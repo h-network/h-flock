@@ -5,6 +5,7 @@ import threading
 import pytest
 from flock.api import Settings, create_app
 from flock.api import app as api_module
+from flock.api.app import ReplyStore, _receiver
 
 
 class FakePipeline:
@@ -123,7 +124,10 @@ def test_send_returns_stream_and_correlation_ids(client, monkeypatch):
         "recipient": "alice",
         "payload": {"text": "hello"},
         "correlation_id": None,
+        "module": "api",
     }
+    assert len(response_body["correlation_id"]) == 32
+    int(response_body["correlation_id"], 16)
 
 
 def test_board_aggregate_is_roster_bounded_and_pipelined(client):
@@ -144,3 +148,46 @@ def test_board_aggregate_is_roster_bounded_and_pipelined(client):
 def test_non_loopback_bind_requires_token():
     with pytest.raises(RuntimeError, match="API_TOKEN"):
         create_app(settings=Settings(pod="test", tenant="office", api_bind="0.0.0.0"), redis_client=FakeRedis())
+
+
+def test_loopback_bind_also_requires_token():
+    with pytest.raises(RuntimeError, match="API_TOKEN"):
+        create_app(settings=Settings(pod="test", tenant="office"), redis_client=FakeRedis())
+
+
+def test_reply_store_is_bounded_by_correlation_and_reply_count():
+    replies = ReplyStore(max_correlations=2, max_replies_per_correlation=2)
+    replies.add({"correlation_id": "old", "payload": 1})
+    replies.add({"correlation_id": "kept", "payload": 1})
+    replies.add({"correlation_id": "kept", "payload": 2})
+    replies.add({"correlation_id": "kept", "payload": 3})
+    replies.add({"correlation_id": "new", "payload": 1})
+
+    assert replies.get("old") == []
+    assert [message["payload"] for message in replies.get("kept")] == [2, 3]
+
+
+def test_receiver_recovers_after_error_and_identifies_api_module(monkeypatch):
+    stop = threading.Event()
+    calls = []
+    logs = []
+
+    def flaky_receive(*_args, **kwargs):
+        calls.append(kwargs)
+        if len(calls) == 1:
+            raise ConnectionError("redis unavailable")
+        stop.set()
+
+    monkeypatch.setattr(api_module, "receive", flaky_receive)
+    monkeypatch.setattr(api_module, "log_record", lambda *args, **kwargs: logs.append((args, kwargs)))
+    _receiver(
+        FakeRedis(),
+        Settings(pod="test", tenant="office", api_token="secret"),
+        ReplyStore(),
+        stop,
+        backoff_seconds=0,
+    )
+
+    assert len(calls) == 2
+    assert calls[1]["module"] == "api"
+    assert logs == [(('api', 'receiver_error'), {'reason': 'redis unavailable'})]

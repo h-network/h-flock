@@ -7,7 +7,7 @@ import ipaddress
 import os
 import threading
 import uuid
-from collections import defaultdict
+from collections import OrderedDict, deque
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from typing import Any, AsyncIterator
@@ -19,7 +19,12 @@ from pydantic import BaseModel
 
 from flock.bus.doors import receive, send
 from flock.bus.keys import prefix
+from flock.bus.logging import log_record
 from flock.bus.roster import members
+
+MAX_REPLY_CORRELATIONS = 1024
+MAX_REPLIES_PER_CORRELATION = 100
+RECEIVER_BACKOFF_SECONDS = 1.0
 
 
 @dataclass(frozen=True)
@@ -41,8 +46,10 @@ class Settings:
         )
 
     def validate(self) -> None:
-        if not self.api_token and not _is_loopback(self.api_bind):
-            raise RuntimeError("API_TOKEN is required when API_BIND is not loopback")
+        if not self.api_token:
+            if not _is_loopback(self.api_bind):
+                raise RuntimeError("API_TOKEN is required when API_BIND is not loopback")
+            raise RuntimeError("API_TOKEN is required")
 
 
 class MessageRequest(BaseModel):
@@ -50,15 +57,29 @@ class MessageRequest(BaseModel):
 
 
 class ReplyStore:
-    def __init__(self) -> None:
+    def __init__(
+        self,
+        max_correlations: int = MAX_REPLY_CORRELATIONS,
+        max_replies_per_correlation: int = MAX_REPLIES_PER_CORRELATION,
+    ) -> None:
         self._lock = threading.Lock()
-        self._messages: dict[str, list[dict[str, Any]]] = defaultdict(list)
+        self._max_correlations = max_correlations
+        self._max_replies_per_correlation = max_replies_per_correlation
+        self._messages: OrderedDict[str, deque[dict[str, Any]]] = OrderedDict()
 
     def add(self, envelope: dict[str, Any]) -> None:
         correlation_id = envelope.get("correlation_id")
         if correlation_id:
             with self._lock:
-                self._messages[correlation_id].append(envelope)
+                messages = self._messages.get(correlation_id)
+                if messages is None:
+                    messages = deque(maxlen=self._max_replies_per_correlation)
+                    self._messages[correlation_id] = messages
+                else:
+                    self._messages.move_to_end(correlation_id)
+                messages.append(envelope)
+                while len(self._messages) > self._max_correlations:
+                    self._messages.popitem(last=False)
 
     def get(self, correlation_id: str) -> list[dict[str, Any]]:
         with self._lock:
@@ -80,17 +101,26 @@ def _decode(value: Any) -> Any:
 
 
 def _receiver(
-    client: Any, settings: Settings, replies: ReplyStore, stop: threading.Event
+    client: Any,
+    settings: Settings,
+    replies: ReplyStore,
+    stop: threading.Event,
+    backoff_seconds: float = RECEIVER_BACKOFF_SECONDS,
 ) -> None:
     while not stop.is_set():
-        receive(
-            client,
-            pod=settings.pod,
-            tenant=settings.tenant,
-            agent="api",
-            openers={"Message": replies.add},
-            timeout=1,
-        )
+        try:
+            receive(
+                client,
+                pod=settings.pod,
+                tenant=settings.tenant,
+                agent="api",
+                openers={"Message": replies.add},
+                timeout=1,
+                module="api",
+            )
+        except Exception as exc:
+            log_record("api", "receiver_error", reason=str(exc))
+            stop.wait(backoff_seconds)
 
 
 def create_app(*, settings: Settings | None = None, redis_client: Any = None) -> FastAPI:
@@ -156,7 +186,7 @@ def create_app(*, settings: Settings | None = None, redis_client: Any = None) ->
 
     @app.post("/agents/{agent}/messages", status_code=status.HTTP_202_ACCEPTED)
     def post_message(agent: str, message: MessageRequest) -> dict[str, str]:
-        correlation_id = str(uuid.uuid4())
+        correlation_id = uuid.uuid4().hex
         try:
             stream_id = send(
                 client,
@@ -166,6 +196,7 @@ def create_app(*, settings: Settings | None = None, redis_client: Any = None) ->
                 recipient=agent,
                 payload={"text": message.text},
                 correlation_id=correlation_id,
+                module="api",
             )
         except KeyError as exc:
             raise HTTPException(status_code=404, detail="invalid agent") from exc
