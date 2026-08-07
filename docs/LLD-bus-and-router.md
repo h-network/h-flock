@@ -192,22 +192,31 @@ end, mint a fresh one when it is missing or empty.
 
 ## 7. Open items
 
-- **The gateway.** Cross-tenant routing is agreed in shape only: each tenant
-  keeps its own local Redis and dials *out*, a registry of enrolled tenants
-  lives in a shared Redis, and no separate service is deployed. The routing
-  table, the enrolment handshake, and what happens to an envelope for a
-  known-but-offline tenant are all undesigned.
-- **The literal segment tags.** The two-level prefix is agreed; what the levels
-  are called is not. Must be settled before the first key is written.
-- **Subscribe-set fairness.** A fixed queue order starves later queues under
-  sustained load. The router should rotate.
-- **Roster durability.** Enrolment has to live somewhere that survives a restart
-  before `api` can manage it.
-- **Kind taxonomy.** Whether dispatch is keyed on `kind` alone or on
-  `(kind, source)`, and what kinds exist beyond a plain message.
-- **Client library.** A minimal hand-rolled RESP client keeps the dependency
-  count at zero; a maintained client brings async and TLS, which federation
-  makes real.
+**One decision blocks implementation. Everything else here is deferred on
+purpose** — the first build is a skeleton that forwards envelopes, and none of
+the deferrals change its shape. Do not solve them pre-emptively.
+
+### Blocking
+
+**The literal segment tags.** The two-level prefix is agreed; what the levels
+are called is not. Every key begins with it, so it cannot be deferred. The
+shape is two literal tags followed by two values:
+
+```
+  <tag-a>:<tag-b>:<value-a>:<value-b>
+```
+
+`tag-b` names what a router serves; `tag-a` names the group it sits in.
+
+### Deferred
+
+| Item | Why it can wait |
+|---|---|
+| **Gateway** | Cross-tenant routing arrives as another module with the same ingress/egress pair. Nothing in the skeleton changes to accommodate it later. |
+| **Subscribe-set fairness** | A fixed queue order can starve later queues under sustained load. With a handful of modules it cannot happen. Rotate when it does. |
+| **Roster durability** | Read the roster at boot; a restart re-reads it. Durable storage is needed only once something writes it at runtime. |
+| **Kind taxonomy** | One kind until a second is needed. Dispatch keyed on `kind` alone; `(kind, source)` is a change to make when two sources need different handling of the same kind. |
+| **Client library** | A hand-rolled RESP client keeps dependencies at zero; a maintained one brings async and TLS. Decide at the import, not before. |
 
 ## 8. What this is not
 
