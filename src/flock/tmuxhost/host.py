@@ -33,16 +33,20 @@ class TmuxHost:
         self.session_name = session_name or tenant
         self.socket = socket or os.environ.get("TMUX_SOCKET")
 
-    def ensure_server_and_session(self) -> None:
+    def ensure_server_and_session(self, initial_window: str = "__init__") -> None:
         ret, stdout, stderr = run_tmux("has-session", "-t", self.session_name, socket=self.socket)
         if ret != 0:
-            # Create session detached with geometry 80x24
-            code, out, err = run_tmux(
-                "new-session", "-d", "-s", self.session_name, "-n", "__init__", "-x", "80", "-y", "24",
-                socket=self.socket
-            )
+            # Create session detached with initial window
+            cmd = [
+                "new-session", "-d", "-s", self.session_name, "-n", initial_window, "-x", "80", "-y", "24"
+            ]
+            if initial_window != "__init__":
+                cmd.extend(["-e", f"AGENT_NAME={initial_window}"])
+            code, out, err = run_tmux(*cmd, socket=self.socket)
             if code != 0:
                 log_record("tmuxhost", "error", reason=f"Failed to create tmux session: {err}")
+            elif initial_window != "__init__":
+                log_record("tmuxhost", "window_created", recipient=initial_window)
 
         # Set session & server options
         run_tmux("set-option", "-g", "exit-empty", "off", socket=self.socket)
@@ -80,25 +84,26 @@ class TmuxHost:
             return False
 
     def reconcile_once(self, r: redis.Redis) -> None:
-        self.ensure_server_and_session()
         roster_agents = members(r, pod=self.pod, tenant=self.tenant)
+        first_agent = sorted(list(roster_agents))[0] if roster_agents else "__init__"
+        self.ensure_server_and_session(initial_window=first_agent)
+
         existing_windows = self.get_windows()
 
-        # Create missing agent windows
-        for agent in roster_agents:
+        # Create missing agent windows first
+        for agent in sorted(list(roster_agents)):
             if agent not in existing_windows:
                 self.create_window(agent)
 
         # Re-fetch after creations to decide cleanup
         existing_windows = self.get_windows()
 
-        # Remove windows that are no longer in roster
-        for window in existing_windows:
+        # Remove windows that are no longer in roster (never leaving 0 windows in session)
+        for window in sorted(list(existing_windows)):
             if window not in roster_agents:
-                if window == "__init__" and len(existing_windows) > 1:
-                    self.kill_window(window)
-                elif window != "__init__":
-                    self.kill_window(window)
+                if len(existing_windows) > 1:
+                    if self.kill_window(window):
+                        existing_windows.remove(window)
 
     def run_forever(self) -> None:
         r = redis.Redis.from_url(self.redis_url)
