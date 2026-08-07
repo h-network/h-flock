@@ -2,8 +2,13 @@
 
 import re
 
-_SEGMENT = re.compile(r"^[a-z0-9][a-z0-9-]{0,62}$")
-_RESERVED = {"pod", "tenant", "agent"}
+SEGMENT_REGEX = re.compile(r"^[a-z0-9][a-z0-9-]{0,62}$")
+# "all" is the broadcast recipient (LLD-bus-and-router §3.1), so no agent may
+# carry that name — it would be unaddressable.
+RESERVED = {"pod", "tenant", "agent", "all"}
+
+_SEGMENT = SEGMENT_REGEX
+_RESERVED = RESERVED
 
 
 def _validate(value: str | None) -> str:

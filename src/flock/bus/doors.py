@@ -18,10 +18,11 @@ def send(
     payload: dict,
     kind: str = "Message",
     correlation_id: str | None = None,
+    module: str = "bus",
 ) -> str:
     envelope = build(kind, producer, recipient, payload, correlation_id)
     r.rpush(prefix(pod, tenant, producer, "egress"), json.dumps(envelope, separators=(",", ":")))
-    emit("bus", "sent", envelope)
+    emit(module, "sent", envelope)
     return envelope["stream_id"]
 
 
@@ -33,6 +34,7 @@ def receive(
     agent: str,
     openers: dict[str, Callable[[dict], None]],
     timeout: int,
+    module: str = "adapter",
 ) -> None:
     item = r.blpop(prefix(pod, tenant, agent, "ingress"), timeout=timeout)
     if item is None:
@@ -42,18 +44,18 @@ def receive(
         envelope = parse(raw)
     except EnvelopeError as exc:
         r.rpush(prefix(pod, tenant, agent, "dead"), raw)
-        emit("adapter", "dead_lettered", {}, str(exc))
+        emit(module, "dead_lettered", {}, str(exc))
         return
-    emit("bus", "received", envelope)
+    emit(module, "received", envelope)
     opener = openers.get(envelope["kind"])
     if opener is None:
         r.rpush(prefix(pod, tenant, agent, "dead"), raw)
-        emit("adapter", "dead_lettered", envelope, f"unknown kind: {envelope['kind']}")
+        emit(module, "dead_lettered", envelope, f"unknown kind: {envelope['kind']}")
         return
     try:
         opener(envelope)
     except Exception as exc:
         r.rpush(prefix(pod, tenant, agent, "dead"), raw)
-        emit("adapter", "dead_lettered", envelope, f"opener failed: {exc}")
+        emit(module, "dead_lettered", envelope, f"opener failed: {exc}")
         return
-    emit("adapter", "opened", envelope)
+    emit(module, "opened", envelope)
