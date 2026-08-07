@@ -39,18 +39,21 @@ has to put it in front of it.
 
 ## 2. Receiving
 
-**Arrival triggers the adapter. There is no polling loop.** An envelope landing
-on an ingress queue kicks off delivery for that agent; nothing is popped until
-something is ready to deliver it.
+**The router triggers the adapter. There is no polling loop.** The router is the
+only thing that writes an ingress queue, so it is the only thing that knows an
+envelope just landed on one. Having written it, it kicks off delivery for that
+agent.
+
+The agent is not involved and its state is irrelevant — an idle agent is exactly
+the normal case, and it has no way to know anything arrived.
 
 ```
-  envelope lands on …:alice:ingress
-        │
-        ▼
-  adapter runs for alice ──► pop ──► open ──► paste into window
-                                             (paste, delay, Enter, verify)
+  router  ──RPUSH──►  …:alice:ingress
+     │
+     └──kick──►  adapter for alice ──► pop ──► open ──► paste into window
+                                                (paste, delay, Enter, verify)
 
-  alice already busy?  the envelope stays in the queue
+  alice's delivery already in flight?  the envelope stays in the queue
 ```
 
 The reason this matters, rather than being a style preference: a long-running
