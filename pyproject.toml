@@ -1,0 +1,20 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "flock"
+version = "0.1.0"
+description = "h-flock multi-agent architecture"
+requires-python = ">=3.12"
+dependencies = [
+    "redis>=5.0.0",
+    "fastapi>=0.100.0",
+    "uvicorn>=0.20.0",
+]
+
+[project.scripts]
+send = "flock.adapter.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
