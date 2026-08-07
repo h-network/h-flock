@@ -40,31 +40,29 @@ Producers emit frames; a switch forwards them by address without reading the
 payload. That is the whole design.
 
 ```
-  ┌──────────────────────────── tenant ──────────────────────────────────┐
-  │                                                                      │
-  │   EDGE                      L3 ROUTER                    EDGE        │
-  │  ┌─────────┐                                         ┌─────────┐     │
-  │  │  mod-a  │                                         │  mod-b  │     │
-  │  └────┬────┘                                         └────▲────┘     │
-  │       │ produce                                consume    │          │
-  │       ▼                                                   │          │
-  │ ┌──────────────┐                                ┌───────────────┐    │
-  │ │egress.mod-a  │──┐                          ┌─►│ingress.mod-b  │    │
-  │ └──────────────┘  │  BLPOP         RPUSH     │  └───────────────┘    │
-  │                   ├──────►┌───────────┐──────┤                       │
-  │ ┌──────────────┐  │       │  router   │      │  ┌───────────────┐    │
-  │ │egress.mod-b  │──┘       │           │      └─►│ingress.mod-a  │    │
-  │ └──────────────┘          │from_key → │         └───────────────┘    │
-  │                           │  tenant   │                              │
-  │ ┌──────────────┐          │kind+source│         ┌───────────────┐    │
-  │ │ egress.api   │─────────►│ → target  │────────►│ ingress.api   │    │
-  │ └──────────────┘          └─────┬─────┘         └───────────────┘    │
-  │                                 │                                    │
-  │                                 ▼  won't forward                     │
-  │                           ┌───────────┐                              │
-  │                           │   dead    │                              │
-  │                           └───────────┘                              │
-  └──────────────────────────────────────────────────────────────────────┘
+  ┌───────────────────────────── tenant ───────────────────────────────┐
+  │                                                                    │
+  │  EDGE                                          L3 ROUTER           │
+  │                                                                    │
+  │  ┌───────┐  produce  ┌───────────────┐ BLPOP  ┌────────────────┐   │
+  │  │       │──────────►│ egress.mod-a  │───────►│                │   │
+  │  │ mod-a │           └───────────────┘        │     router     │   │
+  │  │       │  consume  ┌───────────────┐ RPUSH  │                │   │
+  │  │       │◄──────────│ ingress.mod-a │◄───────│  from_key →    │   │
+  │  └───────┘           └───────────────┘        │     tenant     │   │
+  │                                               │                │   │
+  │  ┌───────┐  produce  ┌───────────────┐ BLPOP  │  kind+source → │   │
+  │  │       │──────────►│ egress.mod-b  │───────►│     target     │   │
+  │  │ mod-b │           └───────────────┘        │                │   │
+  │  │       │  consume  ┌───────────────┐ RPUSH  │                │   │
+  │  │       │◄──────────│ ingress.mod-b │◄───────│                │   │
+  │  └───────┘           └───────────────┘        └───────┬────────┘   │
+  │                                                       │ won't      │
+  │   every module has the same pair —                    ▼ forward    │
+  │   api and gateway included                      ┌───────────┐      │
+  │                                                 │   dead    │      │
+  │                                                 └───────────┘      │
+  └────────────────────────────────────────────────────────────────────┘
 ```
 
 A module never writes to another module's ingress queue. It writes to **its
