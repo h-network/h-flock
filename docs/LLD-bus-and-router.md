@@ -1,15 +1,15 @@
 # LLD — the bus and the router
 
 > **Status: design, not code.** Decisions taken are stated as such; what is
-> still open is listed in §7. Nothing here is implemented yet.
+> deferred is listed in §7. Nothing here is implemented yet.
 
 ## 1. Purpose & layer
 
-A **module** is anything that talks on the bus. Every module is a producer on
-its own egress queue and a consumer of its own ingress queue. The bus carries
-envelopes; the router forwards them between modules. What a module *is* — a
-process, a session, a daemon — is not the bus's concern and is deliberately
-absent from this document.
+An **agent** is anything that talks on the bus. Every agent is a producer on its
+own egress queue and a consumer of its own ingress queue. The bus carries
+envelopes; the router forwards them between agents. What an agent *is* — a
+process, a session, a daemon, an HTTP handler — is not the bus's concern and is
+deliberately absent from this document.
 
 Three layers, and the point of the split is that each is ignorant of the layer
 above it.
@@ -21,28 +21,28 @@ above it.
   │                lifecycle, no opinion about what a message    │
   │                means                                         │
   ├──────────────────────────────────────────────────────────────┤
-  │  L3  ROUTER    subscribe set · tenant from the queue key     │
-  │                forward by kind + source · dead-letter        │
+  │  L3  ROUTER    subscribe set · sender from the queue key     │
+  │                resolve recipient → queue · dead-letter       │
   ├──────────────────────────────────────────────────────────────┤
-  │  EDGE          modules: produce onto egress.<module>         │
-  │                         consume from ingress.<module>        │
+  │  EDGE          agents: produce onto <prefix>:egress          │
+  │                        consume from <prefix>:ingress         │
   └──────────────────────────────────────────────────────────────┘
 ```
 
 The load-bearing test for the split: **the router must forward an envelope
-without knowing anything about how the target module is implemented or
+without knowing anything about how the receiving agent is implemented or
 hosted.** If routing and delivery live in one component, the bus can only ever
-reach the kind of module that component knows how to drive.
+reach the kind of agent that component knows how to drive.
 
 **Why a router exists at all.** A producer could write straight into its
 recipient's queue, and then no router would be needed. The cost is that every
-producer must then know the topology — which modules exist, what their queues
+producer must then know the topology — which agents exist, what their queues
 are called, which tenant they sit in — and that knowledge has to be correct in
-every module and updated in all of them at once. With a router, a producer
-knows two things: its own name, and the name of whoever it is addressing. It
-names a **recipient**, never a route. Working out where that recipient
-currently is — local, another tenant, or gone — is the router's job, and it is
-the only component that has to change when the answer does.
+every agent and updated in all of them at once. With a router, a producer knows
+two things: its own name, and the name of whoever it is addressing. It names a
+**recipient**, never a route. Working out where that recipient currently is —
+local, another tenant, or gone — is the router's job, and it is the only
+component that has to change when the answer does.
 
 ## 2. The model, in one picture
 
@@ -50,104 +50,117 @@ Producers emit frames; a switch forwards them by address without reading the
 payload. That is the whole design.
 
 ```
-  ┌───────────────────────────── tenant ───────────────────────────────┐
+  ┌───────────── tenant — pod:tenant:agent:acme:hq:* ──────────────────┐
   │                                                                    │
   │  EDGE                                          L3 ROUTER           │
   │                                                                    │
-  │  ┌───────┐  produce  ┌───────────────┐ BLPOP  ┌────────────────┐   │
-  │  │       │──────────►│ egress.mod-a  │───────►│                │   │
-  │  │ mod-a │           └───────────────┘        │     router     │   │
-  │  │       │  consume  ┌───────────────┐ RPUSH  │                │   │
-  │  │       │◄──────────│ ingress.mod-a │◄───────│  from_key →    │   │
-  │  └───────┘           └───────────────┘        │     tenant     │   │
-  │                                               │                │   │
-  │  ┌───────┐  produce  ┌───────────────┐ BLPOP  │  recipient →   │   │
-  │  │       │──────────►│ egress.mod-b  │───────►│     queue      │   │
-  │  │ mod-b │           └───────────────┘        │                │   │
-  │  │       │  consume  ┌───────────────┐ RPUSH  │                │   │
-  │  │       │◄──────────│ ingress.mod-b │◄───────│                │   │
-  │  └───────┘           └───────────────┘        └───────┬────────┘   │
-  │                                                       │ won't      │
-  │   every module has the same pair —                    ▼ forward    │
-  │   api and gateway included                      ┌───────────┐      │
-  │                                                 │   dead    │      │
-  │                                                 └───────────┘      │
+  │  ┌───────┐  produce  ┌────────────────┐ BLPOP  ┌────────────────┐  │
+  │  │       │──────────►│ …:alice:egress │───────►│                │  │
+  │  │ alice │           └────────────────┘        │     router     │  │
+  │  │       │  consume  ┌────────────────┐ RPUSH  │                │  │
+  │  │       │◄──────────│ …:alice:ingress│◄───────│  recipient →   │  │
+  │  └───────┘           └────────────────┘        │     queue      │  │
+  │                                                │                │  │
+  │  ┌───────┐  produce  ┌────────────────┐ BLPOP  │  from_key →    │  │
+  │  │       │──────────►│ …:bob:egress   │───────►│     sender     │  │
+  │  │  bob  │           └────────────────┘        │                │  │
+  │  │       │  consume  ┌────────────────┐ RPUSH  │                │  │
+  │  │       │◄──────────│ …:bob:ingress  │◄───────│                │  │
+  │  └───────┘           └────────────────┘        └───────┬────────┘  │
+  │                                                        │ won't     │
+  │   api and gateway are agents too —                     ▼ forward   │
+  │   same prefix shape, same pair                 ┌────────────────┐  │
+  │                                                │ …:<from>:dead  │  │
+  │                                                └────────────────┘  │
   └────────────────────────────────────────────────────────────────────┘
 ```
 
-A module never writes to another module's ingress queue. It writes to **its
-own** egress, and the router decides what happens next. Two things follow: routing
+An agent never writes to another agent's ingress queue. It writes to **its own**
+egress, and the router decides what happens next. Two things follow: routing
 decisions happen in exactly one place, and a producer can only write inside its
 own prefix — so the tenancy boundary is enforced on entry, not only on exit.
 
 ## 3. Addressing
 
-### 3.1 The tenancy prefix
+### 3.1 The prefix
 
 ```
-  <scope>:<tenant>:<scope-id>:<tenant-id>
+  pod:tenant:agent:<pod>:<tenant>:<agent>
+
+  e.g. pod:tenant:agent:acme:hq:alice
 ```
 
-Two segments, because tenancy has two levels: the group a tenant belongs to,
-and the tenant itself. The second is what a router serves; the first is what a
-gateway routes on. One segment would work today and cost a migration the day
-tenants federate. The literal tags are a deployment choice and are not fixed
-here (§7).
+Three literal tags, then three values. The tags never change; they make a key
+self-describing and let a parser reject a key belonging to some other scheme
+sharing the same Redis.
+
+| Level | Holds | Who cares |
+|---|---|---|
+| `pod` | tenants | a gateway, when routing between tenants |
+| `tenant` | agents | one router serves exactly one tenant |
+| `agent` | queues | the agent itself |
+
+Putting the agent in the prefix rather than in the queue name is what makes
+per-agent isolation structural: a credential can be scoped to
+`~pod:tenant:agent:acme:hq:alice:*` and reach that agent's keys and nothing
+else. Scoping at the tenant level could not express that.
 
 Segment rule: `^[a-z0-9][a-z0-9-]{0,62}$` — lowercase alnum and dash. No glob
 metacharacters, so a prefix is safe to drop into a Redis `SCAN MATCH`. No
-underscore, so that per-tenant filesystem directories named `<a>_<b>` stay
+underscore, so that per-agent filesystem directories named `<a>_<b>` stay
 unambiguous to split.
 
 **Every key goes through `prefix()`.** There is no API that yields a flat key.
 This is what makes many tenants on one Redis safe, and it is the invariant that
 must survive every change.
 
-### 3.2 Modules
+### 3.2 Agents
 
-The tenant is the isolation boundary. Every module lives underneath one:
+Everything addressable is an agent. There is no second concept:
 
-| Module | Kind | Notes |
+| Agent | Kind | Notes |
 |---|---|---|
-| dynamic modules | dynamic | enrolled from a roster. Appear and disappear while running. |
-| `api` | fixed | the local daemon, acting for a client |
-| `gateway` | fixed | cross-tenant traffic (not yet designed — §7) |
+| named agents | dynamic | enrolled from a roster. Appear and disappear while running. |
+| `api` | fixed | serves an HTTP client |
+| `gateway` | fixed | cross-tenant traffic (deferred — §7) |
 
-Dynamic modules come from a roster that changes while the router is running, so
-the subscribe set is **derived from the roster and rebuilt when it changes**,
-not read from a constant. Adding a module type is adding a name, not altering
-the addressing scheme — that is what makes the scheme scale.
-
-Consequence worth stating: credential scoping is **per tenant**, not per module.
-Credentials cannot be provisioned for a module that does not exist yet.
+Named agents come from a roster that changes while the router is running, so the
+subscribe set is **derived from the roster and rebuilt when it changes**, not
+read from a constant. Adding a kind of agent is adding a name, not altering the
+addressing scheme — that is what makes the scheme scale.
 
 ### 3.3 Queues
 
-Direction is relative to the **module**, as it is on a network device:
-`egress.<module>` is traffic leaving that module, `ingress.<module>` is traffic
-arriving at it. The router sits on the opposite end of both.
+Direction is relative to the **agent**, as it is on a network device: egress is
+traffic leaving the agent, ingress is traffic arriving at it. The router sits on
+the opposite end of both.
 
 | Key | Type | Producer | Consumer |
 |---|---|---|---|
-| `<prefix>:egress.<module>` | LIST | the module | the router |
-| `<prefix>:ingress.<module>` | LIST | the router | the module |
+| `<prefix>:egress` | LIST | the agent | the router |
+| `<prefix>:ingress` | LIST | the router | the agent |
 | `<prefix>:dead` | LIST | the router | nothing yet — read by hand or by `api` |
 
 Lists, not pub/sub, so a backlog survives a consumer restart.
 
+A dead-lettered envelope is parked under the **sender's** prefix, not the
+recipient's — an envelope that failed because its recipient could not be
+resolved has no recipient prefix to be parked under, and the sender is the party
+that needs to see it.
+
 ## 4. Semantics
 
 **Fire-and-forget, like UDP.** The producer gets no acknowledgement, there is no
-retransmit, and nothing at the bus layer promises delivery. A module wanting a
+retransmit, and nothing at the bus layer promises delivery. An agent wanting a
 reply gets one by convention on top, the way DNS does over UDP — never from the
 transport.
 
 **Order is preserved per queue**, because Redis lists are FIFO. Nothing should
 come to depend on ordering *across* queues.
 
-**Broadcast is tenant-scoped.** A broadcast fans out to the modules of one
-tenant and stops there, the way a broadcast domain ends at a router. Reaching
-another tenant is explicit addressing, never implicit fan-out.
+**Broadcast is tenant-scoped.** A broadcast fans out to the agents of one tenant
+and stops there, the way a broadcast domain ends at a router. Reaching another
+tenant is explicit addressing, never implicit fan-out.
 
 **Nothing disappears silently.** Two records per envelope, not one: the router
 logs at **pop**, before doing anything, and again at the outcome. A crash in
@@ -171,8 +184,8 @@ change to what a message means becomes a change to the router.
   "stream_id": "<hex>",
   "correlation_id": "<hex>",
   "ts": "2026-08-07T18:00:00.000Z",
-  "producer": "<module>",
-  "recipient": "<module>",
+  "producer": "<agent>",
+  "recipient": "<agent>",
   "payload": { }
 }
 ```
@@ -182,65 +195,53 @@ inside `payload`, and validating it is the consumer's job, never the bus's.
 Unknown top-level fields are ignored, so a newer producer cannot break an older
 router.
 
-`recipient` is a **module name, not a queue name**. A producer writes
-`"recipient": "mod-b"`; it never constructs `ingress.mod-b` and never names a
+`recipient` is an **agent name, not a queue name**. A producer writes
+`"recipient": "bob"`; it never constructs `…:bob:ingress` and never names a
 tenant. Resolving the name to a queue is the router's only real decision, and
-keeping it there is what stops topology knowledge spreading into every module.
-An unresolvable name is a dead-letter, not a crash.
+keeping it there is what stops topology knowledge spreading into every agent. An
+unresolvable name is a dead-letter, not a crash.
+
+A bare name means "in my tenant", which is the only case the first build
+handles. Qualified names for reaching another tenant or pod arrive with the
+gateway (§7) — until then, an unqualified name that does not resolve inside the
+sender's own tenant is dead-lettered.
 
 Both `producer` and `recipient` are header fields, so reading them is not
 reading the payload — §6.7 holds.
 
-`correlation_id` is carried but unused for now. When request/reply arrives it
-becomes the join key, under the rule: propagate an inbound non-empty cid end to
-end, mint a fresh one when it is missing or empty.
-
 ## 6. Invariants
 
 1. **`prefix()` on every key.** No flat keys, anywhere, ever.
-2. **Tenancy comes from the queue the envelope was popped from**, never from its
-   contents. Cross-tenant leakage is therefore structural, not a runtime check.
-3. **A module may only write to its own `egress.` queue.** The router is the
-   only writer of `ingress.` queues. This is what makes the router load-bearing rather
+2. **The sender comes from the queue the envelope was popped from**, never from
+   its contents. Cross-tenant leakage is therefore structural, not a runtime
+   check.
+3. **An agent may only write to its own `egress` queue.** The router is the only
+   writer of `ingress` queues. This is what makes the router load-bearing rather
    than a naming convention.
 4. **The bus is lifecycle-agnostic.** It moves opaque strings. Task state,
    correlation and session context live above it.
 5. **Lists, not pub/sub.**
 6. **One bad envelope never stops the loop.** Malformed JSON, an unparseable
-   queue name, an unknown module: log and skip, per envelope.
-7. **The router knows nothing about how a module is implemented.**
+   queue name, an unresolvable recipient: log and skip or dead-letter, per
+   envelope.
+7. **The router knows nothing about how an agent is implemented.**
 
-## 7. Open items
+## 7. Deferred
 
-**One decision blocks implementation. Everything else here is deferred on
-purpose** — the first build is a skeleton that forwards envelopes, and none of
-the deferrals change its shape. Do not solve them pre-emptively.
-
-### Blocking
-
-**The literal segment tags.** The two-level prefix is agreed; what the levels
-are called is not. Every key begins with it, so it cannot be deferred. The
-shape is two literal tags followed by two values:
-
-```
-  <tag-a>:<tag-b>:<value-a>:<value-b>
-```
-
-`tag-b` names what a router serves; `tag-a` names the group it sits in.
-
-### Deferred
+**None of these block the first build**, which is a skeleton that forwards
+envelopes. None of them change its shape. Do not solve them pre-emptively.
 
 | Item | Why it can wait |
 |---|---|
-| **Gateway** | Cross-tenant routing arrives as another module with the same ingress/egress pair. Nothing in the skeleton changes to accommodate it later. |
-| **Subscribe-set fairness** | A fixed queue order can starve later queues under sustained load. With a handful of modules it cannot happen. Rotate when it does. |
+| **Gateway** | Cross-tenant routing arrives as another agent with the same ingress/egress pair, plus qualified recipient names. Nothing in the skeleton changes to accommodate it later. |
+| **Subscribe-set fairness** | A fixed queue order can starve later queues under sustained load. With a handful of agents it cannot happen. Rotate when it does. |
 | **Roster durability** | Read the roster at boot; a restart re-reads it. Durable storage is needed only once something writes it at runtime. |
-| **Kind taxonomy** | One kind until a second is needed. Dispatch keyed on `kind` alone; `(kind, source)` is a change to make when two sources need different handling of the same kind. |
+| **Kind taxonomy** | One kind until a second is needed. Dispatch keyed on `kind` alone; `(kind, sender)` is a change to make when two senders need different handling of the same kind. |
 | **Client library** | A hand-rolled RESP client keeps dependencies at zero; a maintained one brings async and TLS. Decide at the import, not before. |
 
 ## 8. What this is not
 
 Not a task system. Not an orchestrator in the "supervisor delegates to workers"
-sense. Not a scheduler. Anything a module does with an envelope after consuming
+sense. Not a scheduler. Anything an agent does with an envelope after consuming
 it is out of scope — the bus carries signals, the router forwards them, and
 neither decides what is done with them.
