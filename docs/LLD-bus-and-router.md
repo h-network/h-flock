@@ -1,20 +1,19 @@
 # LLD — the bus and the router
 
 > **Status: design, not code.** This describes the nervous system h-flock is
-> being built around — the message bus and the envelope router. It records
-> decisions taken in discussion, and marks the ones still open in §7. Nothing
-> here is implemented yet.
->
-> Lineage: the envelope, the VAB tenancy primitive and the `in.`/`out.` queue
-> pair come from `h-network/h-cli-dev` (`modules/h-bus/`,
-> `services/orchestrator/`). The office model, the roster and the delivery
-> mechanics come from `h-network/h-office`. This document is where the two
-> meet.
+> built around — the message bus and the envelope router. Decisions taken are
+> stated as such; what is still open is listed in §7. Nothing here is
+> implemented yet.
 
 ## 1. Purpose & layer
 
-Three layers, and the whole point of the split is that each one is ignorant of
-the layer above it.
+An office is a set of agents that need to talk to each other. The bus carries
+what they say; the router decides where it goes. Everything else — what an
+agent is, how a message reaches its screen, what work it is doing — sits above
+and is out of scope here.
+
+Three layers, and the point of the split is that each is ignorant of the layer
+above it.
 
 ```
   ┌──────────────────────────────────────────────────────────────┐
@@ -25,19 +24,19 @@ the layer above it.
   ├──────────────────────────────────────────────────────────────┤
   │  L3  ROUTER       subscribe set · tenant from the queue key  │
   │                   forward by kind + source · dead-letter     │
-  │                   knows nothing about tmux                   │
+  │                   no knowledge of how a module is hosted     │
   ├──────────────────────────────────────────────────────────────┤
-  │  EDGE  ADAPTERS   agents (tmux) · api · gateway              │
+  │  EDGE  ADAPTERS   agents · api · gateway                     │
   │                   produce onto out.<module>                  │
   │                   consume from in.<module>                   │
   └──────────────────────────────────────────────────────────────┘
 ```
 
 The load-bearing test for the split: **the router must be able to forward an
-envelope to an agent in another office without knowing that local agents live
-in tmux.** h-office fails this test — its courier is both the router and the
-tmux deliverer in one class, which is why its bus can only ever talk to tmux.
-Separating them is the reason this document exists.
+envelope to a module in another office without knowing how any module is
+hosted.** If routing and delivery live in one component, the bus can only ever
+talk to whatever that component knows how to drive. Keeping them apart is the
+reason this document exists.
 
 ## 2. The model, in one picture
 
@@ -50,7 +49,6 @@ payload. That is the whole design.
   │   EDGE                     L3 ROUTER                    EDGE       │
   │  ┌─────────┐                                        ┌─────────┐    │
   │  │ alice   │                                        │  bob    │    │
-  │  │ (tmux)  │                                        │ (tmux)  │    │
   │  └────┬────┘                                        └────▲────┘    │
   │       │ emit                                    deliver  │         │
   │       ▼                                                  │         │
@@ -73,10 +71,11 @@ payload. That is the whole design.
   └────────────────────────────────────────────────────────────────────┘
 ```
 
-An agent never writes to another agent's mailbox. It writes to **its own**
-out-queue, and the router decides what happens next. This is the difference
-from h-office, where `sendMessage` RPUSHes straight onto the recipient's inbox
-and nothing sits in between.
+A module never writes to another module's mailbox. It writes to **its own**
+out-queue, and the router decides what happens next. Two things follow: routing
+decisions happen in exactly one place, and a sender can only ever write inside
+its own prefix — so the tenancy boundary is enforced on the way in, not just on
+the way out.
 
 ## 3. Addressing
 
@@ -88,18 +87,18 @@ and nothing sits in between.
 ```
 
 Two segments, because tenancy has two levels: the federation an office belongs
-to, and the office itself. The second is what a courier serves; the first is
-what a gateway routes on. Collapsing to one segment would work today and cost a
-migration the day offices federate.
+to, and the office itself. The second is what a router serves; the first is
+what a gateway routes on. One segment would work today and cost a migration the
+day offices federate.
 
-Segment rule, carried over unchanged: `^[a-z0-9][a-z0-9-]{0,62}$`. Lowercase
-alnum and dash. No glob metacharacters, so a prefix is safe to drop into a
-Redis `SCAN MATCH`. No underscore, because per-tenant filesystem directories
-are named `<a>_<b>` and would be ambiguous to split.
+Segment rule: `^[a-z0-9][a-z0-9-]{0,62}$` — lowercase alnum and dash. No glob
+metacharacters, so a prefix is safe to drop into a Redis `SCAN MATCH`. No
+underscore, so that per-tenant filesystem directories named `<a>_<b>` stay
+unambiguous to split.
 
 **Every key goes through `prefix()`.** There is no API that yields a flat key.
-This is the invariant that makes single-Redis multi-tenancy work, and it is the
-one that must survive every change.
+This is what makes many offices on one Redis safe, and it is the invariant that
+must survive every change.
 
 ### 3.2 Modules
 
@@ -109,18 +108,16 @@ underneath it:
 | Module | Kind | Notes |
 |---|---|---|
 | `<agent>` — `alice`, `bob` | dynamic | one per roster entry. Appears and disappears while running. |
-| `api` | fixed | the local daemon, on behalf of a UI or an operator |
+| `api` | fixed | the local daemon, acting for a UI or an operator |
 | `gateway` | fixed | cross-office traffic (not yet designed — §7) |
 
-This is the one place h-flock departs from h-cli-dev, whose module set
-(`telegram`, `claude`, `codex`) is known at build time. Here the agent modules
-come from the roster, so the subscribe set is **built from the roster and
-rebuilt when it changes**, rather than read from a constant. h-office's courier
-already does exactly this, so the mechanism carries over.
+Agent modules come from the roster, which changes while the router is running.
+So the subscribe set is **derived from the roster and rebuilt when it changes**,
+not read from a constant. Adding a module type is adding a name, not altering
+the addressing scheme — that is what makes the scheme scale.
 
-Consequence worth stating: ACL scoping, when it arrives, is **per office** and
-not per agent. Credentials cannot be provisioned for a module that does not
-exist yet.
+Consequence worth stating: any credential scoping is **per office**, not per
+module. Credentials cannot be provisioned for a module that does not exist yet.
 
 ### 3.3 Queues
 
@@ -131,40 +128,38 @@ emits", not "envelopes going to alice".
 |---|---|---|---|
 | `<vab>:out.<module>` | LIST | the module | the router |
 | `<vab>:in.<module>` | LIST | the router | the module |
-| `<vab>:dead` | LIST | the router | nothing yet (read by hand / by the API) |
+| `<vab>:dead` | LIST | the router | nothing yet — read by hand or by the api |
 
 Lists, not pub/sub, so a backlog survives a consumer restart.
 
 ## 4. Semantics
 
-**UDP at the edges.** Emitting is fire-and-forget. The sender gets no
-acknowledgement, there is no retransmit, and nothing at the bus layer promises
-delivery. An agent that wants a reply gets one the same way DNS does — by
-convention on top, not by the transport.
+**Fire-and-forget, like UDP.** The sender gets no acknowledgement, there is no
+retransmit, and nothing at the bus layer promises delivery. A module wanting a
+reply gets one by convention on top, the way DNS does over UDP — never from the
+transport.
 
-**Order is preserved per queue** because Redis lists are FIFO. Nothing should
+**Order is preserved per queue**, because Redis lists are FIFO. Nothing should
 come to depend on ordering *across* queues.
 
-**Broadcast is office-scoped.** `-a all` fans out within one office and stops
-there. A broadcast domain ends at the router, as it does in a network. Crossing
-offices is explicit addressing, never implicit fan-out.
+**Broadcast is office-scoped.** A broadcast fans out within one office and stops
+there, the way a broadcast domain ends at a router. Reaching another office is
+explicit addressing, never implicit fan-out.
 
 **Nothing disappears silently.** Two records per envelope, not one: the router
-logs at **pop**, before it does anything, and again at the outcome. A crash in
+logs at **pop**, before doing anything, and again at the outcome. A crash in
 between then leaves a "received, no outcome" line carrying the `stream_id`,
 which is detectable. This is deliberately cheaper than a reserve/ack/heartbeat
-reliability layer — it does not recover the lost envelope, it only guarantees
-the loss is visible. That trade is the decision; revisit it if losses turn out
-to be common rather than theoretical.
+reliability layer — it does not recover a lost envelope, it only guarantees the
+loss is visible. That trade is the decision; revisit it if losses turn out to be
+common rather than theoretical.
 
 **The router does not read payloads.** It forwards on `kind` and the source
 queue name. The moment routing depends on payload contents it stops being a
-switch and becomes a middlebox. h-cli-dev learned this the expensive way and
-retired its `TaskBus` and eight task-lifecycle key builders to undo it.
+switch and becomes a middlebox, and every future change to a message's meaning
+becomes a change to the router.
 
 ## 5. The envelope
-
-Carried over from h-cli-dev / h-office unchanged:
 
 ```json
 {
@@ -184,16 +179,14 @@ Unknown top-level fields are ignored, so a newer producer cannot break an older
 router.
 
 `correlation_id` is carried but unused for now. When request/reply arrives it
-becomes the join key, and the rule is already settled by precedent: propagate
-an inbound non-empty cid end to end, mint a fresh one when it is missing or
-empty.
+becomes the join key, under the rule: propagate an inbound non-empty cid end to
+end, mint a fresh one when it is missing or empty.
 
 ## 6. Invariants
 
 1. **`prefix()` on every key.** No flat keys, anywhere, ever.
-2. **Tenancy comes from the queue the envelope was popped from**, never from
-   its contents. Cross-tenant leakage is therefore structural, not a runtime
-   check.
+2. **Tenancy comes from the queue the envelope was popped from**, never from its
+   contents. Cross-tenant leakage is therefore structural, not a runtime check.
 3. **A module may only write to its own `out.` queue.** The router is the only
    writer of `in.` queues. This is what makes the router load-bearing rather
    than a naming convention.
@@ -202,34 +195,30 @@ empty.
 5. **Lists, not pub/sub.**
 6. **One bad envelope never stops the loop.** Malformed JSON, an unparseable
    queue name, an unknown module: log and skip, per envelope.
-7. **The router knows nothing about tmux.**
+7. **The router does not know how any module is hosted.**
 
 ## 7. Open items
 
 - **The gateway.** Cross-office routing is agreed in shape only: offices keep
   their own local Redis and dial *out*, a registry of enrolled offices lives in
   a shared Redis, and no separate service is deployed. The routing table, the
-  enrolment handshake and what happens to an envelope for a known-but-offline
+  enrolment handshake, and what happens to an envelope for a known-but-offline
   office are all undesigned.
-- **The `flock` segment.** Proposed here, not yet confirmed. If federation is
-  abandoned it is dead weight; if it is kept, it must be decided before the
-  first key is written.
+- **The `flock` segment.** Proposed, not confirmed. Dead weight if federation is
+  abandoned; must be settled before the first key is written.
 - **Subscribe-set fairness.** A fixed queue order starves later queues under
-  sustained load. Both h-office and h-cli-dev have this defect today. The
-  router should rotate.
-- **Roster durability.** h-office regenerates its roster from env on every
-  container start, so nothing written by an API survives a restart. h-flock
-  needs membership to live somewhere durable before the API can manage it.
-- **Kind taxonomy.** `Message` and `Alert` exist. Whether h-flock needs more,
-  and whether the router's dispatch table is keyed on `kind` alone or on
-  `(kind, source)`, is undecided.
-- **Client library.** h-office hand-rolls RESP in 131 dependency-free lines;
-  h-cli-dev takes `redis-py`. Federation makes TLS real, which argues for the
-  dependency.
+  sustained load. The router should rotate.
+- **Roster durability.** Membership has to live somewhere that survives a
+  restart before the api can manage it.
+- **Kind taxonomy.** Whether dispatch is keyed on `kind` alone or on
+  `(kind, source)`, and what kinds exist beyond a plain message.
+- **Client library.** A minimal hand-rolled RESP client keeps the dependency
+  count at zero; a maintained client brings async and TLS, which federation
+  makes real.
 
 ## 8. What this is not
 
 Not a task system. Not an orchestrator in the "supervisor delegates to workers"
-sense. Not a scheduler. The board, presence, delivery mechanics and the agent
-CLIs all sit at the edge and are out of scope for this document — the nervous
+sense. Not a scheduler. Boards, presence, delivery mechanics and the agent
+processes themselves all sit at the edge and are out of scope — the nervous
 system carries signals; it does not decide what the body does with them.
