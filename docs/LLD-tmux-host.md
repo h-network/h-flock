@@ -27,9 +27,17 @@ it is how the office runs, and everything downstream is built for it.
   set -g exit-empty off        server survives its last window closing
 ```
 
-`exit-empty off` matters more than it looks: without it, removing the last
-agent takes the server down, and with it every assumption the adapter makes
-about windows being there.
+`exit-empty off` matters more than it looks: without it, removing the last agent
+takes the server down.
+
+⚠ **It does not save the session, and the session is what everything depends
+on.** A session whose last window closes is destroyed by tmux, and no option
+prevents that — `exit-empty off` keeps the *server* running with no sessions in
+it, which is not the same thing and is not enough. Every later
+`new-window -t <session>` then fails with "no current target", permanently.
+
+This is not theoretical: it is how the first deployment failed. See §5 — it is
+the reason reconciliation has an order.
 
 Attaching is an **escape hatch for a human**, not the interface. Nothing may
 depend on a client being connected.
@@ -89,6 +97,13 @@ the roster with no window gets one, a window with no agent in the roster is
 removed. Reconciliation is a repeatable operation, not a one-time setup step, so
 running it again after a roster change is the whole mechanism for hiring and
 letting go.
+
+⚠ **Create before you kill.** The two directions are not interchangeable in
+order. Killing first can empty the session — most obviously on the very first
+pass, where the session's own initial window is by definition not an agent — and
+an emptied session is destroyed and does not come back (§2). Creating first
+means the session always holds at least one window and the destructive half is
+never the last thing standing.
 
 Nothing announces a roster change, so this module polls for it like the others.
 Having no queue to block on, it polls on a loop of its own, every
