@@ -42,3 +42,27 @@ def test_tmuxhost_reconciliation(mock_run_tmux):
     calls = [c[0] for c in mock_run_tmux.call_args_list]
     assert any("new-window" in c for c in calls)
     assert any("kill-window" in c for c in calls)
+
+
+@patch("flock.tmuxhost.host.run_tmux")
+def test_tmuxhost_ensure_session_with_roster_agent(mock_run_tmux):
+    mock_run_tmux.side_effect = [
+        (1, "", "no server running"),  # has-session -> 1 (not existing)
+        (0, "", ""),  # new-session -d -s hq -n alice ...
+        (0, "", ""),  # exit-empty
+        (0, "", ""),  # window-size
+        (0, "", ""),  # history-limit
+        (0, "alice", ""),  # list-windows 1 -> alice
+        (0, "alice", ""),  # list-windows 2 -> alice
+    ]
+
+    r = MockRedis(["alice"])
+    host = TmuxHost(pod="acme", tenant="hq", redis_url="redis://127.0.0.1:6379/0", session_name="hq")
+    host.reconcile_once(r)
+
+    calls = [c[0] for c in mock_run_tmux.call_args_list]
+    # Check new-session was called with alice as initial window
+    assert any("new-session" in c and "alice" in c for c in calls)
+    # Check no kill-window was called (as alice is the only window)
+    assert not any("kill-window" in c for c in calls)
+
