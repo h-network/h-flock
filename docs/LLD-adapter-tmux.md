@@ -22,7 +22,7 @@ differently even though the contract is symmetric:
   │  send      a command the agent runs inside its own window     │
   │            builds the envelope, writes its own egress         │
   │                                                               │
-  │  receive   triggered when an envelope lands on ingress        │
+  │  receive   blocks on ingress, woken by Redis on arrival       │
   │            pops it, opens it, pastes it into the window       │
   │                                                               │
   └───────────────────────────────────────────────────────────────┘
@@ -33,16 +33,19 @@ invokes anything else. The adapter's only job on that side is to make the
 command available in the window and configured with the agent's own identity, so
 it writes the right egress without being told.
 
-**Receive is triggered from outside**, because nothing in the window is waiting
-for anything — the agent has no way to know an envelope arrived, so something
-has to put it in front of it.
+**Receive runs outside the window**, because the agent has no way to know an
+envelope arrived. Something else has to be waiting on its behalf and put the
+result in front of it.
 
 ## 2. Receiving
 
-**Arrival wakes a blocked consumer. Nothing polls, and nothing is triggered.**
-The adapter holds one `BLPOP` per agent. Redis wakes it the instant the router
-`RPUSH`es, so the queue itself is the notification — there is no signal to send
-and no call between the router and this module.
+**Arrival wakes a blocked consumer. Nothing is triggered, and no envelope is
+polled for.** The adapter holds one `BLPOP` per agent. Redis wakes it the
+instant the router `RPUSH`es, so the queue itself is the notification — there is
+no signal to send and no call between the router and this module.
+
+(The roster *is* polled, on the same `BLPOP` timeout — see below. Envelopes are
+not.)
 
 ```
   router ──RPUSH──► …:alice:ingress
@@ -73,6 +76,13 @@ independent and overlap freely.
 
 **One connection per agent** is the cost. For the tens of agents a tenant holds,
 that is not a consideration.
+
+**Agents come and go**, so the set of blocked consumers has to follow the
+roster. Give each `BLPOP` a timeout: on every wake with nothing popped, re-read
+the roster, start a consumer for anyone new, and stop one whose agent has gone.
+The timeout is therefore both the shutdown latency and how stale membership may
+be — and it must match what the router and the tmux host use, or an agent will
+exist to one module and not another. See `LLD-bus-and-router` §3.2.
 
 ## 3. Opening
 

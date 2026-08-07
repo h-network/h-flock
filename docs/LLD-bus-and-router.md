@@ -221,6 +221,26 @@ credentials, its configuration — belongs to whichever module starts it, not to
 membership. Keeping the roster to names is what lets three modules read it
 without agreeing on anything further.
 
+**Noticing a change: everyone polls.** A `SET` has no wake-up, so each reader
+re-reads it. There is no notification to enable, and no obligation on whatever
+writes the roster beyond writing it.
+
+A module already blocked on `BLPOP` gets this for nothing: give the pop a
+timeout and re-read the roster on each wake. The timeout is then two things at
+once — how long shutdown takes, and how stale membership may be — and one value
+tunes both. A module with no queue to block on polls on its own interval.
+
+Staleness is bounded by that interval and is harmless in both directions. An
+agent added a moment ago is simply not routed to yet; one removed a moment ago
+has its envelopes dead-lettered on the next pass. Neither is a race worth
+closing, and closing it — keyspace notifications, a watched version key — would
+put a write-side obligation on the roster that nothing currently owns.
+
+⚠ **All three readers must poll the same way.** The router rebuilds its
+subscribe set, the tmux adapter opens and closes a blocked connection per agent,
+and the tmux host reconciles windows. Three different staleness windows would
+mean an agent that exists to one module and not another.
+
 ### 3.3 Queues
 
 Direction is relative to the **agent**, as it is on a network device: egress is

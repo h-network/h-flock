@@ -43,7 +43,7 @@ nothing needs discovery, and the whole tenant starts and stops as one thing.
 | redis | — | the bus. Loopback, no persistence needed for a skeleton |
 | router | `LLD-bus-and-router` | one per tenant, therefore one per container |
 | tmux host | `LLD-tmux-host` | creates the server, session and windows |
-| tmux adapter | `LLD-adapter-tmux` | triggered by the router, pastes into windows |
+| tmux adapter | `LLD-adapter-tmux` | blocks on ingress, pastes into windows |
 | api | `LLD-api` | the only thing reachable from outside |
 | agents | — | one per tmux window, whatever the roster says to run |
 

@@ -90,6 +90,12 @@ removed. Reconciliation is a repeatable operation, not a one-time setup step, so
 running it again after a roster change is the whole mechanism for hiring and
 letting go.
 
+Nothing announces a roster change, so this module polls for it like the others.
+Having no queue to block on, it polls on its own interval — which must match the
+one the router and the adapter use, or a window will exist for an agent nothing
+routes to, or fail to exist for one that everything does. See
+`LLD-bus-and-router` §3.2.
+
 What runs in the window is configuration, not this module's opinion. It starts
 what it is told to start, in the working directory it is told to use, with the
 environment it is given.
