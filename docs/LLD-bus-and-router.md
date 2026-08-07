@@ -159,6 +159,13 @@ subscribe set is **derived from the roster and rebuilt when it changes**, not
 read from a constant. Adding a kind of agent is adding a name, not altering the
 addressing scheme — that is what makes the scheme scale.
 
+**The roster is live state, not boot configuration.** Agents join and leave
+while the router runs, and the subscribe set follows. It is also the only source
+of membership: the router builds its egress subscribe set from it, and anything
+that needs "every agent in this tenant" — aggregating a board, fanning out a
+broadcast — walks the same list rather than scanning the keyspace. One source,
+several readers.
+
 ### 3.3 Queues
 
 Direction is relative to the **agent**, as it is on a network device: egress is
@@ -200,10 +207,11 @@ reliability layer — it does not recover a lost envelope, it only guarantees th
 loss is visible. That trade is the decision; revisit it if losses turn out to be
 common rather than theoretical.
 
-**The router does not read payloads.** It forwards on the header — `recipient`,
-`kind`, and the queue the envelope was popped from. The moment routing depends
-on payload contents it stops being a switch and becomes a middlebox, and every
-change to what a message means becomes a change to the router.
+**The router does not read payloads.** It forwards on `recipient`, and derives
+the sender from the queue the envelope was popped from. Nothing else in the
+envelope affects where it goes. The moment routing depends on payload contents
+it stops being a switch and becomes a middlebox, and every change to what a
+message means becomes a change to the router.
 
 ## 5. The envelope
 
@@ -236,6 +244,12 @@ handles. Qualified names for reaching another tenant or pod arrive with the
 gateway (§7) — until then, an unqualified name that does not resolve inside the
 sender's own tenant is dead-lettered.
 
+`kind` is **opaque to the router**. It exists for the receiving agent, which
+decides what to do with an envelope once it has one. Do not build a dispatch
+table on it — routing is `recipient` and nothing else. A router that branches on
+`kind` has to change every time a new kind is added, which is the coupling this
+design exists to avoid.
+
 Both `producer` and `recipient` are header fields, so reading them is not
 reading the payload — §6.7 holds.
 
@@ -261,13 +275,26 @@ reading the payload — §6.7 holds.
 **None of these block the first build**, which is a skeleton that forwards
 envelopes. None of them change its shape. Do not solve them pre-emptively.
 
-| Item | Why it can wait |
-|---|---|
-| **Gateway** | Cross-tenant routing arrives as another agent with the same ingress/egress pair, plus qualified recipient names. Nothing in the skeleton changes to accommodate it later. |
-| **Subscribe-set fairness** | A fixed queue order can starve later queues under sustained load. With a handful of agents it cannot happen. Rotate when it does. |
-| **Roster durability** | Read the roster at boot; a restart re-reads it. Durable storage is needed only once something writes it at runtime. |
-| **Kind taxonomy** | One kind until a second is needed. Dispatch keyed on `kind` alone; `(kind, sender)` is a change to make when two senders need different handling of the same kind. |
-| **Client library** | A hand-rolled RESP client keeps dependencies at zero; a maintained one brings async and TLS. Decide at the import, not before. |
+**Cross-tenant routing.** Not a separate component — a branch in the router.
+When a `recipient` does not resolve inside the local tenant, look it up in a
+registry of enrolled tenants and write the envelope to that tenant's Redis.
+Registration supplies the discovery half; what remains undesigned is the
+enrolment handshake, qualified recipient names, and what happens to an envelope
+for a tenant that is known but offline.
+
+⚠ Keep remote forwarding **off the hot path**. A local forward is a Redis round
+trip; a remote one is a network round trip, and doing that inline turns a
+microsecond loop into a tens-of-milliseconds one. That is the one thing that
+would make subscribe-set fairness matter — see below.
+
+**Subscribe-set fairness.** `BLPOP` returns from the first non-empty key in
+argument order, so a fixed order can in principle starve later queues. It cannot
+happen here: the router's loop is pop, resolve, push — a few local round trips —
+and no agent produces fast enough to keep its queue non-empty across that. The
+problem belongs to designs where routing and delivery share a loop, and the
+layer split in §1 is what removes it. Rotating the key list each pass
+(`keys = keys[1:] + keys[:1]`) is one line and worth having as insurance, but it
+is not fixing a defect this design has.
 
 ## 8. What this is not
 
