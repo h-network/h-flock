@@ -154,6 +154,9 @@ is indistinguishable from the start of an agent path. The segment regex already
 validates every name, so this is one more check in the same place — cheaper than
 a marker segment that would lengthen every key to solve the same problem.
 
+`all` is reserved too, for the same reason one level up: it is the broadcast
+recipient (§4), so an agent by that name would be unaddressable.
+
 Putting the agent in the address rather than in the queue name is what makes
 per-agent isolation structural: a credential can be scoped to
 `~pod:acme:tenant:hq:agent:alice:*` and reach that agent's keys and nothing
@@ -299,6 +302,31 @@ come to depend on ordering *across* queues.
 **Broadcast is tenant-scoped.** A broadcast fans out to the agents of one tenant
 and stops there, the way a broadcast domain ends at a router. Reaching another
 tenant is explicit addressing, never implicit fan-out.
+
+**`recipient: "all"` is the broadcast address.** The router walks the roster and
+writes one copy to each member's ingress, skipping the producer — an agent does
+not receive its own broadcast.
+
+It has to be a value of `recipient` and not anything else, because routing is
+`recipient` and nothing else (§6.4) — a `kind` of `Broadcast` would make the
+router branch on `kind`, which is exactly the coupling §5 exists to prevent. And
+it has to be a name rather than a pattern: §3.1 excludes glob metacharacters so
+that a prefix is safe in a `SCAN MATCH`, which rules out `*`. A reserved name is
+what is left, and reserving it costs one entry in a list that already exists.
+
+**The router does not rewrite the envelope.** Each copy keeps
+`recipient: "all"`, so a receiver can tell it was addressed to the room rather
+than to it. The router has no other case where it modifies what it forwards, and
+this is not worth being the first.
+
+The fan-out is one pop and *n* pushes, pipelined, not atomic — nothing at this
+layer promises delivery, so a partial fan-out is the same fire-and-forget as a
+partial anything. Two log records still, not *n*: the outcome is a single
+`forwarded` carrying `count`. One pop, one outcome, as §4 requires.
+
+A broadcast into a tenant of one is *n* = 0 — a successful broadcast to nobody,
+not a dead-letter. There was no unresolvable recipient; there was simply no one
+else there.
 
 **Nothing disappears silently.** The router writes **two** records per envelope,
 not one: at **pop**, before doing anything, and again at the outcome. A crash in
