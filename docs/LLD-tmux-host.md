@@ -53,12 +53,25 @@ underneath whatever was reading it.
 
 ```
   new-session -d -x <cols> -y <rows>    an explicit size, not the default
-  set -g window-size manual             an attaching client does not resize
+  set -g default-size 80x24             the size a headless window gets
 ```
 
 `window-size` defaults to `latest`, which hands control to whoever attached most
 recently. That is the wrong owner once the windows exist to be read by software
 rather than looked at.
+
+⚠ **`set -g window-size manual` is the obvious fix and it does not work.** On
+tmux 3.5a it kills the server outright the moment a second window is created
+with no client attached — the first window succeeds, the next one takes the
+whole server down, and every later call reports "server exited unexpectedly".
+Verified in the container image; without it three windows create cleanly.
+
+So pin `default-size` and leave `window-size` alone. That secures the half that
+matters — a known, stable geometry for every window created headless, which is
+the normal state (§2). It does not stop a human who attaches from resizing, and
+that is accepted: attaching is a rare escape hatch, nothing may depend on a
+client being connected, and a reflow while someone is looking is visible rather
+than silent.
 
 Also set here, because it is a property of the host rather than of any agent:
 

@@ -50,7 +50,11 @@ class TmuxHost:
 
         # Set session & server options
         run_tmux("set-option", "-g", "exit-empty", "off", socket=self.socket)
-        run_tmux("set-option", "-g", "window-size", "manual", socket=self.socket)
+        # NOT "window-size manual": on tmux 3.5a that kills the server the
+        # moment a second window is created with no client attached. Pinning
+        # default-size gets the part that matters — a known geometry for
+        # software reading panes — without the crash. See LLD-tmux-host §3.
+        run_tmux("set-option", "-g", "default-size", "80x24", socket=self.socket)
         run_tmux("set-option", "-g", "history-limit", "2000", socket=self.socket)
 
     def get_windows(self) -> Set[str]:
