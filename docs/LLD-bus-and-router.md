@@ -204,6 +204,23 @@ that needs "every agent in this tenant" — aggregating a board, fanning out a
 broadcast — walks the same list rather than scanning the keyspace. One source,
 several readers.
 
+Since every module reads it, its shape is part of the contract:
+
+| | |
+|---|---|
+| **Key** | `pod:<pod>:tenant:<tenant>:roster` |
+| **Type** | `SET` |
+| **Members** | agent names, one per member, each matching the segment rule |
+
+A set, because membership is the only question asked of it — "who is in this
+tenant", and "is this a member" when resolving a recipient. Both are single
+commands (`SMEMBERS`, `SISMEMBER`) and neither needs order.
+
+Nothing else lives in it. Whatever an agent *is* — what runs in its window, its
+credentials, its configuration — belongs to whichever module starts it, not to
+membership. Keeping the roster to names is what lets three modules read it
+without agreeing on anything further.
+
 ### 3.3 Queues
 
 Direction is relative to the **agent**, as it is on a network device: egress is
@@ -217,6 +234,12 @@ the opposite end of both.
 | `<prefix>:dead` | LIST | the router, or an edge adapter | nothing yet — read by hand or by `api` |
 
 Lists, not pub/sub, so a backlog survives a consumer restart.
+
+**The `RPUSH` is the notification.** An adapter blocked on `BLPOP` for an
+ingress queue is woken by Redis the moment the router writes it. The router
+therefore sends no signal and calls nothing — it does not know an adapter
+exists, which is what keeps invariant 8 true. Anything wanting to be told about
+arrivals blocks on the queue.
 
 A dead-lettered envelope is parked under the prefix of **whoever failed to move
 it on**, which differs by where it died:

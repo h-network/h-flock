@@ -39,39 +39,40 @@ has to put it in front of it.
 
 ## 2. Receiving
 
-**The router triggers the adapter. There is no polling loop.** The router is the
-only thing that writes an ingress queue, so it is the only thing that knows an
-envelope just landed on one. Having written it, it kicks off delivery for that
-agent.
-
-The agent is not involved and its state is irrelevant — an idle agent is exactly
-the normal case, and it has no way to know anything arrived.
+**Arrival wakes a blocked consumer. Nothing polls, and nothing is triggered.**
+The adapter holds one `BLPOP` per agent. Redis wakes it the instant the router
+`RPUSH`es, so the queue itself is the notification — there is no signal to send
+and no call between the router and this module.
 
 ```
-  router  ──RPUSH──►  …:alice:ingress
-     │
-     └──kick──►  adapter for alice ──► pop ──► open ──► paste into window
-                                                (paste, delay, Enter, verify)
-
-  alice's delivery already in flight?  the envelope stays in the queue
+  router ──RPUSH──► …:alice:ingress
+                          │ wakes
+                          ▼
+                    BLPOP for alice ──► open ──► paste into window
+                          ▲                       (paste, delay, Enter, verify)
+                          └───────────────────────────┘
+                            blocks again only when done
 ```
 
-The reason this matters, rather than being a style preference: a long-running
-consumer that pops eagerly and hands work to an internal queue **moves the
-backlog into process memory**. Delivery is hundreds of milliseconds, arrivals
-are not rate-limited, so a loop draining as fast as it can will buffer
-unboundedly in RAM — invisible, lost on restart, and with nothing to look at
-when it goes wrong.
+The agent is not involved and its state is irrelevant — an idle agent is the
+normal case, and it has no way to know anything arrived.
 
-Triggering on arrival keeps the backlog in Redis, which is the only place it
-should be. It is durable there, it is visible there, and depth per agent is a
-number anything can read.
+**Exactly one envelope per agent is ever in flight.** The consumer blocks again
+only after its delivery completes, so nothing accumulates in process memory. A
+long-running loop that popped eagerly and handed work to an internal queue would
+do the opposite: delivery takes hundreds of milliseconds, arrivals are not rate
+limited, and the backlog would move from Redis into RAM — invisible, lost on
+restart, and with nothing to inspect when it goes wrong.
 
-Per-agent serialisation falls out of the same rule: while alice's delivery is in
-flight nothing else pops alice's queue, so her messages arrive in order and a
-wedged window blocks only her. Deliveries for different agents are independent
-and can overlap.
+Keeping it in Redis means it is durable, and depth per agent is a number
+anything can read.
 
+Per-agent ordering falls out of the same rule: while alice's delivery is in
+flight nothing else pops alice's queue. Deliveries for different agents are
+independent and overlap freely.
+
+**One connection per agent** is the cost. For the tens of agents a tenant holds,
+that is not a consideration.
 
 ## 3. Opening
 
