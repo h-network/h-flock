@@ -103,9 +103,21 @@ Events, in the order they occur:
   opened        an opener ran to completion              (adapter)
 ```
 
+A module may also log its own **lifecycle** — `started`, `stopped`, `error` —
+which is not about any envelope. Those carry no `stream_id`: it is the join key
+for one envelope's life, and a synthetic value like `"system"` in that field
+makes the four records of a real envelope harder to find, not easier. `stream_id`
+is required on the six events above and absent on the rest.
+
 ⚠ **Never log a payload.** Invariant 4 says the router does not read one; the
 same restraint applies to everything else, and a payload is the one field that
 may hold something private. Headers are enough to trace an envelope end to end.
+
+⚠ **A swallowed exception is a lost envelope.** `receive` has already popped by
+the time an opener runs, so an opener that raises destroys the envelope. Invariant
+7 says one bad envelope must not stop the loop; §4 says nothing disappears
+silently. Both hold only if the handler dead-letters and logs. `except: pass`
+satisfies the first invariant by violating the second.
 
 ## 4. The `send` command
 
