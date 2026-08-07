@@ -34,6 +34,7 @@ class Settings:
     redis_url: str = "redis://127.0.0.1:6379/0"
     api_token: str | None = None
     api_bind: str = "127.0.0.1"
+    api_port: int = 8080
 
     @classmethod
     def from_env(cls) -> "Settings":
@@ -43,6 +44,7 @@ class Settings:
             redis_url=os.getenv("REDIS_URL", "redis://127.0.0.1:6379/0"),
             api_token=os.getenv("API_TOKEN") or None,
             api_bind=os.getenv("API_BIND", "127.0.0.1"),
+            api_port=int(os.getenv("API_PORT", "8080")),
         )
 
     def validate(self) -> None:
