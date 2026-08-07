@@ -5,11 +5,11 @@
 
 ## 1. Purpose & layer
 
-An **agent** is anything that talks on the bus. Every agent is a producer on its
-own egress queue and a consumer of its own ingress queue. The bus carries
-envelopes; the router forwards them between agents. What an agent *is* — a
-process, a session, a daemon, an HTTP handler — is not the bus's concern and is
-deliberately absent from this document.
+An **agent** is anything that talks on the bus. It reaches the bus through an
+adapter, which produces onto the agent's egress and consumes from its ingress on
+its behalf. The bus carries envelopes; the router forwards them between agents.
+What an agent *is* — a process, a session, a daemon, an HTTP handler — is not
+the bus's concern and is deliberately absent from this document.
 
 Three layers, and the point of the split is that each is ignorant of the layer
 above it.
@@ -21,11 +21,11 @@ above it.
   │                lifecycle, no opinion about what a message    │
   │                means                                         │
   ├──────────────────────────────────────────────────────────────┤
-  │  L3  ROUTER    subscribe set · sender from the queue key     │
+  │  L2  ROUTER    subscribe set · sender from the queue key     │
   │                resolve recipient → queue · dead-letter       │
   ├──────────────────────────────────────────────────────────────┤
-  │  EDGE          agents: produce onto <prefix>:egress          │
-  │                        consume from <prefix>:ingress         │
+  │  L3  EDGE      adapters: send onto <prefix>:egress           │
+  │                          receive from <prefix>:ingress       │
   └──────────────────────────────────────────────────────────────┘
 ```
 
@@ -90,7 +90,7 @@ payload. That is the whole design.
 ```
   ┌──────────── tenant — pod:acme:tenant:hq:agent:* ───────────────────┐
   │                                                                    │
-  │  EDGE                                          L3 ROUTER           │
+  │  L3 EDGE                                       L2 ROUTER           │
   │                                                                    │
   │  ┌───────┐  produce  ┌────────────────┐ BLPOP  ┌────────────────┐  │
   │  │       │──────────►│ …:alice:egress │───────►│                │  │
@@ -218,10 +218,15 @@ the opposite end of both.
 
 Lists, not pub/sub, so a backlog survives a consumer restart.
 
-A dead-lettered envelope is parked under the **sender's** prefix, not the
-recipient's — an envelope that failed because its recipient could not be
-resolved has no recipient prefix to be parked under, and the sender is the party
-that needs to see it.
+A dead-lettered envelope is parked under the prefix of **whoever failed to move
+it on**, which differs by where it died:
+
+- **The router** parks under the *sender's* prefix. An envelope that failed
+  because its recipient could not be resolved has no recipient prefix to park
+  under, and the sender is the party who needs to see it.
+- **An adapter** parks under *its own*. The envelope arrived; the failure was at
+  this end. Parking it under the sender's prefix would put an adapter outside
+  its own agent's keys, which §6.3 forbids.
 
 ## 4. Semantics
 
@@ -296,7 +301,7 @@ dropped. An unopenable envelope is exactly the kind of thing you need to find
 out about.
 
 Both `producer` and `recipient` are header fields, so reading them is not
-reading the payload — §6.7 holds.
+reading the payload — §6.4 holds.
 
 ## 6. Invariants
 
@@ -307,13 +312,17 @@ reading the payload — §6.7 holds.
 3. **An agent may only write to its own `egress` queue.** The router is the only
    writer of `ingress` queues. This is what makes the router load-bearing rather
    than a naming convention.
-4. **The bus is lifecycle-agnostic.** It moves opaque strings. Task state,
+4. **The router never reads the payload.** It forwards on `recipient` and
+   derives the sender from the queue key. Nothing else in an envelope affects
+   where it goes. Reading a payload to route makes it a middlebox, and every
+   change to what a message means becomes a change to the router.
+5. **The bus is lifecycle-agnostic.** It moves opaque strings. Task state,
    correlation and session context live above it.
-5. **Lists, not pub/sub.**
-6. **One bad envelope never stops the loop.** Malformed JSON, an unparseable
+6. **Lists, not pub/sub.**
+7. **One bad envelope never stops the loop.** Malformed JSON, an unparseable
    queue name, an unresolvable recipient: log and skip or dead-letter, per
    envelope.
-7. **The router knows nothing about how an agent is implemented.**
+8. **The router knows nothing about how an agent is implemented.**
 
 ## 7. Deferred
 
