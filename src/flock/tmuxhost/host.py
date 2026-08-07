@@ -42,7 +42,7 @@ class TmuxHost:
                 socket=self.socket
             )
             if code != 0:
-                log_record("tmuxhost", "error", stream_id="system", reason=f"Failed to create tmux session: {err}")
+                log_record("tmuxhost", "error", reason=f"Failed to create tmux session: {err}")
 
         # Set session & server options
         run_tmux("set-option", "-g", "exit-empty", "off", socket=self.socket)
@@ -62,10 +62,10 @@ class TmuxHost:
             "new-window", "-t", self.session_name, "-n", agent_name, socket=self.socket
         )
         if ret == 0:
-            log_record("tmuxhost", "window_created", stream_id="system", recipient=agent_name)
+            log_record("tmuxhost", "window_created", recipient=agent_name)
             return True
         else:
-            log_record("tmuxhost", "error", stream_id="system", recipient=agent_name, reason=f"new-window failed: {stderr}")
+            log_record("tmuxhost", "error", recipient=agent_name, reason=f"new-window failed: {stderr}")
             return False
 
     def kill_window(self, window_name: str) -> bool:
@@ -73,10 +73,10 @@ class TmuxHost:
             "kill-window", "-t", f"{self.session_name}:{window_name}", socket=self.socket
         )
         if ret == 0:
-            log_record("tmuxhost", "window_killed", stream_id="system", recipient=window_name)
+            log_record("tmuxhost", "window_killed", recipient=window_name)
             return True
         else:
-            log_record("tmuxhost", "error", stream_id="system", recipient=window_name, reason=f"kill-window failed: {stderr}")
+            log_record("tmuxhost", "error", recipient=window_name, reason=f"kill-window failed: {stderr}")
             return False
 
     def reconcile_once(self, r: redis.Redis) -> None:
@@ -102,10 +102,10 @@ class TmuxHost:
 
     def run_forever(self) -> None:
         r = redis.Redis.from_url(self.redis_url)
-        log_record("tmuxhost", "started", stream_id="system", reason=f"session={self.session_name}")
+        log_record("tmuxhost", "started", reason=f"session={self.session_name}")
         while True:
             try:
                 self.reconcile_once(r)
             except Exception as e:
-                log_record("tmuxhost", "error", stream_id="system", reason=f"Reconciliation exception: {e}")
+                log_record("tmuxhost", "error", reason=f"Reconciliation exception: {e}")
             time.sleep(self.poll_seconds)

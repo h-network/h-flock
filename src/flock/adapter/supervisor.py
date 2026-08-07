@@ -26,15 +26,16 @@ class AdapterSupervisor:
 
     def run_forever(self) -> None:
         r = redis.Redis.from_url(self.redis_url)
-        log_record("adapter", "started", stream_id="system", reason=f"session={self.session_name}")
+        log_record("adapter", "started", reason=f"session={self.session_name}")
 
         while True:
             try:
                 current_members = members(r, pod=self.pod, tenant=self.tenant)
 
-                # Start new consumers
+                # Start consumers for new members
                 for agent in current_members:
-                    if agent not in self.consumers or not self.consumers[agent].is_alive():
+                    existing = self.consumers.get(agent)
+                    if existing is None or not existing.is_alive():
                         t = AgentConsumerThread(
                             agent=agent,
                             pod=self.pod,
@@ -49,11 +50,13 @@ class AdapterSupervisor:
                 # Stop consumers for agents no longer in roster
                 removed_agents = [a for a in self.consumers if a not in current_members]
                 for agent in removed_agents:
-                    t = self.consumers.pop(agent)
+                    t = self.consumers[agent]
                     t.stop()
-                    t.join(timeout=2.0)
+                    t.join()  # Join until dead before removing
+                    del self.consumers[agent]
+                    log_record("adapter", "stopped", recipient=agent)
 
             except Exception as e:
-                log_record("adapter", "error", stream_id="system", reason=f"Supervisor exception: {e}")
+                log_record("adapter", "error", reason=f"Supervisor exception: {e}")
 
             time.sleep(self.poll_seconds)

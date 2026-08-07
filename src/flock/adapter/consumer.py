@@ -1,8 +1,10 @@
+import json
+import time
 import threading
 import redis
 from typing import Callable
 
-from flock.bus import receive
+from flock.bus import receive, prefix, log_record
 from .openers import message_opener
 
 
@@ -32,15 +34,35 @@ class AgentConsumerThread(threading.Thread):
         r = redis.Redis.from_url(self.redis_url)
 
         def handle_message(env: dict) -> None:
-            message_opener(
-                r=r,
-                pod=self.pod,
-                tenant=self.tenant,
-                agent=self.agent,
-                envelope=env,
-                session_name=self.session_name,
-                socket=self.socket,
-            )
+            try:
+                message_opener(
+                    r=r,
+                    pod=self.pod,
+                    tenant=self.tenant,
+                    agent=self.agent,
+                    envelope=env,
+                    session_name=self.session_name,
+                    socket=self.socket,
+                )
+            except Exception as e:
+                stream_id = env.get("stream_id", "")
+                corr_id = env.get("correlation_id")
+                producer = env.get("producer")
+                recipient = env.get("recipient", self.agent)
+                dead_key = prefix(self.pod, self.tenant, agent=self.agent, resource="dead")
+                try:
+                    r.rpush(dead_key, json.dumps(env))
+                except Exception:
+                    pass
+                log_record(
+                    "adapter",
+                    "dead_lettered",
+                    stream_id=stream_id,
+                    correlation_id=corr_id,
+                    producer=producer,
+                    recipient=recipient,
+                    reason=f"Opener exception: {e}",
+                )
 
         openers: dict[str, Callable[[dict], None]] = {
             "Message": handle_message
@@ -58,4 +80,5 @@ class AgentConsumerThread(threading.Thread):
                 )
             except Exception as e:
                 if not self._stop_requested.is_set():
-                    pass
+                    log_record("adapter", "error", recipient=self.agent, reason=f"Consumer loop error: {e}")
+                    time.sleep(1.0)
