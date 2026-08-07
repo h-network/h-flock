@@ -34,6 +34,17 @@ without knowing anything about how the receiving agent is implemented or
 hosted.** If routing and delivery live in one component, the bus can only ever
 reach the kind of agent that component knows how to drive.
 
+**Agents that cannot speak Redis have an adapter.** A process at a terminal
+neither pushes nor pops; something does it on its behalf — writing what the
+agent emits onto egress, and taking what arrives on ingress and putting it in
+front of the agent. Both directions live at the edge, never in the router, and
+they are symmetric: one puts an envelope on the bus, the other opens one.
+
+Opening is where an envelope stops being opaque. The adapter reads the header to
+know *where* — which tenant, which agent, therefore which window — and relays
+the payload without interpreting it. Which is precisely the line the router
+cannot cross: it never touches the payload at all, not even to pass it through.
+
 **Why a router exists at all.** A producer could write straight into its
 recipient's queue, and then no router would be needed. The cost is that every
 producer must then know the topology — which agents exist, what their queues
@@ -176,7 +187,7 @@ the opposite end of both.
 |---|---|---|---|
 | `<prefix>:egress` | LIST | the agent | the router |
 | `<prefix>:ingress` | LIST | the router | the agent |
-| `<prefix>:dead` | LIST | the router | nothing yet — read by hand or by `api` |
+| `<prefix>:dead` | LIST | the router, or an edge adapter | nothing yet — read by hand or by `api` |
 
 Lists, not pub/sub, so a backlog survives a consumer restart.
 
@@ -244,11 +255,18 @@ handles. Qualified names for reaching another tenant or pod arrive with the
 gateway (§7) — until then, an unqualified name that does not resolve inside the
 sender's own tenant is dead-lettered.
 
-`kind` is **opaque to the router**. It exists for the receiving agent, which
-decides what to do with an envelope once it has one. Do not build a dispatch
-table on it — routing is `recipient` and nothing else. A router that branches on
-`kind` has to change every time a new kind is added, which is the coupling this
-design exists to avoid.
+`kind` is **opaque to the router**. Routing is `recipient` and nothing else. A
+router that branches on `kind` has to change every time a new kind is added,
+which is the coupling this design exists to avoid.
+
+Where `kind` *is* read is at the far edge: the adapter keeps a `kind` → opener
+table and dispatches on it. One opener knows how to put a message in front of an
+agent, another does something else entirely. Adding a kind means adding an
+opener, and nothing between the two ends changes.
+
+An envelope whose kind has no opener is **dead-lettered and logged**, not
+dropped. An unopenable envelope is exactly the kind of thing you need to find
+out about.
 
 Both `producer` and `recipient` are header fields, so reading them is not
 reading the payload — §6.7 holds.
