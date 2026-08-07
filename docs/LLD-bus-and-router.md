@@ -45,6 +45,27 @@ know *where* — which tenant, which agent, therefore which window — and relay
 the payload without interpreting it. Which is precisely the line the router
 cannot cross: it never touches the payload at all, not even to pass it through.
 
+### The two doors
+
+**Every envelope enters and leaves the bus through one of exactly two tools.**
+Nothing else performs a raw `RPUSH` or `BLPOP`. They are the inspectors, and
+having only two of them is what makes behaviour deterministic:
+
+| | Does | Rejects |
+|---|---|---|
+| **send** | builds the envelope, writes the caller's own egress, logs | nothing malformed can be constructed |
+| **receive** | validates what came off ingress, dispatches on `kind` to an opener, logs | unknown kind → dead-letter |
+
+Each check therefore has exactly one home. An envelope cannot be malformed
+because only one thing builds them; an agent cannot write outside its own prefix
+because only one thing writes; nothing arrives unlogged because only one thing
+pops. This is the same argument as `prefix()` being the sole key builder — an
+invariant held in one place holds everywhere, and an invariant checked in ten
+places eventually isn't.
+
+A consequence worth stating: **an agent never learns a queue name.** Its entire
+surface is `send`, `receive`, and the name of whoever it is addressing.
+
 **Why a router exists at all.** A producer could write straight into its
 recipient's queue, and then no router would be needed. The cost is that every
 producer must then know the topology — which agents exist, what their queues
