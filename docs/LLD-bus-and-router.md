@@ -242,13 +242,17 @@ come to depend on ordering *across* queues.
 and stops there, the way a broadcast domain ends at a router. Reaching another
 tenant is explicit addressing, never implicit fan-out.
 
-**Nothing disappears silently.** Two records per envelope, not one: the router
-logs at **pop**, before doing anything, and again at the outcome. A crash in
+**Nothing disappears silently.** The router writes **two** records per envelope,
+not one: at **pop**, before doing anything, and again at the outcome. A crash in
 between then leaves a "received, no outcome" line carrying the `stream_id`,
 which is detectable. This is deliberately cheaper than a reserve/ack/heartbeat
 reliability layer — it does not recover a lost envelope, it only guarantees the
 loss is visible. That trade is the decision; revisit it if losses turn out to be
 common rather than theoretical.
+
+`send` and `receive` log at their own ends too, so a delivered envelope leaves
+four records across its life. The pair-per-component is what matters: each
+component records that it took custody and what it then did.
 
 **The router does not read payloads.** It forwards on `recipient`, and derives
 the sender from the queue the envelope was popped from. Nothing else in the
@@ -340,6 +344,10 @@ for a tenant that is known but offline.
 trip; a remote one is a network round trip, and doing that inline turns a
 microsecond loop into a tens-of-milliseconds one. That is the one thing that
 would make subscribe-set fairness matter — see below.
+
+**Roster ownership.** The roster is read as live state (§3.2), and for the first
+build nothing writes it. Where it lives and what maintains it is a question for
+once the skeleton forwards envelopes — do not invent a write path before then.
 
 **Subscribe-set fairness.** `BLPOP` returns from the first non-empty key in
 argument order, so a fixed order can in principle starve later queues. It cannot
