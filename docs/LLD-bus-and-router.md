@@ -225,21 +225,36 @@ without agreeing on anything further.
 re-reads it. There is no notification to enable, and no obligation on whatever
 writes the roster beyond writing it.
 
-A module already blocked on `BLPOP` gets this for nothing: give the pop a
-timeout and re-read the roster on each wake. The timeout is then two things at
-once — how long shutdown takes, and how stale membership may be — and one value
-tunes both. A module with no queue to block on polls on its own interval.
+**Exactly one loop per module does the re-reading.** The router has a single
+`BLPOP` over every egress key, so it can do it on the pop's own timeout — one
+loop, one re-read, and the timeout doubles as how long shutdown takes. A module
+holding *many* blocked connections cannot: the tmux adapter has one `BLPOP` per
+agent, and if each re-read membership they would race to start a consumer for
+the same new agent, while an empty roster would leave nothing blocked and so
+nothing polling at all. Such a module gives the job to a supervisor loop that
+owns nothing else. The tmux host, with no queue to block on, is the same shape
+already.
 
-Staleness is bounded by that interval and is harmless in both directions. An
-agent added a moment ago is simply not routed to yet; one removed a moment ago
-has its envelopes dead-lettered on the next pass. Neither is a race worth
-closing, and closing it — keyspace notifications, a watched version key — would
-put a write-side obligation on the roster that nothing currently owns.
+**The interval is `ROSTER_POLL_SECONDS`, from the environment** (`LLD-container`
+§4), default 5. Every reader takes the same value from the same place, so the
+three staleness windows agree by construction rather than by three modules
+remembering to. The router rebuilds its subscribe set, the adapter opens and
+closes a consumer per agent, and the tmux host reconciles windows — all on it.
 
-⚠ **All three readers must poll the same way.** The router rebuilds its
-subscribe set, the tmux adapter opens and closes a blocked connection per agent,
-and the tmux host reconciles windows. Three different staleness windows would
-mean an agent that exists to one module and not another.
+Staleness is bounded by that interval and is harmless in the two obvious
+directions. An agent added a moment ago is simply not routed to yet; one removed
+a moment ago has its envelopes dead-lettered on the next pass. Neither is a race
+worth closing, and closing it — keyspace notifications, a watched version key —
+would put a write-side obligation on the roster that nothing currently owns.
+
+⚠ A third case is **not** harmless, and it appears as soon as something writes
+the roster. Readers poll on the same interval but not in the same instant, so
+the router can start routing to a new agent before the tmux host has built its
+window — and the adapter then dead-letters that agent's first envelopes into
+nothing. Equal intervals do not fix it, because what differs is phase. Have the
+host lead: it reconciles windows before anything routes to them. Nothing exercises
+this while nothing writes the roster (§7), which is why it is named here rather
+than solved.
 
 ### 3.3 Queues
 

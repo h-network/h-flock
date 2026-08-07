@@ -44,8 +44,7 @@ polled for.** The adapter holds one `BLPOP` per agent. Redis wakes it the
 instant the router `RPUSH`es, so the queue itself is the notification — there is
 no signal to send and no call between the router and this module.
 
-(The roster *is* polled, on the same `BLPOP` timeout — see below. Envelopes are
-not.)
+(The roster *is* polled, by a supervisor loop — see below. Envelopes are not.)
 
 ```
   router ──RPUSH──► …:alice:ingress
@@ -78,11 +77,22 @@ independent and overlap freely.
 that is not a consideration.
 
 **Agents come and go**, so the set of blocked consumers has to follow the
-roster. Give each `BLPOP` a timeout: on every wake with nothing popped, re-read
-the roster, start a consumer for anyone new, and stop one whose agent has gone.
-The timeout is therefore both the shutdown latency and how stale membership may
-be — and it must match what the router and the tmux host use, or an agent will
-exist to one module and not another. See `LLD-bus-and-router` §3.2.
+roster. **One supervisor loop owns that set** — it re-reads the roster every
+`ROSTER_POLL_SECONDS`, starts a consumer for anyone new, and stops one whose
+agent has gone. A consumer only pops, opens and pastes; it never reads the
+roster and never starts or stops another consumer.
+
+The ownership matters, and not only for tidiness. If each consumer re-read the
+roster on its own `BLPOP` timeout, then an empty roster would mean no consumers,
+therefore nothing polling, therefore no way to ever notice the first agent — and
+ten consumers waking independently would each see the same new agent and each
+start a consumer for it, putting several `BLPOP`s on one ingress queue and
+destroying the one-in-flight rule above.
+
+The `BLPOP` timeout is then a separate and much smaller concern: how quickly a
+consumer notices it has been told to stop. Membership staleness is the
+supervisor's interval, and it is the same value the router and the tmux host
+use. See `LLD-bus-and-router` §3.2.
 
 ## 3. Opening
 

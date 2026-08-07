@@ -91,10 +91,12 @@ running it again after a roster change is the whole mechanism for hiring and
 letting go.
 
 Nothing announces a roster change, so this module polls for it like the others.
-Having no queue to block on, it polls on its own interval — which must match the
-one the router and the adapter use, or a window will exist for an agent nothing
-routes to, or fail to exist for one that everything does. See
-`LLD-bus-and-router` §3.2.
+Having no queue to block on, it polls on a loop of its own, every
+`ROSTER_POLL_SECONDS` — the same value the router and the adapter take from the
+environment, so all three see the same membership. See `LLD-bus-and-router` §3.2
+for why that value is shared, and for the one case where being a poll behind
+still hurts: windows should lead routes, so this module reconciling promptly is
+what keeps a new agent's first envelope from being dead-lettered.
 
 What runs in the window is configuration, not this module's opinion. It starts
 what it is told to start, in the working directory it is told to use, with the

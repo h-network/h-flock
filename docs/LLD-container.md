@@ -67,6 +67,18 @@ An agent's own identity is the same story one level down: each agent's window is
 given its name in its environment, so the `send` command it runs knows which
 egress to write without being told each time.
 
+The same channel carries the one setting more than one module has to agree on:
+
+| | |
+|---|---|
+| `POD`, `TENANT` | the prefix every module builds keys from |
+| `ROSTER_POLL_SECONDS` | how often the roster is re-read. Default 5 |
+
+`ROSTER_POLL_SECONDS` is here rather than in any module because the router, the
+tmux adapter and the tmux host must use one value (`LLD-bus-and-router` §3.2).
+Set in one place and inherited, they agree by construction; configured per
+module, they agree until someone edits one of them.
+
 ## 5. Starting up
 
 Order matters only where a dependency is real:
