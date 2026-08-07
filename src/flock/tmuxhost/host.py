@@ -59,7 +59,7 @@ class TmuxHost:
 
     def create_window(self, agent_name: str) -> bool:
         ret, stdout, stderr = run_tmux(
-            "new-window", "-t", self.session_name, "-n", agent_name, socket=self.socket
+            "new-window", "-t", self.session_name, "-n", agent_name, "-e", f"AGENT_NAME={agent_name}", socket=self.socket
         )
         if ret == 0:
             log_record("tmuxhost", "window_created", recipient=agent_name)
