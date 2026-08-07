@@ -29,7 +29,7 @@ of them. It does not share a process with the router, and a crash or a redeploy
 of one does not take the other with it.
 
 ```
-  ┌──────────────── api module — its own process ──────────────────┐
+  ┌──────────────── api module — its own process ───────────────────┐
   │                                                                 │
   │   HTTP client                                                   │
   │        │  Authorization: Bearer <token>                         │
