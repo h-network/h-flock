@@ -49,6 +49,30 @@ mechanics but not the behaviour they defend against. That is accepted — the
 sequence is already proven in production use — and it is why delivery gating
 stays deferred pending measurement against real CLIs.
 
+### ⚠ Never run tmux work on the office's own server
+
+**You are an agent living in a tmux window. Bare `tmux` reaches the server you
+are running inside.** Before any `tmux` command, before `python -m
+flock.tmuxhost`, and before `python -m flock.adapter`, outside a container:
+
+```bash
+export TMUX_TMPDIR=$(mktemp -d)     # a scratch server, not the office's
+```
+
+Two ways this bites, and both have happened:
+
+- `tmux kill-server` between repro attempts is the ordinary debugging reflex. On
+  the default socket it kills the office and every agent in it, including you.
+- `flock.tmuxhost` reconciles **in both directions** (`LLD-tmux-host` §5). Run
+  against the office server it finds windows named `architect`, `bus`, `tmux`,
+  `api` — none of them in the roster it was given — and removes them. That is
+  the module working exactly as designed.
+
+The container sets `TMUX_TMPDIR` for this reason (`LLD-tmux-host` §4). Outside
+one, nothing sets it for you. **A reproduction handed to someone else must carry
+this line with it** — the isolation belongs next to the command, not in a note
+somewhere else.
+
 ⚠ Once it runs, `SADD` a fourth agent into the roster live. The polling
 machinery in `LLD-bus-and-router` §3.2 is otherwise shipped unexercised, and
 this is the one cheap test of it: a window should appear, a consumer should

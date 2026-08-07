@@ -41,7 +41,7 @@ class TmuxHost:
                 "new-session", "-d", "-s", self.session_name, "-n", initial_window, "-x", "80", "-y", "24"
             ]
             if initial_window != "__init__":
-                cmd.extend(["-e", f"AGENT_NAME={initial_window}"])
+                cmd.extend(["env", f"AGENT_NAME={initial_window}", "bash", "-il"])
             code, out, err = run_tmux(*cmd, socket=self.socket)
             if code != 0:
                 log_record("tmuxhost", "error", reason=f"Failed to create tmux session: {err}")
@@ -62,8 +62,18 @@ class TmuxHost:
         return {w for w in stdout.splitlines() if w}
 
     def create_window(self, agent_name: str) -> bool:
+        # "-t <session>:" with the trailing colon targets the session. A bare
+        # "-t <session>" is a *window* target, which tmux resolves to that
+        # session's current window index and then refuses to create over:
+        # "create window failed: index 0 in use". Only the first agent ever got
+        # a window, and the cascade took the server down with it.
+        #
+        # Identity is the window's command rather than "-e", which is the
+        # pattern the office's own session uses and is proven against tmux 3.5a.
         ret, stdout, stderr = run_tmux(
-            "new-window", "-t", self.session_name, "-n", agent_name, "-e", f"AGENT_NAME={agent_name}", socket=self.socket
+            "new-window", "-t", f"{self.session_name}:", "-n", agent_name,
+            "env", f"AGENT_NAME={agent_name}", "bash", "-il",
+            socket=self.socket,
         )
         if ret == 0:
             log_record("tmuxhost", "window_created", recipient=agent_name)
