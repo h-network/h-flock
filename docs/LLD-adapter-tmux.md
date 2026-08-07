@@ -22,8 +22,8 @@ differently even though the contract is symmetric:
   │  send      a command the agent runs inside its own window     │
   │            builds the envelope, writes its own egress         │
   │                                                               │
-  │  receive   a daemon outside the window                        │
-  │            pops ingress, opens the envelope, pastes it in     │
+  │  receive   triggered when an envelope lands on ingress        │
+  │            pops it, opens it, pastes it into the window       │
   │                                                               │
   └───────────────────────────────────────────────────────────────┘
 ```
@@ -33,27 +33,42 @@ invokes anything else. The adapter's only job on that side is to make the
 command available in the window and configured with the agent's own identity, so
 it writes the right egress without being told.
 
-**Receive is a daemon**, because nothing in the window is waiting for anything.
+**Receive is triggered from outside**, because nothing in the window is waiting
+for anything — the agent has no way to know an envelope arrived, so something
+has to put it in front of it.
 
 ## 2. Receiving
 
-One consumer, per-agent workers:
+**Arrival triggers the adapter. There is no polling loop.** An envelope landing
+on an ingress queue kicks off delivery for that agent; nothing is popped until
+something is ready to deliver it.
 
 ```
-  BLPOP over every ingress in the tenant
+  envelope lands on …:alice:ingress
         │
         ▼
-  hand to that agent's worker ──► open ──► paste into window
-        │                          (slow: paste, delay, Enter, verify)
-        └──► straight back to BLPOP
+  adapter runs for alice ──► pop ──► open ──► paste into window
+                                             (paste, delay, Enter, verify)
+
+  alice already busy?  the envelope stays in the queue
 ```
 
-The pop loop must not do the pasting. Delivery is hundreds of milliseconds —
-paste, settle, Enter, verify — and a single loop doing both means a burst to one
-agent holds up everyone else's mail behind it. One worker per agent isolates
-that: a wedged window blocks only its own queue.
+The reason this matters, rather than being a style preference: a long-running
+consumer that pops eagerly and hands work to an internal queue **moves the
+backlog into process memory**. Delivery is hundreds of milliseconds, arrivals
+are not rate-limited, so a loop draining as fast as it can will buffer
+unboundedly in RAM — invisible, lost on restart, and with nothing to look at
+when it goes wrong.
 
-One process, N workers. Per-agent processes would work too and buy nothing.
+Triggering on arrival keeps the backlog in Redis, which is the only place it
+should be. It is durable there, it is visible there, and depth per agent is a
+number anything can read.
+
+Per-agent serialisation falls out of the same rule: while alice's delivery is in
+flight nothing else pops alice's queue, so her messages arrive in order and a
+wedged window blocks only her. Deliveries for different agents are independent
+and can overlap.
+
 
 ## 3. Opening
 
