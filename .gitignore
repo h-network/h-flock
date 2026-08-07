@@ -11,3 +11,7 @@ __pycache__/
 build/
 dist/
 >>>>>>> origin/tmux/skeleton-tmuxhost-adapter
+__pycache__/
+*.pyc
+.venv/
+container/.env

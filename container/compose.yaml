@@ -1,0 +1,37 @@
+# One container is one tenant. Reaching a different tenant means reaching a
+# different container (LLD-container §1).
+#
+#   docker compose -p h-flock-hq -f container/compose.yaml up --build -d
+#   docker compose -p h-flock-hq -f container/compose.yaml down -v
+#
+# ⚠ Always pass -p. On the lab host an unrelated h-cli container is off limits,
+# and a project-scoped teardown is what keeps it that way. Never run
+# `docker system prune` or `docker stop $(docker ps -q)` there.
+
+services:
+  tenant:
+    build:
+      context: ..
+      dockerfile: container/Dockerfile
+    image: h-flock:latest
+    environment:
+      POD: "${POD:-acme}"
+      TENANT: "${TENANT:-hq}"
+      AGENTS: "${AGENTS:-alice,bob,carol}"
+      ROSTER_POLL_SECONDS: "${ROSTER_POLL_SECONDS:-5}"
+      # No default. The container refuses to start without it.
+      API_TOKEN: "${API_TOKEN:?set API_TOKEN in container/.env}"
+    ports:
+      # Host loopback only — publishing beyond it is a deliberate act, not a
+      # default (LLD-api §6). The api is the only mapped port (§3).
+      - "127.0.0.1:${API_PORT:-8080}:8080"
+    # A tenant is either up or it is not; if a module exits the container exits
+    # and this brings it back (LLD-container §6).
+    restart: unless-stopped
+    init: false  # tini is PID 1 from the image's own ENTRYPOINT
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS -H \"Authorization: Bearer $$API_TOKEN\" http://127.0.0.1:8080/health || exit 1"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 20s
