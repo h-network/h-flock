@@ -90,6 +90,7 @@ writes a log file.
 | `correlation_id` | when known | |
 | `producer`, `recipient` | when known | |
 | `reason` | on a failure | why it dead-lettered |
+| `count` | on a broadcast | how many copies were written |
 
 Events, in the order they occur:
 
@@ -113,6 +114,7 @@ The agent-facing surface, and the only part of this a human touches. Available o
 
 ```bash
 send <recipient> <text>...        # kind defaults to Message
+send all <text>...                # tenant broadcast, everyone but you
 send --kind <kind> <recipient> --payload '<json>'
 ```
 
@@ -139,7 +141,52 @@ SADD pod:$POD:tenant:$TENANT:roster $AGENTS      # AGENTS=alice,bob,carol
 (`LLD-container` §5). **Nothing else writes the roster** — this is boot
 configuration, not the write path §7 defers, and no module may acquire one.
 
-## 6. Shared environment
+## 6. What the api reads
+
+The board is **three LISTs per agent**, using the resource names
+`LLD-bus-and-router` §3.1 already shows:
+
+```
+  <prefix>:tasks.todo     LIST     FIFO — consume takes from the head
+  <prefix>:tasks.doing    LIST     at most one entry
+  <prefix>:tasks.done     LIST
+```
+
+Not one HASH. A board is ordered — "take your next task" is only meaningful
+against a FIFO — and a hash gives no order. Three keys also make a state
+transition a `LMOVE` between two of them rather than a read-modify-write of one
+value, which is what keeps two readers from tearing a board in half.
+
+⚠ **Entries are opaque strings and the api does not parse them.**
+`LLD-bus-and-router` §8 is explicit that this is not a task system, so nothing
+here defines what a task *is*. The api returns entries exactly as stored, and
+whatever eventually writes a board owns their shape.
+
+Nothing writes boards in build 01 — the same position as the roster, minus the
+seed. Every board therefore reads empty, and an agent with no board is `[]` and
+`200`, never `404`: `LLD-api` §2 requires that agents holding nothing still
+appear.
+
+Response shapes, since every read is a fixed shape and a request can never name
+a key (`LLD-api` §5, §8):
+
+```json
+GET /agents/alice           { "agent": "alice",
+                              "depths": { "ingress": 0, "egress": 0, "dead": 0 } }
+
+GET /agents/alice/board     { "agent": "alice",
+                              "todo": [], "doing": [], "done": [] }
+
+GET /board                  { "agents": [ { "agent": "alice", "todo": [], … },
+                                          { "agent": "bob",   … } ] }
+
+GET /agents                 { "agents": ["alice", "bob", "carol"] }
+```
+
+A list rather than a map for `GET /board`, so roster order is expressible and
+the entry shape matches the single-agent route exactly.
+
+## 7. Shared environment
 
 Set once by the container, inherited by everything (`LLD-container` §4).
 
