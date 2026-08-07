@@ -6,7 +6,7 @@
 ## 1. Purpose & layer
 
 A **module** is anything that talks on the bus. Every module is a producer on
-its own out-queue and a consumer of its own in-queue. The bus carries
+its own egress queue and a consumer of its own ingress queue. The bus carries
 envelopes; the router forwards them between modules. What a module *is* — a
 process, a session, a daemon — is not the bus's concern and is deliberately
 absent from this document.
@@ -24,8 +24,8 @@ above it.
   │  L3  ROUTER    subscribe set · tenant from the queue key     │
   │                forward by kind + source · dead-letter        │
   ├──────────────────────────────────────────────────────────────┤
-  │  EDGE          modules: produce onto out.<module>            │
-  │                         consume from in.<module>             │
+  │  EDGE          modules: produce onto egress.<module>         │
+  │                         consume from ingress.<module>        │
   └──────────────────────────────────────────────────────────────┘
 ```
 
@@ -40,35 +40,35 @@ Producers emit frames; a switch forwards them by address without reading the
 payload. That is the whole design.
 
 ```
-  ┌─────────────────────────── tenant ─────────────────────────────────┐
-  │                                                                    │
-  │   EDGE                     L3 ROUTER                    EDGE       │
-  │  ┌─────────┐                                        ┌─────────┐    │
-  │  │  mod-a  │                                        │  mod-b  │    │
-  │  └────┬────┘                                        └────▲────┘    │
-  │       │ produce                                consume   │         │
-  │       ▼                                                  │         │
-  │  ┌──────────┐                                     ┌──────────┐     │
-  │  │out.mod-a │──┐                               ┌─►│ in.mod-b │     │
-  │  └──────────┘  │  BLPOP          RPUSH         │  └──────────┘     │
-  │                ├──────►┌──────────────┐────────┤                   │
-  │  ┌──────────┐  │       │   router     │        │  ┌──────────┐     │
-  │  │out.mod-b │──┘       │              │        └─►│ in.mod-a │     │
-  │  └──────────┘          │ from_key →   │           └──────────┘     │
-  │                        │   tenant     │                            │
-  │  ┌──────────┐          │ kind+source →│           ┌──────────┐     │
-  │  │ out.api  │─────────►│   target     │──────────►│  in.api  │     │
-  │  └──────────┘          └──────┬───────┘           └──────────┘     │
-  │                               │                                    │
-  │                               ▼  won't forward                     │
-  │                        ┌─────────────┐                             │
-  │                        │    dead     │                             │
-  │                        └─────────────┘                             │
-  └────────────────────────────────────────────────────────────────────┘
+  ┌──────────────────────────── tenant ──────────────────────────────────┐
+  │                                                                      │
+  │   EDGE                      L3 ROUTER                    EDGE        │
+  │  ┌─────────┐                                         ┌─────────┐     │
+  │  │  mod-a  │                                         │  mod-b  │     │
+  │  └────┬────┘                                         └────▲────┘     │
+  │       │ produce                                consume    │          │
+  │       ▼                                                   │          │
+  │ ┌──────────────┐                                ┌───────────────┐    │
+  │ │egress.mod-a  │──┐                          ┌─►│ingress.mod-b  │    │
+  │ └──────────────┘  │  BLPOP         RPUSH     │  └───────────────┘    │
+  │                   ├──────►┌───────────┐──────┤                       │
+  │ ┌──────────────┐  │       │  router   │      │  ┌───────────────┐    │
+  │ │egress.mod-b  │──┘       │           │      └─►│ingress.mod-a  │    │
+  │ └──────────────┘          │from_key → │         └───────────────┘    │
+  │                           │  tenant   │                              │
+  │ ┌──────────────┐          │kind+source│         ┌───────────────┐    │
+  │ │ egress.api   │─────────►│ → target  │────────►│ ingress.api   │    │
+  │ └──────────────┘          └─────┬─────┘         └───────────────┘    │
+  │                                 │                                    │
+  │                                 ▼  won't forward                     │
+  │                           ┌───────────┐                              │
+  │                           │   dead    │                              │
+  │                           └───────────┘                              │
+  └──────────────────────────────────────────────────────────────────────┘
 ```
 
-A module never writes to another module's in-queue. It writes to **its own**
-out-queue, and the router decides what happens next. Two things follow: routing
+A module never writes to another module's ingress queue. It writes to **its
+own** egress, and the router decides what happens next. Two things follow: routing
 decisions happen in exactly one place, and a producer can only write inside its
 own prefix — so the tenancy boundary is enforced on entry, not only on exit.
 
@@ -115,13 +115,14 @@ Credentials cannot be provisioned for a module that does not exist yet.
 
 ### 3.3 Queues
 
-Named from the module's point of view — `out.<module>` is "envelopes this
-module emits", not "envelopes going to it".
+Direction is relative to the **module**, as it is on a network device:
+`egress.<module>` is traffic leaving that module, `ingress.<module>` is traffic
+arriving at it. The router sits on the opposite end of both.
 
 | Key | Type | Producer | Consumer |
 |---|---|---|---|
-| `<prefix>:out.<module>` | LIST | the module | the router |
-| `<prefix>:in.<module>` | LIST | the router | the module |
+| `<prefix>:egress.<module>` | LIST | the module | the router |
+| `<prefix>:ingress.<module>` | LIST | the router | the module |
 | `<prefix>:dead` | LIST | the router | nothing yet — read by hand or by `api` |
 
 Lists, not pub/sub, so a backlog survives a consumer restart.
@@ -181,8 +182,8 @@ end, mint a fresh one when it is missing or empty.
 1. **`prefix()` on every key.** No flat keys, anywhere, ever.
 2. **Tenancy comes from the queue the envelope was popped from**, never from its
    contents. Cross-tenant leakage is therefore structural, not a runtime check.
-3. **A module may only write to its own `out.` queue.** The router is the only
-   writer of `in.` queues. This is what makes the router load-bearing rather
+3. **A module may only write to its own `egress.` queue.** The router is the
+   only writer of `ingress.` queues. This is what makes the router load-bearing rather
    than a naming convention.
 4. **The bus is lifecycle-agnostic.** It moves opaque strings. Task state,
    correlation and session context live above it.
