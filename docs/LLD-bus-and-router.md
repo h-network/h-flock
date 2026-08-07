@@ -34,11 +34,17 @@ without knowing anything about how the receiving agent is implemented or
 hosted.** If routing and delivery live in one component, the bus can only ever
 reach the kind of agent that component knows how to drive.
 
-**Agents that cannot speak Redis have an adapter.** A process at a terminal
-neither pushes nor pops; something does it on its behalf — writing what the
-agent emits onto egress, and taking what arrives on ingress and putting it in
-front of the agent. Both directions live at the edge, never in the router, and
-they are symmetric: one puts an envelope on the bus, the other opens one.
+**Everything reaches the bus through an adapter.** Not a workaround for agents
+that cannot speak Redis — the rule for all of them. Nothing writes or reads a
+queue directly, so the adapter is the only thing that ever touches one, in both
+directions: it writes what its agent emits onto egress, and takes what arrives
+on ingress and puts it in front of the agent. Both directions live at the edge,
+never in the router, and they are symmetric — one puts an envelope on the bus,
+the other opens one.
+
+What differs between agents is only the far end. One opener types into a
+terminal window; another hands the envelope to an HTTP client. The bus side of
+the adapter is identical for every one of them.
 
 Opening is where an envelope stops being opaque. The adapter reads the header to
 know *where* — which tenant, which agent, therefore which window — and relays
