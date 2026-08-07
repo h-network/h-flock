@@ -50,7 +50,7 @@ Producers emit frames; a switch forwards them by address without reading the
 payload. That is the whole design.
 
 ```
-  ┌───────────── tenant — pod:tenant:agent:acme:hq:* ──────────────────┐
+  ┌──────────── tenant — pod:acme:tenant:hq:agent:* ───────────────────┐
   │                                                                    │
   │  EDGE                                          L3 ROUTER           │
   │                                                                    │
@@ -84,26 +84,56 @@ own prefix — so the tenancy boundary is enforced on entry, not only on exit.
 
 ### 3.1 The prefix
 
-```
-  pod:tenant:agent:<pod>:<tenant>:<agent>
+Levels interleave, `tag:value` at each step:
 
-  e.g. pod:tenant:agent:acme:hq:alice
 ```
+  pod:<pod>:tenant:<tenant>:agent:<agent>
 
-Three literal tags, then three values. The tags never change; they make a key
-self-describing and let a parser reject a key belonging to some other scheme
-sharing the same Redis.
+  e.g. pod:acme:tenant:hq:agent:alice
+```
 
 | Level | Holds | Who cares |
 |---|---|---|
 | `pod` | tenants | a gateway, when routing between tenants |
 | `tenant` | agents | one router serves exactly one tenant |
-| `agent` | queues | the agent itself |
+| `agent` | resources | the agent itself |
 
-Putting the agent in the prefix rather than in the queue name is what makes
+**Interleaved rather than tags-first**, so every level is a genuine prefix of
+the level below it. That is what makes one pattern able to span levels:
+
+```
+  SCAN MATCH pod:acme:tenant:hq:*                    everything in the tenant
+  SCAN MATCH pod:acme:tenant:hq:agent:*:tasks.todo   one resource, every agent
+```
+
+With the tags grouped at the front the shapes would not nest — a tenant key and
+an agent key would diverge immediately after the tag block, and no single
+pattern could cover both.
+
+**The tags are reserved words.** No pod, tenant, agent or resource may be named
+`pod`, `tenant` or `agent`. Without that rule a tenant resource called `agent`
+is indistinguishable from the start of an agent path. The segment regex already
+validates every name, so this is one more check in the same place — cheaper than
+a marker segment that would lengthen every key to solve the same problem.
+
+Putting the agent in the address rather than in the queue name is what makes
 per-agent isolation structural: a credential can be scoped to
-`~pod:tenant:agent:acme:hq:alice:*` and reach that agent's keys and nothing
+`~pod:acme:tenant:hq:agent:alice:*` and reach that agent's keys and nothing
 else. Scoping at the tenant level could not express that.
+
+**Resources are a dotted suffix, not a level.** A resource is not an address —
+nothing routes to it — so it does not get a tag. Dots group related resources
+without adding depth:
+
+```
+  pod:acme:tenant:hq                 : roster        a tenant's resource
+  pod:acme:tenant:hq:agent:alice     : egress        an agent's resources
+  pod:acme:tenant:hq:agent:alice     : tasks.todo
+  pod:acme:tenant:hq:agent:alice     : tasks.doing
+```
+
+An address at any level can carry resources, so tenant-level and pod-level state
+have a home without a special case.
 
 Segment rule: `^[a-z0-9][a-z0-9-]{0,62}$` — lowercase alnum and dash. No glob
 metacharacters, so a prefix is safe to drop into a Redis `SCAN MATCH`. No
