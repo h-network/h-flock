@@ -132,18 +132,21 @@ at while busy, and that is a measurement rather than a design question.
 
 ## 6. Talking to tmux
 
-**Open choice.** Two ways, and it is not settled:
+**Subprocess per command.** `tmux load-buffer`, `tmux paste-buffer`, `tmux
+send-keys`, each its own call. No protocol to parse, each call fails
+independently, and a failure is a return code rather than a stream to resynchronise.
 
-- **Subprocess per command.** Simple, no protocol to parse, each call fails
-  independently. Costs a fork per operation, and delivery is several operations.
-- **One control-mode client** (`tmux -C`). One long-lived process, no per-command
-  fork, and pane output arrives as `%output` events — which would also supply the
-  activity signal in §5 for free. Costs a stateful line protocol to parse,
-  octal-escaped output, and reconnect logic; when it wedges, everything it
-  carries wedges together.
+The alternative is a single control-mode client (`tmux -C`), which avoids a fork
+per operation and delivers pane output as `%output` events. It is not chosen
+here, because its real advantage is streaming a window somewhere, and that
+belongs to whatever eventually renders agent windows in an app — not to
+delivery. Weigh it there, with that requirement in hand.
 
-Subprocess is the smaller first build. Control mode is the better long-run
-answer if fork churn or output streaming turns out to matter.
+Fork cost is not a reason to prefer it. Delivery is a handful of `tmux` calls
+against hundreds of milliseconds of paste-and-settle, so the forks are noise
+next to the work. And processes spawned this way are waited on and reaped by the
+caller — orphan reaping is a container concern, handled by running a real init
+as PID 1, and unrelated to this choice.
 
 ## 7. Deferred
 
