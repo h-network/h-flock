@@ -34,6 +34,16 @@ without knowing anything about how the target module is implemented or
 hosted.** If routing and delivery live in one component, the bus can only ever
 reach the kind of module that component knows how to drive.
 
+**Why a router exists at all.** A producer could write straight into its
+recipient's queue, and then no router would be needed. The cost is that every
+producer must then know the topology — which modules exist, what their queues
+are called, which tenant they sit in — and that knowledge has to be correct in
+every module and updated in all of them at once. With a router, a producer
+knows two things: its own name, and the name of whoever it is addressing. It
+names a **recipient**, never a route. Working out where that recipient
+currently is — local, another tenant, or gone — is the router's job, and it is
+the only component that has to change when the answer does.
+
 ## 2. The model, in one picture
 
 Producers emit frames; a switch forwards them by address without reading the
@@ -51,8 +61,8 @@ payload. That is the whole design.
   │  │       │◄──────────│ ingress.mod-a │◄───────│  from_key →    │   │
   │  └───────┘           └───────────────┘        │     tenant     │   │
   │                                               │                │   │
-  │  ┌───────┐  produce  ┌───────────────┐ BLPOP  │  kind+source → │   │
-  │  │       │──────────►│ egress.mod-b  │───────►│     target     │   │
+  │  ┌───────┐  produce  ┌───────────────┐ BLPOP  │  recipient →   │   │
+  │  │       │──────────►│ egress.mod-b  │───────►│     queue      │   │
   │  │ mod-b │           └───────────────┘        │                │   │
   │  │       │  consume  ┌───────────────┐ RPUSH  │                │   │
   │  │       │◄──────────│ ingress.mod-b │◄───────│                │   │
@@ -147,10 +157,10 @@ reliability layer — it does not recover a lost envelope, it only guarantees th
 loss is visible. That trade is the decision; revisit it if losses turn out to be
 common rather than theoretical.
 
-**The router does not read payloads.** It forwards on `kind` and the source
-queue name. The moment routing depends on payload contents it stops being a
-switch and becomes a middlebox, and every change to what a message means
-becomes a change to the router.
+**The router does not read payloads.** It forwards on the header — `recipient`,
+`kind`, and the queue the envelope was popped from. The moment routing depends
+on payload contents it stops being a switch and becomes a middlebox, and every
+change to what a message means becomes a change to the router.
 
 ## 5. The envelope
 
@@ -162,6 +172,7 @@ becomes a change to the router.
   "correlation_id": "<hex>",
   "ts": "2026-08-07T18:00:00.000Z",
   "producer": "<module>",
+  "recipient": "<module>",
   "payload": { }
 }
 ```
@@ -170,6 +181,15 @@ Outer fields are structural and always present. Everything kind-specific lives
 inside `payload`, and validating it is the consumer's job, never the bus's.
 Unknown top-level fields are ignored, so a newer producer cannot break an older
 router.
+
+`recipient` is a **module name, not a queue name**. A producer writes
+`"recipient": "mod-b"`; it never constructs `ingress.mod-b` and never names a
+tenant. Resolving the name to a queue is the router's only real decision, and
+keeping it there is what stops topology knowledge spreading into every module.
+An unresolvable name is a dead-letter, not a crash.
+
+Both `producer` and `recipient` are header fields, so reading them is not
+reading the payload — §6.7 holds.
 
 `correlation_id` is carried but unused for now. When request/reply arrives it
 becomes the join key, under the rule: propagate an inbound non-empty cid end to
