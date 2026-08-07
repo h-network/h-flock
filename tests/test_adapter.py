@@ -50,6 +50,23 @@ def test_message_opener_window_missing(mock_get_windows):
     assert len(r.lists[dead_key]) == 1
 
 
+@patch("flock.adapter.openers.get_tmux_windows")
+@patch("flock.adapter.openers.run_tmux_cmd")
+def test_message_opener_broadcast(mock_run_tmux_cmd, mock_get_windows):
+    mock_get_windows.return_value = {"alice", "bob", "carol"}
+    mock_run_tmux_cmd.return_value = (0, "", "")
+
+    r = MockRedis()
+    env = build_envelope(kind="Message", producer="alice", recipient="all", payload={"text": "broadcast message"})
+
+    # Delivered to bob's window via bob's consumer thread
+    message_opener(r, pod="acme", tenant="hq", agent="bob", envelope=env, session_name="hq")
+
+    cmd_args = [call[0][0] for call in mock_run_tmux_cmd.call_args_list]
+    assert any("paste-buffer" in cmd and "hq:bob" in cmd for cmd in cmd_args)
+
+
+
 @patch("flock.adapter.cli.redis.Redis.from_url")
 def test_cli_send(mock_redis_cls, monkeypatch):
     mock_r = MockRedis()

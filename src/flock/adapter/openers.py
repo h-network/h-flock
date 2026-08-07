@@ -43,8 +43,8 @@ def message_opener(
     payload = envelope.get("payload", {})
 
     windows = get_tmux_windows(session_name, socket=socket)
-    if recipient not in windows:
-        dead_key = prefix(pod, tenant, agent=recipient, resource="dead")
+    if agent not in windows:
+        dead_key = prefix(pod, tenant, agent=agent, resource="dead")
         r.rpush(dead_key, json.dumps(envelope))
         log_record(
             module="adapter",
@@ -52,7 +52,7 @@ def message_opener(
             stream_id=stream_id,
             correlation_id=corr_id,
             producer=producer,
-            recipient=recipient,
+            recipient=agent,
             reason="window_missing",
         )
         return
@@ -64,10 +64,10 @@ def message_opener(
     # Load buffer
     run_tmux_cmd(["load-buffer", "-b", buf_name, "-"], socket=socket, input_data=formatted_msg)
     # Bracketed paste
-    run_tmux_cmd(["paste-buffer", "-b", buf_name, "-p", "-t", f"{session_name}:{recipient}"], socket=socket)
+    run_tmux_cmd(["paste-buffer", "-b", buf_name, "-p", "-t", f"{session_name}:{agent}"], socket=socket)
     time.sleep(0.05)
     # Send Enter key
-    run_tmux_cmd(["send-keys", "-t", f"{session_name}:{recipient}", "Enter"], socket=socket)
+    run_tmux_cmd(["send-keys", "-t", f"{session_name}:{agent}", "Enter"], socket=socket)
     # Clean up buffer
     run_tmux_cmd(["delete-buffer", "-b", buf_name], socket=socket)
 
