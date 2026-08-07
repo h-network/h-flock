@@ -71,11 +71,6 @@ def message_opener(
     # Clean up buffer
     run_tmux_cmd(["delete-buffer", "-b", buf_name], socket=socket)
 
-    log_record(
-        module="adapter",
-        event="opened",
-        stream_id=stream_id,
-        correlation_id=corr_id,
-        producer=producer,
-        recipient=recipient,
-    )
+    # No "opened" record here — flock.bus.doors.receive emits it once the opener
+    # returns. Two records per component is what makes "received, no outcome"
+    # mean a crash (LLD-bus-and-router §4); a third voids it.
