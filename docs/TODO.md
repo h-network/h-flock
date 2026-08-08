@@ -23,9 +23,15 @@ Their post-login approval gates are already covered: `startAgent` passes
 So all three need only **credentials**, which
 [`container/seed-home.sh`](../container/seed-home.sh) now handles.
 
-**Credentials and profiles.** No `~/.claude/.credentials.json` and no
-`ANTHROPIC_API_KEY` in the image, so a CLI reaches its login prompt and stops. An
-interactive login works but does not survive a rebuild.
+**Credentials and profiles — mechanism SHIPPED, logins outstanding.**
+`container/seed-home.sh in|out|check` copies keys and credentials into a running
+tenant and saves logins back out, and `setup.sh` asks for accounts and seeds each
+one's config dirs. What remains is doing the interactive logins once.
+
+⚠ **Last link missing:** nothing reads the `profile` key yet. `flock.tmuxhost`
+reads `launch` for the CLI but does not turn `profile` into `CLAUDE_CONFIG_DIR` /
+`CODEX_HOME` in the window environment — so accounts are seeded and selected but
+not used.
 
 → **[`PLAN-profiles.md`](PLAN-profiles.md)** — the shape, taken from h-office,
 which solved it. The unit is the *account*, not the agent: a config dir is one
@@ -64,7 +70,15 @@ call, which `LLD-adapter-tmux` §5 already names.
 **Boards.** The api serves `/board` and nothing writes one, so they read empty.
 Agents have no equivalent of `jira list` / `jira consume`.
 
-## Broadcast strands envelopes on the fixed agents
+## ~~Broadcast strands envelopes on the fixed agents~~ — SHIPPED
+
+**Fixed in build 08.** An unroutable VAB now dead-letters instead of returning
+before popping, and VAB `api` has a delivery routine. `sendBroadcast` also
+resolves its own recipients, so agent broadcasts never reach the fixed agents at
+all. ⚠ Still undecided: whether `POST /agents/all/envelopes` *should* reach them
+— an architect loose end, now cosmetic rather than a leak.
+
+<details><summary>original</summary>
 
 **Found by an agent during the first live run, then confirmed: `api` ingress was
 34 and climbing, `host` dead-letters were 34.** Every `send all` reaches both,
@@ -91,7 +105,13 @@ Two faults meeting, and they can be fixed independently:
    The old router excluded `api`; the current one includes it. Neither is written
    down — this is an architect loose end, noted at the time and not closed.
 
-## What belongs in a window's environment
+</details>
+
+## ~~What belongs in a window's environment~~ — SHIPPED
+
+**Done in build 08.** `AGENT_PEERS` removed, `OFFICE_TOOLS` added, the guide
+names only the agent and is written once. Rule kept below because it decides
+every future variable.
 
 **The rule: static for the window's lifetime → environment. Derived from the
 roster → a tool, never environment.**
@@ -130,7 +150,9 @@ was one it should never have seen.
 
 Two halves, and they only work together:
 
-**Give them clean tools.** → **[`PLAN-agent-tools.md`](PLAN-agent-tools.md)**:
+**Give them clean tools — SHIPPED.** `sendMessage`, `sendBroadcast`, `peers`
+all live, `--help` works with an empty environment, generic `send` gone from
+`PATH`. → **[`PLAN-agent-tools.md`](PLAN-agent-tools.md)**:
 `sendMessage`, `sendBroadcast`, `peers`, `hire`, `letGo`, discovered via
 `OFFICE_TOOLS`. One general `send --kind … --payload '<json>'` was wrong because
 it makes an agent learn the envelope model to use it at all.
