@@ -39,6 +39,22 @@ class MockRedis:
         self.lists.setdefault(destination, []).append(value)
         return value
 
+    def lpop(self, key):
+        values = self.lists.get(key, [])
+        return values.pop(0) if values else None
+
+    def rpush(self, key, value):
+        self.lists.setdefault(key, []).append(value)
+        return len(self.lists[key])
+
+    def lrem(self, key, count, value):
+        values = self.lists.get(key, [])
+        try:
+            values.remove(value)
+        except ValueError:
+            return 0
+        return 1
+
 
 @pytest.fixture
 def office_env(monkeypatch):
@@ -66,17 +82,20 @@ def test_root_help_lists_whole_surface_without_environment_or_redis(monkeypatch,
         "letGo",
         "pause",
         "resume",
-        "tasks",
+        "list",
         "take",
         "done",
-        "assign",
+        "cancel",
+        "hold",
+        "delete",
+        "add",
     ):
         assert command in output
 
 
 @pytest.mark.parametrize(
     "command",
-    ["send", "broadcast", "peers", "hire", "letGo", "pause", "resume", "tasks", "take", "done", "assign"],
+    ["send", "broadcast", "peers", "hire", "letGo", "pause", "resume", "list", "take", "done", "cancel", "hold", "delete", "add"],
 )
 def test_every_subcommand_has_environment_free_help(monkeypatch, command):
     monkeypatch.delenv("AGENT_NAME", raising=False)
@@ -140,17 +159,20 @@ def _task(agent, state):
     return f"pod:acme:tenant:hq:agent:{agent}:tasks.{state}"
 
 
-def test_tasks_prints_all_three_lists(office_env, capsys):
+def test_list_prints_short_ids_and_titles_for_all_four_lists(office_env, capsys):
     office_env.lists = {
         _task("frontend", "todo"): [b'{"id":"a1","title":"next"}'],
         _task("frontend", "doing"): [b'{"id":"b2","title":"now"}'],
+        _task("frontend", "hold"): [b'{"id":"d4","title":"later","description":"secret"}'],
         _task("frontend", "done"): [b'{"id":"c3","title":"finished"}'],
     }
-    cli.main(["tasks"])
+    cli.main(["list"])
     output = capsys.readouterr().out
-    assert "todo:" in output and '"id":"a1"' in output
-    assert "doing:" in output and '"id":"b2"' in output
-    assert "done:" in output and '"id":"c3"' in output
+    assert "a1  next" in output
+    assert "b2  now" in output
+    assert "d4  later" in output
+    assert "c3  finished" in output
+    assert "secret" not in output
 
 
 def test_take_refuses_when_doing_is_nonempty_without_moving(office_env, capsys):
@@ -160,7 +182,7 @@ def test_take_refuses_when_doing_is_nonempty_without_moving(office_env, capsys):
         cli.main(["take"])
     assert exc.value.code == 1
     assert "already have one open" in capsys.readouterr().err
-    assert office_env.moves == []
+    assert office_env.lists[_task("frontend", "todo")] == [b'{"id":"next"}']
 
 
 def test_take_distinguishes_empty_todo(office_env, capsys):
@@ -168,12 +190,11 @@ def test_take_distinguishes_empty_todo(office_env, capsys):
         cli.main(["take"])
     assert exc.value.code == 1
     assert "your todo is empty" in capsys.readouterr().err
-    assert office_env.moves == [
-        (_task("frontend", "todo"), _task("frontend", "doing"), "LEFT", "RIGHT")
-    ]
+    assert office_env.lists.get(_task("frontend", "doing"), []) == []
 
 
-def test_take_atomically_moves_prints_and_logs_task_id(office_env, capsys):
+def test_take_normalizes_old_ticket_prints_and_logs_task_id(office_env, monkeypatch, tmp_path, capsys):
+    monkeypatch.setenv("TASK_RECORD", str(tmp_path / "tasks.jsonl"))
     raw = b'{"id":"a1","title":"opaque: --flag"}'
     office_env.lists[_task("frontend", "todo")] = [raw]
     cli.main(["take"])
@@ -182,13 +203,15 @@ def test_take_atomically_moves_prints_and_logs_task_id(office_env, capsys):
     assert record["module"] == "office"
     assert record["event"] == "task_taken"
     assert record["task_id"] == "a1"
-    assert lines[1] == raw.decode()
-    assert office_env.moves == [
-        (_task("frontend", "todo"), _task("frontend", "doing"), "LEFT", "RIGHT")
-    ]
+    ticket = json.loads(lines[1])
+    assert ticket["status"] == "doing"
+    assert ticket["created_by"] == "unknown"
+    event = json.loads((tmp_path / "tasks.jsonl").read_text())
+    assert event["event"] == "take" and event["id"] == "a1"
 
 
-def test_done_moves_open_task_and_logs_task_id(office_env, capsys):
+def test_done_moves_open_task_and_logs_task_id(office_env, monkeypatch, tmp_path, capsys):
+    monkeypatch.setenv("TASK_RECORD", str(tmp_path / "tasks.jsonl"))
     raw = b'{"id":"b2","title":"finish"}'
     office_env.lists[_task("frontend", "doing")] = [raw]
     cli.main(["done"])
@@ -196,28 +219,60 @@ def test_done_moves_open_task_and_logs_task_id(office_env, capsys):
     record = json.loads(lines[0])
     assert record["event"] == "task_done"
     assert record["task_id"] == "b2"
-    assert lines[1] == raw.decode()
-    assert office_env.moves == [
-        (_task("frontend", "doing"), _task("frontend", "done"), "LEFT", "RIGHT")
-    ]
+    assert json.loads(lines[1])["status"] == "done"
+    assert json.loads((tmp_path / "tasks.jsonl").read_text())["event"] == "done"
 
 
-def test_assign_sends_envelope_and_never_writes_recipient_board(office_env, monkeypatch):
+def test_add_sends_envelope_and_never_writes_recipient_board(office_env, monkeypatch):
     calls = []
     monkeypatch.setattr(cli, "send", lambda r, **kwargs: calls.append(kwargs) or "assignment-stream")
-    cli.main(["assign", "-a", "backend", "explain:", "office", "send", "-a", "frontend", "hi"])
+    cli.main(["add", "-a", "backend", "-t", "explain office send", "-d", "full brief", "-p", "high"])
     assert calls == [
         {
             "pod": "acme",
             "tenant": "hq",
             "producer": "frontend",
             "recipient": "backend",
-            "payload": {"title": "explain: office send -a frontend hi"},
-            "kind": "AssignTask",
+            "payload": {"title": "explain office send", "description": "full brief", "priority": "high"},
+            "kind": "AddTicket",
             "module": "adapter",
         }
     ]
     assert office_env.moves == []
+
+
+def test_hold_then_take_by_prefix(office_env, monkeypatch, tmp_path, capsys):
+    monkeypatch.setenv("TASK_RECORD", str(tmp_path / "tasks.jsonl"))
+    office_env.lists[_task("frontend", "doing")] = [b'{"id":"abcdef12","title":"wait"}']
+    cli.main(["hold"])
+    capsys.readouterr()
+    cli.main(["take", "abcd"])
+    output = capsys.readouterr().out.splitlines()
+    assert json.loads(output[-1])["status"] == "doing"
+    assert office_env.lists[_task("frontend", "hold")] == []
+
+
+def test_cancel_lands_in_done_with_cancelled_status(office_env, monkeypatch, tmp_path, capsys):
+    monkeypatch.setenv("TASK_RECORD", str(tmp_path / "tasks.jsonl"))
+    office_env.lists[_task("frontend", "doing")] = [b'{"id":"cancel-me","title":"nope"}']
+    cli.main(["cancel"])
+    ticket = json.loads(capsys.readouterr().out.splitlines()[-1])
+    assert ticket["status"] == "cancelled"
+    assert json.loads(office_env.lists[_task("frontend", "done")][0])["status"] == "cancelled"
+
+
+def test_delete_requires_id_without_connecting_to_redis(monkeypatch):
+    monkeypatch.setattr(cli.redis.Redis, "from_url", lambda url: pytest.fail("connected to Redis"))
+    with pytest.raises(SystemExit) as exc:
+        cli.main(["delete"])
+    assert exc.value.code == 2
+
+
+def test_task_record_failure_never_breaks_board_command(office_env, monkeypatch, capsys):
+    office_env.lists[_task("frontend", "doing")] = [b'{"id":"safe","title":"finish"}']
+    monkeypatch.setattr("builtins.open", lambda *args, **kwargs: (_ for _ in ()).throw(OSError("read only")))
+    cli.main(["done"])
+    assert json.loads(capsys.readouterr().out.splitlines()[-1])["status"] == "done"
 
 
 def test_office_imports_no_other_flock_module_than_bus():

@@ -1,6 +1,7 @@
 """Contract-shaped JSON line logging."""
 
 import json
+import os
 from datetime import datetime, timezone
 
 _ENVELOPE_EVENTS = {"sent", "popped", "forwarded", "dead_lettered", "received", "opened"}
@@ -62,3 +63,33 @@ def emit(
         reason=reason,
         count=count,
     )
+
+
+def record_task_event(
+    event: str,
+    *,
+    id: str,
+    title: str,
+    agent: str,
+    actor: str,
+    timestamp: str | None = None,
+) -> None:
+    """Append one board-history event without ever breaking its command."""
+    try:
+        path = os.environ.get("TASK_RECORD", "/home/ubuntu/.flock/tasks.jsonl")
+        parent = os.path.dirname(path)
+        if parent:
+            os.makedirs(parent, exist_ok=True)
+        record = {
+            "event": event,
+            "id": id,
+            "title": title,
+            "agent": agent,
+            "actor": actor,
+            "timestamp": timestamp
+            or datetime.now(timezone.utc).isoformat(timespec="milliseconds").replace("+00:00", "Z"),
+        }
+        with open(path, "a", encoding="utf-8") as handle:
+            handle.write(json.dumps(record, separators=(",", ":")) + "\n")
+    except Exception:
+        pass
