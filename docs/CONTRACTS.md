@@ -137,6 +137,26 @@ Fire and forget — the router does not wait, does not read a return code, does
 not retry, and keeps no record (`LLD-bus-and-router` §3.3, rail 3). It hands
 over a name and moves on.
 
+⚠ **Throw the handle away.** `subprocess.Popen([...])` with the return value
+discarded leaves no zombies — CPython reaps the child either when the object is
+collected or at the top of the next `Popen`. Keeping the handles in a list to
+"track" the children is the natural-looking improvement and it is the broken
+one: tracked objects are never collected, `_cleanup()` never sees them, and a
+zombie accumulates per delivery, forever. The careless-looking version is the
+correct one.
+
+⚠ **A kick that cannot start is not fatal.** `Popen` raises `FileNotFoundError`
+when the binary is missing, and `OSError` under fork pressure. Catch it, log a
+lifecycle `error` with the agent in `recipient`, and carry on — the envelope is
+already safely on the ingress queue, so the worst case is that it waits for the
+next kick. Letting it propagate kills the router and, per `LLD-container` §6,
+the whole tenant.
+
+Measured cost of a kick: **~58 ms** for interpreter start plus `redis`,
+`flock.bus` and the openers, against ~150 ms of paste-and-settle. Real, but
+consistent with `LLD-adapter-tmux` §6 treating fork cost as noise next to the
+delivery itself.
+
 The adapter is invoked, delivers, and **exits**. It is not a service and holds
 nothing between deliveries. On start it:
 
