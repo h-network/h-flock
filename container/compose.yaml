@@ -22,9 +22,12 @@ services:
       # No default. The container refuses to start without it.
       API_TOKEN: "${API_TOKEN:?set API_TOKEN in container/.env}"
     ports:
-      # Host loopback only — publishing beyond it is a deliberate act, not a
-      # default (LLD-api §6). The api is the only mapped port (§3).
-      - "127.0.0.1:${API_PORT:-8080}:8080"
+      # Both doors published, one mapping each, so exposure is a decision per
+      # door and neither module depends on the other (LLD-container §3).
+      # API_HOST=127.0.0.1 pulls one back to loopback without touching the other.
+      - "${API_HOST:-0.0.0.0}:${API_PORT:-8080}:8080"
+      # session is not built yet — its mapping lands with it:
+      # - "${SESSION_HOST:-0.0.0.0}:${SESSION_PORT:-8081}:8081"
     # A tenant is either up or it is not; if a module exits the container exits
     # and this brings it back (LLD-container §6).
     restart: unless-stopped

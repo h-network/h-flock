@@ -30,10 +30,14 @@ nothing needs discovery, and the whole tenant starts and stops as one thing.
   │                 ┌─────▼──────┐             │               │
   │                 │ tmux server│◄─ host module creates       │
   │                 │  windows   │   and reconciles these      │
-  │                 └────────────┘             │               │
-  └────────────────────────────────────────────┼───────────────┘
-                                               │
-                                     the only published port
+  │                 └─────┬──────┘             │               │
+  │                       │ tmux -C            │               │
+  │                 ┌─────▼──────┐             │               │
+  │                 │  session   │             │               │
+  │                 └─────┬──────┘             │               │
+  └───────────────────────┼────────────────────┼───────────────┘
+                          │                    │
+                    the two published ports, one each
 ```
 
 ## 2. What is inside
@@ -61,9 +65,19 @@ Two processes are reachable from outside, on separate ports:
 | `api` | envelopes in, state out | something needs to drive the tenant |
 | `session` | terminal bytes and keystrokes | something needs to watch or type |
 
-**Separate ports so publishing is one decision per door.** You may want the api
-reachable and terminals not, or terminals on a private network while data calls
-go out. One mapping each rather than one for both.
+**Separate ports so publishing is one decision per door**, and so neither module
+depends on the other. An app that needs both talks to two base URLs, which costs
+it nothing. The alternative — one door proxying the other — would make one module
+forward traffic it has no business understanding.
+
+You may want the api reachable and terminals not, or terminals on a private
+network while data calls go out. One mapping each rather than one for both.
+
+A single external endpoint is still available later, as a **proxy in front of
+both** rather than one module absorbing the other. Nothing here changes for it:
+neither process learns the proxy exists, and it is also where TLS belongs
+(`LLD-api` §7 — terminate it outside the process). Do it once there is something
+to put behind it.
 
 Together they are the entire attack surface, and both take the same token, which
 is why it is not optional. ⚠ Both can execute arbitrary code in an agent's
