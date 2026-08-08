@@ -12,7 +12,8 @@ typing into its window; the api is the other way in — it puts a correctly form
 envelope on the bus, and the router does what it always does.
 
 It also reads state that already exists in Redis: boards, rosters, queue depths.
-Later it exposes tmux windows.
+Terminal output and live driving are handled by the separate `flock.session`
+service on port 8081.
 
 That is the whole of it. It has no logic of its own beyond building a valid
 envelope, reading keys, and handing back what comes the other way.
@@ -45,8 +46,12 @@ restarted and deployed without disturbing the others.
 | `GET` | `/agents` | enrolled agents, from the roster |
 | `GET` | `/agents/{agent}` | queue depths |
 | `POST` | `/agents/{agent}/envelopes` | put an envelope on the bus, of any kind |
-| `GET` | `/agents/{agent}/board` | that agent's board |
-| `GET` | `/board` | every agent's board |
+| `GET` | `/agents/{agent}/board` | that agent's board (`todo`, `doing`, `hold`, `done`) |
+| `GET` | `/board` | every agent's board (`todo`, `doing`, `hold`, `done`) |
+| `GET` | `/restdoc` | self-contained API documentation page |
+| `GET` | `/docs` | OpenAPI Swagger UI documentation |
+| `GET` | `/redoc` | OpenAPI ReDoc documentation |
+| `GET` | `/openapi.json` | OpenAPI 3.0 schema specification |
 
 `GET /board` walks the roster and pipelines the reads — one round trip, no
 keyspace scan, and agents holding nothing still appear.
@@ -84,7 +89,8 @@ to know what became of an envelope reads the log by `stream_id`.
 **The api does not consume its own ingress, and holds no loop of its own.** It is
 an agent with a VAB of `api` (`LLD-bus-and-router` §3.2), so when the router
 writes its ingress it kicks the adapter exactly as it would for any window
-agent. The adapter reads the VAB, dispatches to the api delivery routine, and
+agent. The adapter reads the VAB, dispatches to the api delivery routine
+(`deliver_api`), which pops the envelope, logs `received` and `opened`, and
 exits. There is no receiver thread here — that is an adapter's job, and the api
 is not an adapter.
 
@@ -110,6 +116,11 @@ Straight from Redis, every key built through `prefix()`. A request never names a
 key or a queue — the path selects a fixed shape and the agent name fills one
 segment.
 
+Board reads (`GET /agents/{agent}/board` and `GET /board`) return four columns
+(`todo`, `doing`, `hold`, `done`). Entries are JSON-decoded ticket objects (or
+raw strings for backwards compatibility), tolerant of both Build 10 and Build 11
+ticket schemas.
+
 Reads are point-in-time — no subscriptions, no watches. That applies to *state*;
 replies are the separate path in §4 and are the only thing a client ever waits
 on.
@@ -119,7 +130,8 @@ on.
 TCP, FastAPI — the clients are browsers and scripts, so a real HTTP surface with
 a generated schema is worth having.
 
-A bearer token, checked on every request including reads.
+A bearer token, checked on every request including reads and documentation routes
+(`/restdoc`, `/docs`, `/redoc`, `/openapi.json`).
 
 ⚠ The token is the only thing between a request and a tenant's bus, so binding
 is the security posture. Default to loopback and publish deliberately; a
@@ -157,3 +169,4 @@ likely simpler than inside.
 Not the router — it forwards nothing. Not an agent runtime — it does not start,
 stop, watch or drive anything. Not a query interface over Redis — every endpoint
 is a fixed shape, and a request can never name a key.
+
