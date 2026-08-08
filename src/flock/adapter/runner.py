@@ -3,7 +3,7 @@ import time
 from datetime import datetime, timezone
 import redis
 
-from flock.bus import prefix, receive, vab
+from flock.bus import prefix, receive, log_record
 from .openers import message_opener
 
 
@@ -15,8 +15,12 @@ def deliver_one(
     session_name: str,
     socket: str | None = None,
 ) -> None:
-    agent_vab = vab(r, pod=pod, tenant=tenant, agent=agent)
+    roster_key = prefix(pod, tenant, resource="roster")
+    raw_vab = r.hget(roster_key, agent)
+    agent_vab = raw_vab.decode() if isinstance(raw_vab, bytes) else raw_vab
+
     if agent_vab is not None and agent_vab != "tmux":
+        log_record("adapter", "error", recipient=agent, reason=f"VAB is {agent_vab!r}, not 'tmux'")
         return
 
     def handle_message(envelope: dict) -> None:
@@ -31,7 +35,7 @@ def deliver_one(
         )
 
     openers = {"Message": handle_message}
-    receive(r, pod=pod, tenant=tenant, agent=agent, openers=openers, timeout=0, module="adapter")
+    receive(r, pod=pod, tenant=tenant, agent=agent, openers=openers, timeout=1, module="adapter")
 
 
 def run_adapter(
@@ -48,13 +52,12 @@ def run_adapter(
 
     delivering_key = prefix(pod, tenant, resource="delivering")
 
-    # Wait for busy tag to clear
-    while r.hexists(delivering_key, agent):
+    # Atomic busy tag acquisition using hsetnx
+    while True:
+        now_iso = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.%f")[:-3] + "Z"
+        if r.hsetnx(delivering_key, agent, now_iso):
+            break
         time.sleep(0.05)
-
-    # Set busy tag
-    now_iso = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.%f")[:-3] + "Z"
-    r.hset(delivering_key, agent, now_iso)
 
     try:
         deliver_one(

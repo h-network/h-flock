@@ -9,7 +9,6 @@ from flock.bus import (
     receive,
     members,
     is_member,
-    vab,
 )
 
 
@@ -126,6 +125,7 @@ def test_send_and_receive(capsys):
 def test_roster():
     r = MockRedis()
     roster_key = prefix("acme", "hq", resource="roster")
+    r.sadd(roster_key, "alice", "bob")
     r.hset(roster_key, "alice", "tmux")
     r.hset(roster_key, "bob", "tmux")
 
@@ -134,4 +134,4 @@ def test_roster():
 
     assert is_member(r, pod="acme", tenant="hq", agent="alice") is True
     assert is_member(r, pod="acme", tenant="hq", agent="carol") is False
-    assert vab(r, pod="acme", tenant="hq", agent="alice") == "tmux"
+    assert r.hget(roster_key, "alice") == "tmux"

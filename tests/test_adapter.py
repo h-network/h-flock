@@ -28,6 +28,14 @@ class MockRedis:
             self.hashes[key] = {}
         self.hashes[key][field] = value
 
+    def hsetnx(self, key, field, value):
+        if key not in self.hashes:
+            self.hashes[key] = {}
+        if field in self.hashes[key]:
+            return 0
+        self.hashes[key][field] = value
+        return 1
+
     def hexists(self, key, field):
         return field in self.hashes.get(key, {})
 
