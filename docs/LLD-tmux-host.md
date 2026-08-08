@@ -1,6 +1,6 @@
 # LLD — the tmux host
 
-> **Status: design, not code.** Nothing here is implemented yet.
+> **Status: built and running.**
 >
 > The module that brings up and maintains the tmux the agents live in. Moving
 > envelopes into and out of those windows is

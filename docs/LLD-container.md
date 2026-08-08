@@ -1,6 +1,6 @@
 # LLD — the container
 
-> **Status: design, not code.** Nothing here is implemented yet.
+> **Status: built and running.**
 >
 > The deployment unit. What the other modules run inside, and how a tenant is
 > brought up. It contains no logic of its own.

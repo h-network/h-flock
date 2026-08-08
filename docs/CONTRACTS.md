@@ -220,10 +220,16 @@ already safely on the ingress queue, so the worst case is that it waits for the
 next kick. Letting it propagate kills the router and, per `LLD-container` §6,
 the whole tenant.
 
-Measured cost of a kick: **~58 ms** for interpreter start plus `redis`,
-`flock.bus` and the openers, against ~150 ms of paste-and-settle. Real, but
-consistent with `LLD-adapter-tmux` §6 treating fork cost as noise next to the
-delivery itself.
+**Measured cost of a delivery: ~500 ms**, split `forwarded` → `received` 274 ms
+(process start, busy tag, `HGET`, `BLPOP`) and `received` → `opened` 226 ms (the
+paste, of which 150 ms is `PASTE_ENTER_DELAY`).
+
+So **process startup is the larger half**, not tmux. `LLD-adapter-tmux` §6
+predicted fork cost would be noise next to paste-and-settle; at these numbers it
+is bigger than the paste. That puts a single agent at roughly **2 deliveries a
+second**. Deliveries to different agents overlap freely, so it is a per-agent
+ceiling, not a tenant one, and nothing is lost above it — the backlog waits in
+Redis. If it ever matters, the lever is the adapter's import graph.
 
 The adapter is invoked, delivers, and **exits**. It is not a service and holds
 nothing between deliveries. On start it:

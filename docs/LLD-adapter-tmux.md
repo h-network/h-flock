@@ -1,6 +1,6 @@
 # LLD — the tmux adapter
 
-> **Status: design, not code.** Nothing here is implemented yet.
+> **Status: built and running.**
 >
 > Depends on [`LLD-bus-and-router.md`](LLD-bus-and-router.md) for the address
 > scheme, the envelope, and the two doors. One adapter per kind of agent; this
@@ -166,6 +166,18 @@ empty prompt ignores.
 
 The adapter checks the window exists before it pastes. If it does not, the
 envelope is dead-lettered rather than delivered into nothing.
+
+**Measured: delivery into a busy window is buffered, not lost.** Three messages
+pasted while a foreground process held the window were echoed by the terminal,
+sat in the tty input buffer, and were read in order the moment the process
+exited. Redis stayed clean and the `opened` records were honest. So the failure
+this section worried about does not occur by default.
+
+⚠ The residual is volume, not busy-ness: the tty input buffer is finite (~4 KB),
+so a long message or a burst arriving during a long task could truncate silently.
+And a process that *does* read stdin behaves differently — a real CLI takes the
+text straight into its input box, which is what we want, and is why this is a
+partial answer.
 
 Beyond that it does **not** try to establish whether the agent is mid-turn.
 tmux's `window_activity` is available for a whole tenant in a single

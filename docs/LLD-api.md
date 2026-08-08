@@ -1,6 +1,6 @@
 # LLD — the api
 
-> **Status: design, not code.** Nothing here is implemented yet.
+> **Status: built and running.**
 >
 > Depends on [`LLD-bus-and-router.md`](LLD-bus-and-router.md) for the address
 > scheme and the envelope.

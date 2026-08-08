@@ -1,7 +1,7 @@
 # LLD — the bus and the router
 
-> **Status: design, not code.** Decisions taken are stated as such; what is
-> deferred is listed in §7. Nothing here is implemented yet.
+> **Status: built and running.** Decisions taken are stated as such; what is
+> deferred is listed in §7.
 
 ## 1. Purpose & layer
 
