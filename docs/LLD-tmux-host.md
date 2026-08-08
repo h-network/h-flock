@@ -107,8 +107,9 @@ owner-only, and treat handing out the socket as handing out the machine.
 ## 5. Windows
 
 One window per agent, **named after the agent**, so a window is addressable by
-the same name the bus uses. That is the only coupling between this module and
-the rest: not a shared library, just a naming rule both ends honour.
+the same name the bus uses. Low-level tmux operations use `flock.tmux` as a shared
+library (`create_window`, `kill_window`, `list_windows`, `write_agent_guide`, etc.)
+shared across `tmuxhost`, `control`, and `adapter`.
 
 Windows are **reconciled against the roster**, in both directions — an agent in
 the roster with no window gets one, a window with no agent in the roster is
@@ -132,8 +133,11 @@ still hurts: windows should lead routes, so this module reconciling promptly is
 what keeps a new agent's first envelope from being dead-lettered.
 
 What runs in the window is configuration, not this module's opinion. It starts
-what it is told to start, in the working directory it is told to use, with the
-environment it is given.
+what it is told to start, in the working directory `/workdir/<agent>` it is told to use,
+with `AGENT_GUIDE=/workdir/<agent>/AGENTS.md` and `OFFICE_TOOLS=office` in the environment.
+`write_agent_guide` generates both `AGENTS.md` and `CLAUDE.md` and pre-approves
+Claude project trust in `.claude.json`. When a CLI is configured, window creation routes
+through `startAgent <cli>` so permission and auto-approval flags apply.
 
 ## 6. Lifecycle
 

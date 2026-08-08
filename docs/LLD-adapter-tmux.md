@@ -28,10 +28,11 @@ differently even though the contract is symmetric:
   └───────────────────────────────────────────────────────────────┘
 ```
 
-**Send is a tool, not a loop.** The agent emits by invoking a command, the way it
-invokes anything else. The adapter's only job on that side is to make the
-command available in the window and configured with the agent's own identity, so
-it writes the right egress without being told.
+**Send is a tool, not a loop.** The agent emits by invoking a command (`office send`,
+`office broadcast`, `office add`, etc.), the way it invokes anything else. The
+adapter's only job on that side is to make the command available in the window and
+configured with the agent's own identity (`AGENT_NAME`), so it writes the right
+egress without being told.
 
 **Receive runs outside the window**, because the agent has no way to know an
 envelope arrived. Something else has to be waiting on its behalf and put the
@@ -109,8 +110,8 @@ For a message, the rendered line names the sender:
 ```
 
 That prefix is the entire reply mechanism. The agent reads a name and replies
-with the same `send` command it would use anyway — nothing routes a reply, and
-nothing needs to.
+with `office send -a <name> <message>` — nothing routes a reply, and nothing
+needs to.
 
 ### `Command` — text to run, not text to read
 
@@ -129,6 +130,15 @@ the api's bearer token. `LLD-tmux-host` §4 already says to treat handing out th
 tmux socket as handing out the machine; this kind hands out the same thing
 through a smaller hole. It is a deliberate capability, not an oversight, and it
 is the reason `LLD-api` §6 says the token is not optional.
+
+### `AddTicket` — board mutation, pastes nothing
+
+`{"title": "…", "description": "…", "priority": "…"}`. The `AddTicket` opener
+creates a v1 ticket entry in the recipient agent's `tasks.todo` Redis list, records
+the `add` event via `flock.bus.record_task_event`, and **pastes nothing** into the
+window.
+
+`AssignTask` is accepted as a deprecated alias (logged via `log_record`).
 
 An envelope whose `kind` has no opener is dead-lettered under **this agent's own
 prefix** and logged. The failure happened at this end, and an adapter writing to

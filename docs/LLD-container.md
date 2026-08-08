@@ -92,7 +92,7 @@ in the container derives its prefix from them, so they are set once, in one
 place, and inherited.
 
 An agent's own identity is the same story one level down: each agent's window is
-given its name in its environment, so the `send` command it runs knows which
+given its name in its environment, so the `office send` command it runs knows which
 egress to write without being told each time.
 
 The same channel carries the one setting more than one module has to agree on:
