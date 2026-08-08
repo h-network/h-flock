@@ -18,7 +18,8 @@ is imported, never vendored.
 
 ```
   src/flock/
-    bus/         prefix, envelope, the two doors, roster reads   ← the library
+    bus/         prefix, envelope, the two doors, roster reads   ← library
+    tmux/        create/kill/list windows, the paste sequence   ← library
     router/      the router process
     adapter/     the adapter: invoked per delivery, dispatches on VAB
     tmuxhost/    the tmux host
@@ -30,9 +31,15 @@ is imported, never vendored.
 Every process is `python -m flock.<module>`. Dependencies: `redis`, `fastapi`,
 `uvicorn`. Nothing else without saying why.
 
-**`flock.bus` is the only module the others import.** `router`, `adapter`,
-`tmuxhost` and `api` never import each other — the layer split in
+**`flock.bus` and `flock.tmux` are the only shared libraries.** `router`,
+`adapter`, `tmuxhost` and `api` never import *each other* — the layer split in
 `LLD-bus-and-router` §1 is enforced by that rule and is checkable by grep.
+
+`flock.tmux` holds the low-level operations — `create_window`, `kill_window`,
+`list_windows`, and the paste sequence — because both the tmux host and the
+adapter's openers drive tmux. One implementation with two callers; two
+implementations would drift, and the drift would be invisible until a window
+appeared with the wrong environment or the wrong shell.
 
 ## 2. The bus library surface
 
@@ -205,35 +212,44 @@ the api validates.
 |---|---|---|---|
 | `Message` | `tmux` | `{"text": "..."}` | pastes `[message from <producer>] <text>` |
 | `Command` | `tmux` | `{"text": "..."}` | pastes `<text>` **bare** — it executes |
-| `StartAgent` | `control` | `{"agent": "dave", "cli": "claude"}` | enrols an agent |
-| `StopAgent` | `control` | `{"agent": "dave"}` | removes one |
+| `StartAgent` | `control` | `{"agent": "dave", "cli": "claude"}` | enrols, creates the window, starts the CLI |
+| `StopAgent` | `control` | `{"agent": "dave"}` | reverses all three |
 
 `cli` defaults to `claude`. `Message` and `Command` share a payload shape and
 differ only in whether the prefix is rendered — see `LLD-adapter-tmux` §3 for why
 that one difference is the whole security boundary.
 
-### How `StartAgent` enrols without reaching into another module
+### `StartAgent` and `StopAgent` are the whole operation
 
-The opener writes **two** keys and creates nothing:
+`StartAgent` enrols the agent, creates its window, and starts the CLI in it.
+`StopAgent` reverses all three. They are not enrolment alone.
 
 ```
-  HSET  …:tenant:<t>:roster        dave  tmux      membership + VAB
-  SET   …:agent:dave:launch        claude          what to start in the window
+  StartAgent            StopAgent
+    HSET roster dave tmux    HDEL roster dave
+    SET  …:dave:launch cli   DEL  …:dave:launch
+    create the window        kill the window
 ```
 
-The tmux host's reconcile loop then creates the window on its next pass, because
-that is already what it does — *"an agent in the roster with no window gets
-one"* (`LLD-tmux-host` §5). Nothing new starts windows, and the control opener
-never touches tmux.
+**Roster first, tmux second, in both directions.** The roster is desired state,
+tmux is actual state, and the host converges the second toward the first — so a
+crash mid-operation gets *completed* by the next reconcile rather than undone.
+
+⚠ Reversed on stop it does worse than fail: kill the window first, crash before
+the `HDEL`, and the host finds a roster row with no window and **recreates it**.
+The agent you just killed comes back, one poll later, looking like the host
+working correctly.
+
+The opener does the tmux work itself rather than waiting for a reconcile, so the
+window appears immediately. That is safe because reconcile is idempotent — it
+finds an agent that already has a window and does nothing. The host stays the
+repair mechanism for anything an opener did not finish.
 
 ⚠ **`launch` is a separate key, not a roster value.** `LLD-bus-and-router` §3.2
 is explicit that nothing beyond the VAB lives in the roster — *"what is started
 in its window, its credentials, its configuration — belongs to whichever module
 starts it, not to membership."* Putting `cli` in the roster value would make
 every reader of the MAC table parse an agent's configuration.
-
-`StopAgent` reverses it: `HDEL` the roster field, `DEL` the launch key, and the
-host removes the window on its next pass. Same loop, opposite direction.
 
 ## 7. Seeding the roster
 
