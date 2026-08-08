@@ -142,9 +142,10 @@ they are genuinely different designs, not two implementations of one:
 durable queue into RAM — invisible, lost on restart, nothing to inspect — which
 is the failure `LLD-adapter-tmux` §2 exists to prevent.
 
-**Session endpoints.** Exposing a live agent window is streaming, not REST, so it
-is a separate transport question and probably a separate module. Named here only
-so the REST surface is not designed around it.
+**Session endpoints.** Answered — it is a separate module, and it is
+[`LLD-session.md`](LLD-session.md). The api carries envelopes and state reads;
+terminal output and keystrokes are a different transport on a different port,
+and nothing about the REST surface is designed around them.
 
 **Per-client identity.** One shared token now.
 

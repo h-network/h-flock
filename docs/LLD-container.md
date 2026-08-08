@@ -43,19 +43,33 @@ nothing needs discovery, and the whole tenant starts and stops as one thing.
 | redis | — | the bus. Loopback, no persistence needed for a skeleton |
 | router | `LLD-bus-and-router` | one per tenant, therefore one per container |
 | tmux host | `LLD-tmux-host` | creates the server, session and windows |
-| tmux adapter | `LLD-adapter-tmux` | blocks on ingress, pastes into windows |
-| api | `LLD-api` | the only thing reachable from outside |
+| tmux adapter | `LLD-adapter-tmux` | kicked per delivery, pastes into windows, exits |
+| api | `LLD-api` | envelopes in, state out |
+| session | `LLD-session` | terminal output and keystrokes. Its own port |
 | agents | — | one per tmux window, whatever the roster says to run |
 
-## 3. Nothing is published except the api
+## 3. Only doors are published, and each one separately
 
 Redis binds loopback and is **never** port-mapped. It has no authentication in
 this build, so exposing it would hand anyone the whole tenant — every queue,
 every board, and the ability to write into any agent's ingress directly.
 
-The api is the only mapped port, which makes it the entire attack surface and is
-why its token is not optional. Everything else talks over loopback inside the
-container and has no reason to leave it.
+Two processes are reachable from outside, on separate ports:
+
+| | Carries | Publish it when |
+|---|---|---|
+| `api` | envelopes in, state out | something needs to drive the tenant |
+| `session` | terminal bytes and keystrokes | something needs to watch or type |
+
+**Separate ports so publishing is one decision per door.** You may want the api
+reachable and terminals not, or terminals on a private network while data calls
+go out. One mapping each rather than one for both.
+
+Together they are the entire attack surface, and both take the same token, which
+is why it is not optional. ⚠ Both can execute arbitrary code in an agent's
+window — the api through the `Command` kind, the session through keystrokes — so
+neither is the "safe" one. Everything else talks over loopback and has no reason
+to leave the container.
 
 ## 4. Identity comes from the environment
 
@@ -99,9 +113,10 @@ Order matters only where a dependency is real:
   redis            first — everything else connects to it
   tmux host        creates the server, session and one window per agent
   router           needs redis; subscribe set comes from the roster
-  adapter          needs redis and the tmux server
-  api              needs redis; last, so it is not reachable before the
-                   tenant behind it is up
+  api              needs redis
+  session          needs the tmux server; holds one control-mode client
+                   the doors last, so neither is reachable before the
+                   tenant behind them is up
 ```
 
 **Bringing the container up twice must be safe.** Reconciliation converges
