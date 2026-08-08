@@ -39,11 +39,16 @@ task" is only meaningful against a FIFO) and because a state change is then an
 `LMOVE` between two keys rather than a read-modify-write of one value — which is
 what stops two readers tearing a board in half.
 
-An entry is a small JSON object:
+An entry is a **ticket**:
 
 ```json
-{ "id": "<hex>", "title": "…", "from": "architect", "created_at": "…" }
+{ "id": "<hex>", "title": "one line", "description": "the whole brief",
+  "from": "architect", "created_at": "…" }
 ```
+
+`office tasks` lists titles. `office take` prints the full ticket — the
+description is where the actual work is explained, and it can be as long as it
+needs to be.
 
 ⚠ **Entries stay opaque and `CONTRACTS` §7 does not move.** `LLD-bus-and-router`
 §8 is explicit that this is not a task system; the api returns entries verbatim
@@ -99,7 +104,7 @@ Subcommands of `office`, which is what that namespace was for — and it dodges
 office tasks                       # my board: todo / doing / done
 office take                        # todo → doing, FIFO, prints the task
 office done                        # doing → done
-office assign -a backend some text # → AssignTask envelope
+office assign -a backend -t "one line" -d "the brief"   # → AssignTask envelope
 ```
 
 ⚠ `office take` with an empty `todo` must say **why** it came back empty — h-office

@@ -21,7 +21,7 @@ Four subcommands of `office`:
 office tasks                        # my board: todo / doing / done
 office take                         # todo → doing, FIFO. prints the task
 office done                         # doing → done
-office assign -a backend some text  # → an AssignTask envelope, see §3
+office assign -a backend -t "one line" -d "the brief"   # → AssignTask, §3
 ```
 
 Keys are already pinned (`CONTRACTS` §7), already served by the api, and have
@@ -33,8 +33,10 @@ never had anything written to them:
   <prefix>:tasks.done     LIST
 ```
 
-An entry is `{"id": "<hex>", "title": "…", "from": "<agent>", "created_at": "…"}`.
-⚠ **`title` is opaque.** Nothing parses it — not the api, not you.
+An entry is a **ticket**:
+`{"id", "title", "description", "from", "created_at"}`. `tasks` lists titles;
+`take` prints the whole ticket. ⚠ **Both text fields are opaque** — nothing
+parses them, not the api, not you.
 
 `take` is an `LMOVE` from `todo` to `doing`, so it is one atomic operation rather
 than a read-then-write two agents could tear.
@@ -56,7 +58,7 @@ The opener on the recipient's side does:
 | | |
 |---|---|
 | kind | `AssignTask` |
-| payload | `{"title": "…"}` |
+| payload | `{"title": "…", "description": "…"}` |
 | opener | writes an entry to that agent's `tasks.todo`, **then pastes a notification into the window** |
 
 So an agent learns it has work the same way it learns anything else, and only an
