@@ -47,7 +47,7 @@ trap shutdown EXIT INT TERM
 # ── redis ─────────────────────────────────────────────────────────────────────
 # Loopback only and never published. No persistence: a skeleton losing its
 # queues on a restart is acceptable (§2, §7).
-start redis redis-server --bind 127.0.0.1 --port 6379 --save '' --appendonly no
+start redis redis-server --bind 127.0.0.1 --port 6379 --save '' --appendonly no --dir /tmp
 until redis-cli -h 127.0.0.1 ping >/dev/null 2>&1; do sleep 0.2; done
 
 # ── seed the roster ───────────────────────────────────────────────────────────
@@ -79,7 +79,7 @@ redis-cli -h 127.0.0.1 HSET "$roster_key" "${fields[@]}" >/dev/null
 echo "{\"module\":\"container\",\"event\":\"roster_seeded\",\"count\":$(( ${#fields[@]} / 2 ))}"
 
 # ── tmux host ─────────────────────────────────────────────────────────────────
-start tmuxhost python -m flock.tmuxhost
+start tmuxhost python3 -m flock.tmuxhost
 
 # Windows lead routes. LLD-bus-and-router §3.2 names the one roster case that is
 # not harmless: the router routing to an agent whose window does not exist yet,
@@ -99,11 +99,11 @@ done
 echo "{\"module\":\"container\",\"event\":\"windows_ready\",\"count\":${#agents[@]}}"
 
 # ── the rest ──────────────────────────────────────────────────────────────────
-start router  python -m flock.router
+start router  python3 -m flock.router
 # No adapter here. It is not a service — the router kicks `flock.adapter <agent>`
 # per delivery and it exits (LLD-adapter-tmux §2). Starting one at boot would be
 # the daemon this build exists to remove.
 # api last, so it is not reachable before the tenant behind it is up (§5).
-start api     python -m flock.api
+start api     python3 -m flock.api
 
 wait -n

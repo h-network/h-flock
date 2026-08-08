@@ -1,12 +1,27 @@
 # One container is one tenant — LLD-container §1.
-FROM python:3.12-slim
+#
+# The h-network base carries tmux and the agent CLIs (claude, codex, agy) plus
+# startAgent, so a window can run a real agent rather than a mock shell. It does
+# not carry redis or an init, which are this container's own concerns.
+FROM ghcr.io/h-network/base:latest
+
+USER root
 
 # tini is PID 1 so the children agent CLIs spawn and abandon are reaped rather
-# than accumulating as zombies (LLD-container §6). redis and tmux are the
-# tenant's own, never shared and never published.
+# than accumulating as zombies (LLD-container §6). That matters more with real
+# CLIs in the windows than it did with bash. redis is the tenant's own bus,
+# never shared and never published.
 RUN apt-get update \
- && apt-get install -y --no-install-recommends redis-server tmux tini procps curl \
+ && apt-get install -y --no-install-recommends redis-server tini procps \
  && rm -rf /var/lib/apt/lists/*
+
+# Ubuntu 24.04 marks the system interpreter externally-managed (PEP 668), so
+# flock gets its own venv rather than fighting it. Putting the venv's bin on
+# PATH is what makes `send` and `flock.adapter` available to every agent window
+# and to the router's kick.
+ENV VIRTUAL_ENV=/opt/flock
+ENV PATH="$VIRTUAL_ENV/bin:$PATH"
+RUN python3 -m venv "$VIRTUAL_ENV"
 
 WORKDIR /app
 COPY pyproject.toml ./
@@ -16,10 +31,15 @@ RUN pip install --no-cache-dir .
 COPY container/entrypoint.sh /usr/local/bin/entrypoint.sh
 RUN chmod +x /usr/local/bin/entrypoint.sh
 
+# The base runs as ubuntu (uid 1000), and the agent CLIs expect that home. The
+# tmux socket therefore lives somewhere that user owns — /run is root's.
+RUN mkdir -p /home/ubuntu/.flock/tmux \
+ && chown -R ubuntu:ubuntu /home/ubuntu/.flock /opt/flock
+
 ENV PYTHONUNBUFFERED=1 \
     REDIS_URL=redis://127.0.0.1:6379/0 \
     ROSTER_POLL_SECONDS=5 \
-    TMUX_TMPDIR=/run/flock-tmux \
+    TMUX_TMPDIR=/home/ubuntu/.flock/tmux \
     API_PORT=8080
 
 # The api binds every interface *inside* the container; publishing is the
@@ -27,5 +47,7 @@ ENV PYTHONUNBUFFERED=1 \
 # non-loopback bind with no token refuses to start (LLD-api §6), which is what
 # makes the token mandatory here rather than advisory (LLD-container §3).
 ENV API_BIND=0.0.0.0
+
+USER ubuntu
 
 ENTRYPOINT ["/usr/bin/tini", "-g", "--", "/usr/local/bin/entrypoint.sh"]
