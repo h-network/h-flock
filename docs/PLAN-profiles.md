@@ -107,18 +107,26 @@ starts a CLI that has an account and has already been through onboarding.
 Checked on the running office, which runs all three: 2× `agy`, 1× `claude`,
 1× `codex`.
 
-| | Size | Keeps |
-|---|---|---|
-| `~/.claude` | 12 MB | per-project JSONL transcripts under `projects/<cwd-key>/` |
-| `~/.codex` | **482 MB** | `sessions/`, SQLite logs, `auth.json`, `config.toml`, plus `packages` 350 MB, `plugins` 29 MB, `cache` 16 MB |
-| `agy` | — | **no config dir of its own.** No `~/.agy`, nothing in `~/.config`; its `PATH` includes `~/.codex/bin` |
+**All three persist the whole conversation as JSON, in three different shapes,
+in three separate directories, each with its own credential.**
 
-Three consequences:
+| CLI | Dir | Size | Transcript | Credential |
+|---|---|---|---|---|
+| `claude` | `~/.claude` | 12 MB | `projects/<cwd-key>/<session>.jsonl` | `.credentials.json` |
+| `codex` | `~/.codex` | **482 MB** | `sessions/YYYY/MM/DD/rollout-<ts>-<uuid>.jsonl`, plus a flat `history.jsonl` | `auth.json` |
+| `agy` | `~/.gemini/antigravity-cli` | 26 MB | `brain/<uuid>/.system_generated/logs/transcript{,_full}.jsonl`, `conversations/` 6.6 MB, `history.jsonl`, `conversation_summaries.db` | `antigravity-oauth-token` |
 
-**`agy` needs no third profile dir.** `setupConfigDir` handling only
-`~/.claude-<name>` and `~/.codex-<name>` is not an omission — agy piggybacks. The
-`codex`/`agy` onboarding item in [`TODO.md`](TODO.md) is probably one answer, not
-two.
+⚠ **Correction.** An earlier draft of this section said agy had no config dir and
+needed no profile of its own. That was wrong — it was reached by looking for
+`~/.agy` and not finding it. `agy` is the Antigravity CLI and keeps everything
+under `~/.gemini/antigravity-cli`, including its **own OAuth token**. So profiles
+are **three** directories, not two, and agy costs its own login.
+
+⚠ **And it is not clear agy's home can be relocated at all.** `claude` has
+`CLAUDE_CONFIG_DIR` and `codex` has `CODEX_HOME`; agy exposes no documented
+equivalent, and `setupConfigDir` handles only the first two. **Verify before
+promising per-account agy** — if there is no such variable, agy is single-account
+per container and that is a constraint on the whole design, not a detail.
 
 ⚠ **Relocating `CODEX_HOME` may duplicate 350 MB of `packages` per profile.**
 h-office's seeding copies only `config.toml` and `AGENTS.md`, which is right for
@@ -126,11 +134,15 @@ h-office's seeding copies only `config.toml` and `AGENTS.md`, which is right for
 unverified, and it is the difference between a few KB per profile and a third of
 a gigabyte. **Check before sizing any volume.**
 
-**Full conversation transcripts are on disk and are the better record.** 912
-lines / 1.2 MB after one short run. Structured — every message, tool call and
-timestamp — where `capture-pane` only shows what fit on screen. They live *in the
-config dir*, so they are profile-scoped and die with the container, and they grow
-without bound.
+**Transcripts are the better record, for all three.** 912 lines / 1.2 MB from
+claude after one short run. Structured — every message, tool call and timestamp —
+where `capture-pane` only shows what fit on screen. They live *in the config
+dir*, so they are profile-scoped, die with the container, and grow without
+bound.
+
+Reading them across CLIs means three parsers: claude keys by working directory,
+codex by date, agy by an internal conversation id. Anything that wants "what did
+the agents say" has to normalise, or pick one CLI.
 
 Two things follow. The volume question is not only "logins persist" but "the
 record of what the agents did persists" — every rebuild today throws it away.
