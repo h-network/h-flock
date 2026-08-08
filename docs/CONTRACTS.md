@@ -180,6 +180,10 @@ writes a log file.
 | `producer`, `recipient` | when known | |
 | `reason` | on a failure | why it dead-lettered |
 | `count` | on a broadcast | how many copies were written |
+| `task_id` | on a board move | the entry's `id` |
+
+⚠ `task_id`, not `id` — a bare `id` sits beside `stream_id` and `correlation_id`
+in the same record and reads as a third identity for the same thing.
 
 Events, in the order they occur:
 
