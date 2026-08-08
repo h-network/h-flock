@@ -40,21 +40,37 @@ whole point of this build. `flock.session` streams a TUI for *watching* an agent
 work; it is not a data format and a wrapper must not scrape it. A chat view in a
 web, phone or Telegram client is built from §3, never from `:8081`.
 
-Out of scope, deliberately: per-client addressing (§6), webhooks, TLS, CORS.
+Out of scope, deliberately: webhooks, TLS, CORS, per-client *authentication* (§6).
 
 ## 3. The surface
 
-**One mailbox and two ways to read it.**
+**A client is a named participant with its own mailbox**, read two ways:
 
 ```
-GET /messages?after=<cursor>&limit=100    catch-up — returns what you missed
-GET /messages/stream                      live — SSE, same objects, as they land
+POST /agents/host/envelopes   {"kind":"StartAgent",
+                               "payload":{"agent":"telegram","vab":"api"}}
+
+GET /agents/telegram/messages?after=<cursor>&limit=100   catch-up
+GET /agents/telegram/messages/stream                     live — SSE
 ```
 
-Both return envelopes as stored, so an app sees `producer` (who replied), `kind`,
-`payload`, `stream_id`, `correlation_id` and the timestamp. **A per-agent chat
-view is a filter on `producer`** — no per-agent endpoint, because the mailbox is
-one stream of everything addressed to the api.
+Sending as yourself rather than as "the api":
+
+```
+POST /agents/alice/envelopes  {"text":"…", "as":"telegram"}
+```
+
+`as` names an **enrolled** client and is validated against the roster — VAB `api`
+only. Omitted, it stays `api`, so everything built before this still works.
+
+⚠ **`as` is a declaration, not an authentication.** One shared token means any
+holder can claim any enrolled name. That is no weaker than today — `producer` is
+already forgeable ([`TODO.md`](TODO.md)) — and checking it against the roster at
+least stops names being invented. Per-client tokens stay deferred (§6).
+
+Messages come back as stored: `producer` (who replied), `kind`, `payload`,
+`stream_id`, `correlation_id`, timestamp. **A per-agent chat view is a filter on
+`producer`.**
 
 `after` is the cursor from the last message the client processed; omitting it
 means "from the beginning of what is retained". The response carries the cursor
@@ -73,11 +89,15 @@ SSE route is hard, ship `GET /messages` alone and follow with the stream.
 
 ## 4. The mailbox
 
-A **Redis Stream**, not a LIST:
+A **Redis Stream** per client, not a LIST:
 
 ```
-  <prefix>:agent:api:inbox     XADD on delivery, MAXLEN ~ 1000
+  <prefix>:agent:<client>:inbox     XADD on delivery, MAXLEN ~ 1000
 ```
+
+One per participant, exactly like `ingress` — an `api` client is an address on
+the switch like any other, so its mailbox is a resource on its own key, not a
+shared bucket everyone sifts.
 
 ⚠ **This is the one place a Stream earns its keep, and the reason is the
 cursor.** Everything else here is a LIST because a queue is a queue. A mailbox is
@@ -105,30 +125,48 @@ is the whole change to the adapter — same kick, same `receive`, same log recor
 ⚠ Keep the catch-all. Every kind is delivered and stored; nothing dead-letters
 for being uninteresting.
 
-## 6. One address now, per-client later
+## 6. `StartAgent` takes a `vab`
 
-Every app shares the single `api` address, so **every client sees every reply**.
-That is fine at this stage and it is the deferral from `LLD-api` §7 — filtering
-by client is a later decision, and `StartAgent` hardcoding VAB `tmux`
-(`src/flock/control/openers.py:34`) is what would have to change first.
+One line today: `r.hset(roster_key, agent, "tmux")`
+(`src/flock/control/openers.py:34`). It becomes `payload.get("vab", "tmux")`,
+accepting `tmux` or `api`, rejecting anything else.
 
-⚠ **Do not solve it here.** The shape it will take is already written down:
-ephemeral named agents, so the bus does the demultiplexing and no table exists.
-Adding a client-id filter now would build the table shape by accident and make
-the real one harder.
+⚠ **A VAB `api` enrolment creates no window and starts no CLI.** `StartAgent`
+means "enrol, make a home, start the CLI" for a tmux agent; for an `api` client
+it is the roster row and nothing else. `StopAgent` likewise removes the row and
+the mailbox. Getting this wrong tries to `tmux new-window` for a phone app.
 
-What an agent needs to know is unchanged: reply to `api`, the same way it replies
-to anyone.
+**This is why per-client addressing is cheap rather than expensive**, and it is
+the piece I had wrong when scoping: agent-facing views already filter on VAB.
+`office peers` and `office broadcast` both select `vab == "tmux"`
+(`cli.py:124,137,280`), so enrolled clients are invisible to agents — they do not
+appear in anyone's peer list and never receive a broadcast. The isolation this
+needs was built two builds ago for a different reason.
+
+It also makes the reply mechanism identical for apps and agents. An agent sees
+`[message from telegram]` and replies with `office send -a telegram` — reply by
+name, the same rule as everyone. Nothing about an app is special from the window
+side, which is the whole L2 idea: the switch does not know what is plugged into a
+port.
+
+**Still deferred:** per-client tokens. One shared token, and `as` is checked
+against the roster rather than proven.
 
 ## 7. Done when
 
-- an agent running `office send -a api hello` puts a message in the mailbox
-- `GET /messages` returns it with `producer` naming that agent
-- `GET /messages?after=<cursor>` returns only what followed, and the same cursor
-  twice returns the same thing
-- `GET /messages/stream` delivers a message sent while the connection is open
-- two clients reading concurrently both see every message
-- a non-`Message` kind addressed to `api` is stored, not dropped
+- `StartAgent` with `vab: api` adds a roster row and **creates no window**
+- `office peers` in an agent's window does not list that client
+- `office broadcast` does not reach it
+- an agent running `office send -a telegram hello` puts a message in telegram's
+  mailbox and **not** in another client's
+- `GET /agents/telegram/messages` returns it with `producer` naming that agent
+- `?after=<cursor>` returns only what followed, and the same cursor twice returns
+  the same thing
+- `/messages/stream` delivers a message sent while the connection is open
+- `POST … {"as":"telegram"}` makes alice's window show `[message from telegram]`
+- `as` naming a non-enrolled or tmux-VAB agent is rejected
+- a non-`Message` kind addressed to a client is stored, not dropped
+- `StopAgent` removes the roster row and the mailbox
 - the mailbox stops growing at `MAXLEN`
 - both routes require the bearer token and appear in `/restdoc`
 
