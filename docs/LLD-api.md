@@ -45,7 +45,9 @@ restarted and deployed without disturbing the others.
 | `GET` | `/health` | liveness |
 | `GET` | `/agents` | enrolled agents, from the roster |
 | `GET` | `/agents/{agent}` | queue depths |
-| `POST` | `/agents/{agent}/envelopes` | put an envelope on the bus, of any kind |
+| `POST` | `/agents/{agent}/envelopes` | put an envelope on the bus, of any kind (optional `as`) |
+| `GET` | `/agents/{agent}/messages` | get stored inbox messages for an api client (`?after=<cursor>&limit=100`) |
+| `GET` | `/agents/{agent}/messages/stream` | live SSE stream of inbox messages (`?after=<cursor>`) |
 | `GET` | `/agents/{agent}/board` | that agent's board (`todo`, `doing`, `hold`, `done`) |
 | `GET` | `/board` | every agent's board (`todo`, `doing`, `hold`, `done`) |
 | `GET` | `/restdoc` | self-contained API documentation page |
@@ -67,12 +69,17 @@ Build a `v=1` envelope with the `recipient` from the path, `send` it, return
 POST /agents/host/envelopes    {"kind": "StartAgent", "payload": {"agent": "dave"}}
 POST /agents/bob/envelopes     {"kind": "Message",    "payload": {"text": "hi"}}
 POST /agents/bob/envelopes     {"text": "hi"}          sugar — means kind Message
+POST /agents/bob/envelopes     {"text": "hi", "as": "telegram"}   sending as an enrolled api client
 ```
 
 The endpoint is `/envelopes`, not `/messages`, because a message is one kind
 among several and naming the resource after it made the whole HTTP surface
 Message-shaped: the one thing the bus was built to make cheap — adding a kind —
 could not be reached over HTTP at all.
+
+A POST request can specify `"as": "<client>"` to declare its producer identity.
+`as` is validated against the roster — it must name an enrolled agent with VAB `api`.
+When omitted, `producer` defaults to `"api"`.
 
 ⚠ **The api must not know what kinds exist.** It builds an envelope and writes
 its own egress; which kinds are openable is a fact about adapters, discovered at
@@ -91,24 +98,13 @@ an agent with a VAB of `api` (`LLD-bus-and-router` §3.2), so when the router
 writes its ingress it kicks the adapter exactly as it would for any window
 agent. The adapter reads the VAB, dispatches to the api delivery routine
 (`deliver_api`), which pops the envelope, logs `received` and `opened`, and
-exits. There is no receiver thread here — that is an adapter's job, and the api
-is not an adapter.
+writes the verbatim JSON envelope into the recipient client's Redis Stream inbox
+(`pod:<pod>:tenant:<tenant>:agent:<client>:inbox`, capped at `MAXLEN ~ 1000`) under
+the `envelope` field.
 
 ⚠ A reply may never come. Nothing on the bus guarantees delivery, the agent may
-be wedged, and the api must not hold a request open forever waiting — a timeout
-that returns "nothing yet" is a correct answer.
-
-**What the api adapter does with a reply is deferred — see §7.** Build 01 is
-inject-only: `POST` puts an envelope on the bus and returns `202`, and nothing
-comes back on that request.
-
-The reason is worth stating, because it is not a gap in the transport. Every
-other agent has a *name*, so the router demultiplexes replies for free — alice's
-reply reaches alice because alice is an address. HTTP clients are anonymous and
-all share the one name `api`, so the router cannot tell them apart and the
-demultiplexing has to happen inside the adapter. That is flow state — a table,
-keyed by `correlation_id`, with an expiry — and it is the one piece of this
-design that has to remember anything.
+be wedged, and the api must not hold a request open forever waiting — polling
+`GET /messages` or streaming `GET /messages/stream` with a cursor is the correct pattern.
 
 ## 5. Reading
 
@@ -137,29 +133,33 @@ A bearer token, checked on every request including reads and documentation route
 is the security posture. Default to loopback and publish deliberately; a
 non-loopback bind with no token set should refuse to start rather than warn.
 
-## 7. Deferred
+## 7. Return path & deferred items
 
-**Handing a reply back to the client that caused it.** The api adapter's far end
-— the opener that hands an envelope to a waiting HTTP request. Two shapes, and
-they are genuinely different designs, not two implementations of one:
+**Handing a reply back to the client that caused it — resolved in Build 12.** Of the
+two shapes originally considered (a correlation table vs. named clients), **named
+clients with per-client stream mailboxes** was chosen and built.
 
-- **A table** keyed by `correlation_id` with a TTL, held in Redis where the rest
-  of the state lives, read by the request handler. Flow state, expiring, visible.
-- **Ephemeral agents** — a waiting client enrols as its own short-lived named
-  agent, the reply routes to it, and no table exists anywhere. Consistent with
-  everything else in the design. It used to cost a roster write path of its own —
-  it no longer does, since `StartAgent`/`StopAgent` built one in build 03.
+The reason: every participant on the bus is a named agent, so an app client
+enrolling as a named agent (`StartAgent` with `vab: api`) stays consistent with
+the switch design (`LLD-bus-and-router` §1).
 
-⚠ Whichever it is, it does not go in the api process's memory. That drains a
-durable queue into RAM — invisible, lost on restart, nothing to inspect — which
-is the failure `LLD-adapter-tmux` §2 exists to prevent.
+- **Mailbox:** `deliver_api` writes incoming envelopes into a per-client Redis Stream
+  (`pod:<pod>:tenant:<tenant>:agent:<client>:inbox`, capped at `MAXLEN ~ 1000`) under the
+  pinned `envelope` field. The stream entry ID acts directly as the cursor (`cursor`).
+- **Reading & Streaming:** Clients retrieve messages via `GET /agents/{client}/messages?after=<cursor>`
+  for catch-up, or `GET /agents/{client}/messages/stream?after=<cursor>` for a live
+  Server-Sent Events (SSE) stream.
+- **Isolation:** `api` clients appear in the roster, but are filtered out of terminal
+  agent CLI operations (`office peers` and `office broadcast` select `vab == "tmux"`),
+  so terminal agents stay unaware of app clients while allowing replies by name
+  (`office send -a telegram ...`).
 
 **Session endpoints.** Answered — it is a separate module, and it is
 [`LLD-session.md`](LLD-session.md). The api carries envelopes and state reads;
 terminal output and keystrokes are a different transport on a different port,
 and nothing about the REST surface is designed around them.
 
-**Per-client identity.** One shared token now.
+**Per-client identity.** One shared token now (with `as` validated against the roster).
 
 **TLS.** Not needed on a loopback bind; terminating it outside this process is
 likely simpler than inside.
