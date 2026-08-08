@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hmac
 import ipaddress
+import json
 import os
 import uuid
 from dataclasses import dataclass
@@ -63,6 +64,20 @@ def _decode(value: Any) -> Any:
     return value.decode() if isinstance(value, bytes) else value
 
 
+def _decode_entry(value: Any) -> Any:
+    if isinstance(value, bytes):
+        try:
+            value = value.decode("utf-8")
+        except UnicodeDecodeError:
+            return None
+    if isinstance(value, str):
+        try:
+            return json.loads(value)
+        except (json.JSONDecodeError, TypeError):
+            return value
+    return value
+
+
 def _render_restdoc_html(app: FastAPI) -> str:
     path_meta = {
         "/health": {
@@ -82,7 +97,7 @@ def _render_restdoc_html(app: FastAPI) -> str:
             "curl": 'curl -X POST -H "Authorization: Bearer $API_TOKEN" -H "Content-Type: application/json" -d \'{"text": "hello"}\' http://localhost:8080/agents/bob/envelopes',
         },
         "/agents/{agent}/board": {
-            "desc": "Get task board lists (todo, doing, done) for a specific agent.",
+            "desc": "Get task board lists (todo, doing, hold, done) for a specific agent.",
             "curl": 'curl -H "Authorization: Bearer $API_TOKEN" http://localhost:8080/agents/bob/board',
         },
         "/board": {
@@ -469,11 +484,11 @@ def create_app(*, settings: Settings | None = None, redis_client: Any = None) ->
             raise HTTPException(status_code=422, detail=str(exc)) from exc
         return {"stream_id": stream_id, "correlation_id": correlation_id}
 
-    def board_keys(agent: str) -> tuple[str, str, str]:
+    def board_keys(agent: str) -> tuple[str, str, str, str]:
         try:
             return tuple(
                 prefix(settings.pod, settings.tenant, agent, f"tasks.{state}")
-                for state in ("todo", "doing", "done")
+                for state in ("todo", "doing", "hold", "done")
             )
         except KeyError as exc:
             raise HTTPException(status_code=404, detail="invalid agent") from exc
@@ -481,9 +496,10 @@ def create_app(*, settings: Settings | None = None, redis_client: Any = None) ->
     def board_response(agent: str, values: list[list[Any]]) -> dict[str, Any]:
         return {
             "agent": agent,
-            "todo": [_decode(value) for value in values[0]],
-            "doing": [_decode(value) for value in values[1]],
-            "done": [_decode(value) for value in values[2]],
+            "todo": [item for val in values[0] if (item := _decode_entry(val)) is not None],
+            "doing": [item for val in values[1] if (item := _decode_entry(val)) is not None],
+            "hold": [item for val in values[2] if (item := _decode_entry(val)) is not None],
+            "done": [item for val in values[3] if (item := _decode_entry(val)) is not None],
         }
 
     @app.get("/agents/{agent}/board")
@@ -500,8 +516,8 @@ def create_app(*, settings: Settings | None = None, redis_client: Any = None) ->
         boards = pipeline.execute()
         return {
             "agents": [
-                board_response(agent, boards[index : index + 3])
-                for index, agent in zip(range(0, len(boards), 3), agents)
+                board_response(agent, boards[index : index + 4])
+                for index, agent in zip(range(0, len(boards), 4), agents)
             ]
         }
 

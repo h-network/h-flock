@@ -193,9 +193,36 @@ def test_board_aggregate_is_roster_bounded_and_pipelined(client):
     )
     assert request(app, "GET", "/board", token="secret")[1] == {
         "agents": [
-            {"agent": "alice", "todo": ["one"], "doing": [], "done": []},
-            {"agent": "bob", "todo": [], "doing": [], "done": []},
+            {"agent": "alice", "todo": ["one"], "doing": [], "hold": [], "done": []},
+            {"agent": "bob", "todo": [], "doing": [], "hold": [], "done": []},
         ]
+    }
+
+
+def test_single_agent_board_four_lists_and_json_tickets(client):
+    app, redis = client
+    ticket1 = json.dumps({"v": 1, "id": "t1", "title": "task 1", "status": "todo"}).encode()
+    ticket2 = json.dumps({"id": "t2", "title": "build 10 task", "from": "architect"}).encode()
+    ticket3 = json.dumps({"v": 1, "id": "t3", "title": "held task", "status": "hold"}).encode()
+
+    redis.lists.update(
+        {
+            "pod:test:tenant:office:agent:alice:tasks.todo": [ticket1, ticket2],
+            "pod:test:tenant:office:agent:alice:tasks.hold": [ticket3],
+        }
+    )
+
+    status, body = request(app, "GET", "/agents/alice/board", token="secret")
+    assert status == 200
+    assert body == {
+        "agent": "alice",
+        "todo": [
+            {"v": 1, "id": "t1", "title": "task 1", "status": "todo"},
+            {"id": "t2", "title": "build 10 task", "from": "architect"},
+        ],
+        "doing": [],
+        "hold": [{"v": 1, "id": "t3", "title": "held task", "status": "hold"}],
+        "done": [],
     }
 
 
@@ -212,3 +239,4 @@ def test_loopback_bind_also_requires_token():
 def test_reply_collection_endpoint_is_not_exposed(client):
     app, _ = client
     assert request(app, "GET", "/messages/correlation", token="secret")[0] == 404
+
