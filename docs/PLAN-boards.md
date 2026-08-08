@@ -166,8 +166,13 @@ ever holds what it pulled, and it pulls the next one when it has finished the
 last. `take` refusing while one is open is that made explicit, not a policy on
 top of it.
 
-Which is also why the board needs no delivery machinery at all: no courier, no
-kick, no adapter, no opener on the receiving side. The agent is the mechanism.
+Which is also why the board needs no delivery machinery **on the agent-facing
+side**: nothing pastes, nothing notifies, nothing hands a ticket over. The agent
+is the mechanism.
+
+⚠ The `AddTicket` opener in §7 still exists — it writes the ticket onto the
+board. What it does not do is tell anyone. Getting a ticket *onto* a board is a
+bus operation; getting one *off* is the agent's.
 
 Practically it makes "is this agent busy" a single yes/no, which is what the
 watchdog reads.
