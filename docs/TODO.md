@@ -139,6 +139,38 @@ leaves one source of truth instead of two that drift.
 `OFFICE_TOOLS` also covers the reader who stops early: `echo $OFFICE_TOOLS` then
 `--help` on each, with no exploring and no source to read.
 
+## Found by running a real agent
+
+First live test with an authenticated Claude Code in a window. Delivery worked —
+the envelope reached the TUI, was read, and acted on. Three findings:
+
+**1. `hire` never writes the guide or the trust entry.** Two code paths create
+windows: `flock.tmuxhost.create_window` writes the guide, the `CLAUDE.md` copy
+and the `.claude.json` trust entry — and the **control opener calls
+`flock.tmux.create_window` directly**, skipping all of it. A hired agent gets an
+empty `/workdir/<name>` and a trust prompt it cannot answer headlessly.
+
+→ Move guide-and-trust writing into `flock.tmux.create_window` itself, so both
+callers get it. One implementation, two callers, which is why that library
+exists.
+
+⚠ It looked fine earlier only because the guide was rewritten on every reconcile
+pass. Removing that loop was correct and exposed a gap that was always there.
+
+**2. ⚠ `sendMessage` collides with Claude Code's own built-in tool.** Told to
+reply, the agent used its native `SendMessage` — for spawning sub-agents — and
+reported *"No agent named 'alice' is reachable. There are no spawned teammates in
+this session."* A coherent-sounding failure from entirely the wrong subsystem.
+
+The name is not neutral inside the CLI we run. Worth reconsidering: `officeSend`,
+`msg`, or something with no built-in of the same name.
+
+**3. An agent with no guide reaches for tools, not commands.** Told to run
+`peers`, it searched its *tool list* and concluded none existed — it never
+considered a binary on `PATH`. Which is correct behaviour with no context, and it
+means the guide is doing more work than "being nice": it is what tells an agent
+that this office is driven by shell commands at all.
+
 ## The agent-facing surface
 
 **Principle: anything reachable will be explored, and a confusing sanctioned path
