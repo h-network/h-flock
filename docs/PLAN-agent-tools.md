@@ -28,6 +28,21 @@ the reason to look, not the ability.
 never appears in an agent's world at all. One more piece of the model that stops
 needing explanation.
 
+⚠ **It reaches agents only — never `api`, never `host`.** A broadcast is a
+message to the room; the fixed agents are plumbing and are not in it.
+
+Satisfied by the mechanism already chosen (`TODO.md`): the router fans out to
+every roster member and the non-agent endpoints **discard**, rather than the
+router learning to filter — which would mean reading roster values and breaking
+invariant 8.
+
+The visible cost: envelopes still *reach* `api` and `host` before being dropped,
+so a broadcast in a three-agent tenant logs a fan-out of four with two discards.
+Semantics right, traffic not zero. If that ever matters, the alternative is this
+command expanding the list itself and sending N individual messages, so `all`
+never goes on the bus — at the price of N sends and the peer list living in the
+tool.
+
 ## 3. Two naming traps
 
 ⚠ **Do not call it `startAgent`.** The base image already ships `startAgent`,
