@@ -37,8 +37,11 @@ find `take <id>` reads wrong in practice, say so before inventing a third verb.
 ⚠ **`delete` never takes the "obvious one".** `done` and `cancel` may default to
 the single open ticket; a destructive verb may not. No id, no deletion.
 
-⚠ **`list` prints titles only.** The brief lives in the ticket now, and `list` is
-run every time anyone looks — see plan §2.
+⚠ **`list` prints titles only** — meaning *not the description*. Printing
+`<id>  <title>` is right and necessary, since the id verbs need an id to name.
+Use a short prefix and accept a prefix wherever an id is taken, as h-office does.
+What §2 of the plan is protecting against is the brief being echoed back every
+time anyone looks; the id is four characters.
 
 ## 3. The ticket — `bus`
 
@@ -81,7 +84,24 @@ never collected. That is the bug plan §5 exists to fix.
 
 Append JSONL to `$TASK_RECORD` (default `/home/ubuntu/.flock/tasks.jsonl`): one
 object per `add` / `take` / `done` / `cancel` / `hold` / `delete`, with the id,
-title, agent, actor and timestamp.
+title, agent, actor and timestamp. The action goes in a field named **`event`**,
+the same word `log_record` uses — one vocabulary across both logs.
+
+**Each mutation is recorded by whoever performs it**, and that settles where the
+`add` line comes from: `office add` does not write one, the **`AddTicket` opener
+does**, at the moment the ticket lands on the board. It has the id, because it
+minted it.
+
+⚠ **`office add` therefore does not mint or learn the ticket id, and the payload
+stays pinned at `{title, description, priority}`.** It returns a `stream_id` like
+every other send — build 09 §3 made that the rule for `hire`, and an added ticket
+is the same kind of thing: fire-and-forget, with "did it land" answered by
+`office list` or the log.
+
+The alternative — minting the id at the sender — writes an `add` line for a
+ticket that may dead-letter on a missing window, which puts a ticket in the
+history that never existed. A record of board mutations has to be written where
+the board is mutated.
 
 ⚠ **Recording must never break a command.** Wrap it; swallow everything. An
 unwritable log is not a reason a `done` fails.
