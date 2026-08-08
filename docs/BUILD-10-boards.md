@@ -59,14 +59,20 @@ The opener on the recipient's side does:
 |---|---|
 | kind | `AssignTask` |
 | payload | `{"title": "…", "description": "…"}` |
-| opener | writes an entry to that agent's `tasks.todo`, **then pastes a notification into the window** |
+| opener | writes the ticket to that agent's `tasks.todo`, and **pastes nothing** |
 
-So an agent learns it has work the same way it learns anything else, and only an
-agent's own side writes its keys.
+Only an agent's own side writes its keys.
 
-⚠ The notification is a paste like any other — same sequence, same rules
-(`LLD-adapter-tmux` §4). Something short: `[task from architect] review the auth
-change`.
+⚠ **Nothing is pasted.** The first live test had a notification, and the agent
+worked straight from the pasted text, running `take` and `done` afterwards as —
+its own words — *"bookkeeping only"*. So `doing` was never populated while the
+work was happening, which is the one state the watchdog reads. Two sources for
+one ticket means the agent uses whichever lands first, and that is always the
+paste.
+
+**The board carries *what*; a message carries *now*.** Assign the ticket, then
+`office send -a backend ticket waiting on your board` if you want it started
+immediately.
 
 ## 4. Three policy calls — decided, do not re-open
 
@@ -85,8 +91,8 @@ theatre.
 
 ## 5. Done when
 
-- `office assign -a backend fix the auth bug` puts an entry on backend's `todo`
-  and a `[task from …]` line in its window
+- `office assign -a backend -t "…" -d "…"` puts the ticket on backend's `todo`
+  and **pastes nothing** into its window
 - `office take` in backend's window moves it to `doing` and prints it
 - `office take` again refuses, and says it is because one is already open
 - `office done` moves it to `done`
