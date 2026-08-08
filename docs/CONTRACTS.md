@@ -30,7 +30,12 @@ is imported, never vendored.
 ```
 
 Every process is `python -m flock.<module>`. Dependencies: `redis`, `fastapi`,
-`uvicorn`. Nothing else without saying why.
+`uvicorn`, `websockets`. Nothing else without saying why.
+
+⚠ `websockets` is not optional. `uvicorn` has no WebSocket implementation of its
+own, and without one `flock.session`'s route answers **404** while logging only a
+warning — which looks like a wrong path, not a missing package. FastAPI's
+`TestClient` does not need it, so unit tests pass either way.
 
 **`flock.bus` and `flock.tmux` are the only shared libraries.** `router`,
 `adapter`, `tmuxhost` and `api` never import *each other* — the layer split in
