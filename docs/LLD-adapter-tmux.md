@@ -39,60 +39,62 @@ result in front of it.
 
 ## 2. Receiving
 
-**Arrival wakes a blocked consumer. Nothing is triggered, and no envelope is
-polled for.** The adapter holds one `BLPOP` per agent. Redis wakes it the
-instant the router `RPUSH`es, so the queue itself is the notification — there is
-no signal to send and no call between the router and this module.
-
-(The roster *is* polled, by a supervisor loop — see below. Envelopes are not.)
+**The router triggers the adapter. There is no polling loop, and nothing is held
+open.** The router is the only thing that writes an ingress queue, so it is the
+only thing that knows an envelope just landed on one. Having written it, it
+kicks off delivery for that agent.
 
 ```
-  router ──RPUSH──► …:alice:ingress
-                          │ wakes
-                          ▼
-                    BLPOP for alice ──► open ──► paste into window
-                          ▲                       (paste, delay, Enter, verify)
-                          └───────────────────────────┘
-                            blocks again only when done
+  router  ──RPUSH──►  …:alice:ingress
+     │
+     └──kick──►  adapter for alice ──► pop ──► open ──► paste into window
+                 (runs, delivers, exits)      (paste, delay, Enter, verify)
+
+  alice's delivery already in flight?  the envelope stays in the queue
 ```
 
 The agent is not involved and its state is irrelevant — an idle agent is the
 normal case, and it has no way to know anything arrived.
 
-**Exactly one envelope per agent is ever in flight.** The consumer blocks again
-only after its delivery completes, so nothing accumulates in process memory. A
-long-running loop that popped eagerly and handed work to an internal queue would
-do the opposite: delivery takes hundreds of milliseconds, arrivals are not rate
-limited, and the backlog would move from Redis into RAM — invisible, lost on
-restart, and with nothing to inspect when it goes wrong.
+**The adapter is not a daemon.** It is invoked, it delivers one agent's backlog,
+and it exits. Nothing sits blocked on a queue, no connection is held per agent,
+and an office of idle agents costs nothing at all. The alternative — a
+long-running consumer per agent, popping eagerly — **moves the backlog into
+process memory**: delivery takes hundreds of milliseconds, arrivals are not rate
+limited, so a loop draining as fast as it can buffers unboundedly in RAM,
+invisible, lost on restart, and with nothing to inspect when it goes wrong.
 
-Keeping it in Redis means it is durable, and depth per agent is a number
-anything can read.
+Triggering on arrival keeps the backlog in Redis, which is the only place it
+should be. It is durable there, it is visible there, and depth per agent is a
+number anything can read.
 
-Per-agent ordering falls out of the same rule: while alice's delivery is in
-flight nothing else pops alice's queue. Deliveries for different agents are
-independent and overlap freely.
+**One delivery per agent at a time, and this is the one thing the kick does not
+give for free.** The number of adapters running for alice is the number of kicks
+the router fired, so two envelopes arriving close together start two of them.
+They do not merely reorder — the tmux calls interleave against one window:
 
-**One connection per agent** is the cost. For the tens of agents a tenant holds,
-that is not a consideration.
+```
+  A: paste-buffer -t hq:bob      "[message from alice] …"
+  B: paste-buffer -t hq:bob      "[message from carol] …"   appended
+  A: send-keys Enter             submits both lines as one input
+  B: send-keys Enter             submits an empty prompt
+```
 
-**Agents come and go**, so the set of blocked consumers has to follow the
-roster. **One supervisor loop owns that set** — it re-reads the roster every
-`ROSTER_POLL_SECONDS`, starts a consumer for anyone new, and stops one whose
-agent has gone. A consumer only pops, opens and pastes; it never reads the
-roster and never starts or stops another consumer.
+`send-keys` targets a window, not a delivery, so nothing separates them. The
+requirement is therefore explicit: **an adapter kicked for an agent already being
+delivered to must exit immediately, and the running one must drain to empty so
+nothing is stranded.** How that is enforced is open — see
+`LLD-bus-and-router` §7.
 
-The ownership matters, and not only for tidiness. If each consumer re-read the
-roster on its own `BLPOP` timeout, then an empty roster would mean no consumers,
-therefore nothing polling, therefore no way to ever notice the first agent — and
-ten consumers waking independently would each see the same new agent and each
-start a consumer for it, putting several `BLPOP`s on one ingress queue and
-destroying the one-in-flight rule above.
+Deliveries for *different* agents are independent and overlap freely. A wedged
+window blocks only its own agent.
 
-The `BLPOP` timeout is then a separate and much smaller concern: how quickly a
-consumer notices it has been told to stop. Membership staleness is the
-supervisor's interval, and it is the same value the router and the tmux host
-use. See `LLD-bus-and-router` §3.2.
+**Agents come and go, and this module does not care.** There is no set of
+consumers to keep in step with the roster, because there are no consumers
+between deliveries. An agent that joins is deliverable the first time the router
+kicks for it; one that leaves simply stops being kicked. The roster polling that
+the router and the tmux host need (`LLD-bus-and-router` §3.2) has no equivalent
+here.
 
 ## 3. Opening
 

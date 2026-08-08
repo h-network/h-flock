@@ -20,7 +20,7 @@ is imported, never vendored.
   src/flock/
     bus/         prefix, envelope, the two doors, roster reads   ← the library
     router/      the router process
-    adapter/     the tmux adapter: supervisor, consumers, openers
+    adapter/     the adapter: invoked per delivery, dispatches on VAB
     tmuxhost/    the tmux host
     api/         the FastAPI app
   tests/
@@ -65,9 +65,15 @@ def receive(r, *, pod, tenant, agent, openers: dict[str, callable],
     # unknown kind -> dead-letter under THIS agent's prefix
 
 # flock.bus.roster
-def members(r, *, pod, tenant) -> set[str]        # SMEMBERS
-def is_member(r, *, pod, tenant, agent) -> bool   # SISMEMBER
+def members(r, *, pod, tenant) -> set[str]        # HKEYS  — fields only
+def is_member(r, *, pod, tenant, agent) -> bool   # HEXISTS
+def vab(r, *, pod, tenant, agent) -> str | None   # HGET   — adapters only
 ```
+
+⚠ **The router calls `members` and `is_member`, never `vab`.** Reading the value
+is what would tell it how an agent is hosted, which invariant 8 forbids. That is
+the whole of the split: the router reads the table's fields, an adapter reads its
+values.
 
 An opener is `callable(envelope: dict) -> None`. Registering one is how a kind
 becomes deliverable; `LLD-adapter-tmux` §3 is the tmux implementation of one.
@@ -119,7 +125,34 @@ the time an opener runs, so an opener that raises destroys the envelope. Invaria
 silently. Both hold only if the handler dead-letters and logs. `except: pass`
 satisfies the first invariant by violating the second.
 
-## 4. The `send` command
+## 4. The kick
+
+The router's only outbound call. One fixed command, one argument:
+
+```bash
+flock.adapter <agent>          # e.g.  flock.adapter bob
+```
+
+Fire and forget — the router does not wait, does not read a return code, does
+not retry, and keeps no record (`LLD-bus-and-router` §3.3, rail 3). It hands
+over a name and moves on.
+
+The adapter is invoked, delivers, and **exits**. It is not a service and holds
+nothing between deliveries. On start it:
+
+1. ensures no other adapter is already delivering for this agent, and exits
+   immediately if one is — **enforcement is still open**, see
+   `LLD-bus-and-router` §7
+2. `HGET`s the roster for this agent's VAB, and dispatches to that base's
+   delivery routine
+3. drains the agent's ingress until empty — not one envelope, or a kick that
+   arrived mid-delivery would strand its message
+4. exits
+
+Adding a base is adding a value to the roster and a routine to the adapter.
+Nothing in the router changes, because the router never learns that bases exist.
+
+## 5. The `send` command
 
 The agent-facing surface, and the only part of this a human touches. Available on
 `PATH` in every agent window (`LLD-adapter-tmux` §1).
@@ -139,21 +172,23 @@ recipient name. It does not report delivery, because it cannot observe it.
 agreement between `send` and the tmux Message opener, not a bus concern — the
 bus does not validate payloads (`LLD-bus-and-router` §5).
 
-## 5. Seeding the roster
+## 6. Seeding the roster
 
 `LLD-bus-and-router` §7 defers who *owns* the roster. Build 01 still needs one to
 exist, so the container's entrypoint writes it once at start, from the
-environment, before any module runs:
+environment, before any module runs. It is a `HASH` of `agent → VAB`
+(`LLD-bus-and-router` §3.2) — the MAC table:
 
 ```bash
-SADD pod:$POD:tenant:$TENANT:roster $AGENTS      # AGENTS=alice,bob,carol
+HSET pod:$POD:tenant:$TENANT:roster alice tmux bob tmux carol tmux api api
+# AGENTS=alice:tmux,bob:tmux,carol:tmux  plus the fixed api row
 ```
 
-`SADD` is idempotent, so bringing the container up twice converges
+`HSET` is idempotent, so bringing the container up twice converges
 (`LLD-container` §5). **Nothing else writes the roster** — this is boot
 configuration, not the write path §7 defers, and no module may acquire one.
 
-## 6. What the api reads
+## 7. What the api reads
 
 The board is **three LISTs per agent**, using the resource names
 `LLD-bus-and-router` §3.1 already shows:
@@ -198,14 +233,14 @@ GET /agents                 { "agents": ["alice", "bob", "carol"] }
 A list rather than a map for `GET /board`, so roster order is expressible and
 the entry shape matches the single-agent route exactly.
 
-## 7. Shared environment
+## 8. Shared environment
 
 Set once by the container, inherited by everything (`LLD-container` §4).
 
 | | |
 |---|---|
 | `POD`, `TENANT` | the prefix every key is built from |
-| `AGENTS` | comma-separated, seeds the roster |
+| `AGENTS` | comma-separated `name:vab` pairs, seeds the roster |
 | `ROSTER_POLL_SECONDS` | default `5`. One value, three readers |
 | `REDIS_URL` | `redis://127.0.0.1:6379/0` — loopback, never published |
 | `AGENT_NAME` | in an agent's window only |

@@ -62,23 +62,28 @@ to know what became of an envelope reads the log by `stream_id`.
 
 ## 4. Receiving
 
-The api consumes its own ingress. Each envelope that arrives carries the
-`correlation_id` of the request that caused it — the bus rule is
-propagate-inbound-or-mint-fresh, so a reply keeps the cid of the message it
-answers. Matching a reply to the client waiting for it is therefore a lookup,
-not a guess.
-
-Two ways to hand it back, and they are the same thing underneath:
-
-- **Stream** — the client holds a connection and gets replies as they arrive
-- **Collect** — the client comes back in a few seconds and asks by `correlation_id`
-
-Both read the same ingress. Which to build first is a transport choice on the
-HTTP side, not a change to anything below it.
+**The api does not consume its own ingress, and holds no loop of its own.** It is
+an agent with a VAB of `api` (`LLD-bus-and-router` §3.2), so when the router
+writes its ingress it kicks the adapter exactly as it would for any window
+agent. The adapter reads the VAB, dispatches to the api delivery routine, and
+exits. There is no receiver thread here — that is an adapter's job, and the api
+is not an adapter.
 
 ⚠ A reply may never come. Nothing on the bus guarantees delivery, the agent may
 be wedged, and the api must not hold a request open forever waiting — a timeout
 that returns "nothing yet" is a correct answer.
+
+**What the api adapter does with a reply is deferred — see §7.** Build 01 is
+inject-only: `POST` puts an envelope on the bus and returns `202`, and nothing
+comes back on that request.
+
+The reason is worth stating, because it is not a gap in the transport. Every
+other agent has a *name*, so the router demultiplexes replies for free — alice's
+reply reaches alice because alice is an address. HTTP clients are anonymous and
+all share the one name `api`, so the router cannot tell them apart and the
+demultiplexing has to happen inside the adapter. That is flow state — a table,
+keyed by `correlation_id`, with an expiry — and it is the one piece of this
+design that has to remember anything.
 
 ## 5. Reading
 
@@ -102,6 +107,21 @@ is the security posture. Default to loopback and publish deliberately; a
 non-loopback bind with no token set should refuse to start rather than warn.
 
 ## 7. Deferred
+
+**Handing a reply back to the client that caused it.** The api adapter's far end
+— the opener that hands an envelope to a waiting HTTP request. Two shapes, and
+they are genuinely different designs, not two implementations of one:
+
+- **A table** keyed by `correlation_id` with a TTL, held in Redis where the rest
+  of the state lives, read by the request handler. Flow state, expiring, visible.
+- **Ephemeral agents** — a waiting client enrols as its own short-lived named
+  agent, the reply routes to it, and no table exists anywhere. Consistent with
+  everything else in the design; costs a roster write path, itself deferred in
+  `LLD-bus-and-router` §7.
+
+⚠ Whichever it is, it does not go in the api process's memory. That drains a
+durable queue into RAM — invisible, lost on restart, nothing to inspect — which
+is the failure `LLD-adapter-tmux` §2 exists to prevent.
 
 **Session endpoints.** Exposing a live agent window is streaming, not REST, so it
 is a separate transport question and probably a separate module. Named here only

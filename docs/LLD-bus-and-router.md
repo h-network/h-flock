@@ -212,43 +212,68 @@ Since every module reads it, its shape is part of the contract:
 | | |
 |---|---|
 | **Key** | `pod:<pod>:tenant:<tenant>:roster` |
-| **Type** | `SET` |
-| **Members** | agent names, one per member, each matching the segment rule |
+| **Type** | `HASH` |
+| **Field** | an agent name, matching the segment rule |
+| **Value** | its **VAB** — the virtual agent base it runs on, e.g. `tmux`, `api` |
 
-A set, because membership is the only question asked of it — "who is in this
-tenant", and "is this a member" when resolving a recipient. Both are single
-commands (`SMEMBERS`, `SISMEMBER`) and neither needs order.
+**This is the MAC address table.** A name resolves to a port and to what is
+attached to that port, and nothing else about the agent lives here.
 
-Nothing else lives in it. Whatever an agent *is* — what runs in its window, its
-credentials, its configuration — belongs to whichever module starts it, not to
-membership. Keeping the roster to names is what lets three modules read it
-without agreeing on anything further.
+The port itself is not stored, because it is computed:
+`prefix(pod, tenant, agent, "ingress")` is a pure function of the name. Nothing
+is duplicated, so nothing can drift.
 
-**Noticing a change: everyone polls.** A `SET` has no wake-up, so each reader
-re-reads it. There is no notification to enable, and no obligation on whatever
-writes the roster beyond writing it.
+**The router reads the fields. The adapter reads the values.**
 
-**Exactly one loop per module does the re-reading.** The router has a single
-`BLPOP` over every egress key, so it can do it on the pop's own timeout — one
-loop, one re-read, and the timeout doubles as how long shutdown takes. A module
-holding *many* blocked connections cannot: the tmux adapter has one `BLPOP` per
-agent, and if each re-read membership they would race to start a consumer for
-the same new agent, while an empty roster would leave nothing blocked and so
-nothing polling at all. Such a module gives the job to a supervisor loop that
-owns nothing else. The tmux host, with no queue to block on, is the same shape
-already.
+| | Reads | Asks |
+|---|---|---|
+| router | `HKEYS`, `HEXISTS` | who exists; does this recipient resolve |
+| adapter | `HGET <agent>` | how do I deliver to this one |
+
+That split is what makes invariant 8 structural rather than a promise: the
+router never reads the column that says how an agent is hosted, so it cannot
+know. A hash answers both membership questions in a single command, exactly as a
+set did, so nothing is lost by carrying a value alongside.
+
+**Why the VAB is here and not in the address.** Putting it in the key —
+`…:vab:tmux:agent:bob:ingress` — would make the queue self-describing, but
+moving an agent between bases would rename its entire keyspace: queues, board,
+dead-letter, everything, with in-flight envelopes stranded in the old queue.
+§3.1 already rejected exactly this trade — a marker segment lengthening every key
+to answer a question one lookup answers.
+
+**Why it is not in the envelope.** A producer knows its own name and the name it
+is addressing, and nothing else (§1). If an envelope carried `vab: tmux`, every
+producer would need to know how its recipient is hosted, and would be wrong the
+moment that changes. The VAB is a property of the recipient, not of the message.
+This holds regardless of the header-versus-payload line — reading a header is
+legitimate (§5), but the sender has no business knowing this in the first place.
+
+**Noticing a change: the readers that need it poll.** A hash has no wake-up, so
+each re-reads it. There is no notification to enable, and no obligation on
+whatever writes the roster beyond writing it.
+
+Two modules need it and one does not. The **router** re-reads on its own
+`BLPOP` timeout — one loop, one re-read, and the timeout doubles as how long
+shutdown takes. The **tmux host**, with no queue to block on, polls on a loop of
+its own. The **adapter** does not poll at all: it holds nothing between
+deliveries, so it has no set to keep in step. It is told which agent to deliver
+for, by the thing that just wrote to that agent.
 
 **The interval is `ROSTER_POLL_SECONDS`, from the environment** (`LLD-container`
-§4), default 5. Every reader takes the same value from the same place, so the
-three staleness windows agree by construction rather than by three modules
-remembering to. The router rebuilds its subscribe set, the adapter opens and
-closes a consumer per agent, and the tmux host reconciles windows — all on it.
+§4), default 5. Both readers take the same value from the same place, so their
+staleness windows agree by construction rather than by two modules remembering
+to.
 
 Staleness is bounded by that interval and is harmless in the two obvious
 directions. An agent added a moment ago is simply not routed to yet; one removed
 a moment ago has its envelopes dead-lettered on the next pass. Neither is a race
 worth closing, and closing it — keyspace notifications, a watched version key —
 would put a write-side obligation on the roster that nothing currently owns.
+
+Nothing else lives in the table. Whatever an agent *is* beyond the base it runs
+on — what is started in its window, its credentials, its configuration — belongs
+to whichever module starts it, not to membership.
 
 ⚠ A third case is **not** harmless, and it appears as soon as something writes
 the roster. Readers poll on the same interval but not in the same instant, so
@@ -273,11 +298,38 @@ the opposite end of both.
 
 Lists, not pub/sub, so a backlog survives a consumer restart.
 
-**The `RPUSH` is the notification.** An adapter blocked on `BLPOP` for an
-ingress queue is woken by Redis the moment the router writes it. The router
-therefore sends no signal and calls nothing — it does not know an adapter
-exists, which is what keeps invariant 8 true. Anything wanting to be told about
-arrivals blocks on the queue.
+**Having written an ingress queue, the router kicks delivery for that agent.**
+
+```
+  RPUSH …:agent:bob:ingress
+  kick  flock.adapter bob
+```
+
+**Only egress is watched, and that asymmetry is the whole design.** You have to
+sit on a queue when writes come from somewhere you do not control: nobody knows
+when an agent will `send`, so the router blocks on egress. But *every* ingress
+write is made by the router itself (invariant 3), so the router already knows
+the instant one lands. A second process waiting to be told something the writer
+already knew is pure redundancy — and it is redundancy with a cost, because
+waiting means a held connection per agent, forever, for an office that is idle
+almost all of the time.
+
+Three rails keep the kick from turning the router into a middlebox. They are
+invariants, not intentions:
+
+1. **The router reads the header and the roster's fields. Never a payload, never
+   a roster value.**
+2. **The kick is one fixed command with an agent name.** Not a type, not a
+   table of adapters, not a choice. The executor is ours, so it does its own
+   `HGET` to find the VAB and dispatches itself. The router hands over a name.
+3. **Fire and forget, exactly like the envelope.** No wait, no return code, no
+   retry, no record of whether it worked. The moment the router cares whether a
+   kick succeeded it is holding delivery state, and that is the slide this list
+   exists to prevent.
+
+Rail 2 is what keeps invariant 8 true here. The router does not know an adapter
+by name, by type or by capability — it knows one command, and the knowledge of
+what to do lives on the far side of it.
 
 A dead-lettered envelope is parked under the prefix of **whoever failed to move
 it on**, which differs by where it died:
@@ -412,12 +464,35 @@ reading the payload — §6.4 holds.
 7. **One bad envelope never stops the loop.** Malformed JSON, an unparseable
    queue name, an unresolvable recipient: log and skip or dead-letter, per
    envelope.
-8. **The router knows nothing about how an agent is implemented.**
+8. **The router knows nothing about how an agent is implemented.** It reads the
+   roster's *fields*, never its *values*, so it cannot know an agent's VAB. It
+   kicks one fixed command with a name. This is structural, not a convention
+   anyone has to remember.
 
 ## 7. Deferred
 
 **None of these block the first build**, which is a skeleton that forwards
 envelopes. None of them change its shape. Do not solve them pre-emptively.
+
+**Concurrent delivery to one agent — the one open item that does block.** The
+number of adapters running for bob is the number of kicks the router fired, so
+two envelopes landing close together start two of them, and their tmux calls
+interleave against one window: two pastes, then two `Enter`s, fusing both
+messages into one input. `send-keys` targets a window, not a delivery, so
+nothing separates them.
+
+The requirement is settled — **a kick for an agent already being delivered to
+must exit immediately, and the running adapter must drain to empty so nothing is
+stranded.** How it is enforced is not. A per-agent lock in Redis (`SET
+…:agent:bob:delivering NX EX`) keeps the state visible and self-expiring and
+holds the router clear of it, but a rate limit per ingress, or something else
+entirely, would also satisfy the requirement. Whatever is chosen has a seam
+worth naming: an adapter that drains to empty, releases, and only then has an
+envelope land behind it leaves that envelope until the next kick.
+
+Note this property was free under a blocked-consumer-per-agent design — one
+consumer, so nothing else could pop — and is not free here. That is the price of
+adapters that do not exist between deliveries, and it is worth paying.
 
 **Cross-tenant routing.** Not a separate component — a branch in the router.
 When a `recipient` does not resolve inside the local tenant, look it up in a
