@@ -91,6 +91,23 @@ becomes deliverable; `LLD-adapter-tmux` §3 is the tmux implementation of one.
 Frozen for the same reason as the bus library: the `tmux` lane implements it and
 the `control` VAB calls it.
 
+⚠ **Every tmux-driving entry point calls `require_isolated_tmux()` first.**
+`run_tmux` does it for you; anything invoking `tmux` by other means — a
+control-mode client, for instance — must call it explicitly.
+
+```python
+def require_isolated_tmux(socket: str | None = None) -> None
+    # raises AmbientTmuxError unless a socket is given, or TMUX_SOCKET or
+    # TMUX_TMPDIR is set. Without one of those, tmux uses
+    # /tmp/tmux-$UID/default — the office's own server.
+```
+
+This is a guard rather than a warning because the warning did not work. The
+office has been destroyed twice by a module driving the ambient server: once by a
+reconcile deleting every window not in the roster it was given, once by testing a
+control-mode client. Both times the hazard was already documented. The container
+always sets `TMUX_TMPDIR`, so the check costs nothing in production.
+
 ```python
 def run_tmux(*args: str, socket: str | None = None,
              input_data: str | None = None) -> tuple[int, str, str]
