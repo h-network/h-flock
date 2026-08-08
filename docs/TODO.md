@@ -83,6 +83,34 @@ Two faults meeting, and they can be fixed independently:
    The old router excluded `api`; the current one includes it. Neither is written
    down — this is an architect loose end, noted at the time and not closed.
 
+## The agent-facing surface
+
+**Principle: anything reachable will be explored, and a confusing sanctioned path
+guarantees it.** Observed: an agent asked to find its peers hit
+`AGENTS=alice:tmux,...` — the container's seed string, with VABs in it and itself
+included — and went to `redis-cli` for a better answer, arriving at the roster
+hash with `api` and `host` in it. It did nothing wrong. The best answer available
+was one it should never have seen.
+
+Two halves, and they only work together:
+
+**Give them clean tools.** Every capability a `send`-style command with real
+`--help`. Nothing that requires reading our source or a queue to answer an
+ordinary question.
+
+⚠ Concrete instance already open: **`send --help` fails without `AGENT_NAME`** —
+it checks the environment before parsing arguments, so the first thing anyone
+types errors out. Help must never depend on the environment.
+
+**Take the unsanctioned path away.** Redis ACLs, so exploring does not find the
+bus. Until then a tool is a convenience, not a boundary — an agent has
+`REDIS_URL` and `redis-cli` regardless of what we put on `PATH`.
+
+**Write it at the top.** Agents stop reading early. Whatever matters most goes
+first: who you are, who you can talk to, how to send. Anything below the fold is
+effectively absent, so the guide staying *short* is a feature — every paragraph
+added pushes something out of the part that gets read.
+
 ## Authority between agents
 
 **Agents have no model of who has standing, and correctly refuse to take
