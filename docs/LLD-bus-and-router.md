@@ -331,6 +331,54 @@ Rail 2 is what keeps invariant 8 true here. The router does not know an adapter
 by name, by type or by capability — it knows one command, and the knowledge of
 what to do lives on the far side of it.
 
+**One delivery per agent at a time.** The number of adapters running for bob is
+the number of kicks fired, so two envelopes landing close together start two of
+them — and they do not merely reorder, they interleave against one window: two
+pastes, then two `Enter`s, fusing both messages into one input. `send-keys`
+targets a window, not a delivery.
+
+A **busy tag** serialises them, written by the adapter and cleared by it:
+
+```
+  HSET …:tenant:<t>:delivering  bob  <started_at>     on starting a delivery
+  HDEL …:tenant:<t>:delivering  bob                   on finishing it
+
+  kicked and the tag is set?  wait for it to clear, then deliver your own envelope
+```
+
+The waiter loops rather than exiting, which is what keeps this to one rule: each
+kick delivers the envelope it was fired for, so nothing has to drain a backlog on
+another kick's behalf and there is no seam where an envelope lands just after a
+drain finished.
+
+⚠ **A crashed adapter leaves the tag set, and that is deliberate.** Nothing
+expires it, nothing checks whether the holder is alive, and nothing takes over.
+Recovering automatically would mean guessing a timeout longer than the slowest
+delivery, or a liveness check, or a heartbeat — machinery in the delivery path to
+handle a case that should not be happening. §4 already made this trade for
+envelopes: **do not recover, guarantee it is visible.**
+
+And it is visible, without anything new being built:
+
+```
+  HGETALL …:delivering            who is mid-delivery, and since when
+  LLEN …:agent:bob:ingress        what has piled up behind it
+```
+
+The log says which failure it was. An adapter that died **before** popping leaves
+its envelope in the queue — nothing lost, tag set, depth growing. One that died
+**after** popping leaves a `received` with no `opened` on that `stream_id`, which
+is precisely the signature §4's two-record rule exists to produce. A wedged
+adapter and a dead one look the same from outside, and they do not need telling
+apart: something is wrong with bob, go and look.
+
+An adapter that diagnoses or repairs its own stuck deliveries is a real thing to
+want, and it is not for a build that does not yet work end to end.
+
+Note this property was free under a blocked-consumer-per-agent design — one
+consumer, so nothing else could pop. It is not free here. That is the price of
+adapters that do not exist between deliveries, and it is worth paying.
+
 A dead-lettered envelope is parked under the prefix of **whoever failed to move
 it on**, which differs by where it died:
 
@@ -474,25 +522,8 @@ reading the payload — §6.4 holds.
 **None of these block the first build**, which is a skeleton that forwards
 envelopes. None of them change its shape. Do not solve them pre-emptively.
 
-**Concurrent delivery to one agent — the one open item that does block.** The
-number of adapters running for bob is the number of kicks the router fired, so
-two envelopes landing close together start two of them, and their tmux calls
-interleave against one window: two pastes, then two `Enter`s, fusing both
-messages into one input. `send-keys` targets a window, not a delivery, so
-nothing separates them.
-
-The requirement is settled — **a kick for an agent already being delivered to
-must exit immediately, and the running adapter must drain to empty so nothing is
-stranded.** How it is enforced is not. A per-agent lock in Redis (`SET
-…:agent:bob:delivering NX EX`) keeps the state visible and self-expiring and
-holds the router clear of it, but a rate limit per ingress, or something else
-entirely, would also satisfy the requirement. Whatever is chosen has a seam
-worth naming: an adapter that drains to empty, releases, and only then has an
-envelope land behind it leaves that envelope until the next kick.
-
-Note this property was free under a blocked-consumer-per-agent design — one
-consumer, so nothing else could pop — and is not free here. That is the price of
-adapters that do not exist between deliveries, and it is worth paying.
+*(Concurrent delivery to one agent used to be listed here as open. It is settled
+— see §3.3, "one delivery per agent".)*
 
 **Cross-tenant routing.** Not a separate component — a branch in the router.
 When a `recipient` does not resolve inside the local tenant, look it up in a

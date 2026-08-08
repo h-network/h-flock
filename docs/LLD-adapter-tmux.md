@@ -80,11 +80,12 @@ They do not merely reorder — the tmux calls interleave against one window:
   B: send-keys Enter             submits an empty prompt
 ```
 
-`send-keys` targets a window, not a delivery, so nothing separates them. The
-requirement is therefore explicit: **an adapter kicked for an agent already being
-delivered to must exit immediately, and the running one must drain to empty so
-nothing is stranded.** How that is enforced is open — see
-`LLD-bus-and-router` §7.
+`send-keys` targets a window, not a delivery, so nothing separates them. A busy
+tag in Redis serialises them: an adapter kicked for an agent that is already
+being delivered to **waits for the tag to clear, then delivers its own
+envelope**. It does not exit, and nothing drains a backlog on another kick's
+behalf. See `LLD-bus-and-router` §3.3 for the tag, and for why a crash leaves it
+set on purpose.
 
 Deliveries for *different* agents are independent and overlap freely. A wedged
 window blocks only its own agent.

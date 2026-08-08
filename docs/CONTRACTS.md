@@ -140,14 +140,16 @@ over a name and moves on.
 The adapter is invoked, delivers, and **exits**. It is not a service and holds
 nothing between deliveries. On start it:
 
-1. ensures no other adapter is already delivering for this agent, and exits
-   immediately if one is — **enforcement is still open**, see
-   `LLD-bus-and-router` §7
+1. waits until `HEXISTS …:tenant:<t>:delivering <agent>` is false, then
+   `HSET`s its own entry — the busy tag (`LLD-bus-and-router` §3.3)
 2. `HGET`s the roster for this agent's VAB, and dispatches to that base's
    delivery routine
-3. drains the agent's ingress until empty — not one envelope, or a kick that
-   arrived mid-delivery would strand its message
-4. exits
+3. delivers **the one envelope it was kicked for**
+4. `HDEL`s the busy tag and exits
+
+A crash between 1 and 4 leaves the tag set. Nothing expires it and nothing takes
+over — that is the design, not an omission. `HGETALL …:delivering` plus the
+ingress depth is how you see it.
 
 Adding a base is adding a value to the roster and a routine to the adapter.
 Nothing in the router changes, because the router never learns that bases exist.
