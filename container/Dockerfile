@@ -40,6 +40,15 @@ RUN chmod +x /usr/local/bin/entrypoint.sh
 RUN python3 -c "import json, os; p='/home/ubuntu/.claude.json'; d=json.load(open(p)) if os.path.exists(p) else {}; d['hasCompletedOnboarding']=True; json.dump(d, open(p,'w'), indent=2)" \
  && chown ubuntu:ubuntu /home/ubuntu/.claude.json
 
+# The fourth first-run gate. startAgent passes --dangerously-skip-permissions,
+# which has its own one-time "Bypass Permissions mode" acceptance dialog — and
+# a headless agent stops dead on it. The base image ships no settings.json at
+# all, so there is nothing suppressing it. Merged rather than written, so a
+# settings.json arriving later via container/home keeps its own keys.
+RUN mkdir -p /home/ubuntu/.claude \
+ && python3 -c "import json, os; p='/home/ubuntu/.claude/settings.json'; d=json.load(open(p)) if os.path.exists(p) else {}; d['skipDangerousModePermissionPrompt']=True; json.dump(d, open(p,'w'), indent=2)" \
+ && chown -R ubuntu:ubuntu /home/ubuntu/.claude
+
 # The base runs as ubuntu (uid 1000), and the agent CLIs expect that home. The
 # tmux socket therefore lives somewhere that user owns — /run is root's.
 # /workdir is where each agent gets its own home (LLD-tmux-host §5). The host
