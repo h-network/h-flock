@@ -30,7 +30,7 @@ writing one delivery routine**, not changing the router, the bus, or any command
 
 ```
   alice's window                                          bob's window
-       │  sendMessage -a bob …                                  ▲
+       │  office send -a bob …                                  ▲
        ▼                                                        │ paste
   …:alice:egress ──► ROUTER ──► …:bob:ingress ──kick──► adapter ┘
                      the one daemon              runs, delivers, exits
@@ -96,16 +96,18 @@ Its whole world, and nothing else:
 ```
 $AGENT_NAME      who you are
 $TENANT          the office you are in
-$OFFICE_TOOLS    sendMessage,sendBroadcast,peers,hire,letGo
+$OFFICE_TOOLS    office
 $AGENT_GUIDE     a short guide, also written to AGENTS.md and CLAUDE.md
 ```
 
 ```bash
-sendMessage -a bob can you take a look at this?
-sendBroadcast standup in five
-peers                       # who you can talk to
-hire dave --cli claude      # a new colleague, live, no restart
-letGo dave
+office send -a bob can you take a look at this?
+office broadcast standup in five
+office peers                       # who you can talk to
+office hire dave --cli claude      # a new colleague, live, no restart
+office letGo dave
+office pause dave
+office resume dave
 ```
 
 A message arrives as `[message from alice] …` — **that prefix is the entire reply
@@ -151,8 +153,10 @@ Capabilities are `kind`s, opened at the edge. Adding one is adding an opener.
 | `Command` | `tmux` | pasted bare — **it executes** |
 | `StartAgent` | `control` | enrol: roster row, home, window, CLI |
 | `StopAgent` | `control` | reverses all of it |
+| `PauseAgent` | `control` | stops the CLI while preserving the agent |
+| `ResumeAgent` | `control` | resumes the CLI and drains its inbox |
 
-`hire dave` is a `StartAgent` envelope addressed to `host`. The router forwarded
+`office hire dave` is a `StartAgent` envelope addressed to `host`. The router forwarded
 a kind it has never heard of, to a name like any other.
 
 ---

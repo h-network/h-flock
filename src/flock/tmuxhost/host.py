@@ -7,7 +7,7 @@ from typing import Set
 from flock.bus import members, log_record, vab, prefix
 import flock.tmux.ops as tmux_ops
 
-OFFICE_TOOLS_ENV = "OFFICE_TOOLS=sendMessage,sendBroadcast,peers,hire,letGo"
+OFFICE_TOOLS_ENV = "OFFICE_TOOLS=office"
 
 
 def generate_agents_md(agent_name: str, tenant: str = "default") -> str:
@@ -21,10 +21,10 @@ Everything about your situation is in your environment:
 
 Run any of those with --help. To see who you can talk to:
 
-    peers
+    office peers
 
 A message arrives in your terminal as `[message from alice] …` — reply by name
-with sendMessage. This directory is yours; work in it.
+with `office send -a <name> <message>`. This directory is yours; work in it.
 """
 
 
