@@ -65,10 +65,39 @@ every pane, the way `flock.session` sends them, not envelopes to every ingress.
 pick up where it left off. `letGo` is the wrong tool: it destroys the thing you
 wanted to come back to.
 
-Needs deciding: whether a paused agent stays routable. Envelopes would queue in
-its ingress, durably, and land the moment it resumes — which is arguably correct
-and matches the design ("the backlog stays in Redis"). Or it dead-letters while
-paused, which is louder and loses less time.
+**Decided: pause is a window operation plus a marker. The roster is not
+touched.**
+
+⚠ Removing the agent from the roster would do the *opposite* of pause — it would
+destroy the window. `LLD-tmux-host` §5: *a window with no agent in the roster is
+removed*, so reconcile would kill exactly the thing you wanted to return to.
+That is `letGo` with the keys left behind.
+
+Leaving the roster row alone also dissolves the question of what happens to the
+agent's tasks and other keys: **nothing keyed by the agent name needs touching,
+because the agent still exists.** It simply is not running a CLI.
+
+```
+  pause backend    SET …:agent:backend:paused 1
+                   send-keys C-c into the window
+
+                   a kick arrives → the adapter sees the marker → exits WITHOUT
+                   popping. Envelopes accumulate in ingress, durably, and the
+                   depth is readable.
+
+  resume backend   DEL the marker
+                   send-keys "startAgent --resume"
+                   then drain what accumulated
+```
+
+Same shape as the busy tag: a per-agent state key that **only the adapter
+reads**, so the router stays ignorant and invariant 8 is untouched.
+
+⚠ **The drain on resume needs a decision.** A kick that finds the marker set does
+nothing and is gone, so queued envelopes need kicks — one per envelope, since the
+design is one kick, one delivery. Either `resume` reads `LLEN` and kicks that
+many times, or the first adapter after a resume drains to empty as a special
+case. The first is cruder and does not special-case the adapter.
 
 ## 2. `cloneToAll`
 
