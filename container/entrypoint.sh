@@ -89,6 +89,48 @@ fields+=("host" "control")
 redis-cli -h 127.0.0.1 HSET "$roster_key" "${fields[@]}" >/dev/null
 echo "{\"module\":\"container\",\"event\":\"roster_seeded\",\"count\":$(( ${#fields[@]} / 2 ))}"
 
+# Per-agent CLI and account, as exceptions only — "alice=codex", "bob=work".
+# Both land as agent resources rather than roster values: the roster is the MAC
+# table and holds membership plus VAB, nothing else (LLD-bus-and-router §3.2).
+map_each() {   # $1=map  $2=resource ; SETs pod:…:agent:<name>:<resource>
+  local pair name value
+  IFS=',' read -ra pairs <<< "${1:-}"
+  for pair in "${pairs[@]:-}"; do
+    [ -n "$pair" ] || continue
+    name="${pair%%=*}"; value="${pair#*=}"
+    [ -n "$name" ] && [ -n "$value" ] && [ "$name" != "$pair" ] || continue
+    redis-cli -h 127.0.0.1 SET "pod:${POD}:tenant:${TENANT}:agent:${name}:$2" "$value" >/dev/null
+  done
+}
+map_each "${AGENT_CLIS:-}"     launch
+map_each "${AGENT_PROFILES:-}" profile
+
+# An account is a config dir, and a fresh one is not an empty one — unseeded, an
+# agent loses every default the image carries. Copy what the stock profile has
+# and write the first-run marker INSIDE the dir, because $HOME/.claude.json
+# covers the default account only (PLAN-profiles.md §3).
+seed_profile_dir() {
+  local prof="$1" c="/home/ubuntu/.claude-$1" x="/home/ubuntu/.codex-$1"
+  [ "$prof" = "default" ] && return 0
+  mkdir -p "$c" "$x"
+  for item in settings.json skills agents CLAUDE.md; do
+    [ -e "/home/ubuntu/.claude/$item" ] && [ ! -e "$c/$item" ] && cp -r "/home/ubuntu/.claude/$item" "$c/" 2>/dev/null
+  done
+  for item in config.toml AGENTS.md; do
+    [ -e "/home/ubuntu/.codex/$item" ] && [ ! -e "$x/$item" ] && cp -r "/home/ubuntu/.codex/$item" "$x/" 2>/dev/null
+  done
+  [ -f "$c/.claude.json" ] || printf '{\n  "hasCompletedOnboarding": true\n}\n' > "$c/.claude.json"
+  echo "{\"module\":\"container\",\"event\":\"profile_seeded\",\"reason\":\"$prof\"}"
+}
+IFS=',' read -ra _profpairs <<< "${AGENT_PROFILES:-}"
+for _pair in "${_profpairs[@]:-}"; do
+  [ -n "$_pair" ] && seed_profile_dir "${_pair#*=}"
+done
+
+# Held out of the environment for the same reason as AGENTS: the tmux server
+# inherits it and every window inherits that.
+unset AGENT_CLIS AGENT_PROFILES
+
 # Seeding is the only use of AGENTS. Hold it out of the environment from here:
 # the tmux server is started below and every agent window inherits its
 # environment, so an exported AGENTS put the raw seed string — VABs included,
