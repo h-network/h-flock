@@ -72,6 +72,15 @@ Run any of those with --help. To see who you can talk to:
 
 A message arrives in your terminal as `[message from alice] …` — reply by name
 with `office send -a <name> <message>`. This directory is yours; work in it.
+
+You have a task board. Nothing will notify you about it — check it yourself:
+
+    office list        titles waiting for you
+    office take        take the next one, and it prints in full
+    office done        when it is finished
+
+Take a ticket *before* you start work, not after. `doing` is how the office
+knows what you are on.
 """
 
 
