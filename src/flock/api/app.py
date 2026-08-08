@@ -1,7 +1,4 @@
-"""FastAPI application for a single running tenant."""
-
-from __future__ import annotations
-
+import asyncio
 import hmac
 import ipaddress
 import json
@@ -11,16 +8,16 @@ from dataclasses import dataclass
 from typing import Any
 
 import redis
-from fastapi import Depends, FastAPI, HTTPException, status
+from fastapi import Depends, FastAPI, HTTPException, Query, Request, status
 from fastapi.openapi.docs import get_redoc_html, get_swagger_ui_html
 from fastapi.openapi.utils import get_openapi
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, StreamingResponse
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
 from flock.bus.doors import send
 from flock.bus.envelope import EnvelopeError
 from flock.bus.keys import prefix
-from flock.bus.roster import members
+from flock.bus.roster import members, vab
 
 
 @dataclass(frozen=True)
@@ -93,8 +90,16 @@ def _render_restdoc_html(app: FastAPI) -> str:
             "curl": 'curl -H "Authorization: Bearer $API_TOKEN" http://localhost:8080/agents/bob',
         },
         "/agents/{agent}/envelopes": {
-            "desc": "Post an envelope of any kind to a specific agent or broadcast to 'all'. Accepts standard envelope shape or sugar `{\"text\": \"...\"}` for Message.",
-            "curl": 'curl -X POST -H "Authorization: Bearer $API_TOKEN" -H "Content-Type: application/json" -d \'{"text": "hello"}\' http://localhost:8080/agents/bob/envelopes',
+            "desc": "Post an envelope of any kind to a specific agent or broadcast to 'all'. Accepts standard envelope shape, sugar `{\"text\": \"...\"}` for Message, and optional `\"as\"` for api client producer identity.",
+            "curl": 'curl -X POST -H "Authorization: Bearer $API_TOKEN" -H "Content-Type: application/json" -d \'{"text": "hello", "as": "telegram"}\' http://localhost:8080/agents/bob/envelopes',
+        },
+        "/agents/{agent}/messages": {
+            "desc": "Get stored inbox messages for an api client. Supports cursor catch-up (`?after=<cursor>`) and limit.",
+            "curl": 'curl -H "Authorization: Bearer $API_TOKEN" "http://localhost:8080/agents/telegram/messages?after=1723150000000-0&limit=50"',
+        },
+        "/agents/{agent}/messages/stream": {
+            "desc": "Live Server-Sent Events (SSE) stream of inbox messages for an api client. Supports cursor (`?after=<cursor>`).",
+            "curl": 'curl -H "Authorization: Bearer $API_TOKEN" "http://localhost:8080/agents/telegram/messages/stream"',
         },
         "/agents/{agent}/board": {
             "desc": "Get task board lists (todo, doing, hold, done) for a specific agent.",
@@ -461,7 +466,16 @@ def create_app(*, settings: Settings | None = None, redis_client: Any = None) ->
                 prefix(settings.pod, settings.tenant, agent)
             except KeyError as exc:
                 raise HTTPException(status_code=404, detail="invalid agent") from exc
-        if set(envelope) == {"text"}:
+        producer = "api"
+        if "as" in envelope:
+            as_client = envelope["as"]
+            if vab(client, pod=settings.pod, tenant=settings.tenant, agent=as_client) != "api":
+                raise HTTPException(
+                    status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                    detail="invalid 'as' client: must be an enrolled client with vab 'api'",
+                )
+            producer = as_client
+        if "text" in envelope and set(envelope) <= {"text", "as"}:
             kind = "Message"
             payload = {"text": envelope["text"]}
         else:
@@ -473,7 +487,7 @@ def create_app(*, settings: Settings | None = None, redis_client: Any = None) ->
                 client,
                 pod=settings.pod,
                 tenant=settings.tenant,
-                producer="api",
+                producer=producer,
                 recipient=agent,
                 kind=kind,
                 payload=payload,
@@ -483,6 +497,93 @@ def create_app(*, settings: Settings | None = None, redis_client: Any = None) ->
         except EnvelopeError as exc:
             raise HTTPException(status_code=422, detail=str(exc)) from exc
         return {"stream_id": stream_id, "correlation_id": correlation_id}
+
+    @app.get("/agents/{agent}/messages")
+    def get_messages(
+        agent: str,
+        after: str | None = None,
+        limit: int = Query(default=100, ge=1, le=1000),
+    ) -> dict[str, Any]:
+        if vab(client, pod=settings.pod, tenant=settings.tenant, agent=agent) != "api":
+            raise HTTPException(status_code=404, detail="invalid client agent")
+        inbox_key = prefix(settings.pod, settings.tenant, agent, "inbox")
+        min_id = f"({after}" if after else "-"
+        try:
+            raw_entries = client.xrange(inbox_key, min=min_id, max="+", count=limit)
+        except redis.exceptions.RedisError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+        messages = []
+        for entry_id, fields in raw_entries:
+            cid = entry_id.decode() if isinstance(entry_id, bytes) else str(entry_id)
+            raw_env = fields.get(b"envelope") if b"envelope" in fields else fields.get("envelope")
+            if not raw_env:
+                continue
+            env_str = raw_env.decode() if isinstance(raw_env, bytes) else str(raw_env)
+            try:
+                env_dict = json.loads(env_str)
+            except (json.JSONDecodeError, TypeError):
+                continue
+            env_dict["cursor"] = cid
+            messages.append(env_dict)
+
+        next_cursor = messages[-1]["cursor"] if messages else after
+        return {
+            "agent": agent,
+            "messages": messages,
+            "next_cursor": next_cursor,
+        }
+
+    @app.get("/agents/{agent}/messages/stream", include_in_schema=False)
+    async def stream_messages(
+        agent: str,
+        request: Request,
+        after: str | None = None,
+    ) -> StreamingResponse:
+        if vab(client, pod=settings.pod, tenant=settings.tenant, agent=agent) != "api":
+            raise HTTPException(status_code=404, detail="invalid client agent")
+
+        header_last_id = request.headers.get("last-event-id")
+        cursor = after or header_last_id
+        inbox_key = prefix(settings.pod, settings.tenant, agent, "inbox")
+
+        async def event_generator():
+            nonlocal cursor
+            while True:
+                if await request.is_disconnected():
+                    break
+                min_id = f"({cursor}" if cursor else "-"
+                try:
+                    raw_entries = client.xrange(inbox_key, min=min_id, max="+", count=100)
+                except Exception:
+                    raw_entries = []
+                if raw_entries:
+                    for entry_id, fields in raw_entries:
+                        cid = entry_id.decode() if isinstance(entry_id, bytes) else str(entry_id)
+                        cursor = cid
+                        raw_env = fields.get(b"envelope") if b"envelope" in fields else fields.get("envelope")
+                        if not raw_env:
+                            continue
+                        env_str = raw_env.decode() if isinstance(raw_env, bytes) else str(raw_env)
+                        try:
+                            env_dict = json.loads(env_str)
+                        except (json.JSONDecodeError, TypeError):
+                            continue
+                        env_dict["cursor"] = cid
+                        data_json = json.dumps(env_dict)
+                        yield f"id: {cid}\nevent: message\ndata: {data_json}\n\n"
+                else:
+                    await asyncio.sleep(0.1)
+
+        return StreamingResponse(
+            event_generator(),
+            media_type="text/event-stream",
+            headers={
+                "Cache-Control": "no-cache",
+                "Connection": "keep-alive",
+                "X-Accel-Buffering": "no",
+            },
+        )
 
     def board_keys(agent: str) -> tuple[str, str, str, str]:
         try:
