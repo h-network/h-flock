@@ -107,4 +107,4 @@ def test_tmuxhost_reconciles_with_launch_cli(mock_run_tmux):
     host.reconcile_once(r)
 
     calls = [c[0] for c in mock_run_tmux.call_args_list]
-    assert any("new-window" in c and "startAgent" in c and "codex" in c for c in calls)
+    assert any("new-window" in c and "codex" in c for c in calls)

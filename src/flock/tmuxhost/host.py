@@ -39,7 +39,7 @@ class TmuxHost:
                 "new-session", "-d", "-s", self.session_name, "-n", initial_window, "-x", "80", "-y", "24"
             ]
             if initial_window != "__init__":
-                cmd_args = ["startAgent", cli] if cli else ["bash", "-il"]
+                cmd_args = [cli] if cli else ["bash", "-il"]
                 cmd.extend(["env", f"AGENT_NAME={initial_window}"] + cmd_args)
             code, out, err = tmux_ops.run_tmux(*cmd, socket=self.socket)
             if code != 0:
@@ -57,7 +57,7 @@ class TmuxHost:
 
     def create_window(self, agent_name: str, cli: str | None = None) -> bool:
         if cli:
-            command = ["env", f"AGENT_NAME={agent_name}", "startAgent", cli]
+            command = ["env", f"AGENT_NAME={agent_name}", cli]
         else:
             command = ["env", f"AGENT_NAME={agent_name}", "bash", "-il"]
 
