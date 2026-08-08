@@ -19,6 +19,8 @@ dependencies = [
 [project.scripts]
 send = "flock.adapter.cli:main"
 "flock.adapter" = "flock.adapter.__main__:main"
+hire = "flock.control.cli:hire_main"
+letGo = "flock.control.cli:let_go_main"
 
 [tool.setuptools.packages.find]
 where = ["src"]
