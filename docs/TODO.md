@@ -343,9 +343,17 @@ today. An allow-list in the control opener is the right place — but only once
 `producer` is genuinely unforgeable, which it is not while any window can write
 a peer's ingress directly.
 
-## Correlation
+## ~~Correlation~~ — ANSWERED in build 12
 
-**Replies to a waiting HTTP client.** Build 02 onward is inject-only: `POST`
-returns `202` and nothing comes back on that request. The two shapes are in
-`LLD-api` §7 — an expiring table keyed by `correlation_id`, or ephemeral named
-agents so the bus does the demultiplexing. ⚠ Not in the api process's memory.
+**Ephemeral named agents won**, not the expiring table. A client enrols itself
+with `vab: api`, gets an address and a mailbox, and the bus demultiplexes by
+address — so no table keyed by `correlation_id` exists anywhere, which was the
+point of preferring that shape.
+
+⚠ **It is still not a reply on the same request.** `POST` returns `202` as it
+always did; the answer arrives in the client's mailbox and is read by cursor or
+SSE. Request/response was never the shape — an agent takes seconds to minutes to
+answer, and holding an HTTP request open for that is the thing the design avoids.
+
+**Still open: per-client tokens.** One shared token, and `as` is checked against
+the roster rather than proven.

@@ -136,8 +136,29 @@ neither depends on the other.
 
 | | | |
 |---|---|---|
-| **api** | `:8080` | envelopes in, state out — REST, bearer token |
+| **api** | `:8080` | envelopes in, **messages and state out** — REST, bearer token |
 | **session** | `:8081` | terminal output and keystrokes — WebSocket |
+
+### Apps are participants, not spectators
+
+A Telegram wrapper, a web front end and a macOS app each **enrol as a client**
+and get their own address and mailbox:
+
+```bash
+POST /agents/host/envelopes  {"kind":"StartAgent","payload":{"agent":"telegram","vab":"api"}}
+POST /agents/alice/envelopes {"text":"morning","as":"telegram"}
+GET  /agents/telegram/messages?after=<cursor>     # catch-up
+GET  /agents/telegram/messages/stream             # live, SSE
+```
+
+Alice sees `[message from telegram]` and replies with `office send -a telegram`
+— **reply by name, the same rule as replying to a person.** Nothing about an app
+is special from the window side, and the bus does the demultiplexing, so one
+client's messages never appear in another's mailbox.
+
+⚠ **An app never parses a terminal to get an answer.** `:8081` streams a TUI for
+*watching* an agent work; it is not a data format. A chat view is built from
+`/messages`.
 
 `POST /agents/{agent}/envelopes` carries any `kind`; the api does not validate it
 and could not — which kinds are openable is a fact about adapters, discovered at
@@ -166,6 +187,10 @@ Capabilities are `kind`s, opened at the edge. Adding one is adding an opener.
 | `PauseAgent` | `control` | stops the CLI while preserving the agent |
 | `ResumeAgent` | `control` | resumes the CLI and drains its inbox |
 | `AddTicket` | `tmux` | writes a ticket to the recipient's board — and pastes nothing |
+
+Anything addressed to an **api client** lands in that client's mailbox whatever
+its kind — the api decides nothing about which kinds are interesting, the same
+way the router decides nothing about payloads.
 
 `office hire dave` is a `StartAgent` envelope addressed to `host`. The router forwarded
 a kind it has never heard of, to a name like any other.
@@ -206,8 +231,7 @@ Measured, not assumed: 100 envelopes at 10/s with none lost, ordering preserved,
 Task boards are built: tickets with a title and a brief, four columns, ids
 accepted by prefix, and an append-only history in `$TASK_RECORD`.
 
-Not built: presence, replies correlated back to a waiting HTTP
-client, TLS, CORS. See [`docs/TODO.md`](docs/TODO.md), which says why for each.
+Not built: presence, per-client tokens, TLS, CORS. See [`docs/TODO.md`](docs/TODO.md), which says why for each.
 
 ⚠ Agents run with `sudo` in the container, deliberately. Nothing inside it is a
 boundary — the container is. Tools and a clean environment remove the *reason* to

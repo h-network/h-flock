@@ -337,7 +337,7 @@ the api validates.
 |---|---|---|---|
 | `Message` | `tmux` | `{"text": "..."}` | pastes `[message from <producer>] <text>` |
 | `Command` | `tmux` | `{"text": "..."}` | pastes `<text>` **bare** — it executes |
-| `StartAgent` | `control` | `{"agent": "dave", "cli": "claude"}` | enrols, creates the window, starts the CLI |
+| `StartAgent` | `control` | `{"agent": "dave", "cli": "claude", "vab": "tmux"}` | enrols, creates the window, starts the CLI |
 | `StopAgent` | `control` | `{"agent": "dave"}` | reverses all three |
 | `PauseAgent` | `control` | `{"agent": "dave"}` | stops the CLI, keeps the agent and its queues |
 | `ResumeAgent` | `control` | `{"agent": "dave"}` | starts the CLI again and drains the inbox |
@@ -350,6 +350,18 @@ the api validates.
 under the VAB that opens it, not the thing it does — a board write is the one
 delivery routine that produces no terminal output, deliberately: the board is
 pulled, so nothing notifies the agent (`PLAN-boards` §1).
+
+`vab` defaults to `tmux` and accepts `tmux` or `api`; `cli` defaults to `claude`.
+
+⚠ **`vab: "api"` enrols a client, and creates no window.** A phone app, a web
+front end and a Telegram wrapper are each a roster row and a mailbox — nothing
+else. `StopAgent` on one removes the row and the mailbox and touches no tmux.
+Build 12; see [`BUILD-12-app-api.md`](BUILD-12-app-api.md).
+
+⚠ **Agents never see clients.** `office peers` and `office broadcast` both select
+`vab == "tmux"`, so an enrolled client appears in nobody's peer list and receives
+no broadcast. That filter predates clients — it was built to hide `api` and
+`host` — and it is why per-client addressing cost almost nothing.
 
 `cli` defaults to `claude`. `Message` and `Command` share a payload shape and
 differ only in whether the prefix is rendered — see `LLD-adapter-tmux` §3 for why
@@ -483,6 +495,40 @@ GET /agents                 { "agents": ["alice", "bob", "carol"] }
 
 A list rather than a map for `GET /board`, so roster order is expressible and
 the entry shape matches the single-agent route exactly.
+
+### The client mailbox — build 12
+
+```
+  <prefix>:agent:<client>:inbox   STREAM   MAXLEN ~ 1000
+```
+
+One per api client, written by `deliver_api` and read by the api. **One field,
+`envelope`, carrying the envelope as JSON**, and the stream entry id is the
+cursor a client resumes from — there is no second sequence number.
+
+⚠ **The only Stream in the system, and the cursor is the reason.** Everything
+else is a LIST because a queue is consumed once, by one reader, and then gone. A
+mailbox is not: several clients may read it at their own positions, and a
+disconnected one has to be able to say *I had up to here*. `XRANGE` gives that
+catch-up and `XREAD BLOCK` gives the SSE loop its wait — both built in, where a
+LIST would need a hand-rolled sequence counter.
+
+```json
+GET /agents/telegram/messages   { "agent": "telegram",
+                                  "messages": [ { "cursor": "…-0", "producer": "alice",
+                                                  "kind": "Message", "payload": {…} } ],
+                                  "next_cursor": "…-0" }
+```
+
+`GET /agents/{client}/messages/stream` is the same objects as SSE, resumable with
+`Last-Event-ID`. Both require the client to be enrolled with VAB `api` — `404`
+otherwise, including for a tmux agent, which has no mailbox.
+
+⚠ **`POST /agents/{agent}/envelopes` accepts `"as": "<client>"`**, checked against
+the roster, so an agent sees `[message from telegram]` and replies by name like
+anyone else. Omitted, the producer is `api`. It is a *declaration*, not
+authentication — one shared token means any holder can claim any enrolled name,
+which is no weaker than `producer` already being forgeable.
 
 ## 9. Shared environment
 
