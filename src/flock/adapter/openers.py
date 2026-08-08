@@ -78,7 +78,7 @@ def command_opener(
     paste_text(session_name, agent, formatted_msg, stream_id=stream_id, socket=socket)
 
 
-def assign_task_opener(
+def add_ticket_opener(
     r,
     pod: str,
     tenant: str,
@@ -91,6 +91,15 @@ def assign_task_opener(
     corr_id = envelope.get("correlation_id")
     producer = envelope.get("producer", "unknown")
     payload = envelope.get("payload", {})
+    kind = envelope.get("kind", "AddTicket")
+
+    if kind == "AssignTask":
+        log_record(
+            module="adapter",
+            event="deprecated_kind",
+            recipient=agent,
+            reason="AssignTask is deprecated, use AddTicket",
+        )
 
     windows = list_windows(session_name, socket=socket)
     if agent not in windows:
@@ -107,19 +116,43 @@ def assign_task_opener(
         )
         return
 
-    if isinstance(payload, dict) and "id" in payload:
-        task_obj = payload
-        title = payload.get("title", "")
+    if isinstance(payload, dict) and "v" in payload and "id" in payload:
+        ticket_obj = payload
+    elif isinstance(payload, dict) and "id" in payload:
+        ticket_obj = {
+            "v": 1,
+            "id": payload.get("id", corr_id or os.urandom(4).hex()),
+            "title": payload.get("title", ""),
+            "description": payload.get("description", ""),
+            "created_by": payload.get("created_by", payload.get("from", producer)),
+            "status": payload.get("status", "todo"),
+            "created_ts": payload.get("created_ts", payload.get("created_at", datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.%f")[:-3] + "Z")),
+            "started_ts": payload.get("started_ts", ""),
+            "done_ts": payload.get("done_ts", ""),
+            "priority": payload.get("priority", "normal"),
+        }
     else:
         title = payload.get("title", "") if isinstance(payload, dict) else str(payload)
+        description = payload.get("description", "") if isinstance(payload, dict) else ""
+        priority = payload.get("priority", "normal") if isinstance(payload, dict) else "normal"
         task_id = corr_id or os.urandom(4).hex()
-        created_at = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.%f")[:-3] + "Z"
-        task_obj = {
+        created_ts = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.%f")[:-3] + "Z"
+        ticket_obj = {
+            "v": 1,
             "id": task_id,
             "title": title,
-            "from": producer,
-            "created_at": created_at,
+            "description": description,
+            "created_by": producer,
+            "status": "todo",
+            "created_ts": created_ts,
+            "started_ts": "",
+            "done_ts": "",
+            "priority": priority,
         }
 
     todo_key = prefix(pod, tenant, agent=agent, resource="tasks.todo")
-    r.rpush(todo_key, json.dumps(task_obj))
+    r.rpush(todo_key, json.dumps(ticket_obj))
+
+
+# Alias for backward compatibility
+assign_task_opener = add_ticket_opener
