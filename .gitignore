@@ -15,3 +15,5 @@ __pycache__/
 *.pyc
 .venv/
 container/.env
+container/home/*
+!container/home/README.md
