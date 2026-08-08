@@ -19,6 +19,11 @@ h-office's answer, and the sentence worth keeping:
 So: **profiles are a level above agents.** Many agents → one profile. `default`
 is free.
 
+⚠ **A profile is an account — an email — not a framework.** Which CLI an agent
+runs is a separate axis: an agent has both, and they vary independently. Do not
+collapse `AGENT_PROFILES` and the CLI choice into one declaration just because
+h-office asks for them in the same question.
+
 ## 2. How a profile is selected
 
 Two environment variables, read by the CLIs themselves — nothing of ours parses
