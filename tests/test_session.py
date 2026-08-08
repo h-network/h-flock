@@ -188,3 +188,22 @@ def test_start_requires_isolated_tmux(monkeypatch):
     with pytest.raises(AmbientTmuxError):
         asyncio.run(controller.start())
 
+
+def test_refresh_panes_uses_session_scope_flag():
+    async def scenario():
+        controller = ControlModeClient("hq")
+        calls = []
+
+        async def command(*args):
+            calls.append(args)
+            return ["%0\talice", "%1\tbob"]
+
+        controller.command = command
+        await controller.refresh_panes()
+        return calls, controller.agent_to_pane
+
+    calls, mapping = asyncio.run(scenario())
+    assert calls == [("list-panes", "-s", "-t", "hq", "-F", "#{pane_id}\t#{window_name}")]
+    assert mapping == {"alice": "%0", "bob": "%1"}
+
+

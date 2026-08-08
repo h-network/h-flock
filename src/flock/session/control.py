@@ -106,7 +106,7 @@ class ControlModeClient:
 
     async def refresh_panes(self) -> None:
         lines = await self.command(
-            "list-panes", "-t", self.session_name, "-F", "#{pane_id}\t#{window_name}"
+            "list-panes", "-s", "-t", self.session_name, "-F", "#{pane_id}\t#{window_name}"
         )
         pane_to_agent: dict[str, str] = {}
         for line in lines:
@@ -117,6 +117,8 @@ class ControlModeClient:
         self.agent_to_pane = {agent: pane for pane, agent in pane_to_agent.items()}
 
     async def update_subscription(self, subscriber: Subscriber, agents: set[str]) -> list[str]:
+        if agents - self.agent_to_pane.keys():
+            await self.refresh_panes()
         unknown = sorted(agents - self.agent_to_pane.keys())
         if unknown:
             return unknown
