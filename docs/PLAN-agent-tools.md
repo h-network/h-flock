@@ -1,185 +1,110 @@
 # Plan — the agent-facing tools
 
-> Decided, not built. Replaces the single `send` command.
+> **Status: built.** One `office` command replaced both the generic `send` and
+> the first generation of separate agent commands.
 
-## 1. Why one general command was wrong
+## 1. Why one command name, with focused verbs
 
-`send --kind StartAgent <agent> --payload '{"agent":"dave"}'` requires an agent
-to know that kinds exist, what they are called, and what payload each takes.
-That is the envelope model — ours, not theirs — and learning it means reading
-docs or source.
+`send --kind StartAgent <agent> --payload '{"agent":"dave"}'` requires an
+agent to know that kinds exist, what they are called, and what each payload
+takes. That is the envelope model — ours, not theirs.
 
-**A focused command needs none of it.** `hire dave` requires knowing nothing
-about a bus. Same principle as taking `REDIS_URL` out of the environment: remove
-the reason to look, not the ability.
+A focused verb needs none of it: `office hire dave` says what the agent means.
+The shared `office` prefix matters just as much. The original `sendMessage`
+collided with Claude Code's own `SendMessage` tool; task-shaped names collide
+with its task tools too. One collision-resistant namespace fixes the class of
+problem rather than chasing names one at a time.
 
-## 2. The set
+There is no generic envelope command on an agent's `PATH`. `kind` remains on
+the library call and the HTTP door for components that genuinely speak the
+envelope protocol.
 
-| Command | Does | Envelope underneath |
+## 2. The surface
+
+| Command | Does | Envelope or state underneath |
 |---|---|---|
-| `sendMessage -a <agent> <text>…` | a message to one agent | `Message` |
-| `sendBroadcast <text>…` | a message to every agent | N × `Message`, one per agent |
-| `peers` | who is in this office | roster read, no envelope |
-| `hire <name> [options]` | enrol an agent: roster row, home, window, CLI | `StartAgent` |
-| `letGo <name>` | remove one, reversing all of it | `StopAgent` |
-| ~~`sendCommand`~~ | **parked** — text executed in a peer's window | `Command` |
+| `office send -a <agent> <text>…` | message one agent | `Message` |
+| `office broadcast <text>…` | message every peer agent | N × `Message` |
+| `office peers` | list peer agents | roster read |
+| `office hire <name> [--cli <cli>]` | enrol and start an agent | `StartAgent` to `host` |
+| `office letGo <name>` | retire an agent and clear lifecycle state | `StopAgent` to `host` |
+| `office pause <name>` | stop the CLI without retiring the agent | `PauseAgent` to `host` |
+| `office resume <name>` | restart the CLI and drain its queued kicks | `ResumeAgent` to `host` |
+| `office add -a <agent> -t <title> -d <brief> [-p <priority>]` | add a ticket | `AddTicket` |
+| `office list [-a <agent>\|--all]` | list ticket IDs and titles | four board lists |
+| `office take [<id>]` | pull a todo or held ticket into doing | board move |
+| `office done [<id>]` | finish the open ticket | board move |
+| `office cancel [<id>]` | finish it as cancelled | board move |
+| `office hold [<id>]` | park the open ticket | board move |
+| `office delete <id>` | remove one ticket | board removal |
 
-⚠ **`sendBroadcast` takes no recipient**, which means the reserved name `all`
-never appears in an agent's world at all. One more piece of the model that stops
-needing explanation.
+Every subcommand has environment-free `--help`. Message text after the recipient
+is literal: flags inside a message are data, so an agent can explain an `office`
+command to another agent without `argparse` consuming the inner `-a`.
 
-⚠ **It reaches agents only — never `api`, never `host`.** A broadcast is a
-message to the room; the fixed agents are plumbing and are not in it.
+## 3. Broadcast and discovery
 
-**The command resolves the list itself** — roster members with VAB `tmux`, minus
-the sender — and sends one `Message` each. It does **not** use `recipient: all`.
+`office broadcast` takes no recipient. It resolves roster members whose VAB is
+`tmux`, removes the sender, and sends one `Message` to each. It does not use
+`recipient: all`, and never reaches the fixed `api` or `host` agents. The bus's
+reserved broadcast address remains available to protocol clients such as
+`POST /agents/all/envelopes`, where the router fans out to the whole roster.
 
-That is better than fanning out and discarding downstream, and it is available to
-us precisely because the tool is ours: the filtering happens where the answer is
-already known, instead of sending to four endpoints so two can throw it away.
-Costs N sends of a few hundred bytes on loopback, which is nothing.
+Filtering in the command is deliberate: it already knows that a room message is
+for terminal agents, while the router must remain ignorant of VAB values. N
+sends of a small envelope on loopback are cheaper than teaching the switch what
+a conversational broadcast means.
 
-Consequence worth tracking: with no agent tool using it, `recipient: all` is left
-reachable only through the api (`POST /agents/all/envelopes`). **The `api`
-accumulation bug in [`TODO.md`](TODO.md) is therefore still live via that path**
-— fixing it is not made unnecessary by this, only rarer.
+`office peers` applies the same tmux-only filter. Peer membership is live state,
+so it is read from the roster rather than copied into a window. `AGENT_PEERS`
+does not exist.
 
-## 3. Two naming traps
+## 4. Lifecycle is still bus traffic
 
-⚠ **Do not call it `startAgent`.** The base image already ships `startAgent`,
-which launches a CLI *in the current window*. Ours enrols a *new agent into the
-tenant*. Same name, opposite meaning, both on `PATH` in the same shell.
-`LLD-tmux-host` §5 already calls the concept *"hiring and letting go"*, which is
-where `hire` / `letGo` come from.
+The lifecycle verbs do not call control openers directly. They send
+`StartAgent`, `StopAgent`, `PauseAgent` and `ResumeAgent` envelopes to `host`.
+That keeps the CLI and API on the same path and leaves `flock.office` dependent
+only on the shared `flock.bus` library.
 
-**`sendMessage` is the name — decided**, and the shape is:
+⚠ **Do not call enrolment `startAgent`.** The base image already ships
+`startAgent`, which launches a CLI in the current window. `office hire` enrols a
+new agent and creates a new window: same tempting name, opposite operation.
 
-```
-sendMessage -a bob some text here
-```
+Pause is not retirement. It preserves the roster row, window, queues, board,
+home and address while stopping the CLI. Letting an agent go removes desired
+state before killing the window so tmux-host reconciliation cannot recreate it.
 
-`-a` for the agent, as in h-office; the message is trailing positional text
-rather than h-office's `-m`. No `-o`: an agent is in one tenant and does not
-name it.
+## 5. Accounts arrive through profiles
 
-⚠ So the two are near-identical but not interchangeable — `-m` works there and
-not here. Anyone writing for both should be told once rather than discovering it.
+`office hire` currently selects only `--cli`. It deliberately has no
+`--profile`: a profile is an account/email and a non-default one can require an
+interactive login. [`PLAN-profiles.md`](PLAN-profiles.md) owns that mechanism.
+When profile selection reaches `hire`, it must reuse the profile key and config
+directories rather than inventing a second account path.
 
-## 4. What happens to `send`
+## 6. Discovery and the guide
 
-The focused commands call `flock.bus.send()` directly. There is **no generic
-`send` on an agent's `PATH`** — leaving one there reintroduces exactly the
-discovery path this removes.
+The window carries `OFFICE_TOOLS=office`. It is static for the image's lifetime;
+everything that can change is discovered through an `office` subcommand.
 
-`--kind` does not disappear; it stays as the library call underneath, reachable
-by anything of ours that needs a kind no command covers yet.
+`/workdir/<agent>/AGENTS.md` and `/workdir/<agent>/CLAUDE.md` contain the same
+short guide, and `AGENT_GUIDE` points at the former for CLIs that need an
+explicit path. Only the agent's own name is baked in. The guide tells it to use
+`office peers`, `office send`, and the pulled board verbs; it contains no peer
+list that could go stale.
 
-## 5. `hire` carries the account
-
-`hire` is where profiles land, since enrolling is when an account is chosen:
-
-```
-hire dave --cli claude --profile work
-```
-
-- `--cli` already exists as the `launch` key, written by `StartAgent` and read
-  by `flock.tmuxhost`
-- `--profile` is new and needs [`PLAN-profiles.md`](PLAN-profiles.md) first — a
-  profile is an **account/email**, and a non-`default` one costs an interactive
-  login before it can be used
-
-So `hire` ships in two stages: without `--profile` now, with it once profiles
-exist. **Do not invent a second mechanism for accounts inside `hire`.**
-
-## 6. Discovery
-
-`OFFICE_TOOLS=sendMessage,sendBroadcast,peers,hire,letGo` in the window
-environment — static for the image's lifetime, so it cannot go stale the way
-`AGENT_PEERS` did (see [`TODO.md`](TODO.md)).
-
-Every one carries a real `--help`. ⚠ **Help must never require the
-environment** — `send --help` currently fails without `AGENT_NAME`, which is the
-first thing anyone types.
-
-## 7. The guide
-
-`/workdir/<agent>/AGENTS.md` **and** `/workdir/<agent>/CLAUDE.md`, same content
-in both — see §8 for why two.
-
-**Only the agent's own name is baked in.** It is fixed for the window's
-lifetime, like `AGENT_NAME`. Everything that can change is discovered:
-
-```markdown
-You are **dave**, an agent in this office.
-
-Everything about your situation is in your environment:
-
-    $AGENT_NAME      who you are
-    $TENANT          the office you are in
-    $OFFICE_TOOLS    the commands available to you
-
-Run any of those with --help. To see who you can talk to:
-
-    peers
-
-A message arrives in your terminal as `[message from alice] …` — reply by name
-with sendMessage. This directory is yours; work in it.
-```
-
-⚠ **No peer list.** It is derived, and a written copy goes stale the moment
-someone is hired — the same mistake as `AGENT_PEERS`, in a file instead of an
-environment.
-
-**Which means nothing in the guide is derived, so it never goes stale** — and the
-rewrite-on-every-reconcile added in build 08 is no longer needed. Write it once
-when the directory is created.
-
-## 8. Getting it in front of three different CLIs
-
-Writing `AGENTS.md` is not enough. Each CLI looks somewhere different:
-
-| CLI | reads |
+| CLI | How it finds the guide |
 |---|---|
-| `claude` | `CLAUDE.md` in the working directory |
-| `codex` | `AGENTS.md` — its own convention |
-| `agy` | neither — takes `AGENT_GUIDE=<path>` from the environment |
+| Claude Code | `CLAUDE.md` in the working directory |
+| Codex | `AGENTS.md` in the working directory |
+| agy | the explicit `AGENT_GUIDE` path |
 
-So: write the same content to **both files**, and set
-`AGENT_GUIDE=/workdir/<agent>/AGENTS.md` in the window environment. That is
-legitimate env by the §6 rule — a path fixed for the window's lifetime, not
-derived state.
+The two files are deliberately duplicated. An `@AGENTS.md` include in
+`CLAUDE.md` creates a per-project approval gate in Claude Code; duplicating a
+small guide is cheaper than leaving a headless agent at that prompt.
 
-⚠ **Do not use an `@AGENTS.md` include in `CLAUDE.md`**, the way the h-office
-workspace does. `.claude.json` tracks
-`hasClaudeMdExternalIncludesApproved` per project, so an include is a *second*
-first-run prompt for a headless agent to get stuck on. Duplicating 400 bytes is
-cheaper than a gate.
-
-## 9. First-run gates, and the one that cannot be pre-baked
-
-Claude Code has three, at two different scopes:
-
-| gate | scope | state |
-|---|---|---|
-| theme picker / onboarding | whole install | seeded in the Dockerfile ✓ |
-| **trust this folder** | **per directory** | **not seeded** |
-| external includes | per directory | avoided by not using an include |
-
-`hasTrustDialogAccepted` lives in `.claude.json` under
-`projects["<absolute path>"]`. **It cannot be baked at build time** — `hire dave`
-creates `/workdir/dave`, a path that does not exist until then.
-
-So whatever creates the directory must also write that entry:
-
-```json
-"projects": { "/workdir/dave": {
-    "hasTrustDialogAccepted": true,
-    "hasCompletedProjectOnboarding": true } }
-```
-
-⚠ Into the **right** `.claude.json` — `$HOME`'s for the default account,
-`<CLAUDE_CONFIG_DIR>`'s once profiles exist ([`PLAN-profiles.md`](PLAN-profiles.md)).
-
-Without it, `hire dave --cli claude` produces a window with a trust prompt in it:
-roster row written, router forwarding, nobody home. Precisely the failure the
-deferred presence work would catch, and we have no presence.
+Claude Code's trust state is per working directory, so it cannot be baked into
+the image for dynamically hired agents. Window creation writes
+`hasTrustDialogAccepted` and `hasCompletedProjectOnboarding` for the new
+`/workdir/<agent>` path. Without that, the roster and router say an agent is
+live while its CLI is waiting at a first-run question.
