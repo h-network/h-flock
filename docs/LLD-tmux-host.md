@@ -111,9 +111,9 @@ the same name the bus uses. Low-level tmux operations use `flock.tmux` as a shar
 library (`create_window`, `kill_window`, `list_windows`, `write_agent_guide`, etc.)
 shared across `tmuxhost`, `control`, and `adapter`.
 
-Windows are **reconciled against the roster**, in both directions — an agent in
-the roster with no window gets one, a window with no agent in the roster is
-removed. Reconciliation is a repeatable operation, not a one-time setup step, so
+Windows are **reconciled against roster members with `vab == "tmux"`**, in both directions —
+a `vab == "tmux"` agent in the roster with no window gets one, a window with no `vab == "tmux"` agent in the roster is
+removed. Non-tmux roster entries (enrolled REST clients with `vab: "api"`, or `vab: "control"`) generate no windows and are ignored by `tmuxhost`. Reconciliation is a repeatable operation, not a one-time setup step, so
 running it again after a roster change is the whole mechanism for hiring and
 letting go.
 
@@ -151,7 +151,7 @@ reconciliation must converge rather than duplicate.
 
 Two consequences for anything downstream:
 
-- A missing window is a real state, not an error to repair from elsewhere. The
+- A missing window for `vab == "tmux"` is a real state, not an error to repair from elsewhere. The
   adapter dead-letters into it rather than trying to create one.
 - Nothing may assume a window it saw earlier is still there.
 

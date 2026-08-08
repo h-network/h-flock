@@ -3,9 +3,9 @@
 > **Status: built and running.**
 >
 > Depends on [`LLD-bus-and-router.md`](LLD-bus-and-router.md) for the address
-> scheme, the envelope, and the two doors. One adapter per kind of agent; this
-> is the one for agents that live in a tmux window. Bringing tmux up — the
-> server, the windows, sizing — is a separate module and out of scope here.
+> scheme, the envelope, and the two doors. One adapter binary (`flock.adapter`) per
+> delivery; handles agents in tmux windows (`vab: tmux`) and enrolled REST clients (`vab: api`).
+> Bringing tmux up — the server, the windows, sizing — is a separate module and out of scope here.
 
 ## 1. Purpose
 
@@ -13,8 +13,7 @@ An agent in a tmux window is a program at a terminal. It cannot pop a queue, and
 nothing can hand it an object — it reads bytes on a screen and writes bytes to a
 prompt. This adapter is what makes such a thing addressable on the bus.
 
-It implements the two doors for one class of agent, and the two halves are built
-differently even though the contract is symmetric:
+It implements the two doors for agents and enrolled REST clients, with two delivery routines:
 
 ```
   ┌──────────────────────── tmux adapter ─────────────────────────┐
@@ -23,20 +22,20 @@ differently even though the contract is symmetric:
   │            builds the envelope, writes its own egress         │
   │                                                               │
   │  receive   blocks on ingress, woken by Redis on arrival       │
-  │            pops it, opens it, pastes it into the window       │
+  │            for vab=tmux: pops it, opens it, pastes into window │
+  │            for vab=api:  pops it, writes to client mailbox    │
   │                                                               │
   └───────────────────────────────────────────────────────────────┘
 ```
 
 **Send is a tool, not a loop.** The agent emits by invoking a command (`office send`,
 `office broadcast`, `office add`, etc.), the way it invokes anything else. The
-adapter's only job on that side is to make the command available in the window and
+adapter's job on that side is to make the command available in the window and
 configured with the agent's own identity (`AGENT_NAME`), so it writes the right
 egress without being told.
 
 **Receive runs outside the window**, because the agent has no way to know an
-envelope arrived. Something else has to be waiting on its behalf and put the
-result in front of it.
+envelope arrived. Something else has to be waiting on its behalf and deliver it.
 
 ## 2. Receiving
 
@@ -48,8 +47,8 @@ kicks off delivery for that agent.
 ```
   router  ──RPUSH──►  …:alice:ingress
      │
-     └──kick──►  adapter for alice ──► pop ──► open ──► paste into window
-                 (runs, delivers, exits)      (paste, delay, Enter, verify)
+     └──kick──►  adapter for alice ──► pop ──► open ──► paste into window (vab=tmux)
+                 (runs, delivers, exits)              or write mailbox Stream (vab=api)
 
   alice's delivery already in flight?  the envelope stays in the queue
 ```
@@ -65,14 +64,14 @@ process memory**: delivery takes hundreds of milliseconds, arrivals are not rate
 limited, so a loop draining as fast as it can buffers unboundedly in RAM,
 invisible, lost on restart, and with nothing to inspect when it goes wrong.
 
-Triggering on arrival keeps the backlog in Redis, which is the only place it
+Triggering on arrival keeps the backlog in Redis, which is the place it
 should be. It is durable there, it is visible there, and depth per agent is a
 number anything can read.
 
 **One delivery per agent at a time, and this is the one thing the kick does not
 give for free.** The number of adapters running for alice is the number of kicks
 the router fired, so two envelopes arriving close together start two of them.
-They do not merely reorder — the tmux calls interleave against one window:
+For tmux windows, tmux calls interleave against one window:
 
 ```
   A: paste-buffer -t hq:bob      "[message from alice] …"
@@ -98,12 +97,14 @@ kicks for it; one that leaves simply stops being kicked. The roster polling that
 the router and the tmux host need (`LLD-bus-and-router` §3.2) has no equivalent
 here.
 
-## 3. Opening
+## 3. Opening & Delivery Routines
 
-`kind` selects an opener. The opener reads the header to know which window, and
-relays the payload without interpreting it.
+`flock.adapter` checks the recipient's VAB in the roster:
 
-For a message, the rendered line names the sender:
+- **`vab: "tmux"` (`deliver_one`)**: dispatches on `kind` to select an opener (`Message`, `Command`, `AddTicket`) and pastes into the agent's window (or mutates the board for `AddTicket`).
+- **`vab: "api"` (`deliver_api`)**: pops the envelope from `ingress`, logs `received` and `opened`, and appends the envelope verbatim as JSON to the client's mailbox Redis Stream (`<prefix>:agent:<client>:inbox`) via `XADD MAXLEN ~ 1000 * envelope '<verbatim JSON>'`. Every kind is stored; nothing dead-letters for being uninteresting.
+
+For a tmux message, the rendered line names the sender:
 
 ```
   [message from alice] can you review the auth change?
@@ -140,7 +141,7 @@ window.
 
 `AssignTask` is accepted as a deprecated alias (logged via `log_record`).
 
-An envelope whose `kind` has no opener is dead-lettered under **this agent's own
+An envelope whose `kind` has no opener for `vab: tmux` is dead-lettered under **this agent's own
 prefix** and logged. The failure happened at this end, and an adapter writing to
 the sender's prefix would reach outside its own agent's keys.
 
@@ -174,7 +175,7 @@ empty prompt ignores.
 
 ## 5. Is it safe to deliver?
 
-The adapter checks the window exists before it pastes. If it does not, the
+For tmux agents, the adapter checks the window exists before it pastes. If it does not, the
 envelope is dead-lettered rather than delivered into nothing.
 
 **Measured: delivery into a busy window is buffered, not lost.** Three messages
@@ -229,7 +230,7 @@ serves that, not here.
 
 Not the tmux host — it does not create the server, the session or the windows,
 and it does not decide what runs in them. It attaches to what is already there,
-and if a window is missing that is a dead-letter, not something to repair.
+and if a window is missing for `vab: tmux`, that is a dead-letter, not something to repair.
 
 Not the router. It never resolves a recipient and never writes another agent's
 ingress.
