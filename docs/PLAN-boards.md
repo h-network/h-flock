@@ -97,6 +97,26 @@ architect would do anyway, and it keeps the wake-up separate from the content.
 
 ## 4. The agent's surface
 
+⚠ **Use h-office's `jira` verbs. They exist, they work, and they are what the
+office already types.** An earlier draft of this plan invented `assign` and
+`tasks`, which was wrong:
+
+| h-office `jira` | h-flock |
+|---|---|
+| `jira add -a <agent> -t "…"` | `office add -a <agent> -t "…" -d "…"` |
+| `jira list [-a <agent>]` | `office list [-a <agent>]` |
+| `jira consume` / `take` | `office take` |
+| `jira done [<id>]` | `office done` |
+
+The **only** deliberate differences from h-office: the `office` prefix, because
+`sendMessage` collided with Claude Code's built-in tool and `TaskList`/`TaskGet`
+would collide next; and `-d` for the description, because a ticket's brief is
+what the board is carrying.
+
+Everything below was written before this and uses the invented names — read the
+table above as authoritative.
+
+
 Subcommands of `office`, which is what that namespace was for — and it dodges
 `TaskList` / `TaskGet`, the other collision the agent's own tool list showed us:
 
