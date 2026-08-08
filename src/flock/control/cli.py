@@ -6,9 +6,9 @@ from collections.abc import Sequence
 
 import redis
 
-from flock.tmux import create_window, kill_window
+from flock.tmux import create_window, kill_window, run_tmux
 
-from .openers import start_agent, stop_agent
+from .openers import pause_agent, resume_agent, start_agent, stop_agent
 
 _REDIS_URL = "redis://127.0.0.1:6379/0"
 
@@ -84,3 +84,66 @@ def let_go_main(argv: Sequence[str] | None = None) -> None:
         )
     except Exception as exc:
         parser.exit(1, f"letGo: error: {exc}\n")
+
+
+def pause_main(argv: Sequence[str] | None = None) -> None:
+    parser = argparse.ArgumentParser(
+        prog="pause",
+        description="Pause an agent's CLI while keeping its membership and window.",
+    )
+    parser.add_argument("agent", help="agent to pause")
+    args = parser.parse_args(argv)
+
+    r, pod, tenant, session_name, socket = _context()
+
+    def interrupt(agent: str) -> None:
+        _check_tmux(
+            "pause send-keys",
+            run_tmux("send-keys", "-t", f"{session_name}:{agent}", "C-c", socket=socket),
+        )
+
+    try:
+        pause_agent(
+            r,
+            pod=pod,
+            tenant=tenant,
+            envelope={"payload": {"agent": args.agent}},
+            interrupt_window=interrupt,
+        )
+    except Exception as exc:
+        parser.exit(1, f"pause: error: {exc}\n")
+
+
+def resume_main(argv: Sequence[str] | None = None) -> None:
+    parser = argparse.ArgumentParser(
+        prog="resume",
+        description="Resume an agent's CLI in its existing window.",
+    )
+    parser.add_argument("agent", help="agent to resume")
+    args = parser.parse_args(argv)
+
+    r, pod, tenant, session_name, socket = _context()
+
+    def resume_window(agent: str) -> None:
+        _check_tmux(
+            "resume send-keys",
+            run_tmux(
+                "send-keys",
+                "-t",
+                f"{session_name}:{agent}",
+                "startAgent --resume",
+                "Enter",
+                socket=socket,
+            ),
+        )
+
+    try:
+        resume_agent(
+            r,
+            pod=pod,
+            tenant=tenant,
+            envelope={"payload": {"agent": args.agent}},
+            resume_window=resume_window,
+        )
+    except Exception as exc:
+        parser.exit(1, f"resume: error: {exc}\n")

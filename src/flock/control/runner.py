@@ -2,7 +2,7 @@
 
 from flock.bus import receive
 
-from .openers import start_agent, stop_agent
+from .openers import pause_agent, resume_agent, start_agent, stop_agent
 
 
 def _ensure_tmux(command: str, result: tuple[int, str, str]) -> None:
@@ -23,7 +23,7 @@ def deliver_one(
     """Pop and open one lifecycle envelope addressed to a control agent."""
     # The tmux lane owns this shared library. Keeping the import here lets the
     # control storage operations remain independently testable on this lane.
-    from flock.tmux import create_window, kill_window
+    from flock.tmux import create_window, kill_window, run_tmux
 
     def create(target: str, cli: str) -> None:
         result = create_window(
@@ -36,6 +36,25 @@ def deliver_one(
 
     def kill(target: str) -> None:
         _ensure_tmux("kill-window", kill_window(session_name, target, socket=socket))
+
+    def interrupt(target: str) -> None:
+        _ensure_tmux(
+            "pause send-keys",
+            run_tmux("send-keys", "-t", f"{session_name}:{target}", "C-c", socket=socket),
+        )
+
+    def resume(target: str) -> None:
+        _ensure_tmux(
+            "resume send-keys",
+            run_tmux(
+                "send-keys",
+                "-t",
+                f"{session_name}:{target}",
+                "startAgent --resume",
+                "Enter",
+                socket=socket,
+            ),
+        )
 
     def handle_start(envelope: dict) -> None:
         start_agent(
@@ -55,12 +74,35 @@ def deliver_one(
             kill_window=kill,
         )
 
+    def handle_pause(envelope: dict) -> None:
+        pause_agent(
+            r,
+            pod=pod,
+            tenant=tenant,
+            envelope=envelope,
+            interrupt_window=interrupt,
+        )
+
+    def handle_resume(envelope: dict) -> None:
+        resume_agent(
+            r,
+            pod=pod,
+            tenant=tenant,
+            envelope=envelope,
+            resume_window=resume,
+        )
+
     receive(
         r,
         pod=pod,
         tenant=tenant,
         agent=agent,
-        openers={"StartAgent": handle_start, "StopAgent": handle_stop},
+        openers={
+            "StartAgent": handle_start,
+            "StopAgent": handle_stop,
+            "PauseAgent": handle_pause,
+            "ResumeAgent": handle_resume,
+        },
         timeout=1,
         module="adapter",
     )
