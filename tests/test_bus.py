@@ -2,15 +2,16 @@ import json
 import io
 import unittest
 from contextlib import redirect_stdout
+from unittest.mock import patch
 
-from flock.bus import EnvelopeError, build, emit, is_member, members, parse, prefix, receive, send
+from flock.bus import EnvelopeError, build, emit, is_member, members, parse, prefix, receive, send, vab
 from flock.router.service import Router
 
 
 class FakeRedis:
     def __init__(self):
         self.lists = {}
-        self.sets = {}
+        self.hashes = {}
 
     def rpush(self, key, value):
         self.lists.setdefault(key, []).append(value)
@@ -24,11 +25,14 @@ class FakeRedis:
                 return key, values.pop(0)
         return None
 
-    def smembers(self, key):
-        return self.sets.get(key, set())
+    def hkeys(self, key):
+        return self.hashes.get(key, {}).keys()
 
-    def sismember(self, key, value):
-        return value in self.sets.get(key, set())
+    def hexists(self, key, field):
+        return field in self.hashes.get(key, {})
+
+    def hget(self, key, field):
+        return self.hashes.get(key, {}).get(field)
 
     def pipeline(self):
         return FakePipeline(self)
@@ -97,11 +101,15 @@ class DoorsAndRouterTest(unittest.TestCase):
     def setUp(self):
         self.r = FakeRedis()
         self.roster = prefix("acme", "hq", resource="roster")
-        self.r.sets[self.roster] = {"alice", "bob", "carol"}
+        self.r.hashes[self.roster] = {"alice": "tmux", "bob": "tmux", "carol": "tmux"}
+        self.popen = patch("flock.router.service.subprocess.Popen").start()
+        self.addCleanup(patch.stopall)
 
     def test_roster_reads(self):
         self.assertEqual(members(self.r, pod="acme", tenant="hq"), {"alice", "bob", "carol"})
         self.assertTrue(is_member(self.r, pod="acme", tenant="hq", agent="alice"))
+        self.assertEqual(vab(self.r, pod="acme", tenant="hq", agent="alice"), "tmux")
+        self.assertIsNone(vab(self.r, pod="acme", tenant="hq", agent="nobody"))
 
     def test_send_route_receive_round_trip(self):
         stream_id = send(
@@ -113,6 +121,7 @@ class DoorsAndRouterTest(unittest.TestCase):
             payload={"text": "hello"},
         )
         self.assertTrue(Router(self.r, pod="acme", tenant="hq").step())
+        self.popen.assert_called_once_with(["flock.adapter", "bob"])
         opened = []
         receive(
             self.r,
@@ -135,6 +144,7 @@ class DoorsAndRouterTest(unittest.TestCase):
         )
         Router(self.r, pod="acme", tenant="hq").step()
         self.assertEqual(len(self.r.lists[prefix("acme", "hq", "alice", "dead")]), 1)
+        self.popen.assert_not_called()
 
     def test_unknown_kind_dead_letters_under_receiver(self):
         envelope = build("Mystery", "alice", "bob", {})
@@ -150,6 +160,7 @@ class DoorsAndRouterTest(unittest.TestCase):
         self.assertEqual(len(self.r.lists[prefix("acme", "hq", "bob", "dead")]), 1)
 
     def test_api_is_fixed_address(self):
+        self.r.hashes[self.roster]["api"] = "api"
         send(
             self.r,
             pod="acme",
@@ -160,8 +171,29 @@ class DoorsAndRouterTest(unittest.TestCase):
         )
         Router(self.r, pod="acme", tenant="hq").step()
         self.assertEqual(len(self.r.lists[prefix("acme", "hq", "api", "ingress")]), 1)
+        self.popen.assert_called_once_with(["flock.adapter", "api"])
+
+    def test_kick_spawn_failure_is_logged_and_does_not_lose_ingress(self):
+        self.popen.side_effect = FileNotFoundError("flock.adapter not found")
+        send(
+            self.r,
+            pod="acme",
+            tenant="hq",
+            producer="alice",
+            recipient="bob",
+            payload={},
+        )
+        output = io.StringIO()
+        with redirect_stdout(output):
+            self.assertTrue(Router(self.r, pod="acme", tenant="hq").step())
+        records = [json.loads(line) for line in output.getvalue().splitlines()]
+        error = next(record for record in records if record["event"] == "error")
+        self.assertEqual(error["recipient"], "bob")
+        self.assertNotIn("stream_id", error)
+        self.assertEqual(len(self.r.lists[prefix("acme", "hq", "bob", "ingress")]), 1)
 
     def test_broadcast_fans_out_to_roster_except_sender(self):
+        self.r.hashes[self.roster]["api"] = "api"
         send(
             self.r,
             pod="acme",
@@ -172,12 +204,16 @@ class DoorsAndRouterTest(unittest.TestCase):
         )
         Router(self.r, pod="acme", tenant="hq").step()
         self.assertNotIn(prefix("acme", "hq", "alice", "ingress"), self.r.lists)
-        for agent in ("bob", "carol"):
+        for agent in ("api", "bob", "carol"):
             raw = self.r.lists[prefix("acme", "hq", agent, "ingress")][0]
             self.assertEqual(json.loads(raw)["recipient"], "all")
+        self.assertEqual(
+            sorted(call.args[0][1] for call in self.popen.call_args_list),
+            ["api", "bob", "carol"],
+        )
 
     def test_broadcast_to_one_agent_is_successful_noop(self):
-        self.r.sets[self.roster] = {"alice"}
+        self.r.hashes[self.roster] = {"alice": "tmux"}
         send(
             self.r,
             pod="acme",
@@ -188,6 +224,7 @@ class DoorsAndRouterTest(unittest.TestCase):
         )
         self.assertTrue(Router(self.r, pod="acme", tenant="hq").step())
         self.assertNotIn(prefix("acme", "hq", "alice", "dead"), self.r.lists)
+        self.popen.assert_not_called()
 
 
 if __name__ == "__main__":
