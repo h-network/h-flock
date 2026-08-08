@@ -27,9 +27,6 @@ api_token="$API_TOKEN"
 unset API_TOKEN
 
 export TMUX_SESSION="${TMUX_SESSION:-$TENANT}"
-# Who, if anyone, this office answers to. Unset means an office of equals, which
-# is a legitimate configuration — see docs/BUILD-07-lead.md.
-export AGENT_LEAD="${AGENT_LEAD:-}"
 
 # Socket access is total — anything that can reach it can send-keys into any
 # pane. The directory permissions are the whole boundary (LLD-tmux-host §4).
