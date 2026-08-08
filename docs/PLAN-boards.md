@@ -42,15 +42,39 @@ what stops two readers tearing a board in half.
 An entry is a small JSON object:
 
 ```json
-{ "id": "<hex>", "title": "…", "from": "architect",
-  "created_at": "…", "started_at": "…" }
+{ "id": "<hex>", "title": "…", "from": "architect", "created_at": "…" }
 ```
 
-⚠ **`title` is opaque and stays opaque.** `LLD-bus-and-router` §8 is explicit that
-this is not a task system, and `CONTRACTS` §7 says the api must not parse
-entries. Neither changes. What moves, deliberately and by one field, is that
-**the watchdog reads `started_at`** — it cannot answer "how long has this been
-open" otherwise. Everything else about a task stays the agent's business.
+⚠ **Entries stay opaque and `CONTRACTS` §7 does not move.** `LLD-bus-and-router`
+§8 is explicit that this is not a task system; the api returns entries verbatim
+and parses nothing.
+
+### Where the watchdog's clock lives
+
+The watchdog needs "how long has this been open". Three ways, and the obvious
+one is the worst:
+
+| | |
+|---|---|
+| a `started_at` field *inside* the entry | quietly redefines "opaque". Rejected |
+| the log | `take` is an `LMOVE`, not an envelope, so nothing records it today — and even if it did, a poller would be tailing and parsing stdout every 30s to answer one question |
+| **its own key** | one `GET`, and the entry is untouched |
+
+```
+  <prefix>:tasks.doing          LIST   the entry — opaque
+  <prefix>:tasks.doing.since    when it was taken
+```
+
+**And log the transition as well.** `take` and `done` emit records like
+everything else, so *history* — who took what, when — lives in the one log where
+every other event lives. The key holds *current state*, which is what a poller
+wants. Neither substitutes for the other: a log answers "what happened", a key
+answers "what is true now".
+
+⚠ Note what this means about our logging generally: **we log envelope movements,
+not Redis activity.** Anything an agent's tools do directly — a board move, a
+roster read — is invisible unless the tool emits a record itself. Worth knowing
+before assuming the log has something.
 
 ## 3. Assignment travels as an envelope
 
