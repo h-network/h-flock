@@ -1,0 +1,66 @@
+"""One-envelope delivery routine for the control VAB."""
+
+from flock.bus import receive
+
+from .openers import start_agent, stop_agent
+
+
+def _ensure_tmux(command: str, result: tuple[int, str, str]) -> None:
+    code, _, stderr = result
+    if code != 0:
+        raise RuntimeError(f"{command} failed: {stderr}")
+
+
+def deliver_one(
+    r,
+    *,
+    pod: str,
+    tenant: str,
+    agent: str,
+    session_name: str,
+    socket: str | None = None,
+) -> None:
+    """Pop and open one lifecycle envelope addressed to a control agent."""
+    # The tmux lane owns this shared library. Keeping the import here lets the
+    # control storage operations remain independently testable on this lane.
+    from flock.tmux import create_window, kill_window
+
+    def create(target: str, cli: str) -> None:
+        result = create_window(
+            session_name,
+            target,
+            command=["env", f"AGENT_NAME={target}", cli],
+            socket=socket,
+        )
+        _ensure_tmux("create-window", result)
+
+    def kill(target: str) -> None:
+        _ensure_tmux("kill-window", kill_window(session_name, target, socket=socket))
+
+    def handle_start(envelope: dict) -> None:
+        start_agent(
+            r,
+            pod=pod,
+            tenant=tenant,
+            envelope=envelope,
+            create_window=create,
+        )
+
+    def handle_stop(envelope: dict) -> None:
+        stop_agent(
+            r,
+            pod=pod,
+            tenant=tenant,
+            envelope=envelope,
+            kill_window=kill,
+        )
+
+    receive(
+        r,
+        pod=pod,
+        tenant=tenant,
+        agent=agent,
+        openers={"StartAgent": handle_start, "StopAgent": handle_stop},
+        timeout=1,
+        module="adapter",
+    )
