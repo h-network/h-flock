@@ -86,7 +86,11 @@ def request(app, method, path, *, token=None, body=None):
     response_body = b"".join(
         message.get("body", b"") for message in sent if message["type"] == "http.response.body"
     )
-    return start["status"], json.loads(response_body)
+    try:
+        parsed = json.loads(response_body)
+    except Exception:
+        parsed = response_body.decode("utf-8", "replace")
+    return start["status"], parsed
 
 
 def test_every_route_requires_bearer_token(client):
@@ -94,6 +98,32 @@ def test_every_route_requires_bearer_token(client):
     assert request(app, "GET", "/health")[0] == 401
     assert request(app, "GET", "/health", token="wrong")[0] == 401
     assert request(app, "GET", "/health", token="secret") == (200, {"status": "ok"})
+
+
+def test_restdoc_endpoint_requires_auth_and_serves_html(client):
+    app, _ = client
+    assert request(app, "GET", "/restdoc")[0] == 401
+    assert request(app, "GET", "/restdoc", token="wrong")[0] == 401
+    status, content = request(app, "GET", "/restdoc", token="secret")
+    assert status == 200
+    assert "flock API &amp; Session Documentation" in content
+    assert "Message" in content
+    assert "Command" in content
+    assert "StartAgent" in content
+    assert "StopAgent" in content
+    assert "Notice: This list of kinds is current, not authoritative." in content
+    assert "Meaning of HTTP 202 Accepted" in content
+    assert "120×32" in content
+    assert "ws://&lt;host&gt;:8081/session" in content
+
+
+def test_generated_docs_endpoints_require_auth(client):
+    app, _ = client
+    for path in ("/docs", "/redoc", "/openapi.json"):
+        assert request(app, "GET", path)[0] == 401
+        assert request(app, "GET", path, token="wrong")[0] == 401
+        assert request(app, "GET", path, token="secret")[0] == 200
+
 
 
 def test_envelope_passes_unknown_kind_and_payload_without_validation(client, monkeypatch):
