@@ -14,6 +14,20 @@ An **h-flock** tenant is a message bus for terminal agents and external applicat
 - **Asynchronous Delivery:** `POST` operations return `202 Accepted` immediately. Agents process envelopes asynchronously over seconds to minutes. A reply, if generated, is delivered to your app's inbox stream.
 - **Pull-Based Task Boards:** Task boards are pulled by participants; adding a ticket writes to a board without interrupting or notifying the agent.
 
+> **A reply may never come — build for silence.**
+>
+> `202 Accepted` means the envelope was accepted for routing. It does not mean an
+> agent received it, read it, or agreed to answer. An agent may be busy for
+> minutes, may be stopped, or may simply decide no reply is warranted.
+>
+> This is the single most important thing to design around. Never block a user
+> interaction on a reply arriving, never treat a missing reply as an error, and
+> never retry a message because nothing came back — the first one was very likely
+> delivered, and a retry produces two.
+>
+> A message you send is best thought of as a message to a colleague, not a
+> function call.
+
 ---
 
 ## 2. Authentication & Transport
@@ -439,6 +453,16 @@ Port `:8081` provides WebSocket terminal access for rendering live terminal wind
 | `401 Unauthorized` | Unauthorized | Missing or invalid Bearer token | Check `Authorization: Bearer <TOKEN>` header |
 | `404 Not Found` | Not Found | Unknown route, invalid agent segment name, or reading `/messages` for a non-`api` agent | Verify agent name and roster enrolment |
 | `422 Unprocessable Content` | Validation Error | Invalid `"as"` client name (not enrolled or `vab != "api"`), or malformed payload | Correct request payload |
+
+**No reply is not an error.** There is no status code for it, because nothing
+failed. If you have sent a message and your mailbox stays empty, the envelope was
+still accepted and very probably delivered — the agent has not answered *yet*, or
+will not. Surface it in your interface as waiting, not as a failure, and do not
+resend.
+
+**What is worth retrying:** `5xx` and connection failures, with backoff. `401`,
+`404` and `422` are all deterministic — the same request will fail identically,
+so fix it rather than repeat it.
 
 ---
 
