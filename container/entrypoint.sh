@@ -51,12 +51,32 @@ start redis redis-server --bind 127.0.0.1 --port 6379 --save '' --appendonly no
 until redis-cli -h 127.0.0.1 ping >/dev/null 2>&1; do sleep 0.2; done
 
 # ── seed the roster ───────────────────────────────────────────────────────────
-# Boot configuration, not the write path LLD-bus-and-router §7 defers. SADD is
-# idempotent, so bringing the container up twice converges (CONTRACTS §5).
+# Boot configuration, not the write path LLD-bus-and-router §7 defers. The roster
+# is the MAC table: a HASH of agent -> VAB (§3.2). HSET is idempotent, so
+# bringing the container up twice converges (LLD-container §5).
+#
+# AGENTS is name:vab pairs — AGENTS=alice:tmux,bob:tmux,carol:tmux
 roster_key="pod:${POD}:tenant:${TENANT}:roster"
-IFS=',' read -ra agents <<< "$AGENTS"
-redis-cli -h 127.0.0.1 SADD "$roster_key" "${agents[@]}" >/dev/null
-echo "{\"module\":\"container\",\"event\":\"roster_seeded\",\"count\":${#agents[@]}}"
+IFS=',' read -ra entries <<< "$AGENTS"
+agents=()
+fields=()
+for entry in "${entries[@]}"; do
+  name="${entry%%:*}"
+  vab="${entry#*:}"
+  if [ "$name" = "$entry" ] || [ -z "$vab" ]; then
+    echo "entrypoint: AGENTS entry '$entry' is not name:vab" >&2
+    exit 1
+  fi
+  agents+=("$name")
+  fields+=("$name" "$vab")
+done
+
+# api is a fixed agent and a roster row like any other — the router no longer
+# special-cases it (LLD-bus-and-router §3.2).
+fields+=("api" "api")
+
+redis-cli -h 127.0.0.1 HSET "$roster_key" "${fields[@]}" >/dev/null
+echo "{\"module\":\"container\",\"event\":\"roster_seeded\",\"count\":$(( ${#fields[@]} / 2 ))}"
 
 # ── tmux host ─────────────────────────────────────────────────────────────────
 start tmuxhost python -m flock.tmuxhost
@@ -80,7 +100,9 @@ echo "{\"module\":\"container\",\"event\":\"windows_ready\",\"count\":${#agents[
 
 # ── the rest ──────────────────────────────────────────────────────────────────
 start router  python -m flock.router
-start adapter python -m flock.adapter
+# No adapter here. It is not a service — the router kicks `flock.adapter <agent>`
+# per delivery and it exits (LLD-adapter-tmux §2). Starting one at boot would be
+# the daemon this build exists to remove.
 # api last, so it is not reachable before the tenant behind it is up (§5).
 start api     python -m flock.api
 
