@@ -24,7 +24,7 @@ envelope protocol.
 | Command | Does | Envelope or state underneath |
 |---|---|---|
 | `office send -a <agent> <text>…` | message one agent | `Message` |
-| `office broadcast <text>…` | message every peer agent | N × `Message` |
+| `office broadcast <text>…` | message every terminal peer | N × `Message` |
 | `office peers` | list peer agents | roster read |
 | `office hire <name> [--cli <cli>]` | enrol and start an agent | `StartAgent` to `host` |
 | `office letGo <name>` | retire an agent and clear lifecycle state | `StopAgent` to `host` |
@@ -46,7 +46,8 @@ command to another agent without `argparse` consuming the inner `-a`.
 
 `office broadcast` takes no recipient. It resolves roster members whose VAB is
 `tmux`, removes the sender, and sends one `Message` to each. It does not use
-`recipient: all`, and never reaches the fixed `api` or `host` agents. The bus's
+`recipient: all`, and never reaches any `api` client or the `host` control
+participant. The bus's
 reserved broadcast address remains available to protocol clients such as
 `POST /agents/all/envelopes`, where the router fans out to the whole roster.
 
@@ -59,6 +60,20 @@ a conversational broadcast means.
 so it is read from the roster rather than copied into a window. `AGENT_PEERS`
 does not exist.
 
+Named app clients are roster participants with VAB `api`, but they are not
+terminal peers: they have a retained mailbox and no window, home or CLI. The VAB
+filter therefore keeps them out of both `office peers` and conversational
+broadcasts. Direct addressing needs no special verb. An agent replies to a
+client exactly as it replies to another agent:
+
+```
+office send -a telegram here is the answer
+```
+
+The router resolves `telegram` like any other name; the adapter's `api` routine
+stores the envelope for the app to read. This sameness is the payoff from making
+VAB a property of the roster port rather than of the sender or envelope.
+
 ## 4. Lifecycle is still bus traffic
 
 The lifecycle verbs do not call control openers directly. They send
@@ -69,6 +84,11 @@ only on the shared `flock.bus` library.
 ⚠ **Do not call enrolment `startAgent`.** The base image already ships
 `startAgent`, which launches a CLI in the current window. `office hire` enrols a
 new agent and creates a new window: same tempting name, opposite operation.
+
+`office hire` deliberately enrols only tmux agents. App clients use the same
+`StartAgent` kind through the REST door with `vab: "api"`; that control path
+creates only their roster row. Giving terminal agents a VAB flag would expose a
+hosting decision their focused tool does not need.
 
 Pause is not retirement. It preserves the roster row, window, queues, board,
 home and address while stopping the CLI. Letting an agent go removes desired
@@ -85,7 +105,8 @@ directories rather than inventing a second account path.
 ## 6. Discovery and the guide
 
 The window carries `OFFICE_TOOLS=office`. It is static for the image's lifetime;
-everything that can change is discovered through an `office` subcommand.
+terminal peer membership, which can change, is discovered through `office peers`
+rather than copied into the environment.
 
 `/workdir/<agent>/AGENTS.md` and `/workdir/<agent>/CLAUDE.md` contain the same
 short guide, and `AGENT_GUIDE` points at the former for CLIs that need an

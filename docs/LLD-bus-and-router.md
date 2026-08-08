@@ -5,11 +5,13 @@
 
 ## 1. Purpose & layer
 
-An **agent** is anything that talks on the bus. It reaches the bus through an
-adapter, which produces onto the agent's egress and consumes from its ingress on
-its behalf. The bus carries envelopes; the router forwards them between agents.
-What an agent *is* — a process, a session, a daemon, an HTTP handler — is not
-the bus's concern and is deliberately absent from this document.
+A **participant** is anything that talks on the bus: a terminal agent, an app
+client, or a control endpoint. It is a roster row and a name. An adapter
+produces onto the participant's egress and consumes from its ingress on its
+behalf; its VAB says what is attached at the far end. The bus carries envelopes
+and the router forwards them between participants. What a participant *is* — a
+process, a session, a daemon, an HTTP handler — is not the bus's concern and is
+deliberately absent from this document.
 
 Three layers, and the point of the split is that each is ignorant of the layer
 above it.
@@ -41,9 +43,10 @@ and `receive` takes what arrives on ingress and passes it to an opener. The
 router owns the middle, where it pops egress and writes ingress. The two edge
 directions are symmetric — one puts an envelope on the bus, the other opens one.
 
-What differs between agents is only the far end. One opener types into a
-terminal window; another hands the envelope to an HTTP client. The bus side of
-the adapter is identical for every one of them.
+What differs between participants is only the far end. One delivery routine
+types into a terminal window; another appends the unchanged envelope to a
+client's mailbox. The bus side of the adapter is identical for every one of
+them.
 
 Opening is where an envelope stops being opaque. The adapter reads the header to
 choose a kind-specific opener; that opener may interpret the payload to paste a
@@ -95,9 +98,9 @@ sender:
 
 ⚠ Note what this is *not* justified by, because the tempting argument is the
 weak one: it is **not** about hiding topology from producers. In this build every
-agent has `REDIS_URL` and `redis-cli`, and one read the whole roster within
-minutes of starting. Topology is a command away. The router earns
-its place by being the single component that has to change when the answer to
+terminal agent has `REDIS_URL` and `redis-cli`, and one read the whole roster
+within minutes of starting. Topology is a command away. The router earns its
+place by being the single component that has to change when the answer to
 "where is that recipient" changes — not by keeping the answer secret.
 
 ## 2. The model, in one picture
@@ -124,7 +127,7 @@ payload. That is the whole design.
   │  │       │◄──────────│ …:bob:ingress  │◄───────│                │  │
   │  └───────┘           └────────────────┘        └───────┬────────┘  │
   │                                                        │ won't     │
-  │   api and host are agents too —                        ▼ forward   │
+  │   api and host are participants too —                  ▼ forward   │
   │   same prefix shape, same pair                 ┌────────────────┐  │
   │                                                │ …:<from>:dead  │  │
   │                                                └────────────────┘  │
@@ -151,8 +154,8 @@ Levels interleave, `tag:value` at each step:
 | Level | Holds | Who cares |
 |---|---|---|
 | `pod` | tenants | a gateway, when routing between tenants |
-| `tenant` | agents | one router serves exactly one tenant |
-| `agent` | resources | the agent itself |
+| `tenant` | participants | one router serves exactly one tenant |
+| `agent` | resources | the named participant itself (the tag name is historical) |
 
 **Interleaved rather than tags-first**, so every level is a genuine prefix of
 the level below it. That is what makes one pattern able to span levels:
@@ -189,10 +192,13 @@ without adding depth:
   pod:acme:tenant:hq:agent:alice     : egress        an agent's resources
   pod:acme:tenant:hq:agent:alice     : tasks.todo
   pod:acme:tenant:hq:agent:alice     : tasks.doing
+  pod:acme:tenant:hq:agent:telegram  : inbox         an app client's mailbox
 ```
 
 An address at any level can carry resources, so tenant-level and pod-level state
-have a home without a special case.
+have a home without a special case. `inbox` is the only Redis Stream in the
+system; every queue is a LIST. The exception exists for cursors: a queue is
+consumed once, while a retained mailbox can be read at independent positions.
 
 Address-segment rule: `^[a-z0-9][a-z0-9-]{0,62}$` — lowercase alnum and dash. No glob
 metacharacters, so a prefix is safe to drop into a Redis `SCAN MATCH`. No
@@ -204,51 +210,54 @@ each sub-segment is validated and may not be a reserved word.
 This is what makes many tenants on one Redis safe, and it is the invariant that
 must survive every change.
 
-### 3.2 Agents
+### 3.2 Participants
 
-Everything addressable is an agent. There is no second concept:
+Everything addressable is a participant. There is no separate addressing
+concept for terminal agents and app clients:
 
-| Agent | Kind | Notes |
+| Participant | VAB | Notes |
 |---|---|---|
-| named agents | dynamic | enrolled from a roster. Appear and disappear while running. |
-| `api` | fixed | serves an HTTP client |
-| `host` | fixed | opens lifecycle control envelopes |
-| `gateway` | deferred | cross-tenant traffic (§7) |
+| terminal agents | `tmux` | dynamic; an enrolled name backed by a window and CLI |
+| app clients | `api` | dynamic; an enrolled name backed by a mailbox, with no window |
+| `api` | `api` | fixed default identity for the REST door |
+| `host` | `control` | fixed lifecycle-control endpoint |
+| `gateway` | deferred | future cross-tenant traffic (§7) |
 
-Named agents come from a roster that changes while the router is running, so the
-subscribe set is **derived from the roster and rebuilt when it changes**, not
-read from a constant. Adding a kind of agent is adding a name, not altering the
-addressing scheme — that is what makes the scheme scale.
+Named participants come from a roster that changes while the router is running,
+so the subscribe set is **derived from the roster and rebuilt when it changes**,
+not read from a constant. Adding a kind of participant is adding a name and a
+VAB delivery routine, not altering the addressing scheme — that is what makes
+the scheme scale.
 
-**The roster is live state, not boot configuration.** Agents join and leave
-while the router runs, and the subscribe set follows. It is also the only source
-of membership: the router builds its egress subscribe set from it, and anything
-that needs "every agent in this tenant" — aggregating a board, fanning out a
-broadcast — walks the same list rather than scanning the keyspace. One source,
-several readers.
+**The roster is live state, not boot configuration.** Participants join and
+leave while the router runs, and the subscribe set follows. It is also the only
+source of membership: the router builds its egress subscribe set from it, and
+anything that needs "every participant in this tenant" — aggregating a board,
+fanning out a raw broadcast — walks the same list rather than scanning the
+keyspace. One source, several readers.
 
-Since every module reads it, its shape is part of the contract:
+Since several modules read it, its shape is part of the contract:
 
 | | |
 |---|---|
 | **Key** | `pod:<pod>:tenant:<tenant>:roster` |
 | **Type** | `HASH` |
-| **Field** | an agent name, matching the segment rule |
-| **Value** | its **VAB** — the virtual agent base it runs on, e.g. `tmux`, `api` |
+| **Field** | a participant name, matching the segment rule |
+| **Value** | its **VAB** — the virtual agent base attached to it: `tmux`, `api`, `control` |
 
 **This is the MAC address table.** A name resolves to a port and to what is
-attached to that port, and nothing else about the agent lives here.
+attached to that port, and nothing else about the participant lives here.
 
 The port itself is not stored, because it is computed:
 `prefix(pod, tenant, agent, "ingress")` is a pure function of the name. Nothing
 is duplicated, so nothing can drift.
 
-**The router reads the fields. The adapter reads the values.**
+**The router reads the fields. Adapter-side delivery reads the values.**
 
 | | Reads | Asks |
 |---|---|---|
 | router | `HKEYS`, `HEXISTS` | who exists; does this recipient resolve |
-| adapter | `HGET <agent>` | how do I deliver to this one |
+| adapter/control | `HGET <agent>` | how do I deliver to or stop this one |
 
 That split is what makes invariant 8 structural rather than a promise: the
 router never reads the column that says how an agent is hosted, so it cannot
@@ -273,12 +282,12 @@ legitimate (§5), but the sender has no business knowing this in the first place
 each re-reads it. There is no notification to enable, and no obligation on
 whatever writes the roster beyond writing it.
 
-Two modules need it and one does not. The **router** re-reads on its own
-`BLPOP` timeout — one loop, one re-read, and the timeout doubles as how long
-shutdown takes. The **tmux host**, with no queue to block on, polls on a loop of
-its own. The **adapter** does not poll at all: it holds nothing between
-deliveries, so it has no set to keep in step. It is told which agent to deliver
-for, by the thing that just wrote to that agent.
+Two long-lived readers need polling and one does not. The **router** re-reads on
+its own `BLPOP` timeout — one loop, one re-read, and the timeout doubles as how
+long shutdown takes. The **tmux host**, with no queue to block on, polls on a
+loop of its own. The **adapter** does not poll at all: it holds nothing between
+deliveries, so it has no set to keep in step. It is told which participant to
+deliver for, by the thing that just wrote to that participant.
 
 **The interval is `ROSTER_POLL_SECONDS`, from the environment** (`LLD-container`
 §4), default 5. Both readers take the same value from the same place, so their
@@ -286,53 +295,61 @@ staleness windows agree by construction rather than by two modules remembering
 to.
 
 Staleness is bounded by that interval and is harmless in the two obvious
-directions. An agent added a moment ago is simply not routed to yet; one removed
-a moment ago has its envelopes dead-lettered on the next pass. Neither is a race
-worth closing, and closing it — keyspace notifications, a watched version key —
-would put a write-side obligation on the roster that nothing currently owns.
+directions. A participant added a moment ago is simply not routed to yet; once a
+removed recipient disappears from the router's next roster read, new envelopes
+addressed to it dead-letter at their senders. Neither is a race worth closing,
+and closing it — keyspace notifications, a watched version key — would add a
+write-side obligation to every roster mutation.
 
-Nothing else lives in the table. Whatever an agent *is* beyond the base it runs
-on — what is started in its window, its credentials, its configuration — belongs
-to whichever module starts it, not to membership.
+Nothing else lives in the table. Whatever a participant *is* beyond its VAB —
+what is started in its window, its credentials, its configuration — belongs to
+whichever module starts it, not to membership.
 
-Lifecycle writes desired state before actual state, in both directions.
-`StartAgent` writes the roster row and launch key before creating the window;
-`StopAgent` removes the roster row and per-agent state before killing it. That
-ordering is what makes a crash recoverable: the tmux host reconciles a missing
-window from the roster and launch key, while it removes a window whose roster
-row is gone. There is a narrow start interval in which an early delivery can
-find no window and dead-letter; reversing the order would instead make a crash
-lose the desired state entirely.
+Lifecycle branches on VAB. For `tmux`, desired state comes before actual state
+in both directions: `StartAgent` writes the roster row and launch key before
+creating the window; `StopAgent` removes the roster row and per-agent state
+before killing it. That ordering makes a crash recoverable through tmux-host
+reconciliation. There remains a narrow start interval in which delivery can
+reach the roster row before its window exists and dead-letter; reversing the
+order would instead make a crash lose the desired state entirely. For `api`,
+enrolment writes only the roster row — no launch key, home, window or CLI — and
+stopping removes the row and mailbox without touching tmux.
 
 ### 3.3 Queues
 
-Direction is relative to the **agent**, as it is on a network device: egress is
-traffic leaving the agent, ingress is traffic arriving at it. The router sits on
-the opposite end of both.
+Direction is relative to the **participant**, as it is on a network device:
+egress is traffic leaving the participant, ingress is traffic arriving at it.
+The router sits on the opposite end of both.
 
 | Key | Type | Producer | Consumer |
 |---|---|---|---|
-| `<prefix>:egress` | LIST | the agent | the router |
-| `<prefix>:ingress` | LIST | the router | the agent |
-| `<prefix>:dead` | LIST | the router, or an edge adapter | nothing yet — read by hand or by `api` |
+| `<prefix>:egress` | LIST | the participant | the router |
+| `<prefix>:ingress` | LIST | the router | the participant's adapter |
+| `<prefix>:dead` | LIST | the router, or an edge adapter | entries by hand; depth by `api` |
+| `<prefix>:inbox` | STREAM | the `api` delivery routine | app clients, by cursor |
 
-Lists, not pub/sub, so a backlog survives a consumer restart.
+Envelope transport uses lists, not pub/sub, so a backlog survives a consumer
+restart. The mailbox is the system's one Redis Stream because it is retained,
+not consumed: `XRANGE` and `XREAD` let polling and SSE readers keep independent
+cursors. Delivery appends one field named `envelope`, capped approximately at
+1,000 entries; the stream entry ID is the cursor.
 
-**Having written an ingress queue, the router kicks delivery for that agent.**
+**Having written an ingress queue, the router kicks delivery for that
+participant.**
 
 ```
   RPUSH …:agent:bob:ingress
   kick  flock.adapter bob
 ```
 
-**Only egress is watched, and that asymmetry is the whole design.** You have to
-sit on a queue when writes come from somewhere you do not control: nobody knows
-when an agent will `send`, so the router blocks on egress. But *every* ingress
+**Only egress is watched for envelope delivery, and that asymmetry is the whole
+design.** You have to sit on a queue when writes come from somewhere you do not control: nobody knows
+when a participant will send, so the router blocks on egress. But *every* ingress
 write is made by the router itself (invariant 3), so the router already knows
 the instant one lands. A second process waiting to be told something the writer
 already knew is pure redundancy — and it is redundancy with a cost, because
-waiting means a held connection per agent, forever, for an office that is idle
-almost all of the time.
+waiting means a held ingress connection per participant, forever, for an office
+that is idle almost all of the time.
 
 Three rails keep the kick from turning the router into a middlebox. They are
 invariants, not intentions:
@@ -351,8 +368,8 @@ Rail 2 is what keeps invariant 8 true here. The router does not know an adapter
 by name, by type or by capability — it knows one command, and the knowledge of
 what to do lives on the far side of it.
 
-**One delivery per agent at a time.** The number of adapters running for bob is
-the number of kicks fired, so two envelopes landing close together start two of
+**One delivery per participant at a time.** The number of adapters running for
+bob is the number of kicks fired, so two envelopes landing close together start two of
 them — and they do not merely reorder, they interleave against one window: two
 pastes, then two `Enter`s, fusing both messages into one input. `send-keys`
 targets a window, not a delivery.
@@ -412,20 +429,28 @@ it on**, which differs by where it died:
 ## 4. Semantics
 
 **Fire-and-forget, like UDP.** The producer gets no acknowledgement, there is no
-retransmit, and nothing at the bus layer promises delivery. An agent wanting a
-reply gets one by convention on top, the way DNS does over UDP — never from the
-transport.
+retransmit, and nothing at the bus layer promises delivery. A terminal agent
+replies by addressing the producer's name. When that producer is an app client,
+its `api` delivery routine stores the reply in the client's mailbox for polling
+or SSE. That is an application return path, not a transport acknowledgement: a
+reply may never come.
 
 **Order is preserved per queue**, because Redis lists are FIFO. Nothing should
 come to depend on ordering *across* queues.
 
-**Broadcast is tenant-scoped.** A broadcast fans out to the agents of one tenant
-and stops there, the way a broadcast domain ends at a router. Reaching another
-tenant is explicit addressing, never implicit fan-out.
+**Broadcast is tenant-scoped.** A raw broadcast fans out to the participants of
+one tenant and stops there, the way a broadcast domain ends at a router.
+Reaching another tenant is explicit addressing, never implicit fan-out.
 
 **`recipient: "all"` is the broadcast address.** The router walks the roster and
-writes one copy to each member's ingress, skipping the producer — an agent does
-not receive its own broadcast.
+writes one copy to each member's ingress, skipping the producer — a participant
+does not receive its own broadcast.
+
+That raw protocol broadcast includes every roster participant, so an enrolled
+app client receives a copy in its mailbox. `office broadcast` is deliberately a
+different, conversational surface: it sends N individual `Message` envelopes
+only to VAB `tmux`, excluding app clients and fixed plumbing. The router still
+knows only the first form and never reads a VAB.
 
 It has to be a value of `recipient` and not anything else, because routing is
 `recipient` and nothing else (§6.4) — a `kind` of `Broadcast` would make the
@@ -475,8 +500,8 @@ message means becomes a change to the router.
   "stream_id": "<hex>",
   "correlation_id": "<hex>",
   "ts": "2026-08-07T18:00:00.000Z",
-  "producer": "<agent>",
-  "recipient": "<agent>",
+  "producer": "<participant>",
+  "recipient": "<participant>",
   "payload": { }
 }
 ```
@@ -486,7 +511,7 @@ inside `payload`, and validating it is the consumer's job, never the bus's.
 Unknown top-level fields are ignored, so a newer producer cannot break an older
 router.
 
-`recipient` is an **agent name, not a queue name**. A producer writes
+`recipient` is a **participant name, not a queue name**. A producer writes
 `"recipient": "bob"`; it never constructs `…:bob:ingress` and never names a
 tenant. Resolving the name to a queue is the router's only real decision, and
 keeping it there is what stops topology knowledge spreading into every agent. An
@@ -507,8 +532,8 @@ agent, another does something else entirely. Adding a kind means adding an
 opener, and nothing between the two ends changes.
 
 An envelope whose kind has no opener is **dead-lettered and logged**, not
-dropped. An unopenable envelope is exactly the kind of thing you need to find
-out about.
+dropped. The `api` VAB deliberately registers a catch-all opener, so every kind
+is mailbox data there; tmux and control still dead-letter kinds they cannot open.
 
 Both `producer` and `recipient` are header fields, so reading them is not
 reading the payload — §6.4 holds.
@@ -519,23 +544,24 @@ reading the payload — §6.4 holds.
 2. **The sender comes from the queue the envelope was popped from**, never from
    its contents. Cross-tenant leakage is therefore structural, not a runtime
    check.
-3. **An agent may only write to its own `egress` queue.** The router is the only
-   writer of `ingress` queues. This is what makes the router load-bearing rather
-   than a naming convention.
+3. **A participant may only write to its own `egress` queue.** The router is the
+   only writer of `ingress` queues. This is what makes the router load-bearing
+   rather than a naming convention.
 4. **The router never reads the payload.** It forwards on `recipient` and
    derives the sender from the queue key. Nothing else in an envelope affects
    where it goes. Reading a payload to route makes it a middlebox, and every
    change to what a message means becomes a change to the router.
 5. **The bus is lifecycle-agnostic.** It moves opaque strings. Task state,
    correlation and session context live above it.
-6. **Lists, not pub/sub.**
+6. **Queues are lists, not pub/sub.** The retained app mailbox is the sole Redis
+   Stream; it is not consumed like a queue.
 7. **One bad envelope never stops the loop.** Malformed JSON, an unparseable
    queue name, an unresolvable recipient: log and skip or dead-letter, per
    envelope.
-8. **The router knows nothing about how an agent is implemented.** It reads the
-   roster's *fields*, never its *values*, so it cannot know an agent's VAB. It
-   kicks one fixed command with a name. This is structural, not a convention
-   anyone has to remember.
+8. **The router knows nothing about how a participant is implemented.** It reads
+   the roster's *fields*, never its *values*, so it cannot know a participant's
+   VAB. It kicks one fixed command with a name. This is structural, not a
+   convention anyone has to remember.
 
 ## 7. Built extensions and deferred work
 
@@ -543,8 +569,8 @@ The layer split has survived the extensions built above it. The remaining item
 is intentionally outside the running single-tenant system; do not solve it
 pre-emptively.
 
-*(Concurrent delivery to one agent used to be listed here as open. It is settled
-— see §3.3, "one delivery per agent".)*
+*(Concurrent delivery to one participant used to be listed here as open. It is
+settled — see §3.3, "one delivery per participant".)*
 
 **Cross-tenant routing.** Not a separate component — a branch in the router.
 When a `recipient` does not resolve inside the local tenant, look it up in a
@@ -558,11 +584,12 @@ trip; a remote one is a network round trip, and doing that inline turns a
 microsecond loop into a tens-of-milliseconds one. That is the one thing that
 would make subscribe-set fairness matter — see below.
 
-**Agent lifecycle over the bus is built.** A control agent owns the roster write
-path, and it is reached over the bus like anything else:
+**Participant lifecycle over the bus is built.** A control participant owns the
+roster write path, and it is reached over the bus like anything else:
 
 ```
-  POST /agents/host/messages  --kind StartAgent  --payload {"agent":"dave"}
+  POST /agents/host/envelopes  {"kind":"StartAgent",
+                                "payload":{"agent":"dave"}}
         │
         ▼  api egress ──► router ──► …:agent:host:ingress ──kick──► adapter host
                                                                         │
@@ -571,21 +598,28 @@ path, and it is reached over the bus like anything else:
 ```
 
 Nothing in the router or the bus changes to allow this, which is the point. The
-host becomes an addressable agent with its own VAB — everything addressable is an
-agent (§3.2), so it needs a name and a queue pair and nothing else. `kind` stays
+host becomes an addressable participant with its own VAB, so it needs a name and
+a queue pair and nothing else. `kind` stays
 opaque to the router; the control opener reads it at the far edge, exactly as §5
 describes. All three rails in §3.3 hold untouched.
 
 The same mechanism carries `StopAgent`, `PauseAgent` and `ResumeAgent`. Pause
 deliberately leaves the roster and window intact; resume clears the marker,
-restarts the CLI and kicks once per queued ingress envelope. There is no second
-door into the roster and no module acquires a write path of its own.
+restarts the CLI and kicks once per queued ingress envelope. Runtime lifecycle
+writes remain in the control opener; container boot seeding is the other roster
+writer and establishes the initial fixed and tmux rows.
+
+`StartAgent` also accepts `vab: "api"`. That path writes the named client's
+roster row and nothing tmux-related. Replies addressed to that name route through
+the same ingress and kick, then the API delivery routine appends the envelope to
+`…:agent:<client>:inbox`. `StopAgent` removes the row and mailbox. The switch
+does not change for any of this; it still routes a name without reading its VAB.
 
 **Subscribe-set fairness.** `BLPOP` returns from the first non-empty key in
 argument order, so a fixed order can in principle starve later queues. It cannot
 happen here: the router's loop is pop, resolve, push — a few local round trips —
-and no agent produces fast enough to keep its queue non-empty across that. The
-problem belongs to designs where routing and delivery share a loop, and the
+and no participant produces fast enough to keep its queue non-empty across that.
+The problem belongs to designs where routing and delivery share a loop, and the
 layer split in §1 is what removes it. Rotating the key list each pass
 is not fixing a defect this design has. The router nevertheless rotates the
 sorted key list one position per pass; the cheap insurance is built.
@@ -593,6 +627,6 @@ sorted key list one position per pass; the cheap insurance is built.
 ## 8. What this is not
 
 Not a task system. Not an orchestrator in the "supervisor delegates to workers"
-sense. Not a scheduler. Anything an agent does with an envelope after consuming
-it is out of scope — the bus carries signals, the router forwards them, and
-neither decides what is done with them.
+sense. Not a scheduler. Anything a participant does with an envelope after
+consuming it is out of scope — the bus carries signals, the router forwards
+them, and neither decides what is done with them.
