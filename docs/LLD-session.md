@@ -42,7 +42,7 @@ covers the whole tenant and the fan-out to subscribers is ours to do in memory.
   tmux -C attach                    one client, whole tenant
         │ %output %3 "..."
         ▼
-  pane id → agent name              from list-panes, refreshed on %window-add
+  pane id → agent name              from list-panes -s, refreshed on %window-add / %window-close / %window-renamed
         │
         ▼
   fan out to subscribers of that agent
@@ -54,6 +54,11 @@ somewhere — *"belongs to whatever eventually renders agent windows in an app �
 weigh it there, with that requirement in hand."* The requirement is now in hand,
 and delivery keeps using subprocess calls. Both choices stand; they were always
 about different jobs.
+
+⚠ `refresh_panes()` runs `list-panes -s -t <session>` to map all panes across all
+windows in the session (the `-s` flag is essential e.g. for multiple windows), and
+refreshes on `%window-add`, `%window-close`, and `%window-renamed` events as well as
+on demand during subscription updates.
 
 ⚠ `%output` data is escaped by tmux and carries raw terminal bytes including
 escape sequences. It is passed through untouched — rendering is the app's
