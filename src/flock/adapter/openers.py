@@ -10,6 +10,31 @@ from flock.tmux import list_windows, paste_text, run_tmux
 get_tmux_windows = list_windows
 
 
+def _record_task_add_event(
+    task_id: str,
+    title: str,
+    agent: str,
+    actor: str,
+    timestamp: str | None = None,
+) -> None:
+    try:
+        record_path = os.environ.get("TASK_RECORD", "/home/ubuntu/.flock/tasks.jsonl")
+        os.makedirs(os.path.dirname(record_path), exist_ok=True)
+        ts = timestamp or (datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.%f")[:-3] + "Z")
+        record = {
+            "event": "add",
+            "id": task_id,
+            "title": title,
+            "agent": agent,
+            "actor": actor,
+            "timestamp": ts,
+        }
+        with open(record_path, "a", encoding="utf-8") as f:
+            f.write(json.dumps(record) + "\n")
+    except Exception:
+        pass
+
+
 def message_opener(
     r,
     pod: str,
@@ -97,6 +122,9 @@ def add_ticket_opener(
         log_record(
             module="adapter",
             event="deprecated_kind",
+            stream_id=stream_id,
+            correlation_id=corr_id,
+            producer=producer,
             recipient=agent,
             reason="AssignTask is deprecated, use AddTicket",
         )
@@ -152,6 +180,14 @@ def add_ticket_opener(
 
     todo_key = prefix(pod, tenant, agent=agent, resource="tasks.todo")
     r.rpush(todo_key, json.dumps(ticket_obj))
+
+    _record_task_add_event(
+        task_id=ticket_obj.get("id", ""),
+        title=ticket_obj.get("title", ""),
+        agent=agent,
+        actor=producer,
+        timestamp=ticket_obj.get("created_ts"),
+    )
 
 
 # Alias for backward compatibility
