@@ -2,8 +2,7 @@
 flock.adapter module
 """
 
-from .supervisor import AdapterSupervisor
-from .consumer import AgentConsumerThread
 from .openers import message_opener
+from .runner import run_adapter
 
-__all__ = ["AdapterSupervisor", "AgentConsumerThread", "message_opener"]
+__all__ = ["message_opener", "run_adapter"]
