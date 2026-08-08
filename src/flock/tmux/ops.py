@@ -1,3 +1,4 @@
+import json
 import os
 import subprocess
 import time
@@ -56,6 +57,66 @@ def list_windows(session_name: str, socket: str | None = None) -> Set[str]:
     return {w for w in stdout.splitlines() if w}
 
 
+def generate_agents_md(agent_name: str, tenant: str = "default") -> str:
+    return f"""You are **{agent_name}**, an agent in this office.
+
+Everything about your situation is in your environment:
+
+    $AGENT_NAME      who you are
+    $TENANT          the office you are in
+    $OFFICE_TOOLS    the commands available to you
+
+Run any of those with --help. To see who you can talk to:
+
+    peers
+
+A message arrives in your terminal as `[message from alice] …` — reply by name
+with sendMessage. This directory is yours; work in it.
+"""
+
+
+def ensure_claude_project_trusted(cwd: str) -> None:
+    try:
+        home_dir = os.environ.get("HOME", "/home/ubuntu")
+        config_path = os.path.join(home_dir, ".claude.json")
+        data = {}
+        if os.path.exists(config_path):
+            try:
+                with open(config_path, "r", encoding="utf-8") as f:
+                    data = json.load(f)
+            except Exception:
+                data = {}
+
+        if "projects" not in data or not isinstance(data["projects"], dict):
+            data["projects"] = {}
+
+        if cwd not in data["projects"] or not isinstance(data["projects"][cwd], dict):
+            data["projects"][cwd] = {}
+
+        data["projects"][cwd]["hasTrustDialogAccepted"] = True
+        data["projects"][cwd]["hasCompletedProjectOnboarding"] = True
+
+        with open(config_path, "w", encoding="utf-8") as f:
+            json.dump(data, f, indent=2)
+    except Exception:
+        pass
+
+
+def write_agent_guide(cwd: str, agent_name: str, tenant: str = "default") -> None:
+    try:
+        os.makedirs(cwd, exist_ok=True)
+        content = generate_agents_md(agent_name, tenant)
+
+        for filename in ("AGENTS.md", "CLAUDE.md"):
+            file_path = os.path.join(cwd, filename)
+            with open(file_path, "w", encoding="utf-8") as f:
+                f.write(content)
+
+        ensure_claude_project_trusted(cwd)
+    except Exception:
+        pass
+
+
 def create_window(
     session_name: str,
     agent_name: str,
@@ -70,6 +131,8 @@ def create_window(
         os.makedirs(cwd, exist_ok=True)
     except OSError:
         pass
+
+    write_agent_guide(cwd, agent_name)
 
     if not command:
         command = ["env", f"AGENT_NAME={agent_name}", "bash", "-il"]

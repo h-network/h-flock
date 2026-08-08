@@ -154,3 +154,24 @@ def test_write_agent_guide_creates_both_files_and_trusts_claude():
 
                 assert data["projects"][tmp_workdir]["hasTrustDialogAccepted"] is True
                 assert data["projects"][tmp_workdir]["hasCompletedProjectOnboarding"] is True
+
+
+@patch("flock.tmux.ops.run_tmux")
+def test_create_window_directly_writes_guide_and_trust(mock_run_tmux):
+    mock_run_tmux.return_value = (0, "", "")
+    with tempfile.TemporaryDirectory() as tmp_workdir:
+        with tempfile.TemporaryDirectory() as tmp_home:
+            with patch.dict(os.environ, {"HOME": tmp_home}):
+                from flock.tmux.ops import create_window as shared_create_window
+                shared_create_window("hq", "dave", command=["claude"], cwd=tmp_workdir)
+
+                agents_path = os.path.join(tmp_workdir, "AGENTS.md")
+                claude_path = os.path.join(tmp_workdir, "CLAUDE.md")
+                assert os.path.exists(agents_path)
+                assert os.path.exists(claude_path)
+
+                config_path = os.path.join(tmp_home, ".claude.json")
+                assert os.path.exists(config_path)
+                with open(config_path, "r", encoding="utf-8") as f:
+                    data = json.load(f)
+                assert data["projects"][tmp_workdir]["hasTrustDialogAccepted"] is True
