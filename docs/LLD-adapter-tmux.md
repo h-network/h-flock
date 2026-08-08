@@ -57,8 +57,8 @@ kicks off delivery for that agent.
 The agent is not involved and its state is irrelevant — an idle agent is the
 normal case, and it has no way to know anything arrived.
 
-**The adapter is not a daemon.** It is invoked, it delivers one agent's backlog,
-and it exits. Nothing sits blocked on a queue, no connection is held per agent,
+**The adapter is not a daemon.** It is invoked, it delivers **one envelope**, and
+it exits. Nothing sits blocked on a queue, no connection is held per agent,
 and an office of idle agents costs nothing at all. The alternative — a
 long-running consumer per agent, popping eagerly — **moves the backlog into
 process memory**: delivery takes hundreds of milliseconds, arrivals are not rate

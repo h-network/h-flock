@@ -1,6 +1,9 @@
 # Next sprints
 
-> Four topics, decided in outline, not scheduled. Nothing here is built.
+> Four topics, decided in outline. ⚠ **Partly built since:** pausing an office
+> shipped in build 08 as `PauseAgent`/`ResumeAgent`, and the broadcast row in §1
+> is `office broadcast`. The lead being positional, role-based names, `cloneToAll`
+> and the watchdog are still outline only.
 
 ## 1. Authority, naming, and pausing an office
 

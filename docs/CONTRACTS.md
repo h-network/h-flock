@@ -397,8 +397,17 @@ HSET pod:$POD:tenant:$TENANT:roster alice tmux bob tmux carol tmux api api
 ```
 
 `HSET` is idempotent, so bringing the container up twice converges
-(`LLD-container` §5). **Nothing else writes the roster** — this is boot
-configuration, not the write path §7 defers, and no module may acquire one.
+(`LLD-container` §5).
+
+⚠ **Corrected in build 03 — this used to say "nothing else writes the roster".**
+`StartAgent` and `StopAgent` `HSET` and `HDEL` it, which is the write path §7
+deferred, and it is no longer deferred: it is how `office hire` and `office
+letGo` work.
+
+What still holds, and is the part worth keeping: **the router never writes the
+roster and never reads its values** — only `HKEYS`/`HEXISTS`, fields not values.
+That is invariant 8, and it is structural rather than a convention. The write
+path belongs to `flock.control`, reached only through the bus.
 
 ## 8. What the api reads
 
@@ -413,9 +422,23 @@ The board is **four LISTs per agent**, using the resource names
 ```
 
 Not one HASH. A board is ordered — "take your next task" is only meaningful
-against a FIFO — and a hash gives no order. Separate keys also make a state
-transition a `LMOVE` between two of them rather than a read-modify-write of one
-value, which is what keeps two readers from tearing a board in half.
+against a FIFO — and a hash gives no order.
+
+⚠ **Corrected in build 11 — a transition is `LPOP`/`LREM` then `RPUSH`, not
+`LMOVE`.** This used to promise `LMOVE`, and build 11 made that impossible: a
+ticket is **mutated in flight**. `take` stamps `started_ts` and sets `status`, so
+the value pushed is not the value popped, and `LMOVE` moves a value untouched.
+The moment tickets carried state, the atomic single-command move was gone.
+
+That is safe here for the reason h-office gives: **one agent consumes its own
+column**, so there is no second reader to tear against, and the pair needs no
+locking.
+
+⚠ **The residual risk is a crash between the two commands, which loses the
+ticket.** Small window, single process, and no reason to pay for a Lua script or
+a WATCH loop before it happens once — but it is a real hole and it should be
+written down rather than discovered. Not the same claim as the one this
+paragraph used to make.
 
 ⚠ **Corrected in build 11 — an entry is a ticket, and the api parses it.** This
 clause used to read *"entries are opaque strings and the api does not parse

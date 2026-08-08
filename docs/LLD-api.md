@@ -147,8 +147,8 @@ they are genuinely different designs, not two implementations of one:
   of the state lives, read by the request handler. Flow state, expiring, visible.
 - **Ephemeral agents** — a waiting client enrols as its own short-lived named
   agent, the reply routes to it, and no table exists anywhere. Consistent with
-  everything else in the design; costs a roster write path, itself deferred in
-  `LLD-bus-and-router` §7.
+  everything else in the design. It used to cost a roster write path of its own —
+  it no longer does, since `StartAgent`/`StopAgent` built one in build 03.
 
 ⚠ Whichever it is, it does not go in the api process's memory. That drains a
 durable queue into RAM — invisible, lost on restart, nothing to inspect — which
