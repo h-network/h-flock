@@ -57,20 +57,38 @@ it is wrong for a ticket board. `status` and `started_ts` are fields the board's
 own tooling reads. What stays opaque is `title` and `description`: *text*
 nothing interprets.
 
-## 3. The columns
+## 3. The columns and the states
+
+Four columns. A column is a Redis LIST, so **which list a ticket is in is its
+state** — there is no separate index to keep in step.
 
 ```
-  <prefix>:tasks.todo    RPUSH to add     ← LPOP to take   (FIFO)
-  <prefix>:tasks.doing   RPUSH on take    ← LREM on done
-  <prefix>:tasks.done    RPUSH on done
+  <prefix>:tasks.todo    waiting      RPUSH to add   ← LPOP to take (FIFO)
+  <prefix>:tasks.doing   being worked
+  <prefix>:tasks.hold    parked deliberately
+  <prefix>:tasks.done    finished     status: done | cancelled
 ```
 
-`take` is `LPOP` from todo then `RPUSH` to doing, stamping `started_ts`. **No
-locking needed** — h-office's note: *"One agent (the assignee) consumes its own
-column, so the LPOP+RPUSH pair needs no locking."*
+`done` and `cancelled` share a column because "finished with" is one place on a
+board even when the reason differs — the `status` field carries which.
 
-`done` is `LREM` by exact raw value from doing, then `RPUSH` to done, stamping
-`done_ts`.
+**Actions**
+
+| | |
+|---|---|
+| `add` | RPUSH onto `todo` |
+| `take` | `LPOP` todo → `RPUSH` doing, stamps `started_ts` |
+| `done` | `LREM` from doing → `RPUSH` done, `status: done`, stamps `done_ts` |
+| `cancel` | same, `status: cancelled` — the ticket is finished with, not deleted |
+| `hold` / `resume` | between `doing` and `hold` |
+| `delete` | **removes the ticket.** A real deletion, not a label |
+
+`take` needs no locking — h-office's note: *"One agent (the assignee) consumes
+its own column, so the LPOP+RPUSH pair needs no locking."*
+
+⚠ `delete` is destructive and there is no `deleted` state. If you want the
+history kept, `cancel` is the one to use — that is the whole difference between
+them.
 
 ## 4. Commands
 
