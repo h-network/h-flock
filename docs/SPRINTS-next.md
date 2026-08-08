@@ -93,14 +93,24 @@ because the agent still exists.** It simply is not running a CLI.
 Same shape as the busy tag: a per-agent state key that **only the adapter
 reads**, so the router stays ignorant and invariant 8 is untouched.
 
-**No drain logic in the first version.** A kick that finds the marker set does
-nothing and is gone, so a resumed agent's backlog goes out one envelope per
-subsequent kick — it clears as soon as anyone talks to it. Meanwhile the depth is
-readable, so nothing is hidden.
+**Resume drains.** A kick that finds the marker set does nothing and is gone, so
+after clearing the marker `resume` reads `LLEN` on the ingress and kicks that
+many times. The agent gets everything it missed, back to back.
 
-That is a deliberate first cut, not an oversight. Kicking `LLEN` times on resume
-is the obvious improvement and is worth doing only if the lag turns out to
-matter.
+⚠ Waiting for the next unrelated message to shake one envelope loose is not a
+simpler version of this — it is the wrong behaviour. An agent that was paused for
+an hour should come back to its inbox, not to one message from it.
+
+### `StopAgent` must clear the per-agent state
+
+⚠ `letGo` deletes the roster field and the launch key. It must also **`DEL` the
+`paused` marker**, or pausing an agent, retiring it, and hiring the same name
+again brings it back paused with nothing saying why.
+
+The general rule, since this will recur: **any per-agent key `StopAgent` does not
+clear becomes a booby trap for the next agent with that name.** Roster field,
+`launch`, `profile`, `paused` — all of it goes. Queues and boards are data and
+are a separate question; state is not.
 
 ## 2. `cloneToAll`
 
