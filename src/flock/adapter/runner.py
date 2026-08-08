@@ -1,3 +1,4 @@
+import json
 import os
 import time
 from datetime import datetime, timezone
@@ -15,6 +16,12 @@ class _CatchAllDict(dict):
     def get(self, key, default=None):
         return self.default_factory(key)
 
+    def __getitem__(self, key):
+        return self.default_factory(key)
+
+    def __contains__(self, key):
+        return True
+
 
 def deliver_api(
     r: redis.Redis,
@@ -23,10 +30,13 @@ def deliver_api(
     agent: str,
     timeout: int = 1,
 ) -> None:
-    def handle_api_discard(envelope: dict) -> None:
-        pass
+    inbox_key = prefix(pod, tenant, agent=agent, resource="inbox")
 
-    openers = _CatchAllDict(lambda _kind: handle_api_discard)
+    def handle_api_inbox(envelope: dict) -> None:
+        raw_env = json.dumps(envelope)
+        r.xadd(inbox_key, {"envelope": raw_env}, maxlen=1000, approximate=True)
+
+    openers = _CatchAllDict(lambda _kind: handle_api_inbox)
     receive(r, pod=pod, tenant=tenant, agent=agent, openers=openers, timeout=timeout, module="adapter")
 
 

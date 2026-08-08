@@ -14,6 +14,7 @@ class MockRedis:
         self.lists = {}
         self.hashes = {}
         self.kv = {}
+        self.streams = {}
 
     def get(self, key):
         return self.kv.get(key)
@@ -54,6 +55,15 @@ class MockRedis:
     def hdel(self, key, field):
         if key in self.hashes and field in self.hashes[key]:
             del self.hashes[key][field]
+
+    def xadd(self, name, fields, id="*", maxlen=None, approximate=True):
+        if name not in self.streams:
+            self.streams[name] = []
+        stream_id = f"{len(self.streams[name]) + 1}-0"
+        self.streams[name].append((stream_id, fields))
+        if maxlen and len(self.streams[name]) > maxlen:
+            self.streams[name] = self.streams[name][-maxlen:]
+        return stream_id
 
 
 @patch("flock.adapter.openers.list_windows")
@@ -281,7 +291,7 @@ def test_cli_send(mock_redis_cls, monkeypatch):
 
 
 @patch("flock.adapter.runner.redis.Redis.from_url")
-def test_run_adapter_vab_api_pops_and_discards(mock_redis_cls):
+def test_run_adapter_vab_api_pops_and_writes_mailbox(mock_redis_cls):
     mock_r = MockRedis()
     mock_redis_cls.return_value = mock_r
 
@@ -295,8 +305,15 @@ def test_run_adapter_vab_api_pops_and_discards(mock_redis_cls):
     run_adapter(agent="api", pod="acme", tenant="hq", session_name="hq")
 
     assert len(mock_r.lists.get(ingress_key, [])) == 0
-    dead_key = "pod:acme:tenant:hq:agent:api:dead"
-    assert len(mock_r.lists.get(dead_key, [])) == 0
+    inbox_key = "pod:acme:tenant:hq:agent:api:inbox"
+    assert inbox_key in mock_r.streams
+    assert len(mock_r.streams[inbox_key]) == 1
+    stream_id, fields = mock_r.streams[inbox_key][0]
+    assert "envelope" in fields
+    stored_env = json.loads(fields["envelope"])
+    assert stored_env["producer"] == "alice"
+    assert stored_env["recipient"] == "api"
+    assert stored_env["payload"] == {"text": "reply"}
 
 
 @patch("flock.adapter.runner.redis.Redis.from_url")
