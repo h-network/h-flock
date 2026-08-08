@@ -80,7 +80,10 @@ def receive(r, *, pod, tenant, agent, openers: dict[str, callable],
 # flock.bus.roster
 def members(r, *, pod, tenant) -> set[str]        # HKEYS  — fields only
 def is_member(r, *, pod, tenant, agent) -> bool   # HEXISTS
-def vab(r, *, pod, tenant, agent) -> str | None   # HGET   — adapters only
+def vab(r, *, pod, tenant, agent) -> str | None   # HGET   — adapter side only
+    # the adapter dispatches on it, and control openers read it to know which
+    # teardown they owe (build 12). ⚠ The router still never reads a value —
+    # that is invariant 8, and it is about the router, not about this function.
 ```
 
 ⚠ **The router calls `members` and `is_member`, never `vab`.** Reading the value
