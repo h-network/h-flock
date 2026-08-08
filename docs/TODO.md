@@ -102,9 +102,27 @@ ordinary question.
 it checks the environment before parsing arguments, so the first thing anyone
 types errors out. Help must never depend on the environment.
 
-**Take the unsanctioned path away.** Redis ACLs, so exploring does not find the
-bus. Until then a tool is a convenience, not a boundary — an agent has
-`REDIS_URL` and `redis-cli` regardless of what we put on `PATH`.
+**Take the unsanctioned path away — except we cannot, and that is decided.**
+Agents keep `sudo`: the container grants `ubuntu` `(ALL) NOPASSWD: ALL`, and that
+is wanted (possibly per-agent optional later). ⚠ **So nothing inside the container
+is a boundary.** Not file modes, not a compiled binary, not Redis ACLs — `sudo
+cat redis.conf` and `sudo redis-cli` end all three. The container is the boundary;
+inside it, everything is visible.
+
+That changes the Redis ACL item below from a security control to a tidiness one,
+and it means source-hiding should be **deterrence, not enforcement**:
+
+- **Delete `/app` from the final image.** The source is copied there to build and
+  the package installs into `/opt/flock`; nothing needs it at runtime. This
+  removes the stumble rather than labelling it, and costs nothing.
+- **A banner at the top of anything they may still reach** — and it must give a
+  *reason*, not a prohibition. These agents reason around bare rules: one read a
+  comment in `pyproject.toml` and turned it into a finding. "This is bus
+  internals; `send --help` is your interface, and queue names here will change"
+  answers the question they were about to ask. A bare "do not read" is an
+  invitation.
+- Use the convention they already respect — the `AGENTS.md` style — rather than
+  inventing a new marker.
 
 **Write it at the top.** Agents stop reading early. Whatever matters most goes
 first: who you are, who you can talk to, how to send. Anything below the fold is
