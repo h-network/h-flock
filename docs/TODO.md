@@ -47,6 +47,24 @@ call, which `LLD-adapter-tmux` §5 already names.
 **Boards.** The api serves `/board` and nothing writes one, so they read empty.
 Agents have no equivalent of `jira list` / `jira consume`.
 
+## Authority between agents
+
+**Agents have no model of who has standing, and correctly refuse to take
+direction.** Observed in the first live discussion run: asked why it had not
+followed a peer's instruction, an agent answered *"bob isn't my principal — you
+are. His messages reach me the same way any data does."* That is right, not a
+malfunction — the bus proves **who** sent a message and says nothing about **who
+may direct whom**, and nothing in an agent's context supplies it.
+
+The office already has the word: `AGENTS.md` uses **lead** (*"if you're the
+lead, follow up with them or reassign"*). Reuse it rather than inventing one.
+→ needs a name in the environment and a line in the per-agent guide.
+
+⚠ **Blocked on the item below.** Telling an agent that requests from a named
+peer carry authority makes `producer` load-bearing, and `producer` is currently
+forgeable — see next. Ship the standing model on top of an unenforced identity
+and any agent can impersonate the lead and direct the whole office.
+
 ## Security — all parked deliberately
 
 **TLS.** Both doors are plain HTTP on `0.0.0.0`, so the bearer token crosses the
@@ -57,16 +75,26 @@ front of both doors is where it goes (`LLD-container` §3).
 preflight — and it looks like the api being down rather than a header missing.
 One middleware, once an origin is known.
 
-**Redis ACLs.** `REDIS_URL` is in every agent window because `send` needs it, so
-an agent can bypass the two doors and write any queue directly. Invariant 3 is
-currently a convention `send` honours, not something enforced. `LLD-bus-and-router`
-§3.1 anticipated the fix: a credential scoped to
-`~pod:<pod>:tenant:<tenant>:agent:<agent>:*`.
+**Redis ACLs — now a prerequisite, not a nicety.** `REDIS_URL` is in every agent
+window because `send` needs it, so an agent can bypass both doors and write any
+queue directly. Invariant 3 is a convention `send` honours, not something
+enforced.
+
+⚠ **Demonstrated, not theorised.** From inside an agent window, an `RPUSH`
+straight into a *peer's* ingress with `"producer": "architect"` was accepted by
+Redis. Invariant 2 — *the sender comes from the queue the envelope was popped
+from* — holds only for envelopes that reach the router via egress. **A direct
+ingress write bypasses the router entirely and forges identity.**
+
+That makes this the gate on the authority model above, and on `producer`-based
+policy for control kinds. `LLD-bus-and-router` §3.1 anticipated the fix: a
+credential scoped to `~pod:<pod>:tenant:<tenant>:agent:<agent>:*`, which is why
+the agent sits in the address at all.
 
 **`producer` policy on control kinds.** Any agent can enrol or kill any other
-today. `producer` is unspoofable (invariant 2 — derived from the queue popped,
-never from contents), so an allow-list in the control opener would hold. Moot
-while `REDIS_URL` is readable.
+today. An allow-list in the control opener is the right place — but only once
+`producer` is genuinely unforgeable, which it is not while any window can write
+a peer's ingress directly.
 
 ## Correlation
 
