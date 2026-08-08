@@ -1,169 +1,134 @@
-# Plan — task boards
+# Plan — the jira board
 
-> Proposal. Nothing built. The prerequisite for the watchdog.
+> Rewritten after reading h-office's `task.py` and `jira.py` properly. It is a
+> Jira board: **tickets** an agent works through. Take their model; change only
+> what h-flock forces.
 
-## 1. The one rule everything else follows from
+## 1. It is a ticket board, not a message queue
 
-**The agent moves its own tasks. Nothing infers them.**
+Two separate namespaces on the same Redis, and conflating them is the mistake to
+avoid:
 
-The adapter knows an envelope was delivered. It does not know whether the agent
-read it, agreed with it, started it, finished it, or decided it was a bad idea.
-A framework that guesses is worse than one that admits it does not know, because
-the guess looks like data.
+| | carries | how it moves |
+|---|---|---|
+| **the bus** | messages between agents | pushed — the router forwards, the adapter delivers |
+| **the board** | tickets: things to build or track | **pulled** — a ticket waits until the agent asks |
 
-So the board is **written by the agent** and **read by everything else**:
+h-office's own words: *"Pull-based, so — unlike the message bus — there's no
+courier: tasks just wait on the list until the agent asks for one."*
 
-| | |
-|---|---|
-| the agent | `office take`, `office done` — moves its own tasks |
-| the api | reads. `GET /board` already exists |
-| the watchdog | reads. A task in `doing` is its only evidence anything is underway |
-| the adapter | **never touches it** |
+⚠ **So nothing notifies an agent that a ticket arrived.** No paste, no envelope
+into its window. If you want it started now, add the ticket and then **send it a
+message** — that is a message, and messages are what the bus is for. The board
+carries *what*; a message carries *now*.
 
-That is what makes the board worth having: it is the one place an agent states
-what it is doing, rather than somewhere we record what we did to it.
+The first live test proved why: with a notification, the agent worked from the
+pasted text and ran take/done afterwards as, in its own words, *"bookkeeping
+only"* — so `doing` was never populated while the work was happening, which is
+the one state the watchdog reads.
 
-## 2. Shape
+## 2. The ticket
 
-Already pinned in `CONTRACTS` §7 and served by the api since build 03 — three
-LISTs per agent, nothing writing them:
-
-```
-  <prefix>:tasks.todo     LIST   FIFO — take pulls from the head
-  <prefix>:tasks.doing    LIST   at most one entry
-  <prefix>:tasks.done     LIST
-```
-
-Three keys rather than one hash, because a board is ordered ("take your next
-task" is only meaningful against a FIFO) and because a state change is then an
-`LMOVE` between two keys rather than a read-modify-write of one value — which is
-what stops two readers tearing a board in half.
-
-An entry is a **ticket**:
+h-office's shape, plus one field:
 
 ```json
-{ "id": "<hex>", "title": "one line", "description": "the whole brief",
-  "from": "architect", "created_at": "…" }
+{ "v": 1,
+  "id": "<hex>",
+  "title": "one line naming the deliverable",
+  "description": "the brief — as long as it needs to be",
+  "created_by": "architect",
+  "status": "todo" | "doing" | "done",
+  "created_ts": "…",
+  "started_ts": "…",     set by take
+  "done_ts": "…",        set by done
+  "priority": "…"        optional
+}
 ```
 
-`office tasks` lists titles. `office take` prints the full ticket — the
-description is where the actual work is explained, and it can be as long as it
-needs to be.
+⚠ **`description` is ours, and it is a deliberate difference.** h-office keeps
+the ticket to a title pointing at a spec file, because *"ticket text is echoed
+back by `jira list` and the dashboard every time anyone looks"*. Here the brief
+lives in the ticket — so `list` must print **titles only**, and `take` prints the
+whole thing. Their reason still applies; only the storage moves.
 
-⚠ **Entries stay opaque and `CONTRACTS` §7 does not move.** `LLD-bus-and-router`
-§8 is explicit that this is not a task system; the api returns entries verbatim
-and parses nothing.
+⚠ **A ticket is structured data, not an opaque blob.** `CONTRACTS` §7 said the
+api must not parse board entries — that was written when nothing wrote them, and
+it is wrong for a ticket board. `status` and `started_ts` are fields the board's
+own tooling reads. What stays opaque is `title` and `description`: *text*
+nothing interprets.
 
-**`take` and `done` emit a log record**, like everything else does. That is the
-board's activity log — there is no second place to look.
+## 3. The columns
 
-⚠ Worth knowing generally: **we log envelope movements, not Redis activity.** A
-board move is an `LMOVE` by the agent's own tool, not an envelope, so it is
-invisible unless the tool records it. Hence the line above.
+```
+  <prefix>:tasks.todo    RPUSH to add     ← LPOP to take   (FIFO)
+  <prefix>:tasks.doing   RPUSH on take    ← LREM on done
+  <prefix>:tasks.done    RPUSH on done
+```
 
-The watchdog needs no timestamp anywhere: it polls on an interval already, so a
-task still sitting in `doing` next poll has been there since the last one.
+`take` is `LPOP` from todo then `RPUSH` to doing, stamping `started_ts`. **No
+locking needed** — h-office's note: *"One agent (the assignee) consumes its own
+column, so the LPOP+RPUSH pair needs no locking."*
 
-## 3. Assignment travels as an envelope
+`done` is `LREM` by exact raw value from doing, then `RPUSH` to done, stamping
+`done_ts`.
 
-`office assign -a backend "review the auth change"` does **not** write backend's
-board. It sends an `AssignTask` envelope, and the opener on backend's side writes
-it.
+## 4. Commands
 
-Three reasons, and the third is the one that matters:
-
-- Only an agent's own side writes its keys, which is the rule everywhere else.
-- Assignment gets the four log records every other envelope gets, so "who
-  assigned what, when" is answerable from the log we already have.
-- **It works from the api and the app for free.** `POST /agents/backend/envelopes`
-  with `kind: AssignTask` is assignment, with no new endpoint and no new
-  mechanism — exactly as `hire` turned out.
-
-The opener writes the entry to `tasks.todo` and **pastes nothing**.
-
-⚠ **An earlier version pasted a notification, and the first live test showed why
-that is wrong.** The agent acted on the pasted text, did the work, and only then
-ran `take` and `done` — reporting, accurately, that they were *"bookkeeping only"*.
-So `doing` was never populated while the work was happening, which is the one
-state the watchdog exists to read.
-
-Two sources for the same task means the agent acts on whichever arrives first,
-and that is always the paste. The board stops being the mechanism and becomes a
-record written afterwards.
-
-**The board carries *what*; a message carries *now*.** If you want an agent to
-start immediately, assign the task and then send it a message — which is what an
-architect would do anyway, and it keeps the wake-up separate from the content.
-
-## 4. The agent's surface
-
-⚠ **Use h-office's `jira` verbs. They exist, they work, and they are what the
-office already types.** An earlier draft of this plan invented `assign` and
-`tasks`, which was wrong:
-
-| h-office `jira` | h-flock |
-|---|---|
-| `jira add -a <agent> -t "…"` | `office add -a <agent> -t "…" -d "…"` |
-| `jira list [-a <agent>]` | `office list [-a <agent>]` |
-| `jira consume` / `take` | `office take` |
-| `jira done [<id>]` | `office done` |
-
-`assign` was wrong twice over: it presupposes a ticket that already exists and
-only changes owner, when what actually happens is a ticket being *created* on a
-board — and it is ambiguous about which of those it means. `add` is neither.
-
-The **only** deliberate differences from h-office: the `office` prefix, because
-`sendMessage` collided with Claude Code's built-in tool and `TaskList`/`TaskGet`
-would collide next; and `-d` for the description, because a ticket's brief is
-what the board is carrying.
-
-Everything below was written before this and uses the invented names — read the
-table above as authoritative.
-
-
-Subcommands of `office`, which is what that namespace was for — and it dodges
-`TaskList` / `TaskGet`, the other collision the agent's own tool list showed us:
+h-office's verbs. They exist, they work, and the office already types them — only
+the `office` prefix differs, forced by `sendMessage` colliding with Claude Code's
+built-in tool and `TaskList`/`TaskGet` colliding next.
 
 ```bash
-office tasks                       # my board: todo / doing / done
-office take                        # todo → doing, FIFO, prints the task
-office done                        # doing → done
-office assign -a backend -t "one line" -d "the brief"   # → AssignTask envelope
+office add -a backend -t "one line" -d "the brief" [-p high]
+office take                       # todo → doing, prints the ticket
+office done [<id>]                # doing → done; id optional if exactly one
+office list [-a <agent>|--all]    # titles only
 ```
 
-⚠ `office take` with an empty `todo` must say **why** it came back empty — h-office
-has a commit for exactly this (*"jira: say why consume came back empty"*). "No
-tasks" and "you already have one open" are different answers and an agent will
-act differently on each.
+⚠ **`add`, never `assign`.** `assign` presupposes a ticket that already exists
+and only changes owner; this creates one on a board. It is also ambiguous about
+which it means.
 
-## 5. What this unblocks
+⚠ `done` takes an **optional id or prefix**, and is unambiguous when exactly one
+ticket is in doing. Copied from h-office because it is the ergonomics that make
+it usable by hand.
 
-The watchdog's signal is **stalled task AND silent window** — and h-office's
-comment says why neither half works alone:
+⚠ `take` must say **why** it came back empty — "your todo is empty" and "you
+already have one open" are different answers.
 
-> A stalled task only alerts if the agent's window has ALSO been quiet this
-> long — a long build keeps printing, a wedged agent does not.
+## 5. Events go to a file, not stdout
 
-On elapsed time alone it fired identically for a 15-minute rebuild and a wedged
-agent, so the lead learned to dismiss it and then dismissed a real one. Without
-boards the watchdog has only the half that cries wolf.
+h-office writes an append-only JSONL of task events — `$TASK_RECORD`,
+*"mirrors the bus's `messages.jsonl`"* — recording `add`, `consume` and `done`
+with the task id, title and creator.
 
-It also gives `GET /board` something to return — the api has served it since
-build 03 and it has always been empty.
+⚠ **This is the fix for a real problem we hit.** `office` runs inside an agent's
+window, so anything it prints to stdout lands in that pane and is never
+collected. A file on the container filesystem is written by whoever runs the
+command and read by anything that wants the history. Same reason h-office chose
+it.
 
-## 6. Open
+`record_event` never raises: *"logging must not break a command."*
 
-**Does an agent have exactly one `doing`?** h-office assumes so. It makes "is
-this agent busy" a single question, and it makes `take` refuse rather than
-silently stack work. Recommended, but it is a rule about how agents work, not a
-technical constraint.
+## 6. What the watchdog reads
 
-**What happens to a board on `letGo`?** `StopAgent` clears per-agent *state* and
-leaves *data*. A board is data by that line — so it survives, and a re-hired
-`backend` inherits the old one. Arguably right, arguably a surprise. Same
-question we deferred for queues.
+Already written in h-office, and the reason boards come first:
 
-**Who may assign to whom?** Anyone, today. The lead being positional (first
-agent) makes "only the lead assigns" expressible, and it rests on `producer`,
-which is forgeable — see [`TODO.md`](TODO.md). Worth leaving open rather than
-half-enforcing.
+- `doing_tasks` — what an agent says it is working on
+- `oldest_doing_age` — how long the longest has been open, from `started_ts`
+- `stalled_tasks(stall_sec)` — *"the agent took work and hasn't marked it done
+  — i.e. it may be stuck"*
+
+Combined with window silence, which is the half that stops it crying wolf.
+
+## 7. Open
+
+**Assignment across agents.** `office add -a backend` writes backend's board
+directly in h-office. Whether ours should instead send an envelope, so only an
+agent's own side writes its keys, is a real question — it would give the four log
+records for free and work from the api unchanged. h-office writes directly and
+has not regretted it.
+
+**Does an agent have one `doing` or many?** h-office allows several
+(`doing_tasks` is a list, `stalled_tasks` returns several). Restricting to one
+makes "is this agent busy" a single question. Not settled.
