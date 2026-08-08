@@ -42,8 +42,12 @@ RUN python3 -c "import json, os; p='/home/ubuntu/.claude.json'; d=json.load(open
 
 # The base runs as ubuntu (uid 1000), and the agent CLIs expect that home. The
 # tmux socket therefore lives somewhere that user owns — /run is root's.
-RUN mkdir -p /home/ubuntu/.flock/tmux \
- && chown -R ubuntu:ubuntu /home/ubuntu/.flock /opt/flock
+# /workdir is where each agent gets its own home (LLD-tmux-host §5). The host
+# creates /workdir/<agent> as the `ubuntu` user, so the parent has to exist and
+# be writable by it — otherwise makedirs fails silently and the window falls
+# back to /app, which is h-flock's own source.
+RUN mkdir -p /home/ubuntu/.flock/tmux /workdir \
+ && chown -R ubuntu:ubuntu /home/ubuntu/.flock /opt/flock /workdir
 
 ENV PYTHONUNBUFFERED=1 \
     REDIS_URL=redis://127.0.0.1:6379/0 \
