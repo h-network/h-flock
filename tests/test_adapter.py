@@ -1,7 +1,7 @@
 import json
 import pytest
 from unittest.mock import patch, MagicMock
-from flock.adapter.openers import assign_task_opener, message_opener, command_opener, get_tmux_windows
+from flock.adapter.openers import add_ticket_opener, assign_task_opener, message_opener, command_opener, get_tmux_windows
 from flock.adapter.cli import main as cli_main
 from flock.adapter.runner import run_adapter
 from flock.bus import build as build_envelope
@@ -126,12 +126,43 @@ def test_command_opener_bare_paste(mock_run_tmux, mock_list_windows):
 
 @patch("flock.adapter.openers.list_windows")
 @patch("flock.tmux.ops.run_tmux")
-def test_assign_task_opener_writes_todo_and_pastes_nothing(mock_run_tmux, mock_list_windows):
+def test_add_ticket_opener_writes_v1_ticket(mock_run_tmux, mock_list_windows):
     mock_list_windows.return_value = {"architect", "backend"}
     mock_run_tmux.return_value = (0, "", "")
 
     r = MockRedis()
-    env = build_envelope(kind="AssignTask", producer="architect", recipient="backend", payload={"title": "review the auth change"})
+    env = build_envelope(
+        kind="AddTicket",
+        producer="architect",
+        recipient="backend",
+        payload={"title": "review the auth change", "description": "check auth middleware", "priority": "high"},
+    )
+
+    add_ticket_opener(r, pod="acme", tenant="hq", agent="backend", envelope=env, session_name="hq")
+
+    todo_key = "pod:acme:tenant:hq:agent:backend:tasks.todo"
+    assert todo_key in r.lists
+    assert len(r.lists[todo_key]) == 1
+    ticket_data = json.loads(r.lists[todo_key][0])
+    assert ticket_data["v"] == 1
+    assert ticket_data["title"] == "review the auth change"
+    assert ticket_data["description"] == "check auth middleware"
+    assert ticket_data["created_by"] == "architect"
+    assert ticket_data["priority"] == "high"
+    assert ticket_data["status"] == "todo"
+
+    load_buffer_calls = [call for call in mock_run_tmux.call_args_list if "load-buffer" in call[0]]
+    assert len(load_buffer_calls) == 0
+
+
+@patch("flock.adapter.openers.list_windows")
+@patch("flock.tmux.ops.run_tmux")
+def test_assign_task_opener_deprecated_alias(mock_run_tmux, mock_list_windows):
+    mock_list_windows.return_value = {"architect", "backend"}
+    mock_run_tmux.return_value = (0, "", "")
+
+    r = MockRedis()
+    env = build_envelope(kind="AssignTask", producer="architect", recipient="backend", payload={"title": "legacy task"})
 
     assign_task_opener(r, pod="acme", tenant="hq", agent="backend", envelope=env, session_name="hq")
 
@@ -139,11 +170,7 @@ def test_assign_task_opener_writes_todo_and_pastes_nothing(mock_run_tmux, mock_l
     assert todo_key in r.lists
     assert len(r.lists[todo_key]) == 1
     task_data = json.loads(r.lists[todo_key][0])
-    assert task_data["title"] == "review the auth change"
-    assert task_data["from"] == "architect"
-
-    load_buffer_calls = [call for call in mock_run_tmux.call_args_list if "load-buffer" in call[0]]
-    assert len(load_buffer_calls) == 0
+    assert task_data["title"] == "legacy task"
 
 
 @patch("flock.adapter.runner.redis.Redis.from_url")
