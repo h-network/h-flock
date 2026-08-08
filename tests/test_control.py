@@ -9,9 +9,10 @@ from flock.control import runner
 
 
 class RecordingRedis:
-    def __init__(self, events, ingress_depth=0):
+    def __init__(self, events, ingress_depth=0, roster_vab="tmux"):
         self.events = events
         self.ingress_depth = ingress_depth
+        self.roster_vab = roster_vab
 
     def hset(self, key, field, value):
         self.events.append(("hset", key, field, value))
@@ -21,6 +22,10 @@ class RecordingRedis:
 
     def hdel(self, key, field):
         self.events.append(("hdel", key, field))
+
+    def hget(self, key, field):
+        self.events.append(("hget", key, field))
+        return self.roster_vab
 
     def delete(self, *keys):
         self.events.append(("delete", *keys))
@@ -62,6 +67,20 @@ def test_start_agent_defaults_cli_to_claude():
     ]
 
 
+def test_start_api_client_only_writes_roster_row():
+    events = []
+    start_agent(
+        RecordingRedis(events),
+        pod="acme",
+        tenant="hq",
+        envelope={"payload": {"agent": "telegram", "vab": "api"}},
+        create_window=lambda agent, cli: events.append(("create_window", agent, cli)),
+    )
+    assert events == [
+        ("hset", prefix("acme", "hq", resource="roster"), "telegram", "api"),
+    ]
+
+
 def test_stop_agent_orders_roster_launch_then_window():
     events = []
     r = RecordingRedis(events)
@@ -73,6 +92,7 @@ def test_stop_agent_orders_roster_launch_then_window():
         kill_window=lambda agent: events.append(("kill_window", agent)),
     )
     assert events == [
+        ("hget", prefix("acme", "hq", resource="roster"), "dave"),
         ("hdel", prefix("acme", "hq", resource="roster"), "dave"),
         (
             "delete",
@@ -84,6 +104,22 @@ def test_stop_agent_orders_roster_launch_then_window():
     ]
 
 
+def test_stop_api_client_removes_roster_and_mailbox_without_tmux():
+    events = []
+    stop_agent(
+        RecordingRedis(events, roster_vab="api"),
+        pod="acme",
+        tenant="hq",
+        envelope={"payload": {"agent": "telegram"}},
+        kill_window=lambda agent: events.append(("kill_window", agent)),
+    )
+    assert events == [
+        ("hget", prefix("acme", "hq", resource="roster"), "telegram"),
+        ("hdel", prefix("acme", "hq", resource="roster"), "telegram"),
+        ("delete", prefix("acme", "hq", "telegram", "inbox")),
+    ]
+
+
 @pytest.mark.parametrize(
     "payload",
     [
@@ -92,6 +128,8 @@ def test_stop_agent_orders_roster_launch_then_window():
         {"agent": "BadName"},
         {"agent": "dave", "cli": ""},
         {"agent": "dave", "cli": 42},
+        {"agent": "dave", "vab": "control"},
+        {"agent": "dave", "vab": 42},
     ],
 )
 def test_start_agent_rejects_invalid_payload_before_mutation(payload):
