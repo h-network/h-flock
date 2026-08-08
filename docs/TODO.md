@@ -1,6 +1,13 @@
 # Parked
 
 Things decided-but-not-done, so they live somewhere other than a chat log.
+
+⚠ **A struck-through or `SHIPPED` heading is a record of the time it was
+written**, kept because the reasoning is why the fix went the way it did. Those
+sections name commands that no longer exist — `sendMessage`, `sendBroadcast`,
+`peers` — and that is deliberate: they are what the problem looked like then. The
+current surface is one `office` command (`CONTRACTS` §5). Everything **not**
+struck through is present tense and should be true today.
 Each says *why* it is parked — an item with no reason is either work or noise.
 
 Deferred *design* questions stay in each LLD's §7. This is the operational list.
