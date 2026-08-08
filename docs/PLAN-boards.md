@@ -108,6 +108,10 @@ office already types.** An earlier draft of this plan invented `assign` and
 | `jira consume` / `take` | `office take` |
 | `jira done [<id>]` | `office done` |
 
+`assign` was wrong twice over: it presupposes a ticket that already exists and
+only changes owner, when what actually happens is a ticket being *created* on a
+board — and it is ambiguous about which of those it means. `add` is neither.
+
 The **only** deliberate differences from h-office: the `office` prefix, because
 `sendMessage` collided with Claude Code's built-in tool and `TaskList`/`TaskGet`
 would collide next; and `-d` for the description, because a ticket's brief is
