@@ -1,4 +1,6 @@
 import json
+import os
+import tempfile
 import pytest
 from unittest.mock import patch, MagicMock
 from flock.adapter.openers import add_ticket_opener, assign_task_opener, message_opener, command_opener, get_tmux_windows
@@ -171,6 +173,37 @@ def test_assign_task_opener_deprecated_alias(mock_run_tmux, mock_list_windows):
     assert len(r.lists[todo_key]) == 1
     task_data = json.loads(r.lists[todo_key][0])
     assert task_data["title"] == "legacy task"
+
+
+@patch("flock.adapter.openers.list_windows")
+@patch("flock.tmux.ops.run_tmux")
+def test_add_ticket_opener_appends_to_task_record(mock_run_tmux, mock_list_windows):
+    mock_list_windows.return_value = {"architect", "backend"}
+    mock_run_tmux.return_value = (0, "", "")
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        log_file = os.path.join(tmpdir, "tasks.jsonl")
+        with patch.dict(os.environ, {"TASK_RECORD": log_file}):
+            r = MockRedis()
+            env = build_envelope(
+                kind="AddTicket",
+                producer="architect",
+                recipient="backend",
+                payload={"title": "fix log issue", "description": "detail"},
+            )
+            add_ticket_opener(r, pod="acme", tenant="hq", agent="backend", envelope=env, session_name="hq")
+
+            assert os.path.exists(log_file)
+            with open(log_file, "r", encoding="utf-8") as f:
+                lines = [json.loads(line) for line in f if line.strip()]
+            assert len(lines) == 1
+            rec = lines[0]
+            assert rec["event"] == "add"
+            assert rec["title"] == "fix log issue"
+            assert rec["agent"] == "backend"
+            assert rec["actor"] == "architect"
+            assert "id" in rec
+            assert "timestamp" in rec
 
 
 @patch("flock.adapter.runner.redis.Redis.from_url")
