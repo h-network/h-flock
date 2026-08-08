@@ -8,7 +8,12 @@ from flock.control import cli
 
 @pytest.mark.parametrize(
     ("command", "name"),
-    [(cli.hire_main, "hire"), (cli.let_go_main, "letGo")],
+    [
+        (cli.hire_main, "hire"),
+        (cli.let_go_main, "letGo"),
+        (cli.pause_main, "pause"),
+        (cli.resume_main, "resume"),
+    ],
 )
 def test_help_needs_no_environment_or_redis(monkeypatch, capsys, command, name):
     for key in ("POD", "TENANT", "TMUX_SESSION", "TMUX_SOCKET", "AGENT_NAME"):
@@ -93,9 +98,49 @@ def test_let_go_calls_stop_opener_and_shared_tmux(monkeypatch):
     assert calls[1] == ("kill_window", ("hq", "dave"), {"socket": None})
 
 
+@pytest.mark.parametrize(
+    ("command", "opener_name", "callback_name", "expected_keys"),
+    [
+        (cli.pause_main, "pause_agent", "interrupt_window", ("send-keys", "-t", "hq:backend", "C-c")),
+        (
+            cli.resume_main,
+            "resume_agent",
+            "resume_window",
+            ("send-keys", "-t", "hq:backend", "startAgent --resume", "Enter"),
+        ),
+    ],
+)
+def test_pause_resume_call_openers_and_shared_tmux(
+    monkeypatch, command, opener_name, callback_name, expected_keys
+):
+    calls = []
+    fake_redis = object()
+    monkeypatch.setenv("POD", "acme")
+    monkeypatch.setenv("TENANT", "hq")
+    monkeypatch.setattr(cli.redis.Redis, "from_url", lambda url: fake_redis)
+    monkeypatch.setattr(
+        cli,
+        "run_tmux",
+        lambda *args, **kwargs: calls.append((args, kwargs)) or (0, "", ""),
+    )
+
+    def fake_opener(r, **kwargs):
+        assert r is fake_redis
+        assert kwargs["pod"] == "acme"
+        assert kwargs["tenant"] == "hq"
+        assert kwargs["envelope"] == {"payload": {"agent": "backend"}}
+        kwargs[callback_name]("backend")
+
+    monkeypatch.setattr(cli, opener_name, fake_opener)
+    command(["backend"])
+    assert calls == [(expected_keys, {"socket": None})]
+
+
 def test_only_non_conflicting_control_scripts_are_installed():
     pyproject = tomllib.loads(Path("pyproject.toml").read_text())
     scripts = pyproject["project"]["scripts"]
     assert scripts["hire"] == "flock.control.cli:hire_main"
     assert scripts["letGo"] == "flock.control.cli:let_go_main"
+    assert scripts["pause"] == "flock.control.cli:pause_main"
+    assert scripts["resume"] == "flock.control.cli:resume_main"
     assert "startAgent" not in scripts

@@ -4,7 +4,7 @@ import types
 import pytest
 
 from flock.bus import prefix
-from flock.control import deliver_one, start_agent, stop_agent
+from flock.control import deliver_one, pause_agent, resume_agent, start_agent, stop_agent
 from flock.control import runner
 
 
@@ -110,6 +110,36 @@ def test_stop_agent_rejects_invalid_target_before_mutation():
     assert events == []
 
 
+def test_pause_agent_sets_marker_then_interrupts_without_touching_roster():
+    events = []
+    pause_agent(
+        RecordingRedis(events),
+        pod="acme",
+        tenant="hq",
+        envelope={"payload": {"agent": "backend"}},
+        interrupt_window=lambda agent: events.append(("interrupt", agent)),
+    )
+    assert events == [
+        ("set", prefix("acme", "hq", "backend", "paused"), 1),
+        ("interrupt", "backend"),
+    ]
+
+
+def test_resume_agent_deletes_marker_then_resumes_without_touching_roster():
+    events = []
+    resume_agent(
+        RecordingRedis(events),
+        pod="acme",
+        tenant="hq",
+        envelope={"payload": {"agent": "backend"}},
+        resume_window=lambda agent: events.append(("resume", agent)),
+    )
+    assert events == [
+        ("delete", prefix("acme", "hq", "backend", "paused")),
+        ("resume", "backend"),
+    ]
+
+
 @pytest.mark.parametrize(
     ("kind", "expected_tmux"),
     [
@@ -124,6 +154,19 @@ def test_stop_agent_rejects_invalid_target_before_mutation():
             ),
         ),
         ("StopAgent", ("kill", "hq", "dave", "/tmp/tmux.sock")),
+        ("PauseAgent", ("keys", "send-keys", "-t", "hq:dave", "C-c", "/tmp/tmux.sock")),
+        (
+            "ResumeAgent",
+            (
+                "keys",
+                "send-keys",
+                "-t",
+                "hq:dave",
+                "startAgent --resume",
+                "Enter",
+                "/tmp/tmux.sock",
+            ),
+        ),
     ],
 )
 def test_deliver_one_dispatches_control_kinds(monkeypatch, kind, expected_tmux):
@@ -134,6 +177,9 @@ def test_deliver_one_dispatches_control_kinds(monkeypatch, kind, expected_tmux):
     )
     fake_tmux.kill_window = lambda session, agent, socket=None: (
         events.append(("kill", session, agent, socket)) or (0, "", "")
+    )
+    fake_tmux.run_tmux = lambda *args, socket=None, **kwargs: (
+        events.append(("keys", *args, socket)) or (0, "", "")
     )
     monkeypatch.setitem(sys.modules, "flock.tmux", fake_tmux)
 
@@ -157,6 +203,7 @@ def test_tmux_failure_raises_after_desired_state_is_written(monkeypatch):
     fake_tmux = types.ModuleType("flock.tmux")
     fake_tmux.create_window = lambda *args, **kwargs: (1, "", "no server")
     fake_tmux.kill_window = lambda *args, **kwargs: (0, "", "")
+    fake_tmux.run_tmux = lambda *args, **kwargs: (0, "", "")
     monkeypatch.setitem(sys.modules, "flock.tmux", fake_tmux)
 
     def fake_receive(r, **kwargs):

@@ -51,3 +51,31 @@ def stop_agent(
     r.hdel(roster_key, agent)
     r.delete(launch_key)
     kill_window(agent)
+
+
+def pause_agent(
+    r,
+    *,
+    pod: str,
+    tenant: str,
+    envelope: dict,
+    interrupt_window: Callable[[str], object],
+) -> None:
+    """Mark an agent paused, then interrupt its CLI without changing membership."""
+    agent, _ = _target(envelope)
+    r.set(prefix(pod, tenant, agent=agent, resource="paused"), 1)
+    interrupt_window(agent)
+
+
+def resume_agent(
+    r,
+    *,
+    pod: str,
+    tenant: str,
+    envelope: dict,
+    resume_window: Callable[[str], object],
+) -> None:
+    """Clear an agent's pause marker, then resume its CLI in the existing window."""
+    agent, _ = _target(envelope)
+    r.delete(prefix(pod, tenant, agent=agent, resource="paused"))
+    resume_window(agent)

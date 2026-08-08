@@ -23,6 +23,8 @@ peers = "flock.adapter.tools:peers_cli"
 "flock.adapter" = "flock.adapter.__main__:main"
 hire = "flock.control.cli:hire_main"
 letGo = "flock.control.cli:let_go_main"
+pause = "flock.control.cli:pause_main"
+resume = "flock.control.cli:resume_main"
 
 [tool.setuptools.packages.find]
 where = ["src"]
