@@ -49,32 +49,15 @@ An entry is a small JSON object:
 §8 is explicit that this is not a task system; the api returns entries verbatim
 and parses nothing.
 
-### Where the watchdog's clock lives
+**`take` and `done` emit a log record**, like everything else does. That is the
+board's activity log — there is no second place to look.
 
-The watchdog needs "how long has this been open". Three ways, and the obvious
-one is the worst:
+⚠ Worth knowing generally: **we log envelope movements, not Redis activity.** A
+board move is an `LMOVE` by the agent's own tool, not an envelope, so it is
+invisible unless the tool records it. Hence the line above.
 
-| | |
-|---|---|
-| a `started_at` field *inside* the entry | quietly redefines "opaque". Rejected |
-| the log | `take` is an `LMOVE`, not an envelope, so nothing records it today — and even if it did, a poller would be tailing and parsing stdout every 30s to answer one question |
-| **its own key** | one `GET`, and the entry is untouched |
-
-```
-  <prefix>:tasks.doing          LIST   the entry — opaque
-  <prefix>:tasks.doing.since    when it was taken
-```
-
-**And log the transition as well.** `take` and `done` emit records like
-everything else, so *history* — who took what, when — lives in the one log where
-every other event lives. The key holds *current state*, which is what a poller
-wants. Neither substitutes for the other: a log answers "what happened", a key
-answers "what is true now".
-
-⚠ Note what this means about our logging generally: **we log envelope movements,
-not Redis activity.** Anything an agent's tools do directly — a board move, a
-roster read — is invisible unless the tool emits a record itself. Worth knowing
-before assuming the log has something.
+The watchdog needs no timestamp anywhere: it polls on an interval already, so a
+task still sitting in `doing` next poll has been there since the last one.
 
 ## 3. Assignment travels as an envelope
 
