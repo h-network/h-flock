@@ -11,6 +11,13 @@ class MockRedis:
     def __init__(self):
         self.lists = {}
         self.hashes = {}
+        self.kv = {}
+
+    def get(self, key):
+        return self.kv.get(key)
+
+    def set(self, key, value):
+        self.kv[key] = value
 
     def rpush(self, key, value):
         if key not in self.lists:
@@ -58,7 +65,6 @@ def test_message_opener_window_exists(mock_run_tmux, mock_list_windows):
 
     message_opener(r, pod="acme", tenant="hq", agent="bob", envelope=env, session_name="hq")
 
-    # Check buffer operations were invoked
     cmd_args = [call[0] for call in mock_run_tmux.call_args_list]
     assert any("load-buffer" in cmd for cmd in cmd_args)
     assert any("paste-buffer" in cmd for cmd in cmd_args)
@@ -80,7 +86,6 @@ def test_message_opener_window_missing(mock_list_windows):
 
     message_opener(r, pod="acme", tenant="hq", agent="bob", envelope=env, session_name="hq")
 
-    # Should dead-letter under bob's prefix
     dead_key = "pod:acme:tenant:hq:agent:bob:dead"
     assert dead_key in r.lists
     assert len(r.lists[dead_key]) == 1
@@ -95,7 +100,6 @@ def test_message_opener_broadcast(mock_run_tmux, mock_list_windows):
     r = MockRedis()
     env = build_envelope(kind="Message", producer="alice", recipient="all", payload={"text": "broadcast message"})
 
-    # Delivered to bob's window
     message_opener(r, pod="acme", tenant="hq", agent="bob", envelope=env, session_name="hq")
 
     cmd_args = [call[0] for call in mock_run_tmux.call_args_list]
@@ -129,28 +133,45 @@ def test_run_adapter_kicked_one_shot(mock_run_tmux, mock_list_windows, mock_redi
     mock_list_windows.return_value = {"alice", "bob"}
     mock_run_tmux.return_value = (0, "", "")
 
-    # Set up roster HASH
     roster_key = "pod:acme:tenant:hq:roster"
     mock_r.hset(roster_key, "bob", "tmux")
 
-    # Put envelope in ingress queue
     ingress_key = "pod:acme:tenant:hq:agent:bob:ingress"
     env = build_envelope(kind="Message", producer="alice", recipient="bob", payload={"text": "kicked message"})
     mock_r.rpush(ingress_key, json.dumps(env))
 
-    # Run kicked adapter for bob
     run_adapter(agent="bob", pod="acme", tenant="hq", session_name="hq")
 
-    # Check ingress queue was popped
     assert len(mock_r.lists.get(ingress_key, [])) == 0
 
-    # Check busy tag was cleared
     delivering_key = "pod:acme:tenant:hq:delivering"
     assert not mock_r.hexists(delivering_key, "bob")
 
-    # Check tmux paste command ran for bob
     cmd_args = [call[0] for call in mock_run_tmux.call_args_list]
     assert any("paste-buffer" in cmd and "hq:bob" in cmd for cmd in cmd_args)
+
+
+@patch("flock.adapter.runner.redis.Redis.from_url")
+def test_run_adapter_paused_leaves_envelope_in_ingress(mock_redis_cls):
+    mock_r = MockRedis()
+    mock_redis_cls.return_value = mock_r
+
+    paused_key = "pod:acme:tenant:hq:agent:bob:paused"
+    mock_r.set(paused_key, "1")
+
+    roster_key = "pod:acme:tenant:hq:roster"
+    mock_r.hset(roster_key, "bob", "tmux")
+
+    ingress_key = "pod:acme:tenant:hq:agent:bob:ingress"
+    env = build_envelope(kind="Message", producer="alice", recipient="bob", payload={"text": "paused message"})
+    mock_r.rpush(ingress_key, json.dumps(env))
+
+    run_adapter(agent="bob", pod="acme", tenant="hq", session_name="hq")
+
+    # Ingress queue must NOT be popped when paused
+    assert len(mock_r.lists.get(ingress_key, [])) == 1
+    delivering_key = "pod:acme:tenant:hq:delivering"
+    assert not mock_r.hexists(delivering_key, "bob")
 
 
 @patch("flock.adapter.cli.redis.Redis.from_url")
@@ -214,4 +235,3 @@ def test_run_adapter_unroutable_vab_pops_and_dead_letters(mock_redis_cls):
     assert len(mock_r.lists.get(ingress_key, [])) == 0
     dead_key = "pod:acme:tenant:hq:agent:host:dead"
     assert len(mock_r.lists.get(dead_key, [])) == 1
-

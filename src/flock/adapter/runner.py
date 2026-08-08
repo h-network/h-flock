@@ -64,6 +64,10 @@ def deliver_one(
     session_name: str,
     socket: str | None = None,
 ) -> None:
+    paused_key = prefix(pod, tenant, agent=agent, resource="paused")
+    if r.get(paused_key):
+        return
+
     roster_key = prefix(pod, tenant, resource="roster")
     raw_vab = r.hget(roster_key, agent)
     agent_vab = raw_vab.decode() if isinstance(raw_vab, bytes) else raw_vab
