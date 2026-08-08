@@ -168,9 +168,10 @@ The board is **pulled, never pushed**: adding a ticket notifies nobody. If you
 want it started now, add it and then send a message — the board carries *what*, a
 message carries *now*.
 
-An agent never encounters a queue, a kind, a payload schema, Redis, or the
-roster. That is deliberate: anything reachable gets explored, so the sanctioned
-path has to be the good one.
+**Nothing an agent is asked to do requires a queue, a kind, a payload schema,
+Redis or the roster.** It has `REDIS_URL` and `redis-cli` like any process in the
+container — this is about the sanctioned path, not a sandbox. Anything reachable
+gets explored, so the reachable-and-obvious path has to be the good one.
 
 ## 📱 Build an app
 
@@ -206,7 +207,9 @@ neither depends on the other.
 
 `POST /agents/{agent}/envelopes` carries any `kind`; the api does not validate it
 and could not — which kinds are openable is a fact about adapters, discovered at
-the far edge. An unknown kind returns `202` and then dead-letters with a reason.
+the far edge. An unknown kind returns `202` and then dead-letters with a reason —
+**at a tmux agent.** An app client's mailbox takes every kind, since deciding
+which are interesting is the client's job, not the bus's.
 
 ⚠ Both can execute code in an agent's window — the api through the `Command`
 kind, the session through keystrokes. Neither is the safe one, and the token is

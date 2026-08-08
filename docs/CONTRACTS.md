@@ -343,8 +343,10 @@ the api validates.
 | `ResumeAgent` | `control` | `{"agent": "dave"}` | starts the CLI again and drains the inbox |
 | `AddTicket` | `tmux` | `{"title", "description", "priority"}` | writes a ticket to that agent's `tasks.todo` — and **pastes nothing** |
 
-⚠ `AssignTask` is the old name for `AddTicket`. It is still registered, logs a
-`deprecated_kind` record when used, and goes away in the build after 11.
+⚠ `AssignTask` is the old name for `AddTicket`. It is still registered and logs a
+`deprecated_kind` record when used. It was meant to go one build later and has
+not — it survives, which is the ordinary fate of a compatibility alias with a
+date on it rather than an owner.
 
 ⚠ **`AddTicket` is opened by `tmux` but touches no window.** It is in this table
 under the VAB that opens it, not the thing it does — a board write is the one
@@ -358,19 +360,33 @@ front end and a Telegram wrapper are each a roster row and a mailbox — nothing
 else. `StopAgent` on one removes the row and the mailbox and touches no tmux.
 Build 12; see [`BUILD-12-app-api.md`](BUILD-12-app-api.md).
 
-⚠ **Agents never see clients.** `office peers` and `office broadcast` both select
-`vab == "tmux"`, so an enrolled client appears in nobody's peer list and receives
-no broadcast. That filter predates clients — it was built to hide `api` and
-`host` — and it is why per-client addressing cost almost nothing.
+⚠ **Clients are hidden from an agent's *view*, not from its inbox.** Precisely:
+
+- `office peers` and `office broadcast` select `vab == "tmux"`, so a client is in
+  nobody's peer list and no agent-initiated broadcast reaches it. That filter
+  predates clients — it was built to hide `api` and `host` — and it is why
+  per-client addressing cost almost nothing.
+- **An agent does see a client's name when one writes to it.** A message sent
+  with `as: "telegram"` arrives as `[message from telegram]`, and replying by
+  that name is the whole point. "Agents never see clients" would be wrong.
+- **A raw `recipient: "all"` does reach clients**, unlike `office broadcast`.
+  The router fans out over roster *fields* and by invariant 8 cannot read a VAB,
+  so it has no way to exclude them. Client-side filtering is what `office
+  broadcast` does; the router does not and structurally could not.
 
 `cli` defaults to `claude`. `Message` and `Command` share a payload shape and
 differ only in whether the prefix is rendered — see `LLD-adapter-tmux` §3 for why
 that one difference is the whole security boundary.
 
-### `StartAgent` and `StopAgent` are the whole operation
+### `StartAgent` and `StopAgent` are the whole operation — for a tmux agent
 
 `StartAgent` enrols the agent, creates its window, and starts the CLI in it.
 `StopAgent` reverses all three. They are not enrolment alone.
+
+⚠ **For `vab: "api"` there is only the first step.** A client enrolment writes a
+roster row and stops: no launch key, no home, no window, no CLI. `StopAgent`
+removes the row and the client's mailbox, and touches no tmux. Unqualified, the
+sentence above is false for half the participants.
 
 ```
   StartAgent            StopAgent
