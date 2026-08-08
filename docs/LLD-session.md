@@ -137,7 +137,30 @@ other viewer and the agent in the window, so there is no rule about who wins
 because nobody gets to. An app renders the size it is given and scrolls or
 scales to fit.
 
-## 8. What this is not
+## 8. Not the same thing as the CLI transcripts
+
+Every agent CLI writes its own conversation to disk as JSON — claude, codex and
+agy all do, in three different shapes (`PLAN-profiles.md` §7). Those are a
+**different stream from this one, and neither replaces the other**:
+
+| | `%output`, here | the CLI's transcript |
+|---|---|---|
+| carries | raw terminal bytes and escape sequences | structured events — messages, tool calls, results |
+| timing | live, as the pane paints | seconds behind, one record at a time |
+| shows | what a human sees, half-drawn spinners included | what happened, after it happened |
+
+Measured: a transcript was appended 22 seconds before being read, and carried
+tool usage directly (`Bash` 337, `Edit` 51, `Write` 23, `Read` 16).
+
+So an app wanting both a live terminal *and* a readable account of what an agent
+is doing needs both feeds. Reconstructing "it ran `Bash`, then `Edit`" from
+terminal escape sequences is guesswork; watching a transcript tail is not live.
+
+⚠ Nothing serves transcripts today, and this module should not start — it moves
+terminal bytes. If a structured activity feed is wanted it is its own thing, and
+it reads three formats keyed three different ways.
+
+## 9. What this is not
 
 Not an agent. No address, no queues, no envelopes, in either direction.
 
