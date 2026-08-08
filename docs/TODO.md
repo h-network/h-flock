@@ -122,9 +122,10 @@ was one it should never have seen.
 
 Two halves, and they only work together:
 
-**Give them clean tools.** Every capability a `send`-style command with real
-`--help`. Nothing that requires reading our source or a queue to answer an
-ordinary question.
+**Give them clean tools.** → **[`PLAN-agent-tools.md`](PLAN-agent-tools.md)**:
+`sendMessage`, `sendBroadcast`, `peers`, `hire`, `letGo`, discovered via
+`OFFICE_TOOLS`. One general `send --kind … --payload '<json>'` was wrong because
+it makes an agent learn the envelope model to use it at all.
 
 ⚠ Concrete instance already open: **`send --help` fails without `AGENT_NAME`** —
 it checks the environment before parsing arguments, so the first thing anyone
