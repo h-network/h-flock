@@ -24,6 +24,8 @@ class FakeRedis:
     def __init__(self):
         self.lengths = {}
         self.lists = {}
+        self.streams = {}
+        self.roster = {b"bob": b"tmux", b"alice": b"tmux", b"telegram": b"api"}
 
     def llen(self, key):
         return self.lengths.get(key, 0)
@@ -35,6 +37,40 @@ class FakeRedis:
     def pipeline(self, transaction=False):
         assert transaction is False
         return FakePipeline(self)
+
+    def hexists(self, key, field):
+        f = field.encode() if isinstance(field, str) else field
+        return f in self.roster
+
+    def hget(self, key, field):
+        f = field.encode() if isinstance(field, str) else field
+        return self.roster.get(f)
+
+    def hkeys(self, key):
+        return list(self.roster.keys())
+
+    def xrange(self, name, min="-", max="+", count=None):
+        entries = self.streams.get(name, [])
+        result = []
+        exclusive = False
+        min_str = min
+        if isinstance(min_str, bytes):
+            min_str = min_str.decode()
+        if isinstance(min_str, str) and min_str.startswith("("):
+            exclusive = True
+            min_str = min_str[1:]
+
+        for entry_id, fields in entries:
+            eid = entry_id.decode() if isinstance(entry_id, bytes) else str(entry_id)
+            if min_str != "-":
+                if exclusive and eid <= min_str:
+                    continue
+                if not exclusive and eid < min_str:
+                    continue
+            result.append((entry_id, fields))
+            if count and len(result) >= count:
+                break
+        return result
 
 
 @pytest.fixture
@@ -57,6 +93,12 @@ def request(app, method, path, *, token=None, body=None):
         headers.append((b"authorization", f"Bearer {token}".encode()))
     received = False
 
+    if "?" in path:
+        path, query = path.split("?", 1)
+        query_string = query.encode()
+    else:
+        query_string = b""
+
     async def receive():
         nonlocal received
         if received:
@@ -75,7 +117,7 @@ def request(app, method, path, *, token=None, body=None):
         "scheme": "http",
         "path": path,
         "raw_path": path.encode(),
-        "query_string": b"",
+        "query_string": query_string,
         "headers": headers,
         "client": ("127.0.0.1", 1234),
         "server": ("127.0.0.1", 80),
@@ -181,7 +223,7 @@ def test_messages_endpoint_is_not_exposed(client):
     app, _ = client
     assert request(
         app, "POST", "/agents/alice/messages", token="secret", body={"text": "hello"}
-    )[0] == 404
+    )[0] in (404, 405)
 
 
 def test_board_aggregate_is_roster_bounded_and_pipelined(client):
@@ -239,4 +281,113 @@ def test_loopback_bind_also_requires_token():
 def test_reply_collection_endpoint_is_not_exposed(client):
     app, _ = client
     assert request(app, "GET", "/messages/correlation", token="secret")[0] == 404
+
+
+def test_post_envelope_with_valid_as_client(client, monkeypatch):
+    app, _ = client
+    sent = {}
+    monkeypatch.setattr(
+        api_module,
+        "send",
+        lambda _redis, **kwargs: sent.update(kwargs) or "stream-1",
+    )
+
+    status_code, response_body = request(
+        app,
+        "POST",
+        "/agents/alice/envelopes",
+        token="secret",
+        body={"text": "hello", "as": "telegram"},
+    )
+    assert status_code == 202
+    assert sent["producer"] == "telegram"
+    assert sent["recipient"] == "alice"
+    assert sent["payload"] == {"text": "hello"}
+
+
+def test_post_envelope_with_invalid_as_client_rejected(client):
+    app, _ = client
+    # bob has vab "tmux" (not "api")
+    status_code_tmux, _ = request(
+        app,
+        "POST",
+        "/agents/alice/envelopes",
+        token="secret",
+        body={"text": "hello", "as": "bob"},
+    )
+    assert status_code_tmux == 422
+
+    # unknown is not in roster
+    status_code_unknown, _ = request(
+        app,
+        "POST",
+        "/agents/alice/envelopes",
+        token="secret",
+        body={"text": "hello", "as": "unknown"},
+    )
+    assert status_code_unknown == 422
+
+
+def test_get_messages_for_api_client(client):
+    app, redis = client
+    env = {
+        "v": 1,
+        "producer": "alice",
+        "recipient": "telegram",
+        "kind": "Message",
+        "payload": {"text": "reply text"},
+        "stream_id": "s-1",
+        "correlation_id": "c-1",
+        "timestamp": "2026-08-09T01:00:00Z",
+    }
+    inbox_key = "pod:test:tenant:office:agent:telegram:inbox"
+    redis.streams[inbox_key] = [
+        (b"1000-0", {b"envelope": json.dumps(env).encode()}),
+    ]
+
+    status_code, body = request(app, "GET", "/agents/telegram/messages", token="secret")
+    assert status_code == 200
+    assert body == {
+        "agent": "telegram",
+        "messages": [
+            {
+                "cursor": "1000-0",
+                "v": 1,
+                "producer": "alice",
+                "recipient": "telegram",
+                "kind": "Message",
+                "payload": {"text": "reply text"},
+                "stream_id": "s-1",
+                "correlation_id": "c-1",
+                "timestamp": "2026-08-09T01:00:00Z",
+            }
+        ],
+        "next_cursor": "1000-0",
+    }
+
+
+def test_get_messages_cursor_after(client):
+    app, redis = client
+    env1 = {"v": 1, "producer": "alice", "recipient": "telegram", "kind": "Message", "payload": {"text": "msg1"}}
+    env2 = {"v": 1, "producer": "bob", "recipient": "telegram", "kind": "Message", "payload": {"text": "msg2"}}
+    inbox_key = "pod:test:tenant:office:agent:telegram:inbox"
+    redis.streams[inbox_key] = [
+        (b"1000-0", {b"envelope": json.dumps(env1).encode()}),
+        (b"1001-0", {b"envelope": json.dumps(env2).encode()}),
+    ]
+
+    status_code, body = request(app, "GET", "/agents/telegram/messages?after=1000-0", token="secret")
+    assert status_code == 200
+    assert len(body["messages"]) == 1
+    assert body["messages"][0]["cursor"] == "1001-0"
+    assert body["messages"][0]["producer"] == "bob"
+    assert body["next_cursor"] == "1001-0"
+
+
+def test_get_messages_non_api_agent_returns_404(client):
+    app, _ = client
+    # bob is vab "tmux", so GET /agents/bob/messages should return 404
+    status_code, _ = request(app, "GET", "/agents/bob/messages", token="secret")
+    assert status_code == 404
+
 
