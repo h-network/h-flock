@@ -12,7 +12,6 @@ from typing import Set
 ENTER_DELAY = float(os.environ.get("PASTE_ENTER_DELAY", "0.15"))
 
 
-
 class AmbientTmuxError(RuntimeError):
     """Refused to drive a tmux server we were not explicitly pointed at."""
 
@@ -61,12 +60,21 @@ def create_window(
     session_name: str,
     agent_name: str,
     command: list[str] | None = None,
+    cwd: str | None = None,
     socket: str | None = None,
 ) -> tuple[int, str, str]:
+    if cwd is None:
+        cwd = f"/workdir/{agent_name}"
+
+    try:
+        os.makedirs(cwd, exist_ok=True)
+    except OSError:
+        pass
+
     if not command:
         command = ["env", f"AGENT_NAME={agent_name}", "bash", "-il"]
 
-    args = ["new-window", "-t", f"{session_name}:", "-n", agent_name]
+    args = ["new-window", "-t", f"{session_name}:", "-n", agent_name, "-c", cwd]
     args.extend(command)
     return run_tmux(*args, socket=socket)
 
@@ -86,10 +94,7 @@ def paste_text(
     buf_name = f"flock_{stream_id[:8]}" if stream_id else f"flock_{os.urandom(4).hex()}"
 
     run_tmux("load-buffer", "-b", buf_name, "-", socket=socket, input_data=text)
-    # -p brackets the paste; -d deletes the buffer as part of it, so the common
-    # path is one call fewer than a separate delete-buffer.
     run_tmux("paste-buffer", "-b", buf_name, "-p", "-d", "-t", target, socket=socket)
     time.sleep(ENTER_DELAY)
     run_tmux("send-keys", "-t", target, "Enter", socket=socket)
-    # Only reachable if paste-buffer failed — -d consumed it on success.
     run_tmux("delete-buffer", "-b", buf_name, socket=socket)

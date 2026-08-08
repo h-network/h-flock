@@ -1,6 +1,8 @@
+import os
+import tempfile
 import pytest
 from unittest.mock import patch, MagicMock
-from flock.tmuxhost.host import TmuxHost
+from flock.tmuxhost.host import TmuxHost, generate_agents_md, write_agent_guide
 
 
 class MockRedis:
@@ -90,21 +92,39 @@ def test_tmuxhost_filters_non_tmux_vab(mock_run_tmux):
 
 
 @patch("flock.tmux.ops.run_tmux")
-def test_tmuxhost_reconciles_with_launch_cli(mock_run_tmux):
+def test_tmuxhost_reconciles_peers_and_guide(mock_run_tmux):
     mock_run_tmux.side_effect = [
         (0, "", ""),  # has-session
         (0, "", ""),  # exit-empty
         (0, "", ""),  # default-size
         (0, "", ""),  # history-limit
         (0, "__init__", ""),  # list-windows 1
-        (0, "", ""),  # new-window dave
-        (0, "__init__\ndave", ""),  # list-windows 2
+        (0, "", ""),  # new-window alice
+        (0, "", ""),  # new-window bob
+        (0, "", ""),  # new-window carol
+        (0, "__init__\nalice\nbob\ncarol", ""),  # list-windows 2
         (0, "", ""),  # kill-window __init__
     ]
 
-    r = MockRedis(["dave"], launch_map={"dave": "codex"})
-    host = TmuxHost(pod="acme", tenant="hq", redis_url="redis://127.0.0.1:6379/0", session_name="hq")
-    host.reconcile_once(r)
+    with tempfile.TemporaryDirectory() as tmpdir:
+        with patch("flock.tmuxhost.host.write_agent_guide") as mock_guide:
+            r = MockRedis(["alice", "bob", "carol"])
+            host = TmuxHost(pod="acme", tenant="hq", redis_url="redis://127.0.0.1:6379/0", session_name="hq")
+            host.reconcile_once(r)
 
-    calls = [c[0] for c in mock_run_tmux.call_args_list]
-    assert any("new-window" in c and "codex" in c for c in calls)
+            calls = [c[0] for c in mock_run_tmux.call_args_list]
+            # Verify AGENT_PEERS in window environment
+            env_calls = [c for c in calls if "new-window" in c]
+            assert any("AGENT_PEERS=bob,carol" in " ".join(c) for c in env_calls)
+            assert any("AGENT_PEERS=alice,carol" in " ".join(c) for c in env_calls)
+            assert any("AGENT_PEERS=alice,bob" in " ".join(c) for c in env_calls)
+
+
+def test_generate_agents_md():
+    content = generate_agents_md("alice", "hq", ["bob", "carol"])
+    assert "You are **alice**, an agent in tenant `hq`." in content
+    assert "Your peers are **bob** and **carol**." in content
+    assert "send bob can you take a look at this?" in content
+    assert "send all standup in five" in content
+    assert "[message from bob] …" in content
+    assert "This directory is yours. Work in it." in content
