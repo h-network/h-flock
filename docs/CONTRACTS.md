@@ -364,27 +364,40 @@ configuration, not the write path §7 defers, and no module may acquire one.
 
 ## 8. What the api reads
 
-The board is **three LISTs per agent**, using the resource names
+The board is **four LISTs per agent**, using the resource names
 `LLD-bus-and-router` §3.1 already shows:
 
 ```
-  <prefix>:tasks.todo     LIST     FIFO — consume takes from the head
+  <prefix>:tasks.todo     LIST     FIFO — take pulls from the head
   <prefix>:tasks.doing    LIST     at most one entry
-  <prefix>:tasks.done     LIST
+  <prefix>:tasks.hold     LIST     parked deliberately
+  <prefix>:tasks.done     LIST     status: done | cancelled
 ```
 
 Not one HASH. A board is ordered — "take your next task" is only meaningful
-against a FIFO — and a hash gives no order. Three keys also make a state
+against a FIFO — and a hash gives no order. Separate keys also make a state
 transition a `LMOVE` between two of them rather than a read-modify-write of one
 value, which is what keeps two readers from tearing a board in half.
 
-⚠ **Entries are opaque strings and the api does not parse them.**
-`LLD-bus-and-router` §8 is explicit that this is not a task system, so nothing
-here defines what a task *is*. The api returns entries exactly as stored, and
-whatever eventually writes a board owns their shape.
+⚠ **Corrected in build 11 — an entry is a ticket, and the api parses it.** This
+clause used to read *"entries are opaque strings and the api does not parse
+them"*, which was right when **nothing wrote boards**: the shape was undefined,
+so returning bytes through was the only honest thing to do. Boards are written
+now, by `office add` and the `AddTicket` opener, and the shape is pinned in
+[`PLAN-boards.md`](PLAN-boards.md) §2.
 
-Nothing writes boards in build 01 — the same position as the roster, minus the
-seed. Every board therefore reads empty, and an agent with no board is `[]` and
+So the api parses each entry as JSON and returns an object. `status`,
+`started_ts` and `id` are structured fields anything may read.
+
+⚠ **`title` and `description` stay opaque.** That is where the original rule
+still holds and where it was always aimed — they are *text*, and nothing parses,
+summarises or truncates them.
+
+⚠ **Tolerate both shapes.** Build 10 tickets and bare strings still exist on live
+boards. An unparseable entry is skipped, never a `500` for the whole response —
+one bad row must not cost the other agents their board.
+
+An agent with no board is `[]` and
 `200`, never `404`: `LLD-api` §2 requires that agents holding nothing still
 appear.
 
@@ -396,7 +409,7 @@ GET /agents/alice           { "agent": "alice",
                               "depths": { "ingress": 0, "egress": 0, "dead": 0 } }
 
 GET /agents/alice/board     { "agent": "alice",
-                              "todo": [], "doing": [], "done": [] }
+                              "todo": [], "doing": [], "hold": [], "done": [] }
 
 GET /board                  { "agents": [ { "agent": "alice", "todo": [], … },
                                           { "agent": "bob",   … } ] }
