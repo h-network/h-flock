@@ -46,11 +46,11 @@ nothing needs discovery, and the whole tenant starts and stops as one thing.
 |---|---|---|
 | redis | — | the bus. Loopback, no persistence needed for a skeleton |
 | router | `LLD-bus-and-router` | one per tenant, therefore one per container |
-| tmux host | `LLD-tmux-host` | creates the server, session and windows |
-| tmux adapter | `LLD-adapter-tmux` | kicked per delivery, pastes into windows, exits |
-| api | `LLD-api` | envelopes in, state out |
+| tmux host | `LLD-tmux-host` | creates the server, session and windows for `vab: tmux` entries |
+| tmux adapter | `LLD-adapter-tmux` | kicked per delivery; pastes into windows (`vab: tmux`), appends to mailbox stream (`vab: api`), exits |
+| api | `LLD-api` | envelopes in, state out, client mailbox polling & SSE streaming |
 | session | `LLD-session` | terminal output and keystrokes. Its own port |
-| agents | — | one per tmux window, whatever the roster says to run |
+| agents | — | one per tmux window for `vab: tmux` roster entries |
 
 ## 3. Only doors are published, and each one separately
 
@@ -62,7 +62,7 @@ Two processes are reachable from outside, on separate ports:
 
 | | Carries | Publish it when |
 |---|---|---|
-| `api` | envelopes in, state out | something needs to drive the tenant |
+| `api` | envelopes in, state out, client mailboxes | something needs to drive the tenant |
 | `session` | terminal bytes and keystrokes | something needs to watch or type |
 
 **Separate ports so publishing is one decision per door**, and so neither module
@@ -125,7 +125,7 @@ Order matters only where a dependency is real:
 
 ```
   redis            first — everything else connects to it
-  tmux host        creates the server, session and one window per agent
+  tmux host        creates the server, session and one window per tmux agent
   router           needs redis; subscribe set comes from the roster
   api              needs redis
   session          needs the tmux server; holds one control-mode client
@@ -136,6 +136,8 @@ Order matters only where a dependency is real:
 **Bringing the container up twice must be safe.** Reconciliation converges
 rather than duplicating, so a restart re-attaches to what is already correct
 instead of rebuilding it.
+
+Enrolling an external application client (`StartAgent` with `vab: "api"`) adds a roster row only, creating no window or CLI process.
 
 ## 6. When something dies
 
