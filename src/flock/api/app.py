@@ -5,26 +5,18 @@ from __future__ import annotations
 import hmac
 import ipaddress
 import os
-import threading
 import uuid
-from collections import OrderedDict, deque
-from contextlib import asynccontextmanager
 from dataclasses import dataclass
-from typing import Any, AsyncIterator
+from typing import Any
 
 import redis
 from fastapi import Depends, FastAPI, HTTPException, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from pydantic import BaseModel
 
-from flock.bus.doors import receive, send
+from flock.bus.doors import send
 from flock.bus.keys import prefix
-from flock.bus.logging import log_record
 from flock.bus.roster import members
-
-MAX_REPLY_CORRELATIONS = 1024
-MAX_REPLIES_PER_CORRELATION = 100
-RECEIVER_BACKOFF_SECONDS = 1.0
 
 
 @dataclass(frozen=True)
@@ -58,36 +50,6 @@ class MessageRequest(BaseModel):
     text: str
 
 
-class ReplyStore:
-    def __init__(
-        self,
-        max_correlations: int = MAX_REPLY_CORRELATIONS,
-        max_replies_per_correlation: int = MAX_REPLIES_PER_CORRELATION,
-    ) -> None:
-        self._lock = threading.Lock()
-        self._max_correlations = max_correlations
-        self._max_replies_per_correlation = max_replies_per_correlation
-        self._messages: OrderedDict[str, deque[dict[str, Any]]] = OrderedDict()
-
-    def add(self, envelope: dict[str, Any]) -> None:
-        correlation_id = envelope.get("correlation_id")
-        if correlation_id:
-            with self._lock:
-                messages = self._messages.get(correlation_id)
-                if messages is None:
-                    messages = deque(maxlen=self._max_replies_per_correlation)
-                    self._messages[correlation_id] = messages
-                else:
-                    self._messages.move_to_end(correlation_id)
-                messages.append(envelope)
-                while len(self._messages) > self._max_correlations:
-                    self._messages.popitem(last=False)
-
-    def get(self, correlation_id: str) -> list[dict[str, Any]]:
-        with self._lock:
-            return list(self._messages.get(correlation_id, ()))
-
-
 def _is_loopback(bind: str) -> bool:
     host = bind.strip("[]")
     if host.lower() == "localhost":
@@ -102,34 +64,10 @@ def _decode(value: Any) -> Any:
     return value.decode() if isinstance(value, bytes) else value
 
 
-def _receiver(
-    client: Any,
-    settings: Settings,
-    replies: ReplyStore,
-    stop: threading.Event,
-    backoff_seconds: float = RECEIVER_BACKOFF_SECONDS,
-) -> None:
-    while not stop.is_set():
-        try:
-            receive(
-                client,
-                pod=settings.pod,
-                tenant=settings.tenant,
-                agent="api",
-                openers={"Message": replies.add},
-                timeout=1,
-                module="api",
-            )
-        except Exception as exc:
-            log_record("api", "receiver_error", reason=str(exc))
-            stop.wait(backoff_seconds)
-
-
 def create_app(*, settings: Settings | None = None, redis_client: Any = None) -> FastAPI:
     settings = settings or Settings.from_env()
     settings.validate()
     client = redis_client or redis.Redis.from_url(settings.redis_url)
-    replies = ReplyStore()
     bearer = HTTPBearer(auto_error=False)
 
     def authorize(
@@ -142,24 +80,9 @@ def create_app(*, settings: Settings | None = None, redis_client: Any = None) ->
         if not hmac.compare_digest(credentials.credentials, settings.api_token):
             raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED)
 
-    @asynccontextmanager
-    async def lifespan(app: FastAPI) -> AsyncIterator[None]:
-        stop = threading.Event()
-        worker = threading.Thread(
-            target=_receiver, args=(client, settings, replies, stop), daemon=True
-        )
-        worker.start()
-        app.state.receiver_stop = stop
-        try:
-            yield
-        finally:
-            stop.set()
-            worker.join(timeout=2)
-
-    app = FastAPI(title="flock api", lifespan=lifespan, dependencies=[Depends(authorize)])
+    app = FastAPI(title="flock api", dependencies=[Depends(authorize)])
     app.state.redis = client
     app.state.settings = settings
-    app.state.replies = replies
 
     @app.get("/health")
     def health() -> dict[str, str]:
@@ -239,9 +162,5 @@ def create_app(*, settings: Settings | None = None, redis_client: Any = None) ->
                 for index, agent in zip(range(0, len(boards), 3), agents)
             ]
         }
-
-    @app.get("/messages/{correlation_id}")
-    def messages(correlation_id: str) -> dict[str, Any]:
-        return {"correlation_id": correlation_id, "messages": replies.get(correlation_id)}
 
     return app
