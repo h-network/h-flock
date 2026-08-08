@@ -3,8 +3,57 @@ import time
 from datetime import datetime, timezone
 import redis
 
-from flock.bus import prefix, receive, log_record
-from .openers import message_opener, command_opener
+from flock.bus import EnvelopeError, emit, log_record, parse, prefix, receive
+from .openers import command_opener, message_opener
+
+
+class _CatchAllDict(dict):
+    def __init__(self, default_factory):
+        super().__init__()
+        self.default_factory = default_factory
+
+    def get(self, key, default=None):
+        return self.default_factory(key)
+
+
+def deliver_api(
+    r: redis.Redis,
+    pod: str,
+    tenant: str,
+    agent: str,
+    timeout: int = 1,
+) -> None:
+    def handle_api_discard(envelope: dict) -> None:
+        pass
+
+    openers = _CatchAllDict(lambda _kind: handle_api_discard)
+    receive(r, pod=pod, tenant=tenant, agent=agent, openers=openers, timeout=timeout, module="adapter")
+
+
+def deliver_unroutable(
+    r: redis.Redis,
+    pod: str,
+    tenant: str,
+    agent: str,
+    vab_name: str | None,
+    timeout: int = 1,
+) -> None:
+    ingress_key = prefix(pod, tenant, agent, "ingress")
+    item = r.blpop(ingress_key, timeout=timeout)
+    if item is None:
+        return
+    raw = item[1]
+    dead_key = prefix(pod, tenant, agent, "dead")
+    try:
+        envelope = parse(raw)
+    except EnvelopeError as exc:
+        r.rpush(dead_key, raw)
+        emit("adapter", "dead_lettered", {}, str(exc))
+        return
+    emit("adapter", "received", envelope)
+    r.rpush(dead_key, raw)
+    reason = f"unroutable VAB: {vab_name!r}"
+    emit("adapter", "dead_lettered", envelope, reason)
 
 
 def deliver_one(
@@ -34,8 +83,12 @@ def deliver_one(
             log_record("adapter", "error", recipient=agent, reason="flock.control module not available")
         return
 
+    if agent_vab == "api":
+        deliver_api(r, pod=pod, tenant=tenant, agent=agent)
+        return
+
     if agent_vab is not None and agent_vab != "tmux":
-        log_record("adapter", "error", recipient=agent, reason=f"VAB is {agent_vab!r}, not 'tmux'")
+        deliver_unroutable(r, pod=pod, tenant=tenant, agent=agent, vab_name=agent_vab)
         return
 
     def handle_message(envelope: dict) -> None:

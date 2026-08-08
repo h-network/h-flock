@@ -176,3 +176,42 @@ def test_cli_send(mock_redis_cls, monkeypatch):
     assert pushed["producer"] == "alice"
     assert pushed["recipient"] == "bob"
     assert pushed["payload"] == {"text": "hello world"}
+
+
+@patch("flock.adapter.runner.redis.Redis.from_url")
+def test_run_adapter_vab_api_pops_and_discards(mock_redis_cls):
+    mock_r = MockRedis()
+    mock_redis_cls.return_value = mock_r
+
+    roster_key = "pod:acme:tenant:hq:roster"
+    mock_r.hset(roster_key, "api", "api")
+
+    ingress_key = "pod:acme:tenant:hq:agent:api:ingress"
+    env = build_envelope(kind="Message", producer="alice", recipient="api", payload={"text": "reply"})
+    mock_r.rpush(ingress_key, json.dumps(env))
+
+    run_adapter(agent="api", pod="acme", tenant="hq", session_name="hq")
+
+    assert len(mock_r.lists.get(ingress_key, [])) == 0
+    dead_key = "pod:acme:tenant:hq:agent:api:dead"
+    assert len(mock_r.lists.get(dead_key, [])) == 0
+
+
+@patch("flock.adapter.runner.redis.Redis.from_url")
+def test_run_adapter_unroutable_vab_pops_and_dead_letters(mock_redis_cls):
+    mock_r = MockRedis()
+    mock_redis_cls.return_value = mock_r
+
+    roster_key = "pod:acme:tenant:hq:roster"
+    mock_r.hset(roster_key, "host", "custom_vab")
+
+    ingress_key = "pod:acme:tenant:hq:agent:host:ingress"
+    env = build_envelope(kind="Message", producer="alice", recipient="host", payload={"text": "test"})
+    mock_r.rpush(ingress_key, json.dumps(env))
+
+    run_adapter(agent="host", pod="acme", tenant="hq", session_name="hq")
+
+    assert len(mock_r.lists.get(ingress_key, [])) == 0
+    dead_key = "pod:acme:tenant:hq:agent:host:dead"
+    assert len(mock_r.lists.get(dead_key, [])) == 1
+
