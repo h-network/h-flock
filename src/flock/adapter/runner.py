@@ -4,7 +4,7 @@ from datetime import datetime, timezone
 import redis
 
 from flock.bus import prefix, receive, log_record
-from .openers import message_opener
+from .openers import message_opener, command_opener
 
 
 def deliver_one(
@@ -34,7 +34,21 @@ def deliver_one(
             socket=socket,
         )
 
-    openers = {"Message": handle_message}
+    def handle_command(envelope: dict) -> None:
+        command_opener(
+            r=r,
+            pod=pod,
+            tenant=tenant,
+            agent=agent,
+            envelope=envelope,
+            session_name=session_name,
+            socket=socket,
+        )
+
+    openers = {
+        "Message": handle_message,
+        "Command": handle_command,
+    }
     receive(r, pod=pod, tenant=tenant, agent=agent, openers=openers, timeout=1, module="adapter")
 
 

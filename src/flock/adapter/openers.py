@@ -1,30 +1,11 @@
-import os
-import subprocess
-import time
 import json
 from typing import Set
 
 from flock.bus import prefix, log_record
+from flock.tmux import list_windows, paste_text, run_tmux
 
-
-def get_tmux_windows(session_name: str, socket: str | None = None) -> Set[str]:
-    cmd = ["tmux"]
-    if socket:
-        cmd.extend(["-S", socket])
-    cmd.extend(["list-windows", "-t", session_name, "-F", "#{window_name}"])
-    proc = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
-    if proc.returncode != 0:
-        return set()
-    return {w for w in proc.stdout.splitlines() if w}
-
-
-def run_tmux_cmd(args: list[str], socket: str | None = None, input_data: str | None = None) -> tuple[int, str, str]:
-    cmd = ["tmux"]
-    if socket:
-        cmd.extend(["-S", socket])
-    cmd.extend(args)
-    proc = subprocess.run(cmd, input=input_data, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
-    return proc.returncode, proc.stdout.strip(), proc.stderr.strip()
+# Backwards compatibility helper for existing tests
+get_tmux_windows = list_windows
 
 
 def message_opener(
@@ -39,10 +20,9 @@ def message_opener(
     stream_id = envelope.get("stream_id", "")
     corr_id = envelope.get("correlation_id")
     producer = envelope.get("producer", "unknown")
-    recipient = envelope.get("recipient", agent)
     payload = envelope.get("payload", {})
 
-    windows = get_tmux_windows(session_name, socket=socket)
+    windows = list_windows(session_name, socket=socket)
     if agent not in windows:
         dead_key = prefix(pod, tenant, agent=agent, resource="dead")
         r.rpush(dead_key, json.dumps(envelope))
@@ -59,18 +39,38 @@ def message_opener(
 
     text = payload.get("text", "")
     formatted_msg = f"[message from {producer}] {text}\n"
+    paste_text(session_name, agent, formatted_msg, stream_id=stream_id, socket=socket)
 
-    buf_name = f"flock_{stream_id[:8]}"
-    # Load buffer
-    run_tmux_cmd(["load-buffer", "-b", buf_name, "-"], socket=socket, input_data=formatted_msg)
-    # Bracketed paste
-    run_tmux_cmd(["paste-buffer", "-b", buf_name, "-p", "-t", f"{session_name}:{agent}"], socket=socket)
-    time.sleep(0.05)
-    # Send Enter key
-    run_tmux_cmd(["send-keys", "-t", f"{session_name}:{agent}", "Enter"], socket=socket)
-    # Clean up buffer
-    run_tmux_cmd(["delete-buffer", "-b", buf_name], socket=socket)
 
-    # No "opened" record here — flock.bus.doors.receive emits it once the opener
-    # returns. Two records per component is what makes "received, no outcome"
-    # mean a crash (LLD-bus-and-router §4); a third voids it.
+def command_opener(
+    r,
+    pod: str,
+    tenant: str,
+    agent: str,
+    envelope: dict,
+    session_name: str,
+    socket: str | None = None,
+) -> None:
+    stream_id = envelope.get("stream_id", "")
+    corr_id = envelope.get("correlation_id")
+    producer = envelope.get("producer", "unknown")
+    payload = envelope.get("payload", {})
+
+    windows = list_windows(session_name, socket=socket)
+    if agent not in windows:
+        dead_key = prefix(pod, tenant, agent=agent, resource="dead")
+        r.rpush(dead_key, json.dumps(envelope))
+        log_record(
+            module="adapter",
+            event="dead_lettered",
+            stream_id=stream_id,
+            correlation_id=corr_id,
+            producer=producer,
+            recipient=agent,
+            reason="window_missing",
+        )
+        return
+
+    text = payload.get("text", "")
+    formatted_msg = f"{text}\n"
+    paste_text(session_name, agent, formatted_msg, stream_id=stream_id, socket=socket)

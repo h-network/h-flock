@@ -1,7 +1,7 @@
 import json
 import pytest
 from unittest.mock import patch, MagicMock
-from flock.adapter.openers import message_opener, get_tmux_windows
+from flock.adapter.openers import message_opener, command_opener, get_tmux_windows
 from flock.adapter.cli import main as cli_main
 from flock.adapter.runner import run_adapter
 from flock.bus import build as build_envelope
@@ -47,11 +47,11 @@ class MockRedis:
             del self.hashes[key][field]
 
 
-@patch("flock.adapter.openers.get_tmux_windows")
-@patch("flock.adapter.openers.run_tmux_cmd")
-def test_message_opener_window_exists(mock_run_tmux_cmd, mock_get_windows):
-    mock_get_windows.return_value = {"alice", "bob"}
-    mock_run_tmux_cmd.return_value = (0, "", "")
+@patch("flock.adapter.openers.list_windows")
+@patch("flock.tmux.ops.run_tmux")
+def test_message_opener_window_exists(mock_run_tmux, mock_list_windows):
+    mock_list_windows.return_value = {"alice", "bob"}
+    mock_run_tmux.return_value = (0, "", "")
 
     r = MockRedis()
     env = build_envelope(kind="Message", producer="alice", recipient="bob", payload={"text": "hello"})
@@ -59,16 +59,21 @@ def test_message_opener_window_exists(mock_run_tmux_cmd, mock_get_windows):
     message_opener(r, pod="acme", tenant="hq", agent="bob", envelope=env, session_name="hq")
 
     # Check buffer operations were invoked
-    cmd_args = [call[0][0] for call in mock_run_tmux_cmd.call_args_list]
+    cmd_args = [call[0] for call in mock_run_tmux.call_args_list]
     assert any("load-buffer" in cmd for cmd in cmd_args)
     assert any("paste-buffer" in cmd for cmd in cmd_args)
     assert any("send-keys" in cmd for cmd in cmd_args)
     assert any("delete-buffer" in cmd for cmd in cmd_args)
 
+    load_buffer_calls = [call for call in mock_run_tmux.call_args_list if "load-buffer" in call[0]]
+    assert len(load_buffer_calls) == 1
+    input_data = load_buffer_calls[0][1].get("input_data", "")
+    assert input_data == "[message from alice] hello\n"
 
-@patch("flock.adapter.openers.get_tmux_windows")
-def test_message_opener_window_missing(mock_get_windows):
-    mock_get_windows.return_value = {"alice"}
+
+@patch("flock.adapter.openers.list_windows")
+def test_message_opener_window_missing(mock_list_windows):
+    mock_list_windows.return_value = {"alice"}
 
     r = MockRedis()
     env = build_envelope(kind="Message", producer="alice", recipient="bob", payload={"text": "hello"})
@@ -81,11 +86,11 @@ def test_message_opener_window_missing(mock_get_windows):
     assert len(r.lists[dead_key]) == 1
 
 
-@patch("flock.adapter.openers.get_tmux_windows")
-@patch("flock.adapter.openers.run_tmux_cmd")
-def test_message_opener_broadcast(mock_run_tmux_cmd, mock_get_windows):
-    mock_get_windows.return_value = {"alice", "bob", "carol"}
-    mock_run_tmux_cmd.return_value = (0, "", "")
+@patch("flock.adapter.openers.list_windows")
+@patch("flock.tmux.ops.run_tmux")
+def test_message_opener_broadcast(mock_run_tmux, mock_list_windows):
+    mock_list_windows.return_value = {"alice", "bob", "carol"}
+    mock_run_tmux.return_value = (0, "", "")
 
     r = MockRedis()
     env = build_envelope(kind="Message", producer="alice", recipient="all", payload={"text": "broadcast message"})
@@ -93,18 +98,36 @@ def test_message_opener_broadcast(mock_run_tmux_cmd, mock_get_windows):
     # Delivered to bob's window
     message_opener(r, pod="acme", tenant="hq", agent="bob", envelope=env, session_name="hq")
 
-    cmd_args = [call[0][0] for call in mock_run_tmux_cmd.call_args_list]
+    cmd_args = [call[0] for call in mock_run_tmux.call_args_list]
     assert any("paste-buffer" in cmd and "hq:bob" in cmd for cmd in cmd_args)
 
 
+@patch("flock.adapter.openers.list_windows")
+@patch("flock.tmux.ops.run_tmux")
+def test_command_opener_bare_paste(mock_run_tmux, mock_list_windows):
+    mock_list_windows.return_value = {"alice", "bob"}
+    mock_run_tmux.return_value = (0, "", "")
+
+    r = MockRedis()
+    env = build_envelope(kind="Command", producer="alice", recipient="bob", payload={"text": "touch /tmp/it-ran"})
+
+    command_opener(r, pod="acme", tenant="hq", agent="bob", envelope=env, session_name="hq")
+
+    load_buffer_calls = [call for call in mock_run_tmux.call_args_list if "load-buffer" in call[0]]
+    assert len(load_buffer_calls) == 1
+    input_data = load_buffer_calls[0][1].get("input_data", "")
+    assert input_data == "touch /tmp/it-ran\n"
+    assert "[message from" not in input_data
+
+
 @patch("flock.adapter.runner.redis.Redis.from_url")
-@patch("flock.adapter.openers.get_tmux_windows")
-@patch("flock.adapter.openers.run_tmux_cmd")
-def test_run_adapter_kicked_one_shot(mock_run_tmux_cmd, mock_get_windows, mock_redis_cls):
+@patch("flock.adapter.openers.list_windows")
+@patch("flock.tmux.ops.run_tmux")
+def test_run_adapter_kicked_one_shot(mock_run_tmux, mock_list_windows, mock_redis_cls):
     mock_r = MockRedis()
     mock_redis_cls.return_value = mock_r
-    mock_get_windows.return_value = {"alice", "bob"}
-    mock_run_tmux_cmd.return_value = (0, "", "")
+    mock_list_windows.return_value = {"alice", "bob"}
+    mock_run_tmux.return_value = (0, "", "")
 
     # Set up roster HASH
     roster_key = "pod:acme:tenant:hq:roster"
@@ -126,7 +149,7 @@ def test_run_adapter_kicked_one_shot(mock_run_tmux_cmd, mock_get_windows, mock_r
     assert not mock_r.hexists(delivering_key, "bob")
 
     # Check tmux paste command ran for bob
-    cmd_args = [call[0][0] for call in mock_run_tmux_cmd.call_args_list]
+    cmd_args = [call[0] for call in mock_run_tmux.call_args_list]
     assert any("paste-buffer" in cmd and "hq:bob" in cmd for cmd in cmd_args)
 
 
