@@ -164,7 +164,7 @@ def test_resume_agent_deletes_marker_then_resumes_without_touching_roster():
                 "create",
                 "hq",
                 "dave",
-                ["env", "AGENT_NAME=dave", "claude"],
+                ["env", "AGENT_NAME=dave", "startAgent", "claude"],
                 "/tmp/tmux.sock",
             ),
         ),

@@ -38,7 +38,7 @@ def deliver_one(
         result = create_window(
             session_name,
             target,
-            command=["env", f"AGENT_NAME={target}", cli],
+            command=["env", f"AGENT_NAME={target}", "startAgent", cli],
             socket=socket,
         )
         _ensure_tmux("create-window", result)

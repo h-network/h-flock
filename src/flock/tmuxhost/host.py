@@ -54,7 +54,7 @@ class TmuxHost:
             if initial_window != "__init__":
                 guide_path = f"/workdir/{initial_window}/AGENTS.md"
                 write_agent_guide(cwd, initial_window, self.tenant)
-                cmd_args = [cli] if cli else ["bash", "-il"]
+                cmd_args = ["startAgent", cli] if cli else ["bash", "-il"]
                 cmd.extend([
                     "env",
                     f"AGENT_NAME={initial_window}",
@@ -89,7 +89,7 @@ class TmuxHost:
             f"AGENT_GUIDE={guide_path}",
         ]
         if cli:
-            command = env_args + [cli]
+            command = env_args + ["startAgent", cli]
         else:
             command = env_args + ["bash", "-il"]
 

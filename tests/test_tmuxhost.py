@@ -163,7 +163,7 @@ def test_create_window_directly_writes_guide_and_trust(mock_run_tmux):
         with tempfile.TemporaryDirectory() as tmp_home:
             with patch.dict(os.environ, {"HOME": tmp_home}):
                 from flock.tmux.ops import create_window as shared_create_window
-                shared_create_window("hq", "dave", command=["claude"], cwd=tmp_workdir)
+                shared_create_window("hq", "dave", command=["startAgent", "claude"], cwd=tmp_workdir)
 
                 agents_path = os.path.join(tmp_workdir, "AGENTS.md")
                 claude_path = os.path.join(tmp_workdir, "CLAUDE.md")
@@ -175,3 +175,25 @@ def test_create_window_directly_writes_guide_and_trust(mock_run_tmux):
                 with open(config_path, "r", encoding="utf-8") as f:
                     data = json.load(f)
                 assert data["projects"][tmp_workdir]["hasTrustDialogAccepted"] is True
+
+
+@patch("flock.tmux.ops.run_tmux")
+def test_tmuxhost_launches_cli_via_startagent(mock_run_tmux):
+    mock_run_tmux.side_effect = [
+        (0, "", ""),  # has-session
+        (0, "", ""),  # exit-empty
+        (0, "", ""),  # default-size
+        (0, "", ""),  # history-limit
+        (0, "__init__", ""),  # list-windows 1
+        (0, "", ""),  # new-window dave
+        (0, "__init__\ndave", ""),  # list-windows 2
+        (0, "", ""),  # kill-window __init__
+    ]
+
+    r = MockRedis(["dave"], launch_map={"dave": "claude"})
+    host = TmuxHost(pod="acme", tenant="hq", redis_url="redis://127.0.0.1:6379/0", session_name="hq")
+    host.reconcile_once(r)
+
+    calls = [c[0] for c in mock_run_tmux.call_args_list]
+    new_window_calls = [c for c in calls if "new-window" in c]
+    assert any("startAgent" in c and "claude" in c for c in new_window_calls)
