@@ -89,6 +89,14 @@ fields+=("host" "control")
 redis-cli -h 127.0.0.1 HSET "$roster_key" "${fields[@]}" >/dev/null
 echo "{\"module\":\"container\",\"event\":\"roster_seeded\",\"count\":$(( ${#fields[@]} / 2 ))}"
 
+# Seeding is the only use of AGENTS. Hold it out of the environment from here:
+# the tmux server is started below and every agent window inherits its
+# environment, so an exported AGENTS put the raw seed string — VABs included,
+# and the agent itself in the list — in front of every agent. Asked where its
+# peers were, one read that, found it confusing, and went to redis-cli for a
+# better answer. Peers reach a window as AGENT_PEERS, derived from the roster.
+unset AGENTS
+
 # ── tmux host ─────────────────────────────────────────────────────────────────
 start tmuxhost python3 -m flock.tmuxhost
 
