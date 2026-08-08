@@ -1,5 +1,9 @@
 # Build 10 — task boards
 
+> ⚠ **Superseded by [`BUILD-11-boards-recut.md`](BUILD-11-boards-recut.md).**
+> Shipped, but with the wrong verbs and ticket shape. Kept for the history of why
+> each call went the way it did; do not build from it.
+
 > Design is [`PLAN-boards.md`](PLAN-boards.md). This is the split, the three
 > policy calls, and what done means.
 >
