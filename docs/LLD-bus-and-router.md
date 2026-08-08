@@ -537,9 +537,34 @@ trip; a remote one is a network round trip, and doing that inline turns a
 microsecond loop into a tens-of-milliseconds one. That is the one thing that
 would make subscribe-set fairness matter — see below.
 
-**Roster ownership.** The roster is read as live state (§3.2), and for the first
-build nothing writes it. Where it lives and what maintains it is a question for
-once the skeleton forwards envelopes — do not invent a write path before then.
+**Roster ownership, and agent lifecycle over the bus.** The roster is read as
+live state (§3.2), and for the first build nothing writes it. The shape it will
+take is settled even though it is not built: **a control agent owns the write
+path, and it is reached over the bus like anything else.**
+
+```
+  POST /agents/host/messages  --kind StartAgent  --payload {"agent":"dave"}
+        │
+        ▼  api egress ──► router ──► …:agent:host:ingress ──kick──► adapter host
+                                                                        │
+                                            VAB `control` → StartAgent opener:
+                                            create the window, write the roster row
+```
+
+Nothing in the router or the bus changes to allow this, which is the point. The
+host becomes an addressable agent with its own VAB — everything addressable is an
+agent (§3.2), so it needs a name and a queue pair and nothing else. `kind` stays
+opaque to the router; the control opener reads it at the far edge, exactly as §5
+describes. All three rails in §3.3 hold untouched.
+
+The same mechanism carries the rest of the lifecycle — adding an agent creates
+its window *and* its roster row in one operation, and stopping one reverses it.
+There is no second door into the roster and no module acquires a write path of
+its own.
+
+⚠ **Still deferred.** None of this is built, and the preamble above applies: do
+not solve it pre-emptively. It is written down so the shape is not re-invented,
+not because it is next.
 
 **Subscribe-set fairness.** `BLPOP` returns from the first non-empty key in
 argument order, so a fixed order can in principle starve later queues. It cannot
