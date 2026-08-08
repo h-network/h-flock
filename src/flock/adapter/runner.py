@@ -4,7 +4,7 @@ from datetime import datetime, timezone
 import redis
 
 from flock.bus import EnvelopeError, emit, log_record, parse, prefix, receive
-from .openers import command_opener, message_opener
+from .openers import assign_task_opener, command_opener, message_opener
 
 
 class _CatchAllDict(dict):
@@ -117,9 +117,21 @@ def deliver_one(
             socket=socket,
         )
 
+    def handle_assign_task(envelope: dict) -> None:
+        assign_task_opener(
+            r=r,
+            pod=pod,
+            tenant=tenant,
+            agent=agent,
+            envelope=envelope,
+            session_name=session_name,
+            socket=socket,
+        )
+
     openers = {
         "Message": handle_message,
         "Command": handle_command,
+        "AssignTask": handle_assign_task,
     }
     receive(r, pod=pod, tenant=tenant, agent=agent, openers=openers, timeout=1, module="adapter")
 
