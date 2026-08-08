@@ -246,6 +246,7 @@ went the way it did rather than only what it was.
 
 | | |
 |---|---|
+| [`API.md`](docs/API.md) | public API reference for app developers |
 | [`LLD-bus-and-router.md`](docs/LLD-bus-and-router.md) | addressing, the envelope, the two doors, the invariants |
 | [`LLD-adapter-tmux.md`](docs/LLD-adapter-tmux.md) | how text actually gets into a terminal, and why each rule is load-bearing |
 | [`LLD-tmux-host.md`](docs/LLD-tmux-host.md) | the server, windows, geometry, reconciliation |
