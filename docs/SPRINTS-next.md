@@ -172,13 +172,35 @@ selected but never used.
 **The logins themselves** still need doing once per account, interactively.
 `container/seed-home.sh out` then keeps them across rebuilds.
 
-### To verify: how nvidia openshell handles this
+### Checked: NVIDIA OpenShell, and why it changes nothing here
 
-Reported to do something similar — recollection is that **it copies credentials
-to the host**, which is the same shape as `seed-home.sh out`. Worth confirming
-before assuming our approach is the only sensible one, particularly for the part
-we have not solved: making the *first* login painless rather than a manual
-browser flow per account.
+`NVIDIA/OpenShell` treats credentials as named *providers* discovered from the
+host shell and injected as environment variables:
 
-⚠ **Unverified.** I have not found or read it; this is a note to check, not a
-finding. A pointer to the repo or docs would settle it in minutes.
+```bash
+openshell provider create --name my-claude --type claude --from-existing
+openshell sandbox create --provider my-github -- claude
+```
+
+That is **API-key shaped**, and it does not solve the interactive login. Their own
+GitHub tutorial says so:
+
+> OpenShell provides the sandbox runtime, not the agent. **You must authenticate
+> with your own account.** … Claude Code starts inside the sandbox. **It prints an
+> authentication link. Open it in your browser** … **When prompted, trust the
+> `/sandbox` workspace.**
+
+So the browser flow *and* the trust prompt are exactly what we hit. Nobody has
+made the first login painless.
+
+**And we do not need them to.** The office's answer, proven in practice: log in
+once, copy `.credentials.json`, done — no API keys, no provider mechanism.
+`container/seed-home.sh` already does this for all three CLIs
+(`.claude/.credentials.json`, `.codex/auth.json`,
+`.gemini/antigravity-cli/antigravity-oauth-token`).
+
+The one thing they have that we do not is direction: theirs is host → sandbox
+only, because their sandboxes are meant to be ephemeral and re-authenticated.
+`seed-home.sh out` is the half that makes a tenant survive a rebuild.
+
+**Closed.** Nothing to build.
