@@ -102,8 +102,53 @@ persists across rebuilds instead of being redone by hand.
 It also makes the third item, the `startAgent` flip, safe to do: every window
 starts a CLI that has an account and has already been through onboarding.
 
-⚠ Still needs a decision that is not ours to guess: **where the credentials
-themselves come from.** Seeding copies settings, not logins. Each non-`default`
+## 7. What the CLIs actually keep — measured, not assumed
+
+Checked on the running office, which runs all three: 2× `agy`, 1× `claude`,
+1× `codex`.
+
+| | Size | Keeps |
+|---|---|---|
+| `~/.claude` | 12 MB | per-project JSONL transcripts under `projects/<cwd-key>/` |
+| `~/.codex` | **482 MB** | `sessions/`, SQLite logs, `auth.json`, `config.toml`, plus `packages` 350 MB, `plugins` 29 MB, `cache` 16 MB |
+| `agy` | — | **no config dir of its own.** No `~/.agy`, nothing in `~/.config`; its `PATH` includes `~/.codex/bin` |
+
+Three consequences:
+
+**`agy` needs no third profile dir.** `setupConfigDir` handling only
+`~/.claude-<name>` and `~/.codex-<name>` is not an omission — agy piggybacks. The
+`codex`/`agy` onboarding item in [`TODO.md`](TODO.md) is probably one answer, not
+two.
+
+⚠ **Relocating `CODEX_HOME` may duplicate 350 MB of `packages` per profile.**
+h-office's seeding copies only `config.toml` and `AGENTS.md`, which is right for
+*seeding* — but whether codex then rebuilds its package cache in the new home is
+unverified, and it is the difference between a few KB per profile and a third of
+a gigabyte. **Check before sizing any volume.**
+
+**Full conversation transcripts are on disk and are the better record.** 912
+lines / 1.2 MB after one short run. Structured — every message, tool call and
+timestamp — where `capture-pane` only shows what fit on screen. They live *in the
+config dir*, so they are profile-scoped and die with the container, and they grow
+without bound.
+
+Two things follow. The volume question is not only "logins persist" but "the
+record of what the agents did persists" — every rebuild today throws it away.
+And claude keys transcripts by working directory, so while every window started
+in `/app` all three agents shared one project key; build 06's `/workdir/<agent>`
+splits them, which is a better reason for that change than the one given at the
+time.
+
+**Also worth knowing:** the running agents have `AGENT_GUIDE=/opt/h-office/config/agent-guide.md`
+in their environment. h-office points agents at a *shared* guide via an env var;
+build 06 writes a *per-agent* file into the working directory. Ours names the
+agent and its peers, theirs is one file for everyone. If these CLIs already look
+for `AGENT_GUIDE`, setting it may be the mechanism rather than hoping the file is
+read.
+
+## 8. Still undecided
+
+⚠ **Where the credentials themselves come from.** Seeding copies settings, not logins. Each non-`default`
 profile still costs one interactive login, done once and then persisted — which
 means the profile dirs have to survive a container rebuild, i.e. a volume. That
 is the piece h-office gets for free by being long-lived, and we do not.
