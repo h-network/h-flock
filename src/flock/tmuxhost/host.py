@@ -36,7 +36,7 @@ class TmuxHost:
         if ret != 0:
             # Create session detached with initial window
             cmd = [
-                "new-session", "-d", "-s", self.session_name, "-n", initial_window, "-x", "80", "-y", "24"
+                "new-session", "-d", "-s", self.session_name, "-n", initial_window, "-x", "120", "-y", "32"
             ]
             if initial_window != "__init__":
                 cmd_args = [cli] if cli else ["bash", "-il"]
@@ -49,7 +49,7 @@ class TmuxHost:
 
         # Set session & server options
         tmux_ops.run_tmux("set-option", "-g", "exit-empty", "off", socket=self.socket)
-        tmux_ops.run_tmux("set-option", "-g", "default-size", "80x24", socket=self.socket)
+        tmux_ops.run_tmux("set-option", "-g", "default-size", "120x32", socket=self.socket)
         tmux_ops.run_tmux("set-option", "-g", "history-limit", "2000", socket=self.socket)
 
     def get_windows(self) -> Set[str]:

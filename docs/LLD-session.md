@@ -131,9 +131,11 @@ snapshot.
 **Per-client identity.** One shared token, as with the api. Which means the
 per-connection log record identifies a connection, not a person.
 
-**Resize.** An app showing a window narrower than 80 columns will wrap oddly.
-Letting a client resize a window affects every other viewer and the agent in it,
-so it needs a rule about who wins — see `LLD-tmux-host` §3.
+**Resize — decided, and the answer is no.** Windows are a fixed 120×32
+(`LLD-tmux-host` §3) and no client may change that. A resize would affect every
+other viewer and the agent in the window, so there is no rule about who wins
+because nobody gets to. An app renders the size it is given and scrolls or
+scales to fit.
 
 ## 8. What this is not
 

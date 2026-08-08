@@ -46,14 +46,19 @@ depend on a client being connected.
 
 The one that bites, because it only appears when no one is looking.
 
-With no client attached, panes get `default-size` — 80×24. Every TUI in the
-office renders to that, and anything reading a pane sees 80 columns. Then a
+With no client attached, panes get `default-size`. Every TUI in the office
+renders to that, and anything reading a pane sees exactly those columns. Then a
 human attaches with a wide terminal, tmux resizes, and every window reflows
 underneath whatever was reading it.
 
+**120×32, fixed.** tmux's own default of 80×24 is cramped for the TUIs that
+actually run here, and a size nothing ever changes is what lets an app render a
+window without negotiating geometry. Wide enough not to wrap awkwardly, small
+enough that a full redraw is not much to push down a stream.
+
 ```
-  new-session -d -x <cols> -y <rows>    an explicit size, not the default
-  set -g default-size 80x24             the size a headless window gets
+  new-session -d -x 120 -y 32           an explicit size, not the default
+  set -g default-size 120x32            the size a headless window gets
 ```
 
 `window-size` defaults to `latest`, which hands control to whoever attached most
