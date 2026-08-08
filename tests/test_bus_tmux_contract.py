@@ -9,6 +9,7 @@ from flock.bus import (
     receive,
     members,
     is_member,
+    vab,
 )
 
 
@@ -16,6 +17,7 @@ class MockRedis:
     def __init__(self):
         self.lists = {}
         self.sets = {}
+        self.hashes = {}
 
     def rpush(self, key, value):
         if key not in self.lists:
@@ -27,6 +29,23 @@ class MockRedis:
             val = self.lists[key].pop(0)
             return (key, val)
         return None
+
+    def hset(self, key, field=None, value=None, **kwargs):
+        if key not in self.hashes:
+            self.hashes[key] = {}
+        if field is not None:
+            self.hashes[key][field] = value
+        for k, v in kwargs.items():
+            self.hashes[key][k] = v
+
+    def hexists(self, key, field):
+        return field in self.hashes.get(key, {})
+
+    def hget(self, key, field):
+        return self.hashes.get(key, {}).get(field)
+
+    def hkeys(self, key):
+        return set(self.hashes.get(key, {}).keys())
 
     def smembers(self, key):
         return self.sets.get(key, set())
@@ -107,10 +126,12 @@ def test_send_and_receive(capsys):
 def test_roster():
     r = MockRedis()
     roster_key = prefix("acme", "hq", resource="roster")
-    r.sadd(roster_key, "alice", "bob")
+    r.hset(roster_key, "alice", "tmux")
+    r.hset(roster_key, "bob", "tmux")
 
     mem = members(r, pod="acme", tenant="hq")
     assert mem == {"alice", "bob"}
 
     assert is_member(r, pod="acme", tenant="hq", agent="alice") is True
     assert is_member(r, pod="acme", tenant="hq", agent="carol") is False
+    assert vab(r, pod="acme", tenant="hq", agent="alice") == "tmux"

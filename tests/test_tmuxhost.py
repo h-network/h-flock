@@ -7,6 +7,9 @@ class MockRedis:
     def __init__(self, roster_agents):
         self.roster_agents = set(roster_agents)
 
+    def hkeys(self, key):
+        return {a.encode("utf-8") for a in self.roster_agents}
+
     def smembers(self, key):
         return {a.encode("utf-8") for a in self.roster_agents}
 
