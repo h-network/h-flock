@@ -15,12 +15,21 @@ stops on a setup prompt never starts, while the roster says it exists and the
 router keeps routing to it.
 → find each CLI's equivalent marker, seed all three the same way.
 
-**Credentials.** No `~/.claude/.credentials.json` and no `ANTHROPIC_API_KEY` in
-the image, so a CLI reaches its login prompt and stops. An interactive login
-works but does not survive a rebuild, since nothing is mounted or persisted.
-→ needs a decision: mounted credentials file, or an env var. The mount keeps the
-secret out of every pane's environment, which is why `API_TOKEN` was scoped to
-the api process (`LLD-container` §3).
+**Credentials and profiles.** No `~/.claude/.credentials.json` and no
+`ANTHROPIC_API_KEY` in the image, so a CLI reaches its login prompt and stops. An
+interactive login works but does not survive a rebuild.
+
+→ **[`PLAN-profiles.md`](PLAN-profiles.md)** — the shape, taken from h-office,
+which solved it. The unit is the *account*, not the agent: a config dir is one
+interactive login, so several agents share a profile and `default` is free.
+`CLAUDE_CONFIG_DIR` / `CODEX_HOME` in the window env is the whole mechanism.
+
+⚠ Our current onboarding seed writes `$HOME/.claude.json`, which covers the
+**default profile only** — a second profile lands on the theme picker again
+unless its own dir is seeded. Same bug h-office fixed in `4b88096`.
+
+⚠ Still undecided: profile dirs must survive a rebuild, so they need a volume.
+h-office gets that for free by being long-lived; we do not.
 
 **The `startAgent` flip.** Windows still run `bash -il`. `create_window` already
 takes a command and `StartAgent` already passes one, so this is a default, not
