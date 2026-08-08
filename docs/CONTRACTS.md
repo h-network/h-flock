@@ -194,7 +194,48 @@ recipient name. It does not report delivery, because it cannot observe it.
 agreement between `send` and the tmux Message opener, not a bus concern — the
 bus does not validate payloads (`LLD-bus-and-router` §5).
 
-## 6. Seeding the roster
+## 6. Kinds and their payloads
+
+`kind` is opaque to the router and read only by an opener (`LLD-bus-and-router`
+§5). The table below is therefore an agreement between whoever *sends* a kind
+and whoever *opens* it — never a bus concern, and never something the router or
+the api validates.
+
+| `kind` | VAB that opens it | Payload | Does |
+|---|---|---|---|
+| `Message` | `tmux` | `{"text": "..."}` | pastes `[message from <producer>] <text>` |
+| `Command` | `tmux` | `{"text": "..."}` | pastes `<text>` **bare** — it executes |
+| `StartAgent` | `control` | `{"agent": "dave", "cli": "claude"}` | enrols an agent |
+| `StopAgent` | `control` | `{"agent": "dave"}` | removes one |
+
+`cli` defaults to `claude`. `Message` and `Command` share a payload shape and
+differ only in whether the prefix is rendered — see `LLD-adapter-tmux` §3 for why
+that one difference is the whole security boundary.
+
+### How `StartAgent` enrols without reaching into another module
+
+The opener writes **two** keys and creates nothing:
+
+```
+  HSET  …:tenant:<t>:roster        dave  tmux      membership + VAB
+  SET   …:agent:dave:launch        claude          what to start in the window
+```
+
+The tmux host's reconcile loop then creates the window on its next pass, because
+that is already what it does — *"an agent in the roster with no window gets
+one"* (`LLD-tmux-host` §5). Nothing new starts windows, and the control opener
+never touches tmux.
+
+⚠ **`launch` is a separate key, not a roster value.** `LLD-bus-and-router` §3.2
+is explicit that nothing beyond the VAB lives in the roster — *"what is started
+in its window, its credentials, its configuration — belongs to whichever module
+starts it, not to membership."* Putting `cli` in the roster value would make
+every reader of the MAC table parse an agent's configuration.
+
+`StopAgent` reverses it: `HDEL` the roster field, `DEL` the launch key, and the
+host removes the window on its next pass. Same loop, opposite direction.
+
+## 7. Seeding the roster
 
 `LLD-bus-and-router` §7 defers who *owns* the roster. Build 01 still needs one to
 exist, so the container's entrypoint writes it once at start, from the
@@ -210,7 +251,7 @@ HSET pod:$POD:tenant:$TENANT:roster alice tmux bob tmux carol tmux api api
 (`LLD-container` §5). **Nothing else writes the roster** — this is boot
 configuration, not the write path §7 defers, and no module may acquire one.
 
-## 7. What the api reads
+## 8. What the api reads
 
 The board is **three LISTs per agent**, using the resource names
 `LLD-bus-and-router` §3.1 already shows:
@@ -255,7 +296,7 @@ GET /agents                 { "agents": ["alice", "bob", "carol"] }
 A list rather than a map for `GET /board`, so roster order is expressible and
 the entry shape matches the single-agent route exactly.
 
-## 8. Shared environment
+## 9. Shared environment
 
 Set once by the container, inherited by everything (`LLD-container` §4).
 

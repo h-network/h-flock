@@ -112,6 +112,24 @@ That prefix is the entire reply mechanism. The agent reads a name and replies
 with the same `send` command it would use anyway — nothing routes a reply, and
 nothing needs to.
 
+### `Command` — text to run, not text to read
+
+`{"text": "git status"}`. The same window, the same paste sequence in §4, and
+one difference that is the whole point: **no `[message from …]` prefix.** The
+line is pasted bare, so the shell or the CLI in that window executes it.
+
+That is the only distinction between the two kinds, and it is deliberate — the
+prefix is what makes a `Message` inert, because a program reading it sees a
+sentence addressed to it rather than an instruction. Remove the prefix and the
+same mechanism becomes remote execution.
+
+⚠ **`Command` is arbitrary code execution in an agent's window**, reachable by
+anyone who can put an envelope on the bus — which now includes anyone holding
+the api's bearer token. `LLD-tmux-host` §4 already says to treat handing out the
+tmux socket as handing out the machine; this kind hands out the same thing
+through a smaller hole. It is a deliberate capability, not an oversight, and it
+is the reason `LLD-api` §6 says the token is not optional.
+
 An envelope whose `kind` has no opener is dead-lettered under **this agent's own
 prefix** and logged. The failure happened at this end, and an adapter writing to
 the sender's prefix would reach outside its own agent's keys.

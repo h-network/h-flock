@@ -44,10 +44,9 @@ restarted and deployed without disturbing the others.
 | `GET` | `/health` | liveness |
 | `GET` | `/agents` | enrolled agents, from the roster |
 | `GET` | `/agents/{agent}` | queue depths |
-| `POST` | `/agents/{agent}/messages` | put an envelope on the bus |
+| `POST` | `/agents/{agent}/envelopes` | put an envelope on the bus, of any kind |
 | `GET` | `/agents/{agent}/board` | that agent's board |
 | `GET` | `/board` | every agent's board |
-| `GET` | `/messages/{correlation_id}` | replies collected for that request, if any |
 
 `GET /board` walks the roster and pipelines the reads — one round trip, no
 keyspace scan, and agents holding nothing still appear.
@@ -56,6 +55,26 @@ keyspace scan, and agents holding nothing still appear.
 
 Build a `v=1` envelope with the `recipient` from the path, `send` it, return
 `202` with the `stream_id` and the `correlation_id`.
+
+**The body carries `kind` and `payload`, and the api validates neither.**
+
+```json
+POST /agents/host/envelopes    {"kind": "StartAgent", "payload": {"agent": "dave"}}
+POST /agents/bob/envelopes     {"kind": "Message",    "payload": {"text": "hi"}}
+POST /agents/bob/envelopes     {"text": "hi"}          sugar — means kind Message
+```
+
+The endpoint is `/envelopes`, not `/messages`, because a message is one kind
+among several and naming the resource after it made the whole HTTP surface
+Message-shaped: the one thing the bus was built to make cheap — adding a kind —
+could not be reached over HTTP at all.
+
+⚠ **The api must not know what kinds exist.** It builds an envelope and writes
+its own egress; which kinds are openable is a fact about adapters, discovered at
+the far edge. An api that rejects an unknown `kind` becomes a second place to
+update every time one is added, and `LLD-bus-and-router` §5 keeps that knowledge
+at exactly one end. An unopenable kind is a dead-letter with a reason, which is
+a better answer than a `400` from something that cannot actually know.
 
 It does not report delivery, because it cannot observe it. A client that wants
 to know what became of an envelope reads the log by `stream_id`.
