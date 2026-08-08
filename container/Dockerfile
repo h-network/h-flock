@@ -31,6 +31,15 @@ RUN pip install --no-cache-dir .
 COPY container/entrypoint.sh /usr/local/bin/entrypoint.sh
 RUN chmod +x /usr/local/bin/entrypoint.sh
 
+# Claude Code keeps first-run state in ~/.claude.json. Without hasCompletedOnboarding
+# an agent's first `startAgent` lands on the theme picker instead of a prompt —
+# which for an agent in a headless window means it never starts at all. The base
+# image does not set it; h-office pre-seeds the same flag for the same reason.
+# Merged into the existing file rather than overwritten: it carries installMethod,
+# machineID and migration flags that should survive.
+RUN python3 -c "import json, os; p='/home/ubuntu/.claude.json'; d=json.load(open(p)) if os.path.exists(p) else {}; d['hasCompletedOnboarding']=True; json.dump(d, open(p,'w'), indent=2)" \
+ && chown ubuntu:ubuntu /home/ubuntu/.claude.json
+
 # The base runs as ubuntu (uid 1000), and the agent CLIs expect that home. The
 # tmux socket therefore lives somewhere that user owns — /run is root's.
 RUN mkdir -p /home/ubuntu/.flock/tmux \
