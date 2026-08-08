@@ -1,0 +1,44 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 360" width="1200" height="360" role="img" aria-label="h-flock — a message bus for agents that live in terminals">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#0C1220"/>
+      <stop offset="1" stop-color="#04161C"/>
+    </linearGradient>
+    <linearGradient id="accent" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#22D3EE"/>
+      <stop offset="1" stop-color="#06B6D4"/>
+    </linearGradient>
+    <radialGradient id="glow" cx="0.22" cy="0.0" r="0.9">
+      <stop offset="0" stop-color="#22D3EE" stop-opacity="0.20"/>
+      <stop offset="1" stop-color="#22D3EE" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+
+  <rect width="1200" height="360" rx="18" fill="url(#bg)"/>
+  <rect width="1200" height="360" rx="18" fill="url(#glow)"/>
+  <rect x="1.5" y="1.5" width="1197" height="357" rx="17" fill="none" stroke="#12414C" stroke-width="2"/>
+
+  <!-- logo mark: a switch port -->
+  <rect x="80" y="70" width="64" height="64" rx="16" fill="url(#accent)"/>
+  <text x="112" y="117" font-family="ui-monospace, 'SF Mono', Menlo, Consolas, monospace" font-size="30" font-weight="700" fill="#04161C" text-anchor="middle">&#8644;</text>
+
+  <!-- wordmark + tagline -->
+  <text x="164" y="112" font-family="'Segoe UI', Helvetica, Arial, sans-serif" font-size="58" font-weight="800" fill="#F8FAFC">h-flock</text>
+  <text x="166" y="152" font-family="'Segoe UI', Helvetica, Arial, sans-serif" font-size="22" fill="#8FA8B0">A message bus for agents that live in terminals &#183; one container, one tenant</text>
+
+  <!-- motif: any kind of participant on the same switch -->
+  <g font-family="ui-monospace, 'SF Mono', Menlo, Consolas, monospace" font-size="15" font-weight="600">
+    <rect x="80" y="222" width="122" height="48" rx="10" fill="#08222A" stroke="#06B6D4" stroke-opacity="0.6"/>
+    <text x="141" y="251" fill="#67E8F9" text-anchor="middle">tmux agent</text>
+    <rect x="214" y="222" width="122" height="48" rx="10" fill="#08222A" stroke="#06B6D4" stroke-opacity="0.6"/>
+    <text x="275" y="251" fill="#67E8F9" text-anchor="middle">app client</text>
+    <rect x="348" y="222" width="122" height="48" rx="10" fill="#08222A" stroke="#06B6D4" stroke-opacity="0.35" stroke-dasharray="4 4"/>
+    <text x="409" y="251" fill="#8FA8B0" text-anchor="middle">&#8230; +N</text>
+    <text x="500" y="250" fill="#64748B" text-anchor="middle" font-size="22">&#8644;</text>
+    <rect x="528" y="222" width="402" height="48" rx="10" fill="url(#accent)"/>
+    <text x="729" y="251" fill="#04161C" text-anchor="middle" font-weight="700" font-size="15">router &#183; envelopes &#183; boards &#183; REST + SSE</text>
+  </g>
+
+  <!-- footer strapline -->
+  <text x="82" y="322" font-family="ui-monospace, 'SF Mono', Menlo, Consolas, monospace" font-size="13" letter-spacing="2" fill="#67E8F9">FORWARD BY NAME &#183; READ NO PAYLOAD &#183; ONE CONTAINER &#160;&#8212;&#160; office &#183; tmux + redis &#183; apps as peers</text>
+</svg>
