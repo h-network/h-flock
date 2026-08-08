@@ -73,14 +73,30 @@ A consequence worth stating: **an agent never learns a queue name.** Its entire
 surface is `send`, `receive`, and the name of whoever it is addressing.
 
 **Why a router exists at all.** A producer could write straight into its
-recipient's queue, and then no router would be needed. The cost is that every
-producer must then know the topology — which agents exist, what their queues
-are called, which tenant they sit in — and that knowledge has to be correct in
-every agent and updated in all of them at once. With a router, a producer knows
-two things: its own name, and the name of whoever it is addressing. It names a
-**recipient**, never a route. Working out where that recipient currently is —
-local, another tenant, or gone — is the router's job, and it is the only
-component that has to change when the answer does.
+recipient's queue, and then no router would be needed — this is what h-office
+does, and its envelope has no `recipient` field at all: the address is the queue,
+and the courier derives everything from the key it popped. Simpler, and it works.
+
+**The router is what buys scale.** A producer names a **recipient**, never a
+route, so where that recipient actually is can change without touching a single
+sender:
+
+- **another tenant.** A producer cannot know a foreign tenant's topology, and
+  should not. Cross-tenant routing has one home (§7) instead of needing every
+  producer to learn a second address space.
+- **another base.** An agent moving from a tmux window to something else changes
+  nothing for anyone addressing it, because nobody was addressing a queue.
+- **gone.** An unresolvable name dead-letters in one place with a reason, rather
+  than each sender discovering it separately.
+- **many tenants on one Redis.** One router per tenant, and the boundary is
+  enforced where envelopes enter rather than in every producer.
+
+⚠ Note what this is *not* justified by, because the tempting argument is the
+weak one: it is **not** about hiding topology from producers. In this build every
+agent has `REDIS_URL`, `redis-cli` and its peer list, and one read the whole
+roster within minutes of starting. Topology is a command away. The router earns
+its place by being the single component that has to change when the answer to
+"where is that recipient" changes — not by keeping the answer secret.
 
 ## 2. The model, in one picture
 
