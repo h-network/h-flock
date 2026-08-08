@@ -131,6 +131,20 @@ def create_window(session_name: str, agent_name: str,
 def kill_window(session_name: str, window_name: str,
                 socket: str | None = None) -> tuple[int, str, str]
 
+def write_agent_guide(agent_name: str, tenant: str, cwd: str) -> None
+    # AGENTS.md *and* CLAUDE.md, both, in the agent's own directory
+    # every window gets one — create_window calls this for all callers,
+    # so a guide is not something a caller can forget
+
+def generate_agents_md(agent_name: str, tenant: str = "default") -> str
+    # the guide text itself. Names the board, because nothing else will:
+    # a board is pulled, so a silent guide makes it invisible
+
+def ensure_claude_project_trusted(cwd: str) -> None
+    # writes hasTrustDialogAccepted for that directory in ~/.claude.json
+    # per-directory, so a new agent home needs its own — found by running
+    # a real CLI into a first-run gate
+
 def paste_text(session_name: str, agent_name: str, text: str,
                stream_id: str = "", socket: str | None = None) -> None
     # load-buffer → paste-buffer -p → delay → Enter → delete-buffer
@@ -276,16 +290,29 @@ ingress depth is how you see it.
 Adding a base is adding a value to the roster and a routine to the adapter.
 Nothing in the router changes, because the router never learns that bases exist.
 
-## 5. The `send` command
+## 5. The `office` command
 
-The agent-facing surface, and the only part of this a human touches. Available on
-`PATH` in every agent window (`LLD-adapter-tmux` §1).
+The agent-facing surface, and the only part of this a human touches. One binary
+on `PATH` in every agent window (`LLD-adapter-tmux` §1).
 
 ```bash
-send <recipient> <text>...        # kind defaults to Message
-send all <text>...                # tenant broadcast, everyone but you
-send --kind <kind> <recipient> --payload '<json>'
+office send -a <recipient> <text>...    # kind defaults to Message
+office broadcast <text>...              # tenant broadcast, everyone but you
+office peers | hire | letGo | pause | resume
+office add | list | take | done | cancel | hold | delete
 ```
+
+⚠ **Corrected in build 09 — this was seven separate binaries** (`send`,
+`sendMessage`, `sendBroadcast`, `peers`, `hire`, `letGo`, …) and is now one.
+Found by running a real agent: told to use `sendMessage`, Claude Code reached for
+its **own built-in `SendMessage` tool** and reported that no such teammate
+existed — a coherent-sounding failure from entirely the wrong subsystem. A
+lowercase prefixed command cannot be mistaken for a PascalCase tool, which fixes
+the class rather than the one name. See `BUILD-09-office-cli.md` §1.
+
+⚠ Not to be confused with **`flock.bus.send()`** in §2, which is the library
+function that writes an egress. Same word, different layer: the command is what
+an agent types, the function is what it ends up calling.
 
 Identity is **never** an argument — it comes from `AGENT_NAME`, `POD` and
 `TENANT` in the window's environment, so the command writes the right egress
@@ -309,6 +336,17 @@ the api validates.
 | `Command` | `tmux` | `{"text": "..."}` | pastes `<text>` **bare** — it executes |
 | `StartAgent` | `control` | `{"agent": "dave", "cli": "claude"}` | enrols, creates the window, starts the CLI |
 | `StopAgent` | `control` | `{"agent": "dave"}` | reverses all three |
+| `PauseAgent` | `control` | `{"agent": "dave"}` | stops the CLI, keeps the agent and its queues |
+| `ResumeAgent` | `control` | `{"agent": "dave"}` | starts the CLI again and drains the inbox |
+| `AddTicket` | `tmux` | `{"title", "description", "priority"}` | writes a ticket to that agent's `tasks.todo` — and **pastes nothing** |
+
+⚠ `AssignTask` is the old name for `AddTicket`. It is still registered, logs a
+`deprecated_kind` record when used, and goes away in the build after 11.
+
+⚠ **`AddTicket` is opened by `tmux` but touches no window.** It is in this table
+under the VAB that opens it, not the thing it does — a board write is the one
+delivery routine that produces no terminal output, deliberately: the board is
+pulled, so nothing notifies the agent (`PLAN-boards` §1).
 
 `cli` defaults to `claude`. `Message` and `Command` share a payload shape and
 differ only in whether the prefix is rendered — see `LLD-adapter-tmux` §3 for why
