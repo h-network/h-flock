@@ -4,7 +4,7 @@ import time
 import redis
 from typing import Set
 
-from flock.bus import members, log_record
+from flock.bus import members, log_record, vab
 
 
 def run_tmux(*args: str, socket: str | None = None) -> tuple[int, str, str]:
@@ -98,7 +98,11 @@ class TmuxHost:
             return False
 
     def reconcile_once(self, r: redis.Redis) -> None:
-        roster_agents = members(r, pod=self.pod, tenant=self.tenant)
+        all_members = members(r, pod=self.pod, tenant=self.tenant)
+        roster_agents = {
+            a for a in all_members
+            if vab(r, pod=self.pod, tenant=self.tenant, agent=a) == "tmux"
+        }
         first_agent = sorted(list(roster_agents))[0] if roster_agents else "__init__"
         self.ensure_server_and_session(initial_window=first_agent)
 
