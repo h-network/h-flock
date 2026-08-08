@@ -7,13 +7,21 @@ Deferred *design* questions stay in each LLD's §7. This is the operational list
 
 ## Agents in windows
 
-**Onboarding for `codex` and `agy`.** `container/Dockerfile` pre-seeds
-`hasCompletedOnboarding` for `claude` only. The other two CLIs the base image
-ships have their own first-run state and will land on their own setup screens.
-The failure is silent and specific to us: an agent in a headless window that
-stops on a setup prompt never starts, while the roster says it exists and the
-router keeps routing to it.
-→ find each CLI's equivalent marker, seed all three the same way.
+**Onboarding for `codex` and `agy` — checked, and there is nothing to seed.**
+Run headless in a fresh container, both go **straight to a login prompt**:
+codex offers "Sign in with ChatGPT / Device Code / API key", agy offers "Google
+OAuth / Cloud project". Neither has a pre-login gate.
+
+`claude` is the odd one out — a theme picker *and* a per-directory trust dialog
+before login, which is why it alone needed `hasCompletedOnboarding` and
+`hasTrustDialogAccepted` seeded.
+
+Their post-login approval gates are already covered: `startAgent` passes
+`--dangerously-bypass-approvals-and-sandbox` to codex and
+`--dangerously-skip-permissions` to agy.
+
+So all three need only **credentials**, which
+[`container/seed-home.sh`](../container/seed-home.sh) now handles.
 
 **Credentials and profiles.** No `~/.claude/.credentials.json` and no
 `ANTHROPIC_API_KEY` in the image, so a CLI reaches its login prompt and stops. An
