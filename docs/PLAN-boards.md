@@ -160,12 +160,17 @@ board.
 
 ## 8. One ticket in `doing`
 
-**Decided.** `doing` is per agent and holds at most one ticket. `take` refuses
-while one is open, and says so.
+**It falls out of §1 rather than being a rule we impose.** Nothing delivers a
+ticket — the agent knows its board and grabs work when it is ready. So it only
+ever holds what it pulled, and it pulls the next one when it has finished the
+last. `take` refusing while one is open is that made explicit, not a policy on
+top of it.
 
-An agent works on one thing at a time, so this matches what is actually true
-rather than permitting a state nothing produces. It also makes "is this agent
-busy" a single yes/no, which is what the watchdog reads.
+Which is also why the board needs no delivery machinery at all: no courier, no
+kick, no adapter, no opener on the receiving side. The agent is the mechanism.
+
+Practically it makes "is this agent busy" a single yes/no, which is what the
+watchdog reads.
 
 ⚠ Differs from h-office, which allows several — `doing_tasks` returns a list and
 `stalled_tasks` can report more than one. Ours is the narrower rule; if a ticket
