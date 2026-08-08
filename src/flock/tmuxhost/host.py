@@ -1,3 +1,4 @@
+import json
 import os
 import time
 import redis
@@ -9,45 +10,64 @@ import flock.tmux.ops as tmux_ops
 OFFICE_TOOLS_ENV = "OFFICE_TOOLS=sendMessage,sendBroadcast,peers,hire,letGo"
 
 
-def generate_agents_md(agent_name: str, tenant: str, peers: list[str]) -> str:
-    sorted_peers = sorted(peers)
-    if len(sorted_peers) == 0:
-        peers_text = "You have no peers currently."
-        example_peer = "bob"
-    elif len(sorted_peers) == 1:
-        peers_text = f"Your peers are **{sorted_peers[0]}**. Message one with:"
-        example_peer = sorted_peers[0]
-    elif len(sorted_peers) == 2:
-        peers_text = f"Your peers are **{sorted_peers[0]}** and **{sorted_peers[1]}**. Message one with:"
-        example_peer = sorted_peers[0]
-    else:
-        formatted_list = ", ".join(f"**{p}**" for p in sorted_peers[:-1]) + f" and **{sorted_peers[-1]}**"
-        peers_text = f"Your peers are {formatted_list}. Message one with:"
-        example_peer = sorted_peers[0]
+def generate_agents_md(agent_name: str, tenant: str = "default") -> str:
+    return f"""You are **{agent_name}**, an agent in this office.
 
-    return f"""You are **{agent_name}**, an agent in tenant `{tenant}`.
+Everything about your situation is in your environment:
 
-{peers_text}
+    $AGENT_NAME      who you are
+    $TENANT          the office you are in
+    $OFFICE_TOOLS    the commands available to you
 
-    sendMessage -a {example_peer} can you take a look at this?
-    sendBroadcast standup in five
+Run any of those with --help. To see who you can talk to:
 
-A message arrives in your terminal as `[message from {example_peer}] …`. Reply by name —
-`sendMessage -a {example_peer} …`. That prefix is the whole reply mechanism; nothing routes a reply.
+    peers
 
-This directory is yours. Work in it.
+A message arrives in your terminal as `[message from alice] …` — reply by name
+with sendMessage. This directory is yours; work in it.
 """
 
 
-def write_agent_guide(cwd: str, agent_name: str, tenant: str, peers: list[str]) -> None:
+def ensure_claude_project_trusted(cwd: str) -> None:
+    try:
+        home_dir = os.environ.get("HOME", "/home/ubuntu")
+        config_path = os.path.join(home_dir, ".claude.json")
+        data = {}
+        if os.path.exists(config_path):
+            try:
+                with open(config_path, "r", encoding="utf-8") as f:
+                    data = json.load(f)
+            except Exception:
+                data = {}
+
+        if "projects" not in data or not isinstance(data["projects"], dict):
+            data["projects"] = {}
+
+        if cwd not in data["projects"] or not isinstance(data["projects"][cwd], dict):
+            data["projects"][cwd] = {}
+
+        data["projects"][cwd]["hasTrustDialogAccepted"] = True
+        data["projects"][cwd]["hasCompletedProjectOnboarding"] = True
+
+        with open(config_path, "w", encoding="utf-8") as f:
+            json.dump(data, f, indent=2)
+    except Exception as exc:
+        log_record("tmuxhost", "error", reason=f"Failed to update .claude.json: {exc}")
+
+
+def write_agent_guide(cwd: str, agent_name: str, tenant: str = "default") -> None:
     try:
         os.makedirs(cwd, exist_ok=True)
-        file_path = os.path.join(cwd, "AGENTS.md")
-        content = generate_agents_md(agent_name, tenant, peers)
-        with open(file_path, "w", encoding="utf-8") as f:
-            f.write(content)
+        content = generate_agents_md(agent_name, tenant)
+
+        for filename in ("AGENTS.md", "CLAUDE.md"):
+            file_path = os.path.join(cwd, filename)
+            with open(file_path, "w", encoding="utf-8") as f:
+                f.write(content)
+
+        ensure_claude_project_trusted(cwd)
     except Exception as exc:
-        log_record("tmuxhost", "error", recipient=agent_name, reason=f"Failed to write AGENTS.md: {exc}")
+        log_record("tmuxhost", "error", recipient=agent_name, reason=f"Failed to write agent guide: {exc}")
 
 
 class TmuxHost:
@@ -91,8 +111,15 @@ class TmuxHost:
                 cmd.extend(["-c", cwd])
 
             if initial_window != "__init__":
+                guide_path = f"/workdir/{initial_window}/AGENTS.md"
+                write_agent_guide(cwd, initial_window, self.tenant)
                 cmd_args = [cli] if cli else ["bash", "-il"]
-                cmd.extend(["env", f"AGENT_NAME={initial_window}", OFFICE_TOOLS_ENV] + cmd_args)
+                cmd.extend([
+                    "env",
+                    f"AGENT_NAME={initial_window}",
+                    OFFICE_TOOLS_ENV,
+                    f"AGENT_GUIDE={guide_path}",
+                ] + cmd_args)
 
             code, out, err = tmux_ops.run_tmux(*cmd, socket=self.socket)
             if code != 0:
@@ -112,11 +139,20 @@ class TmuxHost:
         self, agent_name: str, cli: str | None = None, cwd: str | None = None
     ) -> bool:
         cwd = cwd or f"/workdir/{agent_name}"
+        guide_path = f"{cwd}/AGENTS.md"
 
+        write_agent_guide(cwd, agent_name, self.tenant)
+
+        env_args = [
+            "env",
+            f"AGENT_NAME={agent_name}",
+            OFFICE_TOOLS_ENV,
+            f"AGENT_GUIDE={guide_path}",
+        ]
         if cli:
-            command = ["env", f"AGENT_NAME={agent_name}", OFFICE_TOOLS_ENV, cli]
+            command = env_args + [cli]
         else:
-            command = ["env", f"AGENT_NAME={agent_name}", OFFICE_TOOLS_ENV, "bash", "-il"]
+            command = env_args + ["bash", "-il"]
 
         ret, stdout, stderr = tmux_ops.create_window(
             self.session_name, agent_name, command=command, cwd=cwd, socket=self.socket
@@ -155,12 +191,6 @@ class TmuxHost:
             if agent not in existing_windows:
                 cli = self.get_agent_cli(r, agent)
                 self.create_window(agent, cli=cli)
-
-        # Rewrite AGENTS.md guide for all roster agents on every reconcile pass
-        for agent in sorted(list(roster_agents)):
-            peers = sorted([a for a in roster_agents if a != agent])
-            cwd = f"/workdir/{agent}"
-            write_agent_guide(cwd, agent, self.tenant, peers)
 
         # Re-fetch after creations to decide cleanup
         existing_windows = self.get_windows()

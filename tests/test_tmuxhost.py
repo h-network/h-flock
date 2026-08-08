@@ -1,8 +1,9 @@
+import json
 import os
 import tempfile
 import pytest
 from unittest.mock import patch, MagicMock
-from flock.tmuxhost.host import TmuxHost, generate_agents_md, write_agent_guide
+from flock.tmuxhost.host import TmuxHost, generate_agents_md, write_agent_guide, ensure_claude_project_trusted
 
 
 class MockRedis:
@@ -92,7 +93,7 @@ def test_tmuxhost_filters_non_tmux_vab(mock_run_tmux):
 
 
 @patch("flock.tmux.ops.run_tmux")
-def test_tmuxhost_reconciles_office_tools_and_guide(mock_run_tmux):
+def test_tmuxhost_reconciles_office_tools_and_agent_guide_env(mock_run_tmux):
     mock_run_tmux.side_effect = [
         (0, "", ""),  # has-session
         (0, "", ""),  # exit-empty
@@ -100,32 +101,56 @@ def test_tmuxhost_reconciles_office_tools_and_guide(mock_run_tmux):
         (0, "", ""),  # history-limit
         (0, "__init__", ""),  # list-windows 1
         (0, "", ""),  # new-window alice
-        (0, "", ""),  # new-window bob
-        (0, "", ""),  # new-window carol
-        (0, "__init__\nalice\nbob\ncarol", ""),  # list-windows 2
+        (0, "__init__\nalice", ""),  # list-windows 2
         (0, "", ""),  # kill-window __init__
     ]
 
     with tempfile.TemporaryDirectory() as tmpdir:
-        with patch("flock.tmuxhost.host.write_agent_guide") as mock_guide:
-            r = MockRedis(["alice", "bob", "carol"])
-            host = TmuxHost(pod="acme", tenant="hq", redis_url="redis://127.0.0.1:6379/0", session_name="hq")
-            host.reconcile_once(r)
+        r = MockRedis(["alice"])
+        host = TmuxHost(pod="acme", tenant="hq", redis_url="redis://127.0.0.1:6379/0", session_name="hq")
+        host.reconcile_once(r)
 
-            calls = [c[0] for c in mock_run_tmux.call_args_list]
-            env_calls = [c for c in calls if "new-window" in c]
-            # Verify OFFICE_TOOLS is set in environment and AGENT_PEERS is NOT
-            assert any("OFFICE_TOOLS=sendMessage,sendBroadcast,peers,hire,letGo" in " ".join(c) for c in env_calls)
-            assert not any("AGENT_PEERS=" in " ".join(c) for c in env_calls)
-            # Verify write_agent_guide called for all roster agents on reconcile
-            assert mock_guide.call_count == 3
+        calls = [c[0] for c in mock_run_tmux.call_args_list]
+        env_calls = [c for c in calls if "new-window" in c]
+        assert any("OFFICE_TOOLS=sendMessage,sendBroadcast,peers,hire,letGo" in " ".join(c) for c in env_calls)
+        assert any("AGENT_GUIDE=/workdir/alice/AGENTS.md" in " ".join(c) for c in env_calls)
 
 
 def test_generate_agents_md():
-    content = generate_agents_md("alice", "hq", ["bob", "carol"])
-    assert "You are **alice**, an agent in tenant `hq`." in content
-    assert "Your peers are **bob** and **carol**." in content
-    assert "sendMessage -a bob can you take a look at this?" in content
-    assert "sendBroadcast standup in five" in content
-    assert "[message from bob] …" in content
-    assert "This directory is yours. Work in it." in content
+    content = generate_agents_md("dave", "hq")
+    assert "You are **dave**, an agent in this office." in content
+    assert "$AGENT_NAME" in content
+    assert "$TENANT" in content
+    assert "$OFFICE_TOOLS" in content
+    assert "peers" in content
+    assert "[message from alice] …" in content
+    assert "sendMessage" in content
+
+
+def test_write_agent_guide_creates_both_files_and_trusts_claude():
+    with tempfile.TemporaryDirectory() as tmp_workdir:
+        with tempfile.TemporaryDirectory() as tmp_home:
+            with patch.dict(os.environ, {"HOME": tmp_home}):
+                write_agent_guide(tmp_workdir, "dave", "hq")
+
+                agents_path = os.path.join(tmp_workdir, "AGENTS.md")
+                claude_path = os.path.join(tmp_workdir, "CLAUDE.md")
+                assert os.path.exists(agents_path)
+                assert os.path.exists(claude_path)
+
+                with open(agents_path, "r", encoding="utf-8") as f:
+                    agents_content = f.read()
+                with open(claude_path, "r", encoding="utf-8") as f:
+                    claude_content = f.read()
+
+                assert agents_content == claude_content
+                assert "You are **dave**, an agent in this office." in agents_content
+
+                # Verify .claude.json pre-approval
+                config_path = os.path.join(tmp_home, ".claude.json")
+                assert os.path.exists(config_path)
+                with open(config_path, "r", encoding="utf-8") as f:
+                    data = json.load(f)
+
+                assert data["projects"][tmp_workdir]["hasTrustDialogAccepted"] is True
+                assert data["projects"][tmp_workdir]["hasCompletedProjectOnboarding"] is True
