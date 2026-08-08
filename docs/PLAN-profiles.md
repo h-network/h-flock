@@ -82,7 +82,7 @@ For h-flock:
   writes and `flock.tmuxhost` now reads. Profile should go the same way rather
   than inventing a second mechanism.
 - `flock.tmuxhost` adds `CLAUDE_CONFIG_DIR`/`CODEX_HOME` to the window env it
-  already builds, next to `AGENT_NAME` and `AGENT_PEERS`.
+  already builds, next to `AGENT_NAME`, `AGENT_GUIDE`, and `OFFICE_TOOLS`.
 
 ## 5. Two traps h-office hit, both worth avoiding by construction
 
@@ -156,12 +156,8 @@ in `/app` all three agents shared one project key; build 06's `/workdir/<agent>`
 splits them, which is a better reason for that change than the one given at the
 time.
 
-**Also worth knowing:** the running agents have `AGENT_GUIDE=/opt/h-office/config/agent-guide.md`
-in their environment. h-office points agents at a *shared* guide via an env var;
-build 06 writes a *per-agent* file into the working directory. Ours names the
-agent and its peers, theirs is one file for everyone. If these CLIs already look
-for `AGENT_GUIDE`, setting it may be the mechanism rather than hoping the file is
-read.
+**Also worth knowing:** the running agents have `AGENT_GUIDE=/workdir/<agent>/AGENTS.md`
+in their environment (Build 08/Plan agent tools).
 
 ## 8. Still undecided
 
