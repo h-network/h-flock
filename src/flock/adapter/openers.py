@@ -123,6 +123,3 @@ def assign_task_opener(
 
     todo_key = prefix(pod, tenant, agent=agent, resource="tasks.todo")
     r.rpush(todo_key, json.dumps(task_obj))
-
-    formatted_msg = f"[task from {producer}] {title}\n"
-    paste_text(session_name, agent, formatted_msg, stream_id=stream_id, socket=socket)

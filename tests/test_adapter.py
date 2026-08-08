@@ -126,7 +126,7 @@ def test_command_opener_bare_paste(mock_run_tmux, mock_list_windows):
 
 @patch("flock.adapter.openers.list_windows")
 @patch("flock.tmux.ops.run_tmux")
-def test_assign_task_opener_writes_todo_and_pastes_notification(mock_run_tmux, mock_list_windows):
+def test_assign_task_opener_writes_todo_and_pastes_nothing(mock_run_tmux, mock_list_windows):
     mock_list_windows.return_value = {"architect", "backend"}
     mock_run_tmux.return_value = (0, "", "")
 
@@ -143,9 +143,7 @@ def test_assign_task_opener_writes_todo_and_pastes_notification(mock_run_tmux, m
     assert task_data["from"] == "architect"
 
     load_buffer_calls = [call for call in mock_run_tmux.call_args_list if "load-buffer" in call[0]]
-    assert len(load_buffer_calls) == 1
-    input_data = load_buffer_calls[0][1].get("input_data", "")
-    assert input_data == "[task from architect] review the auth change\n"
+    assert len(load_buffer_calls) == 0
 
 
 @patch("flock.adapter.runner.redis.Redis.from_url")
