@@ -126,6 +126,32 @@ and `description` stay opaque — do not parse, summarise or truncate them.
 Old-shaped entries from build 10 must still serialise. Do not fail a whole
 `/board` response on one unparseable entry; skip it and carry on.
 
+## 6c. The guide must mention the board — `tmux`
+
+`generate_agents_md` in `src/flock/tmux/ops.py` tells an agent about `peers` and
+`send` and nothing else. **The whole pull model rests on the agent knowing it has
+a board** — nothing will ever tell it, by design (plan §1), so if the guide is
+silent the board is invisible and tickets sit in `todo` forever.
+
+Add a paragraph. Suggested wording, adjust if it reads badly in place:
+
+> You have a task board. Nothing will notify you about it — check it yourself:
+>
+>     office list        titles waiting for you
+>     office take        take the next one, and it prints in full
+>     office done        when it is finished
+>
+> Take a ticket *before* you start work, not after. `doing` is how the office
+> knows what you are on.
+
+⚠ **That last line is the point of the paragraph.** The first live test had an
+agent do the work and then run take/done as, in its own words, *"bookkeeping
+only"* — so `doing` was empty for the entire time the work was happening, which
+is the one state the watchdog reads.
+
+Every window gets the guide, so this reaches existing agents on their next
+`create_window` and new ones immediately.
+
 ## 7. Done when
 
 - `office add -a backend -t "…" -d "…"` puts a plan-§2-shaped ticket on
@@ -139,6 +165,7 @@ Old-shaped entries from build 10 must still serialise. Do not fail a whole
 - `$TASK_RECORD` has one line per action; no board output appears in a pane
 - `GET /board` returns four lists, `hold` included and empty until `bus` lands
 - none of `assign`, `tasks` remain on `PATH`
+- a freshly hired agent's `AGENTS.md` and `CLAUDE.md` both mention the board
 
 ## 8. Reporting
 
