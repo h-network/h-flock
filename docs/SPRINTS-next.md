@@ -93,11 +93,14 @@ because the agent still exists.** It simply is not running a CLI.
 Same shape as the busy tag: a per-agent state key that **only the adapter
 reads**, so the router stays ignorant and invariant 8 is untouched.
 
-⚠ **The drain on resume needs a decision.** A kick that finds the marker set does
-nothing and is gone, so queued envelopes need kicks — one per envelope, since the
-design is one kick, one delivery. Either `resume` reads `LLEN` and kicks that
-many times, or the first adapter after a resume drains to empty as a special
-case. The first is cruder and does not special-case the adapter.
+**No drain logic in the first version.** A kick that finds the marker set does
+nothing and is gone, so a resumed agent's backlog goes out one envelope per
+subsequent kick — it clears as soon as anyone talks to it. Meanwhile the depth is
+readable, so nothing is hidden.
+
+That is a deliberate first cut, not an oversight. Kicking `LLEN` times on resume
+is the obvious improvement and is worth doing only if the lag turns out to
+matter.
 
 ## 2. `cloneToAll`
 
