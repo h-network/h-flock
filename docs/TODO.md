@@ -83,6 +83,34 @@ Two faults meeting, and they can be fixed independently:
    The old router excluded `api`; the current one includes it. Neither is written
    down — this is an architect loose end, noted at the time and not closed.
 
+## What belongs in a window's environment
+
+**The rule: static for the window's lifetime → environment. Derived from the
+roster → a tool, never environment.**
+
+A window's environment is frozen at creation. So anything that changes while the
+office runs is wrong there, and goes stale silently.
+
+| | |
+|---|---|
+| `AGENT_NAME` | env — fixed for this window |
+| `POD`, `TENANT` | env — what `send` needs, fixed |
+| `OFFICE_TOOLS=send,peers,…` | env — ships with the image, cannot go stale |
+| **peers** | **a tool.** Changes the moment `StartAgent` adds one |
+
+⚠ **`AGENT_PEERS` (build 06) breaks this and should be removed.** Add dave and
+alice's `AGENT_PEERS` is wrong until her window is recreated — the exact
+staleness the roster exists to prevent.
+
+⚠ **The guide has the same bug.** `write_agent_guide` runs at window creation
+only, so `/workdir/<agent>/AGENTS.md` ages the same way. Fix both together:
+`flock.tmuxhost` already reconciles every `ROSTER_POLL_SECONDS` and already reads
+the roster, so **rewrite the guide each pass**. A few hundred bytes, and it
+leaves one source of truth instead of two that drift.
+
+`OFFICE_TOOLS` also covers the reader who stops early: `echo $OFFICE_TOOLS` then
+`--help` on each, with no exploring and no source to read.
+
 ## The agent-facing surface
 
 **Principle: anything reachable will be explored, and a confusing sanctioned path
