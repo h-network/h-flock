@@ -1,10 +1,11 @@
 """Forward tenant egress queues without interpreting payloads."""
 
 import os
+import subprocess
 
 import redis
 
-from flock.bus import EnvelopeError, emit, members, parse, prefix
+from flock.bus import EnvelopeError, emit, is_member, members, parse, prefix
 
 
 class Router:
@@ -16,7 +17,11 @@ class Router:
         self._offset = 0
 
     def _agents(self) -> set[str]:
-        return members(self.r, pod=self.pod, tenant=self.tenant) | {"api"}
+        return members(self.r, pod=self.pod, tenant=self.tenant)
+
+    @staticmethod
+    def _kick(agent: str) -> None:
+        subprocess.Popen(["flock.adapter", agent])
 
     def step(self) -> bool:
         agents = sorted(self._agents())
@@ -44,19 +49,22 @@ class Router:
         emit("router", "popped", envelope)
         recipient = envelope["recipient"]
         if recipient == "all":
-            recipients = sorted(self._agents() - {sender, "api"})
+            recipients = sorted(self._agents() - {sender})
             pipe = self.r.pipeline()
             for agent in recipients:
                 pipe.rpush(prefix(self.pod, self.tenant, agent, "ingress"), raw)
             pipe.execute()
             emit("router", "forwarded", envelope, count=len(recipients))
+            for agent in recipients:
+                self._kick(agent)
             return True
-        if recipient not in self._agents():
+        if not is_member(self.r, pod=self.pod, tenant=self.tenant, agent=recipient):
             self.r.rpush(prefix(self.pod, self.tenant, sender, "dead"), raw)
             emit("router", "dead_lettered", envelope, "recipient is not in tenant roster")
             return True
         self.r.rpush(prefix(self.pod, self.tenant, recipient, "ingress"), raw)
         emit("router", "forwarded", envelope)
+        self._kick(recipient)
         return True
 
     def run(self) -> None:

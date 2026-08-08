@@ -4,7 +4,7 @@ from .doors import receive, send
 from .envelope import EnvelopeError, build, parse
 from .keys import RESERVED, SEGMENT_REGEX, prefix
 from .logging import emit, log_record
-from .roster import is_member, members
+from .roster import is_member, members, vab
 
 __all__ = [
     "EnvelopeError",
@@ -19,4 +19,5 @@ __all__ = [
     "prefix",
     "receive",
     "send",
+    "vab",
 ]
