@@ -21,6 +21,7 @@ is imported, never vendored.
     bus/         prefix, envelope, the two doors, roster reads   ← library
     tmux/        create/kill/list windows, the paste sequence   ← library
     router/      the router process
+    control/     the control VAB: StartAgent, StopAgent openers
     adapter/     the adapter: invoked per delivery, dispatches on VAB
     tmuxhost/    the tmux host
     api/         the FastAPI app
@@ -84,6 +85,57 @@ values.
 
 An opener is `callable(envelope: dict) -> None`. Registering one is how a kind
 becomes deliverable; `LLD-adapter-tmux` §3 is the tmux implementation of one.
+
+### `flock.tmux` — the shared window surface
+
+Frozen for the same reason as the bus library: the `tmux` lane implements it and
+the `control` VAB calls it.
+
+```python
+def run_tmux(*args: str, socket: str | None = None,
+             input_data: str | None = None) -> tuple[int, str, str]
+
+def list_windows(session_name: str, socket: str | None = None) -> set[str]
+
+def create_window(session_name: str, agent_name: str,
+                  command: list[str] | None = None,
+                  socket: str | None = None) -> tuple[int, str, str]
+    # command defaults to ["env", f"AGENT_NAME={agent_name}", "bash", "-il"]
+    # targets "<session>:" — the trailing colon is load-bearing, see
+    # LLD-tmux-host §5
+
+def kill_window(session_name: str, window_name: str,
+                socket: str | None = None) -> tuple[int, str, str]
+
+def paste_text(session_name: str, agent_name: str, text: str,
+               stream_id: str = "", socket: str | None = None) -> None
+    # load-buffer → paste-buffer -p → delay → Enter → delete-buffer
+    # the sequence in LLD-adapter-tmux §4, in one place
+```
+
+`StartAgent` passes `command=["env", f"AGENT_NAME={agent}", cli]` to run a real
+CLI instead of the default shell.
+
+### A delivery routine per VAB
+
+`flock.adapter.runner` dispatches on the VAB and calls one of these. Both take
+the same shape, so adding a base is adding a module and a branch:
+
+```python
+def deliver_one(r, *, pod, tenant, agent, session_name, socket=None) -> None
+```
+
+| VAB | Module | Owner |
+|---|---|---|
+| `tmux` | `flock.adapter.runner` (inline) | `tmux` lane |
+| `control` | `flock.control` | `bus` lane |
+
+⚠ **This is a named exception to the rule above.** `flock.adapter` imports
+`flock.control`, which is a module and not a shared library. It is done as a
+*lazy* import inside the dispatch branch, so an adapter with no control module
+installed logs and carries on rather than failing to start. Any further
+cross-module import needs the same explicit justification, or the layer split
+stops meaning anything.
 
 ## 3. What a log record is
 
