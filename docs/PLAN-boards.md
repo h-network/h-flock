@@ -121,13 +121,26 @@ Already written in h-office, and the reason boards come first:
 
 Combined with window silence, which is the half that stops it crying wolf.
 
-## 7. Open
+## 7. Everything goes through the bus
 
-**Assignment across agents.** `office add -a backend` writes backend's board
-directly in h-office. Whether ours should instead send an envelope, so only an
-agent's own side writes its keys, is a real question — it would give the four log
-records for free and work from the api unchanged. h-office writes directly and
-has not regretted it.
+**Decided.** `office add -a backend …` sends an **`AddTicket`** envelope; the
+opener on backend's side writes it to backend's own `tasks.todo`. It does not
+write another agent's keys directly, which is what h-office does.
+
+This generalises invariant 3 from queues to every per-agent key: **nothing writes
+another agent's keys — it sends an envelope.** And it pays for itself three ways:
+
+- the four log records every envelope already gets, so "who added what, when" is
+  answerable from the log rather than only the task JSONL
+- it works from the api and an app unchanged — `POST /agents/backend/envelopes`
+  with `kind: AddTicket` is adding a ticket, no new endpoint
+- one route for the operation instead of two that can diverge
+
+⚠ **The kind is `AddTicket`, not `AssignTask`** — renamed for the same reason the
+command is `add`: nothing is being assigned, a ticket is being created on a
+board.
+
+## 8. Open
 
 **Does an agent have one `doing` or many?** h-office allows several
 (`doing_tasks` is a list, `stalled_tasks` returns several). Restricting to one
