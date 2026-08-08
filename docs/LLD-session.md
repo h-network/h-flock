@@ -1,6 +1,6 @@
 # LLD — the session
 
-> **Status: design, not code.** Nothing here is implemented yet.
+> **Status: built and running.** Published on its own port beside the api.
 >
 > The live view of a tenant's terminals, and the way a human types into one.
 > Depends on [`LLD-tmux-host.md`](LLD-tmux-host.md) for the windows it reads.
