@@ -100,3 +100,86 @@ environment — static for the image's lifetime, so it cannot go stale the way
 Every one carries a real `--help`. ⚠ **Help must never require the
 environment** — `send --help` currently fails without `AGENT_NAME`, which is the
 first thing anyone types.
+
+## 7. The guide
+
+`/workdir/<agent>/AGENTS.md` **and** `/workdir/<agent>/CLAUDE.md`, same content
+in both — see §8 for why two.
+
+**Only the agent's own name is baked in.** It is fixed for the window's
+lifetime, like `AGENT_NAME`. Everything that can change is discovered:
+
+```markdown
+You are **dave**, an agent in this office.
+
+Everything about your situation is in your environment:
+
+    $AGENT_NAME      who you are
+    $TENANT          the office you are in
+    $OFFICE_TOOLS    the commands available to you
+
+Run any of those with --help. To see who you can talk to:
+
+    peers
+
+A message arrives in your terminal as `[message from alice] …` — reply by name
+with sendMessage. This directory is yours; work in it.
+```
+
+⚠ **No peer list.** It is derived, and a written copy goes stale the moment
+someone is hired — the same mistake as `AGENT_PEERS`, in a file instead of an
+environment.
+
+**Which means nothing in the guide is derived, so it never goes stale** — and the
+rewrite-on-every-reconcile added in build 08 is no longer needed. Write it once
+when the directory is created.
+
+## 8. Getting it in front of three different CLIs
+
+Writing `AGENTS.md` is not enough. Each CLI looks somewhere different:
+
+| CLI | reads |
+|---|---|
+| `claude` | `CLAUDE.md` in the working directory |
+| `codex` | `AGENTS.md` — its own convention |
+| `agy` | neither — takes `AGENT_GUIDE=<path>` from the environment |
+
+So: write the same content to **both files**, and set
+`AGENT_GUIDE=/workdir/<agent>/AGENTS.md` in the window environment. That is
+legitimate env by the §6 rule — a path fixed for the window's lifetime, not
+derived state.
+
+⚠ **Do not use an `@AGENTS.md` include in `CLAUDE.md`**, the way the h-office
+workspace does. `.claude.json` tracks
+`hasClaudeMdExternalIncludesApproved` per project, so an include is a *second*
+first-run prompt for a headless agent to get stuck on. Duplicating 400 bytes is
+cheaper than a gate.
+
+## 9. First-run gates, and the one that cannot be pre-baked
+
+Claude Code has three, at two different scopes:
+
+| gate | scope | state |
+|---|---|---|
+| theme picker / onboarding | whole install | seeded in the Dockerfile ✓ |
+| **trust this folder** | **per directory** | **not seeded** |
+| external includes | per directory | avoided by not using an include |
+
+`hasTrustDialogAccepted` lives in `.claude.json` under
+`projects["<absolute path>"]`. **It cannot be baked at build time** — `hire dave`
+creates `/workdir/dave`, a path that does not exist until then.
+
+So whatever creates the directory must also write that entry:
+
+```json
+"projects": { "/workdir/dave": {
+    "hasTrustDialogAccepted": true,
+    "hasCompletedProjectOnboarding": true } }
+```
+
+⚠ Into the **right** `.claude.json` — `$HOME`'s for the default account,
+`<CLAUDE_CONFIG_DIR>`'s once profiles exist ([`PLAN-profiles.md`](PLAN-profiles.md)).
+
+Without it, `hire dave --cli claude` produces a window with a trust prompt in it:
+roster row written, router forwarding, nobody home. Precisely the failure the
+deferred presence work would catch, and we have no presence.
