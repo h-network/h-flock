@@ -92,7 +92,7 @@ def test_tmuxhost_filters_non_tmux_vab(mock_run_tmux):
 
 
 @patch("flock.tmux.ops.run_tmux")
-def test_tmuxhost_reconciles_peers_and_guide(mock_run_tmux):
+def test_tmuxhost_reconciles_office_tools_and_guide(mock_run_tmux):
     mock_run_tmux.side_effect = [
         (0, "", ""),  # has-session
         (0, "", ""),  # exit-empty
@@ -113,18 +113,19 @@ def test_tmuxhost_reconciles_peers_and_guide(mock_run_tmux):
             host.reconcile_once(r)
 
             calls = [c[0] for c in mock_run_tmux.call_args_list]
-            # Verify AGENT_PEERS in window environment
             env_calls = [c for c in calls if "new-window" in c]
-            assert any("AGENT_PEERS=bob,carol" in " ".join(c) for c in env_calls)
-            assert any("AGENT_PEERS=alice,carol" in " ".join(c) for c in env_calls)
-            assert any("AGENT_PEERS=alice,bob" in " ".join(c) for c in env_calls)
+            # Verify OFFICE_TOOLS is set in environment and AGENT_PEERS is NOT
+            assert any("OFFICE_TOOLS=sendMessage,sendBroadcast,peers,hire,letGo" in " ".join(c) for c in env_calls)
+            assert not any("AGENT_PEERS=" in " ".join(c) for c in env_calls)
+            # Verify write_agent_guide called for all roster agents on reconcile
+            assert mock_guide.call_count == 3
 
 
 def test_generate_agents_md():
     content = generate_agents_md("alice", "hq", ["bob", "carol"])
     assert "You are **alice**, an agent in tenant `hq`." in content
     assert "Your peers are **bob** and **carol**." in content
-    assert "send bob can you take a look at this?" in content
-    assert "send all standup in five" in content
+    assert "sendMessage -a bob can you take a look at this?" in content
+    assert "sendBroadcast standup in five" in content
     assert "[message from bob] …" in content
     assert "This directory is yours. Work in it." in content

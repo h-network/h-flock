@@ -17,7 +17,9 @@ dependencies = [
 ]
 
 [project.scripts]
-send = "flock.adapter.cli:main"
+sendMessage = "flock.adapter.tools:send_message_cli"
+sendBroadcast = "flock.adapter.tools:send_broadcast_cli"
+peers = "flock.adapter.tools:peers_cli"
 "flock.adapter" = "flock.adapter.__main__:main"
 
 [tool.setuptools.packages.find]
