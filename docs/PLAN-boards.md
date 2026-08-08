@@ -158,8 +158,15 @@ another agent's keys — it sends an envelope.** And it pays for itself three wa
 command is `add`: nothing is being assigned, a ticket is being created on a
 board.
 
-## 8. Open
+## 8. One ticket in `doing`
 
-**Does an agent have one `doing` or many?** h-office allows several
-(`doing_tasks` is a list, `stalled_tasks` returns several). Restricting to one
-makes "is this agent busy" a single question. Not settled.
+**Decided.** `doing` is per agent and holds at most one ticket. `take` refuses
+while one is open, and says so.
+
+An agent works on one thing at a time, so this matches what is actually true
+rather than permitting a state nothing produces. It also makes "is this agent
+busy" a single yes/no, which is what the watchdog reads.
+
+⚠ Differs from h-office, which allows several — `doing_tasks` returns a list and
+`stalled_tasks` can report more than one. Ours is the narrower rule; if a ticket
+must be set aside, that is what `hold` is for.
