@@ -16,6 +16,7 @@ def log_record(
     recipient: str | None = None,
     reason: str | None = None,
     count: int | None = None,
+    task_id: str | None = None,
 ) -> None:
     """One JSON object per line on stdout. Fields absent when not known.
 
@@ -36,6 +37,7 @@ def log_record(
         ("recipient", recipient),
         ("reason", reason),
         ("count", count),
+        ("task_id", task_id),
     ):
         if value is not None:
             record[field] = value

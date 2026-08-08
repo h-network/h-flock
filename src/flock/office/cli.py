@@ -1,16 +1,29 @@
 """Focused office operations behind one collision-resistant command name."""
 
 import argparse
+import json
 import os
 import sys
 from collections.abc import Sequence
 
 import redis
 
-from flock.bus import is_member, members, send, vab
+from flock.bus import is_member, log_record, members, prefix, send, vab
 
 _REDIS_URL = "redis://127.0.0.1:6379/0"
-_COMMANDS = ("send", "broadcast", "peers", "hire", "letGo", "pause", "resume")
+_COMMANDS = (
+    "send",
+    "broadcast",
+    "peers",
+    "hire",
+    "letGo",
+    "pause",
+    "resume",
+    "tasks",
+    "take",
+    "done",
+    "assign",
+)
 
 
 class OfficeError(ValueError):
@@ -31,6 +44,10 @@ def _root_parser() -> argparse.ArgumentParser:
         "letGo": "retire an agent",
         "pause": "pause an agent's CLI",
         "resume": "resume an agent's CLI and inbox",
+        "tasks": "show your task board",
+        "take": "take your next todo task",
+        "done": "finish your open task",
+        "assign": "assign a task to another agent",
     }
     for name in _COMMANDS:
         subcommands.add_parser(name, help=descriptions[name], add_help=False)
@@ -151,6 +168,99 @@ def _control_command(command: str, argv: list[str]) -> None:
     print(stream_id)
 
 
+def _task_keys(pod: str, tenant: str, agent: str) -> dict[str, str]:
+    return {
+        state: prefix(pod, tenant, agent=agent, resource=f"tasks.{state}")
+        for state in ("todo", "doing", "done")
+    }
+
+
+def _text(value) -> str:
+    return value.decode() if isinstance(value, bytes) else value
+
+
+def _task_id(raw: str) -> str:
+    try:
+        task_id = json.loads(raw)["id"]
+    except (json.JSONDecodeError, KeyError, TypeError) as exc:
+        raise OfficeError("board entry has no valid task id") from exc
+    if not isinstance(task_id, str) or not task_id:
+        raise OfficeError("board entry has no valid task id")
+    return task_id
+
+
+def _tasks_command(argv: list[str]) -> None:
+    parser = _operation_parser("tasks", "Show your todo, doing, and done tasks.")
+    parser.parse_args(argv)
+    r, pod, tenant, producer = _context()
+    keys = _task_keys(pod, tenant, producer)
+    for state in ("todo", "doing", "done"):
+        print(f"{state}:")
+        entries = [_text(raw) for raw in r.lrange(keys[state], 0, -1)]
+        if entries:
+            for entry in entries:
+                print(f"  {entry}")
+        else:
+            print("  (empty)")
+
+
+def _take_command(argv: list[str]) -> None:
+    parser = _operation_parser("take", "Move your next todo task into doing.")
+    parser.parse_args(argv)
+    r, pod, tenant, producer = _context()
+    keys = _task_keys(pod, tenant, producer)
+    if r.llen(keys["doing"]):
+        raise OfficeError("you already have one open task")
+    raw = r.lmove(keys["todo"], keys["doing"], "LEFT", "RIGHT")
+    if raw is None:
+        raise OfficeError("your todo is empty")
+    task = _text(raw)
+    log_record("office", "task_taken", recipient=producer, task_id=_task_id(task))
+    print(task)
+
+
+def _done_command(argv: list[str]) -> None:
+    parser = _operation_parser("done", "Move your open task into done.")
+    parser.parse_args(argv)
+    r, pod, tenant, producer = _context()
+    keys = _task_keys(pod, tenant, producer)
+    raw = r.lmove(keys["doing"], keys["done"], "LEFT", "RIGHT")
+    if raw is None:
+        raise OfficeError("you have no open task")
+    task = _text(raw)
+    log_record("office", "task_done", recipient=producer, task_id=_task_id(task))
+    print(task)
+
+
+def _assign_command(argv: list[str]) -> None:
+    parser = _operation_parser("assign", "Assign a task to another agent.")
+    parser.add_argument("-a", "--agent", metavar="AGENT", help="recipient agent")
+    parser.add_argument("title", nargs=argparse.REMAINDER, help="task title")
+    if argv in (["-h"], ["--help"]):
+        parser.parse_args(argv)
+    if len(argv) < 2 or argv[0] not in ("-a", "--agent"):
+        raise OfficeError("office assign requires -a <agent>")
+    recipient = argv[1]
+    words = argv[2:]
+    if not words:
+        raise OfficeError("office assign requires a task title")
+
+    r, pod, tenant, producer = _context()
+    if not is_member(r, pod=pod, tenant=tenant, agent=recipient):
+        raise OfficeError(f"unknown recipient agent {recipient!r}")
+    stream_id = send(
+        r,
+        pod=pod,
+        tenant=tenant,
+        producer=producer,
+        recipient=recipient,
+        payload={"title": " ".join(words)},
+        kind="AssignTask",
+        module="adapter",
+    )
+    print(stream_id)
+
+
 def main(argv: Sequence[str] | None = None) -> None:
     args = list(sys.argv[1:] if argv is None else argv)
     parser = _root_parser()
@@ -171,6 +281,14 @@ def main(argv: Sequence[str] | None = None) -> None:
             _peers_command(remainder)
         elif command in ("hire", "letGo", "pause", "resume"):
             _control_command(command, remainder)
+        elif command == "tasks":
+            _tasks_command(remainder)
+        elif command == "take":
+            _take_command(remainder)
+        elif command == "done":
+            _done_command(remainder)
+        elif command == "assign":
+            _assign_command(remainder)
         else:
             parser.error(f"unknown command: {command}")
     except OfficeError as exc:

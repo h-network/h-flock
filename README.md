@@ -108,6 +108,10 @@ office hire dave --cli claude      # a new colleague, live, no restart
 office letGo dave
 office pause dave
 office resume dave
+office assign -a backend review the auth change
+office tasks
+office take
+office done
 ```
 
 A message arrives as `[message from alice] …` — **that prefix is the entire reply
@@ -155,6 +159,7 @@ Capabilities are `kind`s, opened at the edge. Adding one is adding an opener.
 | `StopAgent` | `control` | reverses all of it |
 | `PauseAgent` | `control` | stops the CLI while preserving the agent |
 | `ResumeAgent` | `control` | resumes the CLI and drains its inbox |
+| `AssignTask` | `tmux` | adds a todo and notifies the recipient |
 
 `office hire dave` is a `StartAgent` envelope addressed to `host`. The router forwarded
 a kind it has never heard of, to a name like any other.
