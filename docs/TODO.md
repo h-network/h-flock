@@ -81,8 +81,12 @@ still there. Costs one extra Enter that an empty prompt ignores.
 identical from outside. The signal is `window_activity` from one `list-windows`
 call, which `LLD-adapter-tmux` §5 already names.
 
-**Boards.** The api serves `/board` and nothing writes one, so they read empty.
-Agents have no equivalent of `jira list` / `jira consume`.
+**Boards.** → **[`PLAN-boards.md`](PLAN-boards.md)**. The api has served
+`/board` since build 03 and nothing writes one. The rule the design turns on:
+**the agent moves its own tasks, nothing infers them** — the adapter knows an
+envelope was delivered and cannot know whether the agent read it, started it, or
+disagreed with it. Prerequisite for the watchdog, whose only evidence anything is
+underway is a task sitting in `doing`.
 
 ## ~~Broadcast strands envelopes on the fixed agents~~ — SHIPPED
 
