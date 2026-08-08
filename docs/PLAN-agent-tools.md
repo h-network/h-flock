@@ -17,8 +17,8 @@ the reason to look, not the ability.
 
 | Command | Does | Envelope underneath |
 |---|---|---|
-| `sendMessage <agent> <text>` | a message to one agent | `Message` |
-| `sendBroadcast <text>` | a message to every agent | `Message`, `recipient: all` |
+| `sendMessage -a <agent> <text>…` | a message to one agent | `Message` |
+| `sendBroadcast <text>…` | a message to every agent | N × `Message`, one per agent |
 | `peers` | who is in this office | roster read, no envelope |
 | `hire <name> [options]` | enrol an agent: roster row, home, window, CLI | `StartAgent` |
 | `letGo <name>` | remove one, reversing all of it | `StopAgent` |
@@ -31,17 +31,18 @@ needing explanation.
 ⚠ **It reaches agents only — never `api`, never `host`.** A broadcast is a
 message to the room; the fixed agents are plumbing and are not in it.
 
-Satisfied by the mechanism already chosen (`TODO.md`): the router fans out to
-every roster member and the non-agent endpoints **discard**, rather than the
-router learning to filter — which would mean reading roster values and breaking
-invariant 8.
+**The command resolves the list itself** — roster members with VAB `tmux`, minus
+the sender — and sends one `Message` each. It does **not** use `recipient: all`.
 
-The visible cost: envelopes still *reach* `api` and `host` before being dropped,
-so a broadcast in a three-agent tenant logs a fan-out of four with two discards.
-Semantics right, traffic not zero. If that ever matters, the alternative is this
-command expanding the list itself and sending N individual messages, so `all`
-never goes on the bus — at the price of N sends and the peer list living in the
-tool.
+That is better than fanning out and discarding downstream, and it is available to
+us precisely because the tool is ours: the filtering happens where the answer is
+already known, instead of sending to four endpoints so two can throw it away.
+Costs N sends of a few hundred bytes on loopback, which is nothing.
+
+Consequence worth tracking: with no agent tool using it, `recipient: all` is left
+reachable only through the api (`POST /agents/all/envelopes`). **The `api`
+accumulation bug in [`TODO.md`](TODO.md) is therefore still live via that path**
+— fixing it is not made unnecessary by this, only rarer.
 
 ## 3. Two naming traps
 
@@ -51,15 +52,18 @@ tenant*. Same name, opposite meaning, both on `PATH` in the same shell.
 `LLD-tmux-host` §5 already calls the concept *"hiring and letting go"*, which is
 where `hire` / `letGo` come from.
 
-⚠ **`sendMessage` is h-office's name, and h-office's is flag-based:**
+**`sendMessage` is the name — decided**, and the shape is:
 
 ```
-sendMessage -o <office> -a <agent> -m "text"     h-office
-sendMessage <agent> <text>                        proposed here
+sendMessage -a bob some text here
 ```
 
-Taking the name with a different syntax is worse than a different name — someone
-who knows one types it and gets an error. **Decide: match both, or neither.**
+`-a` for the agent, as in h-office; the message is trailing positional text
+rather than h-office's `-m`. No `-o`: an agent is in one tenant and does not
+name it.
+
+⚠ So the two are near-identical but not interchangeable — `-m` works there and
+not here. Anyone writing for both should be told once rather than discovering it.
 
 ## 4. What happens to `send`
 
