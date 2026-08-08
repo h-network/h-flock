@@ -157,6 +157,32 @@ leaves one source of truth instead of two that drift.
 `OFFICE_TOOLS` also covers the reader who stops early: `echo $OFFICE_TOOLS` then
 `--help` on each, with no exploring and no source to read.
 
+## Log records from agent tools never reach the log
+
+⚠ **`office` runs in an agent's window, so its log records go to that pane** —
+not to the container's stdout, which is the only thing collected.
+
+Measured: an envelope sent by an agent produces `popped`, `forwarded`,
+`received`, `opened` centrally. **`sent` is missing.** And `task_taken` /
+`task_done` are absent entirely.
+
+Two documented claims are therefore false as written:
+
+- `LLD-bus-and-router` §4 — *"four records across a delivered envelope's life"*.
+  True for api-sent envelopes; agent-sent ones have three centrally and one in a
+  terminal. The crash-detectability argument does not cover the agent's end.
+- `PLAN-boards.md` — *"there is no second place to look"*. There is, and it is
+  the worst one: every agent's pane separately.
+
+The design assumed every emitter is a container process. An agent's tools are
+not, and nothing about `flock.bus.log_record` writing to stdout is wrong — it is
+that stdout means something different in a window.
+
+→ Options, none chosen: emit to a Redis list the container tails; write to a
+shared file the container collects; or accept it and correct the two claims.
+⚠ Do not "fix" it by having agents' tools skip logging — the record is useful in
+the pane too, as the agent's own confirmation.
+
 ## Found by running a real agent
 
 First live test with an authenticated Claude Code in a window. Delivery worked —
