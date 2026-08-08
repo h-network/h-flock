@@ -121,8 +121,10 @@ def list_windows(session_name: str, socket: str | None = None) -> set[str]
 
 def create_window(session_name: str, agent_name: str,
                   command: list[str] | None = None,
+                  cwd: str | None = None,
                   socket: str | None = None) -> tuple[int, str, str]
     # command defaults to ["env", f"AGENT_NAME={agent_name}", "bash", "-il"]
+    # cwd -> tmux -c. Defaults to /workdir/<agent_name>
     # targets "<session>:" — the trailing colon is load-bearing, see
     # LLD-tmux-host §5
 
