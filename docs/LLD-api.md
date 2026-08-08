@@ -19,17 +19,17 @@ That is the whole of it. It has no logic of its own beyond building a valid
 envelope, reading keys, and handing back what comes the other way.
 
 ```
-  HTTP ──► api ──send──► bus ──► router ──► agent
-    ▲        │                                 │
-    │        └──► Redis reads (boards, roster, depths)
-    │                                          │
-    └──── receive ◄── api ingress ◄── router ◄─┘   agent replies to "api"
+  HTTP ──► api ──send (with 'as')──► bus ──► router ──► agent
+    ▲        │                                             │
+    │        └──► Redis reads (boards, roster, depths)     │
+    │                                                      │
+    └──── receive ◄── client inbox ◄── deliver_api ◄─ router ◄─┘  agent replies to client name
 ```
 
-**It has an address**, so an agent can reply to it. The reply is addressed to
-`api` like any other recipient, the router puts it on the api's ingress, and the
-api takes it off. That is the only reason it needs one — not to be a peer, but
-to be reachable.
+**It has addresses**, so agents can reply to clients by name. A reply is addressed to
+a named client (e.g. `telegram`, or default `api`), the router delivers it to the
+VAB `api` adapter, and `deliver_api` writes it to that client's inbox stream. That is the
+only reason clients have roster rows — not to be terminal peers, but to be reachable.
 
 **It uses the same two doors as everything else** — `send` to put an envelope on
 the bus, `receive` to take one off. It has no privileged path to Redis for
@@ -117,9 +117,8 @@ Board reads (`GET /agents/{agent}/board` and `GET /board`) return four columns
 raw strings for backwards compatibility), tolerant of both Build 10 and Build 11
 ticket schemas.
 
-Reads are point-in-time — no subscriptions, no watches. That applies to *state*;
-replies are the separate path in §4 and are the only thing a client ever waits
-on.
+Reads are point-in-time — no subscriptions, no watches. That applies to *state* (boards, roster, queue depths);
+replies are the separate path in §4 and offer catch-up polling or an SSE stream (`GET /messages/stream`).
 
 ## 6. Transport & auth
 
