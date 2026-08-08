@@ -110,7 +110,7 @@ done
 echo "{\"module\":\"container\",\"event\":\"windows_ready\",\"count\":${#agents[@]}}"
 
 # ── the rest ──────────────────────────────────────────────────────────────────
-start router  python3 -m flock.router
+start router  env REDIS_URL="${REDIS_URL:-redis://127.0.0.1:6379/0}" python3 -m flock.router
 # No adapter here. It is not a service — the router kicks `flock.adapter <agent>`
 # per delivery and it exits (LLD-adapter-tmux §2). Starting one at boot would be
 # the daemon this build exists to remove.

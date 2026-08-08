@@ -49,8 +49,13 @@ RUN python3 -c "import json, os; p='/home/ubuntu/.claude.json'; d=json.load(open
 RUN mkdir -p /home/ubuntu/.flock/tmux /workdir \
  && chown -R ubuntu:ubuntu /home/ubuntu/.flock /opt/flock /workdir
 
+# REDIS_URL is deliberately NOT set image-wide. Every module defaults it to
+# redis://127.0.0.1:6379/0, which is a fact rather than configuration inside a
+# tenant (LLD-container §1). Setting it here put it in the tmux server's
+# environment and therefore in every agent's, which is how an agent asked "where
+# are my peers" found a database instead. The entrypoint hands it to the router,
+# which is the only module that requires it.
 ENV PYTHONUNBUFFERED=1 \
-    REDIS_URL=redis://127.0.0.1:6379/0 \
     ROSTER_POLL_SECONDS=5 \
     TMUX_TMPDIR=/home/ubuntu/.flock/tmux \
     API_PORT=8080 \
