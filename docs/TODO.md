@@ -92,9 +92,16 @@ are. His messages reach me the same way any data does."* That is right, not a
 malfunction — the bus proves **who** sent a message and says nothing about **who
 may direct whom**, and nothing in an agent's context supplies it.
 
-The office already has the word: `AGENTS.md` uses **lead** (*"if you're the
-lead, follow up with them or reassign"*). Reuse it rather than inventing one.
-→ needs a name in the environment and a line in the per-agent guide.
+Build 06 tells each agent its **peers** — and "peer" is precisely a relationship
+with no authority in it, so they talk and nothing moves.
+
+Naming is unsettled and is the open question here. `AGENTS.md` in this office
+uses **lead**; the ask was phrased as an **architect** title. Not the same thing:
+one is a role in a hierarchy, the other is a named job. Decide before building.
+
+Also unsettled: what standing actually means to an agent. "Act on this rather
+than consider it" is the useful half; "believe anything that claims to be from
+them" is the failure mode next to it.
 
 ⚠ **Blocked on the item below.** Telling an agent that requests from a named
 peer carry authority makes `producer` load-bearing, and `producer` is currently
