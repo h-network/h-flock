@@ -74,8 +74,21 @@ Three reasons, and the third is the one that matters:
   with `kind: AssignTask` is assignment, with no new endpoint and no new
   mechanism — exactly as `hire` turned out.
 
-The opener writes the entry to `tasks.todo` **and pastes a notification** into
-the window, so an agent learns it has work the same way it learns anything else.
+The opener writes the entry to `tasks.todo` and **pastes nothing**.
+
+⚠ **An earlier version pasted a notification, and the first live test showed why
+that is wrong.** The agent acted on the pasted text, did the work, and only then
+ran `take` and `done` — reporting, accurately, that they were *"bookkeeping only"*.
+So `doing` was never populated while the work was happening, which is the one
+state the watchdog exists to read.
+
+Two sources for the same task means the agent acts on whichever arrives first,
+and that is always the paste. The board stops being the mechanism and becomes a
+record written afterwards.
+
+**The board carries *what*; a message carries *now*.** If you want an agent to
+start immediately, assign the task and then send it a message — which is what an
+architect would do anyway, and it keeps the wake-up separate from the content.
 
 ## 4. The agent's surface
 
