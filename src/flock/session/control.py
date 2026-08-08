@@ -9,6 +9,9 @@ from dataclasses import dataclass, field
 from typing import Any
 
 
+from flock.tmux import require_isolated_tmux
+
+
 class ControlModeError(RuntimeError):
     """The tmux control-mode stream or a command failed."""
 
@@ -37,6 +40,7 @@ class ControlModeClient:
         self.broken_reason: str | None = None
 
     async def start(self) -> None:
+        require_isolated_tmux(self.socket)
         command = ["tmux"]
         if self.socket:
             command.extend(["-S", self.socket])

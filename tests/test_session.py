@@ -176,3 +176,15 @@ def test_session_has_one_websocket_route_and_no_bus_door_imports():
     assert [route.path for route in app.routes if route.path == "/session"] == [
         "/session"
     ]
+
+
+def test_start_requires_isolated_tmux(monkeypatch):
+    import pytest
+    from flock.tmux import AmbientTmuxError
+
+    monkeypatch.delenv("TMUX_SOCKET", raising=False)
+    monkeypatch.delenv("TMUX_TMPDIR", raising=False)
+    controller = ControlModeClient("hq", socket=None)
+    with pytest.raises(AmbientTmuxError):
+        asyncio.run(controller.start())
+
