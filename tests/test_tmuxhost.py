@@ -112,7 +112,7 @@ def test_tmuxhost_reconciles_office_tools_and_agent_guide_env(mock_run_tmux):
 
         calls = [c[0] for c in mock_run_tmux.call_args_list]
         env_calls = [c for c in calls if "new-window" in c]
-        assert any("OFFICE_TOOLS=sendMessage,sendBroadcast,peers,hire,letGo" in " ".join(c) for c in env_calls)
+        assert any("OFFICE_TOOLS=office" in " ".join(c) for c in env_calls)
         assert any("AGENT_GUIDE=/workdir/alice/AGENTS.md" in " ".join(c) for c in env_calls)
 
 
@@ -122,9 +122,9 @@ def test_generate_agents_md():
     assert "$AGENT_NAME" in content
     assert "$TENANT" in content
     assert "$OFFICE_TOOLS" in content
-    assert "peers" in content
+    assert "office peers" in content
     assert "[message from alice] …" in content
-    assert "sendMessage" in content
+    assert "office send" in content
 
 
 def test_write_agent_guide_creates_both_files_and_trusts_claude():

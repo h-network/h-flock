@@ -68,10 +68,10 @@ Everything about your situation is in your environment:
 
 Run any of those with --help. To see who you can talk to:
 
-    peers
+    office peers
 
 A message arrives in your terminal as `[message from alice] …` — reply by name
-with sendMessage. This directory is yours; work in it.
+with `office send -a <name> <message>`. This directory is yours; work in it.
 """
 
 

@@ -8,7 +8,7 @@ from flock.bus import members, log_record, vab, prefix
 import flock.tmux.ops as tmux_ops
 from flock.tmux.ops import generate_agents_md, ensure_claude_project_trusted, write_agent_guide
 
-OFFICE_TOOLS_ENV = "OFFICE_TOOLS=sendMessage,sendBroadcast,peers,hire,letGo"
+OFFICE_TOOLS_ENV = "OFFICE_TOOLS=office"
 
 
 class TmuxHost:
