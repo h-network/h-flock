@@ -125,6 +125,11 @@ def test_generate_agents_md():
     assert "office peers" in content
     assert "[message from alice] …" in content
     assert "office send" in content
+    assert "You have a task board." in content
+    assert "office list" in content
+    assert "office take" in content
+    assert "office done" in content
+    assert "Take a ticket *before* you start work" in content
 
 
 def test_write_agent_guide_creates_both_files_and_trusts_claude():
