@@ -21,7 +21,10 @@ class Router:
 
     @staticmethod
     def _kick(agent: str) -> None:
-        subprocess.Popen(["flock.adapter", agent])
+        try:
+            subprocess.Popen(["flock.adapter", agent])
+        except OSError as exc:
+            emit("router", "error", {"recipient": agent}, reason=f"adapter kick failed: {exc}")
 
     def step(self) -> bool:
         agents = sorted(self._agents())

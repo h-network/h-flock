@@ -173,6 +173,25 @@ class DoorsAndRouterTest(unittest.TestCase):
         self.assertEqual(len(self.r.lists[prefix("acme", "hq", "api", "ingress")]), 1)
         self.popen.assert_called_once_with(["flock.adapter", "api"])
 
+    def test_kick_spawn_failure_is_logged_and_does_not_lose_ingress(self):
+        self.popen.side_effect = FileNotFoundError("flock.adapter not found")
+        send(
+            self.r,
+            pod="acme",
+            tenant="hq",
+            producer="alice",
+            recipient="bob",
+            payload={},
+        )
+        output = io.StringIO()
+        with redirect_stdout(output):
+            self.assertTrue(Router(self.r, pod="acme", tenant="hq").step())
+        records = [json.loads(line) for line in output.getvalue().splitlines()]
+        error = next(record for record in records if record["event"] == "error")
+        self.assertEqual(error["recipient"], "bob")
+        self.assertNotIn("stream_id", error)
+        self.assertEqual(len(self.r.lists[prefix("acme", "hq", "bob", "ingress")]), 1)
+
     def test_broadcast_fans_out_to_roster_except_sender(self):
         self.r.hashes[self.roster]["api"] = "api"
         send(
