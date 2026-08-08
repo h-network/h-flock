@@ -19,6 +19,21 @@ def deliver_one(
     raw_vab = r.hget(roster_key, agent)
     agent_vab = raw_vab.decode() if isinstance(raw_vab, bytes) else raw_vab
 
+    if agent_vab == "control":
+        try:
+            from flock.control import deliver_one as control_deliver_one
+            control_deliver_one(
+                r,
+                pod=pod,
+                tenant=tenant,
+                agent=agent,
+                session_name=session_name,
+                socket=socket,
+            )
+        except ImportError:
+            log_record("adapter", "error", recipient=agent, reason="flock.control module not available")
+        return
+
     if agent_vab is not None and agent_vab != "tmux":
         log_record("adapter", "error", recipient=agent, reason=f"VAB is {agent_vab!r}, not 'tmux'")
         return
