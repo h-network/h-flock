@@ -71,9 +71,12 @@ for entry in "${entries[@]}"; do
   fields+=("$name" "$vab")
 done
 
-# api is a fixed agent and a roster row like any other — the router no longer
-# special-cases it (LLD-bus-and-router §3.2).
+# Fixed agents. Roster rows like any other — the router special-cases nothing
+# (LLD-bus-and-router §3.2). `host` is what StartAgent/StopAgent are addressed
+# to; its VAB routes delivery to flock.control rather than to a tmux window, so
+# it has no window and the tmux host filters it out.
 fields+=("api" "api")
+fields+=("host" "control")
 
 redis-cli -h 127.0.0.1 HSET "$roster_key" "${fields[@]}" >/dev/null
 echo "{\"module\":\"container\",\"event\":\"roster_seeded\",\"count\":$(( ${#fields[@]} / 2 ))}"
