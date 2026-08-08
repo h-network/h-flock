@@ -96,7 +96,7 @@ def test_every_route_requires_bearer_token(client):
     assert request(app, "GET", "/health", token="secret") == (200, {"status": "ok"})
 
 
-def test_send_returns_stream_and_correlation_ids(client, monkeypatch):
+def test_envelope_passes_unknown_kind_and_payload_without_validation(client, monkeypatch):
     app, _ = client
     sent = {}
 
@@ -106,7 +106,11 @@ def test_send_returns_stream_and_correlation_ids(client, monkeypatch):
 
     monkeypatch.setattr(api_module, "send", fake_send)
     response_status, response_body = request(
-        app, "POST", "/agents/alice/messages", token="secret", body={"text": "hello"}
+        app,
+        "POST",
+        "/agents/alice/envelopes",
+        token="secret",
+        body={"kind": "KindAddedLater", "payload": {"shape": ["is", "opaque"]}},
     )
     assert response_status == 202
     assert response_body["stream_id"] == "stream-1"
@@ -116,12 +120,38 @@ def test_send_returns_stream_and_correlation_ids(client, monkeypatch):
         "tenant": "office",
         "producer": "api",
         "recipient": "alice",
-        "payload": {"text": "hello"},
+        "kind": "KindAddedLater",
+        "payload": {"shape": ["is", "opaque"]},
         "correlation_id": None,
         "module": "api",
     }
     assert len(response_body["correlation_id"]) == 32
     int(response_body["correlation_id"], 16)
+
+
+def test_text_only_body_is_message_sugar(client, monkeypatch):
+    app, _ = client
+    sent = {}
+    monkeypatch.setattr(
+        api_module,
+        "send",
+        lambda _redis, **kwargs: sent.update(kwargs) or "stream-1",
+    )
+
+    response_status, _ = request(
+        app, "POST", "/agents/alice/envelopes", token="secret", body={"text": "hello"}
+    )
+
+    assert response_status == 202
+    assert sent["kind"] == "Message"
+    assert sent["payload"] == {"text": "hello"}
+
+
+def test_messages_endpoint_is_not_exposed(client):
+    app, _ = client
+    assert request(
+        app, "POST", "/agents/alice/messages", token="secret", body={"text": "hello"}
+    )[0] == 404
 
 
 def test_board_aggregate_is_roster_bounded_and_pipelined(client):

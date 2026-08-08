@@ -12,9 +12,9 @@ from typing import Any
 import redis
 from fastapi import Depends, FastAPI, HTTPException, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
-from pydantic import BaseModel
 
 from flock.bus.doors import send
+from flock.bus.envelope import EnvelopeError
 from flock.bus.keys import prefix
 from flock.bus.roster import members
 
@@ -44,10 +44,6 @@ class Settings:
             if not _is_loopback(self.api_bind):
                 raise RuntimeError("API_TOKEN is required when API_BIND is not loopback")
             raise RuntimeError("API_TOKEN is required")
-
-
-class MessageRequest(BaseModel):
-    text: str
 
 
 def _is_loopback(bind: str) -> bool:
@@ -109,8 +105,19 @@ def create_app(*, settings: Settings | None = None, redis_client: Any = None) ->
             },
         }
 
-    @app.post("/agents/{agent}/messages", status_code=status.HTTP_202_ACCEPTED)
-    def post_message(agent: str, message: MessageRequest) -> dict[str, str]:
+    @app.post("/agents/{agent}/envelopes", status_code=status.HTTP_202_ACCEPTED)
+    def post_envelope(agent: str, envelope: dict[str, Any]) -> dict[str, str]:
+        if agent != "all":
+            try:
+                prefix(settings.pod, settings.tenant, agent)
+            except KeyError as exc:
+                raise HTTPException(status_code=404, detail="invalid agent") from exc
+        if set(envelope) == {"text"}:
+            kind = "Message"
+            payload = {"text": envelope["text"]}
+        else:
+            kind = envelope.get("kind")
+            payload = envelope.get("payload")
         correlation_id = uuid.uuid4().hex
         try:
             stream_id = send(
@@ -119,12 +126,13 @@ def create_app(*, settings: Settings | None = None, redis_client: Any = None) ->
                 tenant=settings.tenant,
                 producer="api",
                 recipient=agent,
-                payload={"text": message.text},
+                kind=kind,
+                payload=payload,
                 correlation_id=correlation_id,
                 module="api",
             )
-        except KeyError as exc:
-            raise HTTPException(status_code=404, detail="invalid agent") from exc
+        except EnvelopeError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
         return {"stream_id": stream_id, "correlation_id": correlation_id}
 
     def board_keys(agent: str) -> tuple[str, str, str]:
