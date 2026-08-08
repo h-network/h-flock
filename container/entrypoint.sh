@@ -18,6 +18,14 @@ require() {
 # entire attack surface (LLD-container §3).
 require POD TENANT AGENTS API_TOKEN
 
+# Hold it out of the inherited environment from here on. The tmux server is
+# started below and every agent window inherits the server's environment, so an
+# exported API_TOKEN ends up readable in every pane — and with the Command kind
+# that makes any agent able to run arbitrary code in any other agent's window.
+# Only the api process needs it, so only the api process gets it.
+api_token="$API_TOKEN"
+unset API_TOKEN
+
 export TMUX_SESSION="${TMUX_SESSION:-$TENANT}"
 
 # Socket access is total — anything that can reach it can send-keys into any
@@ -107,6 +115,7 @@ start router  python3 -m flock.router
 # per delivery and it exits (LLD-adapter-tmux §2). Starting one at boot would be
 # the daemon this build exists to remove.
 # api last, so it is not reachable before the tenant behind it is up (§5).
-start api     python3 -m flock.api
+# The token is handed to this one process and nothing else.
+start api     env API_TOKEN="$api_token" python3 -m flock.api
 
 wait -n
