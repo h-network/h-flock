@@ -89,6 +89,23 @@ unwritable log is not a reason a `done` fails.
 Keep the `log_record` calls as well — they are how an envelope-side view stays
 whole. The file is the board's history; the log is the bus's.
 
+## 6b. `GET /board` — `api`
+
+A fourth list, `hold`, alongside `todo` / `doing` / `done`.
+
+⚠ **Build against the key, not against `bus` landing it.** `tasks.hold` will read
+empty until build 11 lands on the `bus` side, and that is fine — `/board` has
+served empty lists since build 03. An empty list and a missing key are the same
+answer here.
+
+⚠ **Reading a ticket's `status` is now allowed** and `CONTRACTS` §7 needs the
+same correction the plan §2 makes: that clause was written when nothing wrote
+board entries. `status`, `started_ts` and the id are structured fields. `title`
+and `description` stay opaque — do not parse, summarise or truncate them.
+
+Old-shaped entries from build 10 must still serialise. Do not fail a whole
+`/board` response on one unparseable entry; skip it and carry on.
+
 ## 7. Done when
 
 - `office add -a backend -t "…" -d "…"` puts a plan-§2-shaped ticket on
@@ -100,7 +117,7 @@ whole. The file is the board's history; the log is the bus's.
 - `office delete` with no id refuses
 - a build-10-shaped ticket already on a board still lists and still takes
 - `$TASK_RECORD` has one line per action; no board output appears in a pane
-- `GET /board` returns four lists
+- `GET /board` returns four lists, `hold` included and empty until `bus` lands
 - none of `assign`, `tasks` remain on `PATH`
 
 ## 8. Reporting
