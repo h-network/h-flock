@@ -196,13 +196,22 @@ Fire and forget — the router does not wait, does not read a return code, does
 not retry, and keeps no record (`LLD-bus-and-router` §3.3, rail 3). It hands
 over a name and moves on.
 
-⚠ **Throw the handle away.** `subprocess.Popen([...])` with the return value
-discarded leaves no zombies — CPython reaps the child either when the object is
-collected or at the top of the next `Popen`. Keeping the handles in a list to
-"track" the children is the natural-looking improvement and it is the broken
-one: tracked objects are never collected, `_cleanup()` never sees them, and a
-zombie accumulates per delivery, forever. The careless-looking version is the
-correct one.
+⚠ **The router must set `signal.signal(signal.SIGCHLD, signal.SIG_IGN)` at
+start.** Without it the kernel keeps every exited kick as a zombie until the
+router reaps it, and CPython only reaps at the top of the *next* `Popen` — so
+during a burst the reaping lags the spawning. Measured: **65 zombies** for a
+100-envelope run, **40 still present at rest** afterwards, clearing only when
+traffic resumed. `SIG_IGN` makes the kernel reap them immediately and the count
+never leaves zero.
+
+This is safe *because* the kick is fire and forget (rail 3): `SIG_IGN` makes
+`wait()` and `poll()` unusable, and we never call them — a return code is
+exactly what rail 3 forbids caring about.
+
+⚠ **Throw the handle away.** Discard the `Popen` return value. Keeping the
+handles in a list to "track" the children is the natural-looking improvement and
+it is the broken one: tracked objects are never garbage collected, so they leak
+memory alongside the processes. The careless-looking version is the correct one.
 
 ⚠ **A kick that cannot start is not fatal.** `Popen` raises `FileNotFoundError`
 when the binary is missing, and `OSError` under fork pressure. Catch it, log a

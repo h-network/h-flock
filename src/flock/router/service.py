@@ -1,6 +1,7 @@
 """Forward tenant egress queues without interpreting payloads."""
 
 import os
+import signal
 import subprocess
 
 import redis
@@ -76,6 +77,17 @@ class Router:
 
 
 def main() -> None:
+    # Let the kernel reap kicked adapters. Without this the router accumulates a
+    # zombie per delivery under load: CPython only reaps children that have
+    # already exited, at the top of the next Popen, so during a burst the
+    # reaping lags the spawning. Measured at 65 zombies for a 100-envelope run,
+    # and they persist at rest until traffic resumes.
+    #
+    # Safe here precisely because the kick is fire and forget (LLD-bus-and-router
+    # §3.3, rail 3): SIG_IGN makes wait()/poll() unusable, and we never call
+    # them — we do not want a return code.
+    signal.signal(signal.SIGCHLD, signal.SIG_IGN)
+
     Router(
         redis.Redis.from_url(os.environ["REDIS_URL"]),
         pod=os.environ["POD"],
