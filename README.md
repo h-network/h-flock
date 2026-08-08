@@ -108,11 +108,17 @@ office hire dave --cli claude      # a new colleague, live, no restart
 office letGo dave
 office pause dave
 office resume dave
-office assign -a backend review the auth change
-office tasks
-office take
+office add -a backend -t "review the auth change" -d "the brief"
+office list                        # titles on your board
+office take                        # the next one — prints it in full
 office done
+office cancel
+office hold
 ```
+
+The board is **pulled, never pushed**: adding a ticket notifies nobody. If you
+want it started now, add it and then `office send` — the board carries *what*, a
+message carries *now*.
 
 A message arrives as `[message from alice] …` — **that prefix is the entire reply
 mechanism.** Read a name, reply with the same command. Nothing routes a reply.
@@ -159,7 +165,7 @@ Capabilities are `kind`s, opened at the edge. Adding one is adding an opener.
 | `StopAgent` | `control` | reverses all of it |
 | `PauseAgent` | `control` | stops the CLI while preserving the agent |
 | `ResumeAgent` | `control` | resumes the CLI and drains its inbox |
-| `AssignTask` | `tmux` | adds a todo and notifies the recipient |
+| `AddTicket` | `tmux` | writes a ticket to the recipient's board — and pastes nothing |
 
 `office hire dave` is a `StartAgent` envelope addressed to `host`. The router forwarded
 a kind it has never heard of, to a name like any other.
@@ -197,7 +203,10 @@ Measured, not assumed: 100 envelopes at 10/s with none lost, ordering preserved,
 3 KB messages intact, delivery into a busy window buffered rather than dropped,
 ~500 ms per delivery of which startup is the larger half.
 
-Not built: task boards, presence, replies correlated back to a waiting HTTP
+Task boards are built: tickets with a title and a brief, four columns, ids
+accepted by prefix, and an append-only history in `$TASK_RECORD`.
+
+Not built: presence, replies correlated back to a waiting HTTP
 client, TLS, CORS. See [`docs/TODO.md`](docs/TODO.md), which says why for each.
 
 ⚠ Agents run with `sudo` in the container, deliberately. Nothing inside it is a
