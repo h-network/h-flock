@@ -47,6 +47,33 @@ call, which `LLD-adapter-tmux` §5 already names.
 **Boards.** The api serves `/board` and nothing writes one, so they read empty.
 Agents have no equivalent of `jira list` / `jira consume`.
 
+## Broadcast strands envelopes on the fixed agents
+
+**Found by an agent during the first live run, then confirmed: `api` ingress was
+34 and climbing, `host` dead-letters were 34.** Every `send all` reaches both,
+because the router fans out to `_agents() - {sender}` and the fixed agents are
+roster rows like any other.
+
+`host` handles it correctly — VAB `control`, no opener for `Message`,
+dead-lettered and logged. Noisy, but visible.
+
+`api` does not. VAB `api` dispatches to no delivery routine, so
+`flock.adapter.runner` logs `VAB is 'api', not 'tmux'` and **returns before
+popping**. The envelope is never consumed and never dead-lettered: it just
+accumulates, one per broadcast, forever.
+
+Two faults meeting, and they can be fixed independently:
+
+1. **No `api` delivery routine.** The api-adapter opener — an envelope handed to
+   a waiting HTTP client (`LLD-api` §7). Its absence should not be silent
+   accumulation.
+2. **An unroutable VAB should dead-letter, not return.** Whatever else is true,
+   an adapter that cannot deliver must leave the envelope visible, the way an
+   unknown `kind` already does. §4: *nothing disappears silently.*
+3. **Whether broadcast should reach the fixed agents at all is still undecided.**
+   The old router excluded `api`; the current one includes it. Neither is written
+   down — this is an architect loose end, noted at the time and not closed.
+
 ## Authority between agents
 
 **Agents have no model of who has standing, and correctly refuse to take
