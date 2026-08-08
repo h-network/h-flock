@@ -112,6 +112,17 @@ sequence counter.
 app that has been away longer than a thousand messages has lost its place
 regardless — say so with a cursor error rather than pretending.
 
+**One field, pinned**, because the writer and the reader are different lanes:
+
+```
+  XADD <key> MAXLEN ~ 1000 * envelope '<the envelope, verbatim JSON>'
+```
+
+The stream entry id **is** the cursor — no second sequence number, and no
+unpacking envelope fields into stream fields. The api decodes that one field and
+returns it as the message object, so whatever the router forwarded is what the
+app sees, unchanged.
+
 ⚠ **Every kind goes in, not only `Message`.** The api does not decide which kinds
 are interesting; that is the same rule that stops the router reading payloads.
 The client filters on `kind`.
