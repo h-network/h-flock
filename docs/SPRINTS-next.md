@@ -45,7 +45,7 @@ command:
 
 | | |
 |---|---|
-| **a message to everyone** | conversation — "standup in five". `sendBroadcast`, exists |
+| **a message to everyone** | conversation — "standup in five". `office broadcast`, exists |
 | **a control signal to everyone** | `Ctrl-C` every window, stop every TUI. Does not exist |
 
 The second is not a message and must not travel as one — it is keystrokes to

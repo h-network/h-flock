@@ -81,12 +81,17 @@ still there. Costs one extra Enter that an empty prompt ignores.
 identical from outside. The signal is `window_activity` from one `list-windows`
 call, which `LLD-adapter-tmux` §5 already names.
 
-**Boards.** → **[`PLAN-boards.md`](PLAN-boards.md)**. The api has served
-`/board` since build 03 and nothing writes one. The rule the design turns on:
-**the agent moves its own tasks, nothing infers them** — the adapter knows an
-envelope was delivered and cannot know whether the agent read it, started it, or
-disagreed with it. Prerequisite for the watchdog, whose only evidence anything is
-underway is a task sitting in `doing`.
+**~~Boards~~ — SHIPPED in build 11.** → [`PLAN-boards.md`](PLAN-boards.md).
+Tickets, four columns, `office add`/`list`/`take`/`done`/`cancel`/`hold`/`delete`,
+and an append-only history in `$TASK_RECORD`. The rule the design turned on held
+all the way through: **the agent moves its own tasks, nothing infers them** — the
+adapter knows an envelope was delivered and cannot know whether the agent read
+it, started it, or disagreed with it.
+
+⚠ It went further than that in the end: **nothing delivers a ticket at all.** A
+board is pulled, so the one-`doing` rule is not enforced, it simply falls out.
+The watchdog's evidence — a ticket sitting in `doing` with a `started_ts` — now
+exists.
 
 ## ~~Broadcast strands envelopes on the fixed agents~~ — SHIPPED
 
@@ -163,16 +168,26 @@ leaves one source of truth instead of two that drift.
 not to the container's stdout, which is the only thing collected.
 
 Measured: an envelope sent by an agent produces `popped`, `forwarded`,
-`received`, `opened` centrally. **`sent` is missing.** And `task_taken` /
-`task_done` are absent entirely.
+`received`, `opened` centrally. **`sent` is missing.**
+
+⚠ **Half solved in build 11, and the half that is solved shows which option
+works.** Board events no longer go through `log_record` at all — they append to
+`$TASK_RECORD`, a shared file the container collects, written by one function
+(`flock.bus.record_task_event`) that swallows every error so a bad log path
+cannot fail a `done`. That is the second of the three options below, chosen in
+practice rather than in principle.
+
+**Still open: `sent`.** `office send` from a window still logs to that pane. The
+same fix would work; it has not been done, and the reason boards went first is
+that the watchdog needed them.
 
 Two documented claims are therefore false as written:
 
 - `LLD-bus-and-router` §4 — *"four records across a delivered envelope's life"*.
   True for api-sent envelopes; agent-sent ones have three centrally and one in a
   terminal. The crash-detectability argument does not cover the agent's end.
-- `PLAN-boards.md` — *"there is no second place to look"*. There is, and it is
-  the worst one: every agent's pane separately.
+- `PLAN-boards.md` — *"there is no second place to look"*. Was true and is now
+  fixed: `$TASK_RECORD` is that one place for board events.
 
 The design assumed every emitter is a container process. An agent's tools are
 not, and nothing about `flock.bus.log_record` writing to stdout is wrong — it is
