@@ -10,6 +10,7 @@ dependencies = ["redis>=5,<7", "fastapi>=0.115,<1", "uvicorn>=0.30,<1"]
 
 [project.scripts]
 send = "flock.adapter.cli:main"
+"flock.adapter" = "flock.adapter.__main__:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]
