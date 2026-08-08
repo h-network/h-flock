@@ -73,6 +73,18 @@ The same channel carries the one setting more than one module has to agree on:
 |---|---|
 | `POD`, `TENANT` | the prefix every module builds keys from |
 | `ROSTER_POLL_SECONDS` | how often the roster is re-read. Default 5 |
+| `TMUX_TMPDIR` | where the tenant's tmux socket lives. `/home/ubuntu/.flock/tmux` |
+
+`TMUX_TMPDIR` is inherited rather than passed per invocation, which is the whole
+reason `LLD-tmux-host` §4 chose it. It is listed here because anything attaching
+to a running tenant needs it and it is otherwise folklore:
+
+```bash
+docker exec -it -e TMUX_TMPDIR=/home/ubuntu/.flock/tmux <container> tmux attach -r -t <tenant>
+```
+
+⚠ It is **not** `/run/…`. The container runs as `ubuntu`, and `/run` belongs to
+root — a socket there cannot be created by the user the agents run as.
 
 `ROSTER_POLL_SECONDS` is here rather than in any module because the router, the
 tmux adapter and the tmux host must use one value (`LLD-bus-and-router` §3.2).
