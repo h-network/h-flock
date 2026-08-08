@@ -82,12 +82,39 @@ the envelope is gone from Redis, and the message was never submitted.
 → check the bottom rows for the message's tail after Enter, press it again if
 still there. Costs one extra Enter that an empty prompt ignores.
 
+## An unknown agent reads as "exists, idle"
+
+`GET /agents/<name>` returns **`200` with zero depths** for a name that is not
+enrolled, and `404` only when the name breaks the segment rule. So a client
+cannot tell "no such agent" from "an agent with an empty queue" — the two answers
+are byte-identical.
+
+Found by the api lane while verifying every call for [`API.md`](API.md), which is
+the value of documenting against a running system rather than against the code.
+
+⚠ **It is a trap for an app**, which will happily send to a typo'd name forever:
+the `POST` is accepted, the envelope dead-letters somewhere the client never
+sees, and the depths read zero throughout. Every layer answers truthfully and the
+sum is misleading.
+
+→ **Parked, not fixed**, because the fix is a decision rather than a patch:
+`404` on an unenrolled name is the obvious answer, but the same handler serves
+`host` and `api`, and boards deliberately return `200`/`[]` for an agent holding
+nothing (`LLD-api` §2). Changing one without the other trades this inconsistency
+for a worse one. Documented accurately in `API.md` in the meantime.
+
 ## Visibility
 
 **Presence.** No busy / idle / wedged / login-expired signal. h-office calls it
 *"the single most expensive gap in a long session"* — every state looks
 identical from outside. The signal is `window_activity` from one `list-windows`
 call, which `LLD-adapter-tmux` §5 already names.
+
+**Watchdog — both halves of the signal now exist.** It was blocked on boards, and
+boards shipped in build 11. A ticket in `doing` carries `started_ts`, so "took
+work and has not finished it" is answerable; window silence is the other half and
+stops it crying wolf at an agent that is thinking. Design is
+[`SPRINTS-next.md`](SPRINTS-next.md) §3. Nothing else blocks it.
 
 **~~Boards~~ — SHIPPED in build 11.** → [`PLAN-boards.md`](PLAN-boards.md).
 Tickets, four columns, `office add`/`list`/`take`/`done`/`cancel`/`hold`/`delete`,

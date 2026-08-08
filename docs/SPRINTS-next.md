@@ -129,6 +129,11 @@ network downloads the same objects N times.
 
 ## 3. The watchdog, and folding `verify` into it
 
+> ⚠ **Unblocked as of build 11.** This was written when boards did not exist and
+> the watchdog had nothing to read. It now has both halves: a ticket in `doing`
+> with a `started_ts`, and window silence. Nothing below has changed — it is
+> simply buildable now.
+
 h-office's watchdog lives in the courier and is four settings:
 
 | | default | |
