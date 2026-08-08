@@ -19,6 +19,11 @@ services:
       TENANT: "${TENANT:-hq}"
       AGENTS: "${AGENTS:-alice,bob,carol}"
       ROSTER_POLL_SECONDS: "${ROSTER_POLL_SECONDS:-5}"
+      # Exceptions only — "carol=codex", "bob=work". Blank when uniform.
+      # ⚠ container/.env feeds compose's variable substitution; a variable only
+      # reaches the container if it is named here as well.
+      AGENT_CLIS: "${AGENT_CLIS:-}"
+      AGENT_PROFILES: "${AGENT_PROFILES:-}"
       # No default. The container refuses to start without it.
       API_TOKEN: "${API_TOKEN:?set API_TOKEN in container/.env}"
     ports:
