@@ -114,8 +114,11 @@ start router  python3 -m flock.router
 # No adapter here. It is not a service — the router kicks `flock.adapter <agent>`
 # per delivery and it exits (LLD-adapter-tmux §2). Starting one at boot would be
 # the daemon this build exists to remove.
-# api last, so it is not reachable before the tenant behind it is up (§5).
-# The token is handed to this one process and nothing else.
+# The doors last, so neither is reachable before the tenant behind it is up
+# (§5). The token is handed to these two processes and nothing else — it must
+# not reach a tmux window, where the Command kind would make it root on every
+# peer (§3).
 start api     env API_TOKEN="$api_token" python3 -m flock.api
+start session env API_TOKEN="$api_token" python3 -m flock.session
 
 wait -n

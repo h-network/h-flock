@@ -26,8 +26,7 @@ services:
       # door and neither module depends on the other (LLD-container §3).
       # API_HOST=127.0.0.1 pulls one back to loopback without touching the other.
       - "${API_HOST:-0.0.0.0}:${API_PORT:-8080}:8080"
-      # session is not built yet — its mapping lands with it:
-      # - "${SESSION_HOST:-0.0.0.0}:${SESSION_PORT:-8081}:8081"
+      - "${SESSION_HOST:-0.0.0.0}:${SESSION_PORT:-8081}:8081"
     # A tenant is either up or it is not; if a module exits the container exits
     # and this brings it back (LLD-container §6).
     restart: unless-stopped
