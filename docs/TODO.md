@@ -45,7 +45,21 @@ unless its own dir is seeded. Same bug h-office fixed in `4b88096`.
 ⚠ Still undecided: profile dirs must survive a rebuild, so they need a volume.
 h-office gets that for free by being long-lived; we do not.
 
-**The `startAgent` flip.** Windows still run `bash -il`. `create_window` already
+**The `startAgent` flip — and it was never about bash.** Found by watching a real
+agent reply: `flock.tmux.create_window` launches the CLI **bare** —
+`env AGENT_NAME=backend claude` — instead of `startAgent claude`. So the
+permission flags are never applied and every command the agent runs stops on
+*"This command requires approval"*.
+
+`startAgent`'s own header says why that wrapper exists: *"Each CLI spells 'don't
+stop to ask me' differently — claude `--dangerously-skip-permissions`, agy the
+same, codex `--dangerously-bypass-approvals-and-sandbox`. Remembering which
+belongs to which is the whole reason this wrapper exists."*
+
+→ launch `startAgent <cli>` rather than `<cli>`. One line, and it covers all
+three CLIs by construction rather than us tracking three sets of flags.
+
+**The old framing.** Windows still run `bash -il`. `create_window` already
 takes a command and `StartAgent` already passes one, so this is a default, not
 work. Held deliberately until the two items above are solved — flipping first
 just means every window stops on a prompt.
