@@ -1,6 +1,8 @@
 """One-envelope delivery routine for the control VAB."""
 
-from flock.bus import receive
+import subprocess
+
+from flock.bus import log_record, receive
 
 from .openers import pause_agent, resume_agent, start_agent, stop_agent
 
@@ -9,6 +11,13 @@ def _ensure_tmux(command: str, result: tuple[int, str, str]) -> None:
     code, _, stderr = result
     if code != 0:
         raise RuntimeError(f"{command} failed: {stderr}")
+
+
+def _kick(agent: str) -> None:
+    try:
+        subprocess.Popen(["flock.adapter", agent])
+    except OSError as exc:
+        log_record("adapter", "error", recipient=agent, reason=f"adapter kick failed: {exc}")
 
 
 def deliver_one(
@@ -90,6 +99,7 @@ def deliver_one(
             tenant=tenant,
             envelope=envelope,
             resume_window=resume,
+            kick_agent=_kick,
         )
 
     receive(

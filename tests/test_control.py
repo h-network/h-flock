@@ -9,8 +9,9 @@ from flock.control import runner
 
 
 class RecordingRedis:
-    def __init__(self, events):
+    def __init__(self, events, ingress_depth=0):
         self.events = events
+        self.ingress_depth = ingress_depth
 
     def hset(self, key, field, value):
         self.events.append(("hset", key, field, value))
@@ -21,8 +22,12 @@ class RecordingRedis:
     def hdel(self, key, field):
         self.events.append(("hdel", key, field))
 
-    def delete(self, key):
-        self.events.append(("delete", key))
+    def delete(self, *keys):
+        self.events.append(("delete", *keys))
+
+    def llen(self, key):
+        self.events.append(("llen", key))
+        return self.ingress_depth
 
 
 def test_start_agent_orders_roster_launch_then_window():
@@ -69,7 +74,12 @@ def test_stop_agent_orders_roster_launch_then_window():
     )
     assert events == [
         ("hdel", prefix("acme", "hq", resource="roster"), "dave"),
-        ("delete", prefix("acme", "hq", "dave", "launch")),
+        (
+            "delete",
+            prefix("acme", "hq", "dave", "launch"),
+            prefix("acme", "hq", "dave", "profile"),
+            prefix("acme", "hq", "dave", "paused"),
+        ),
         ("kill_window", "dave"),
     ]
 
@@ -128,15 +138,20 @@ def test_pause_agent_sets_marker_then_interrupts_without_touching_roster():
 def test_resume_agent_deletes_marker_then_resumes_without_touching_roster():
     events = []
     resume_agent(
-        RecordingRedis(events),
+        RecordingRedis(events, ingress_depth=3),
         pod="acme",
         tenant="hq",
         envelope={"payload": {"agent": "backend"}},
         resume_window=lambda agent: events.append(("resume", agent)),
+        kick_agent=lambda agent: events.append(("kick", agent)),
     )
     assert events == [
         ("delete", prefix("acme", "hq", "backend", "paused")),
         ("resume", "backend"),
+        ("llen", prefix("acme", "hq", "backend", "ingress")),
+        ("kick", "backend"),
+        ("kick", "backend"),
+        ("kick", "backend"),
     ]
 
 
@@ -195,7 +210,7 @@ def test_deliver_one_dispatches_control_kinds(monkeypatch, kind, expected_tmux):
         session_name="hq",
         socket="/tmp/tmux.sock",
     )
-    assert events[-1] == expected_tmux
+    assert expected_tmux in events
 
 
 def test_tmux_failure_raises_after_desired_state_is_written(monkeypatch):

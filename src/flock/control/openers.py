@@ -48,8 +48,10 @@ def stop_agent(
     agent, _ = _target(envelope)
     roster_key = prefix(pod, tenant, resource="roster")
     launch_key = prefix(pod, tenant, agent=agent, resource="launch")
+    profile_key = prefix(pod, tenant, agent=agent, resource="profile")
+    paused_key = prefix(pod, tenant, agent=agent, resource="paused")
     r.hdel(roster_key, agent)
-    r.delete(launch_key)
+    r.delete(launch_key, profile_key, paused_key)
     kill_window(agent)
 
 
@@ -74,8 +76,12 @@ def resume_agent(
     tenant: str,
     envelope: dict,
     resume_window: Callable[[str], object],
+    kick_agent: Callable[[str], object],
 ) -> None:
-    """Clear an agent's pause marker, then resume its CLI in the existing window."""
+    """Clear pause, resume the CLI, then kick once per queued ingress envelope."""
     agent, _ = _target(envelope)
     r.delete(prefix(pod, tenant, agent=agent, resource="paused"))
     resume_window(agent)
+    depth = r.llen(prefix(pod, tenant, agent=agent, resource="ingress"))
+    for _ in range(depth):
+        kick_agent(agent)

@@ -123,6 +123,7 @@ def test_pause_resume_call_openers_and_shared_tmux(
         "run_tmux",
         lambda *args, **kwargs: calls.append((args, kwargs)) or (0, "", ""),
     )
+    monkeypatch.setattr(cli.subprocess, "Popen", lambda args: calls.append(("kick", args)))
 
     def fake_opener(r, **kwargs):
         assert r is fake_redis
@@ -130,10 +131,15 @@ def test_pause_resume_call_openers_and_shared_tmux(
         assert kwargs["tenant"] == "hq"
         assert kwargs["envelope"] == {"payload": {"agent": "backend"}}
         kwargs[callback_name]("backend")
+        if callback_name == "resume_window":
+            kwargs["kick_agent"]("backend")
 
     monkeypatch.setattr(cli, opener_name, fake_opener)
     command(["backend"])
-    assert calls == [(expected_keys, {"socket": None})]
+    expected = [(expected_keys, {"socket": None})]
+    if callback_name == "resume_window":
+        expected.append(("kick", ["flock.adapter", "backend"]))
+    assert calls == expected
 
 
 def test_only_non_conflicting_control_scripts_are_installed():

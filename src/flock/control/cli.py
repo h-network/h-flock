@@ -2,10 +2,12 @@
 
 import argparse
 import os
+import subprocess
 from collections.abc import Sequence
 
 import redis
 
+from flock.bus import log_record
 from flock.tmux import create_window, kill_window, run_tmux
 
 from .openers import pause_agent, resume_agent, start_agent, stop_agent
@@ -25,6 +27,13 @@ def _check_tmux(operation: str, result: tuple[int, str, str]) -> None:
     code, _, stderr = result
     if code != 0:
         raise RuntimeError(f"{operation} failed: {stderr}")
+
+
+def _kick(agent: str) -> None:
+    try:
+        subprocess.Popen(["flock.adapter", agent])
+    except OSError as exc:
+        log_record("adapter", "error", recipient=agent, reason=f"adapter kick failed: {exc}")
 
 
 def hire_main(argv: Sequence[str] | None = None) -> None:
@@ -144,6 +153,7 @@ def resume_main(argv: Sequence[str] | None = None) -> None:
             tenant=tenant,
             envelope={"payload": {"agent": args.agent}},
             resume_window=resume_window,
+            kick_agent=_kick,
         )
     except Exception as exc:
         parser.exit(1, f"resume: error: {exc}\n")
