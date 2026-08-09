@@ -132,6 +132,11 @@ the same sentence as §1 from a different angle.
 | `PauseAgent` | `control` | stops the CLI, keeps the agent, its queues and its board |
 | `ResumeAgent` | `control` | starts the CLI again and drains what queued while it was paused |
 
+⚠ **`AssignTask` also still resolves**, as a deprecated alias for `AddTicket`
+that logs `deprecated_kind` when used. It is not in the table because it is not a
+capability — it is a compatibility shim that outlived its removal date, which is
+the ordinary fate of one with a date but no owner.
+
 ⚠ **An app client's mailbox takes every kind**, not just `Message`. The api does
 not decide which kinds are interesting — the same rule that stops the router
 reading payloads. A client filters on `kind` itself.
