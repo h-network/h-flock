@@ -246,3 +246,42 @@ question this run does not answer.
 reaches state `T`; the same `sleep` as a tmux pane never does, and the
 process-group form fares no better. Three runs of case 1 silently simulated
 nothing on top of that.
+
+---
+
+# Build 31 verified — `PASS=19 FAIL=0`, and the gap does not stand
+
+Reproduced independently on the lab, not taken from the lane's report.
+
+## 16. The documented login-prompt gap is not real for either CLI
+
+| case | result |
+|---|---|
+| wedged CLI (pane consumes nothing) | `blocked` set ✓ |
+| healthy fresh agent | **not judged**, `blocked` empty ✓ — build 31's rule |
+| codex at a proved login prompt | `blocked` **set** — caught |
+| claude at a proved login prompt | `blocked` **set** — caught |
+
+⚠ **`HLD` §8a and `TODO` both claim this case is missed. On this evidence it is
+caught, for both CLIs we run.** Neither file has been changed — see §17.
+
+⚠ **The case tested is the one that matters:** an agent with activity history
+that is *now* at a login prompt — a credential expiring under a working agent,
+which is what ended a live session at 15:30. An agent that starts at a login
+prompt and never speaks has no history, so under build 31 it is `unknown` and
+never judged. Both are correct; they are different states.
+
+## 17. Rebuilding a tenant destroys runtime enrolments
+
+`bus` rebuilt the tenant to run its branch, which restarted the container. Agents
+in the tenant's configured roster came back — `architect`, `sme-2`, `sme-3`.
+Everything **hired or enrolled at runtime did not**: the `networking` agent, and
+the `telegram` and `web` client enrolments.
+
+⚠ **The clients kept running against a tenant that no longer knew them.** No
+error surfaces to the user of a chat app; the bot simply goes quiet. I re-enrolled
+both. `networking` is gone and would have to be hired again.
+
+⚠ **Say this in `LLD-container`.** A rebuild is not a restart of the same office —
+it is a new office wearing the same name, and anything not in configuration is
+lost. Anyone testing against a live tenant needs to know that before they do it.
