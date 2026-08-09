@@ -25,14 +25,36 @@ Producers emit envelopes; the router forwards on `recipient` and never opens one
 | L2 switch | h-flock |
 |---|---|
 | destination MAC | `recipient` — the only thing forwarding depends on |
-| source MAC | `producer` — derived from the queue, never from content |
+| source MAC | `producer` — ⚠ **see §2a; the code does not do this** |
 | MAC table | the **roster**, `name → VAB` |
 | port config | the **VAB** — a property of the port, not the frame |
 | ethertype | `kind` — router ignores it; an opener at the far edge reads it |
 | L3+ | `payload` — invisible to everything in the middle |
 
-**Adding a kind of participant is writing one delivery routine.** Not touching
-the router, the bus, or any command.
+**Adding a kind of participant is writing one delivery routine** — plus
+registering it for dispatch in `adapter/runner.py`. Not the router, not the bus,
+not any command.
+
+### 2a. ⚠ `producer` is *not* derived from the queue — corrected by `bus`
+
+`HLD` invariant 2 and `CONTRACTS` say `producer` is derived from the queue and
+never taken from the envelope. **The code does not do that.**
+
+- `bus/doors.py:24` — `send()` takes `producer` as an **argument**, puts it in the
+  envelope, and uses the same value to pick the egress queue. Consistent by
+  construction, but only because one function writes both
+- `router/service.py:51` — the router derives `sender` from the popped key, and
+  uses it **only** for dead-letter placement and excluding the sender from a
+  broadcast
+- `router/service.py:64, 75` — forwarding pushes `raw` **unchanged**. The
+  recipient reads `envelope["producer"]`, which the router never checked
+
+So the guarantee is a **convention held by `send()`**, not a structural property.
+Anything that RPUSHes an egress queue directly can claim any `producer` it likes.
+
+⚠ **This is the single most valuable thing the review found**, and it is not a
+doc bug — it is an invariant documented as structural that is enforced nowhere.
+Whether to enforce it or to restate it honestly is a decision, not a patch.
 
 ## 3. VAB — and a name collision worth knowing
 
@@ -54,7 +76,7 @@ delivery base. Same word, unrelated meaning.
 |---|---|---|
 | `flock.bus` | library: keys, envelopes, roster, logging | shared |
 | `flock.tmux` | library: windows, the paste sequence | shared |
-| `flock.router` | **the one daemon** | pops every egress; also the maintenance pass |
+| `flock.router` | the one **bus** daemon | pops every egress; also the maintenance pass |
 | `flock.adapter` | invoked per delivery, then exits | **not** a daemon |
 | `flock.control` | Start/Stop/Pause/Resume openers | reached only via the bus |
 | `flock.tmuxhost` | tmux server, session, windows | |
@@ -75,7 +97,10 @@ office send -a frontend …     an agent writes its OWN egress, never frontend's
   → opener                    tmux → paste · api → mailbox · control → act
 ```
 
-**Five log records:** `sent`, `popped`, `forwarded`, `received`, `opened`.
+**Five log records for a delivered unicast:** `sent`, `popped`, `forwarded`,
+`received`, `opened`. ⚠ **Not universal** — a dead-letter or malformed envelope
+stops early, and a broadcast is one `sent`, one router pair, then a
+`received`/`opened` pair **per recipient**.
 
 ⚠ **Adapters are kicked, not running.** A long-running consumer per agent would
 drain a durable Redis queue into process memory. Keeping the backlog in Redis is
@@ -92,7 +117,7 @@ window would interleave.
 | `Command` | tmux | pasted bare — **it executes** |
 | `AddTicket` | tmux | writes a ticket to that agent's board, pastes nothing |
 | `StartAgent` | control | enrols: roster row, and for tmux a home, window, CLI |
-| `StopAgent` | control | reverses it |
+| `StopAgent` | control | ⚠ purges identity state; **queues and boards are deliberately retained** (`bus/resources.py:38`) — not a plain reverse |
 | `PauseAgent` | control | stops the CLI, keeps agent, queues and board |
 | `ResumeAgent` | control | restarts the CLI, drains what queued |
 
@@ -115,15 +140,21 @@ device-code OAuth is terminal bytes in both directions.
 | | source |
 |---|---|
 | activity | the CLI's own session JSONL, tailed — `input` / `output` / `tool` |
-| presence | recency of activity |
-| verify | a delivery marker vs a later `input` |
+| presence | recency of activity — a Redis hash |
+| verify | a delivery marker (Redis) vs a later `input` |
 | window log | a file `office` writes, tailed |
 
-**Presence is `working` / `idle` / `unknown` / `blocked`.**
+⚠ **Not "all from files"** — the *sources of truth about the CLI* are files; the
+derived state lives in Redis.
 
-⚠ **`unknown` is not `idle`** — agy and bare shells write no session file, so
-nothing can be said. For codex and agy this is the correct terminal state, not a
-gap: they run for days on one token.
+**Presence is `working` / `idle` / `unknown`**, and `blocked` is a **separate
+hash overlaid** by the api and `office status` (`api/app.py:554`) — not a fourth
+value in the presence hash.
+
+⚠ **`unknown` means we could never see this agent's activity** — agy, a bare
+shell. A **fresh claude or codex with an empty feed is `idle`, not `unknown`**
+(`router/presence.py:81`). ⚠ **Credential `unknown` is a different thing** from
+presence `unknown`; do not conflate them as I did.
 
 ⚠ **Activity carries tool names, never arguments.**
 
@@ -146,8 +177,10 @@ a test asserting an absence that passed whenever the router had not yet judged.
 It was the only thing that ever argued for a screen scraper.
 
 ⚠ **A delivery is judged only for an agent that has produced activity before.**
-No history → `unknown` → `delivery_unjudged`, never `blocked`. **Cost: the first
-delivery to a new agent is never judged.**
+No history → **unjudgeable** → `delivery_unjudged`, never `blocked`. ⚠ **Not
+presence `unknown`** — such an agent usually reads `idle`. **Cost: the first
+delivery to a new agent is never judged.** Verification applies to marked
+`Message` deliveries, not to every kind.
 
 ⚠ **No retry, ever.** Verification cannot tell an unsubmitted paste from text
 sitting in a wedged CLI, so a retry either cannot help or duplicates. Chosen:
@@ -155,8 +188,10 @@ possible loss, surfaced to a human, over possible duplication.
 
 ## 10. Pulled, not pushed
 
-**Boards** — a ticket waits until an agent asks. Nothing notifies. One ticket in
-`doing` *falls out* of that rather than being a rule.
+**Boards** — a ticket waits until an agent asks. Nothing notifies. ⚠ **One
+ticket in `doing` is explicitly enforced**, not emergent: `office/cli.py:387`
+raises *"you already have one open task"*. I have repeatedly described this as
+falling out of pull semantics, and `HLD` §9 still says so. Both are wrong.
 
 **Mailboxes** — an app reads its own by cursor. `POST` returns `202`.
 
@@ -195,9 +230,11 @@ transcript, so it marked healthy agents blocked.
 
 ## 13. Where it stands
 
-452 commits, 209 tests green, 4505 LOC, 55 docs. Live gates: `plumbing-check.sh`
+455 commits, 209 tests + 5 subtests green, 4505 LOC, 58 docs. Live gates: `plumbing-check.sh`
 (12 sections, 33 assertions) and `sim-blocked.sh` (4 cases, 19 assertions).
-Proven end to end with three CLIs driven from Telegram, plus a web client.
+Proven end to end with three CLIs driven from Telegram against a real bot, plus a
+web client. ⚠ **`clients/REVIEW.md:81` still says the bot has never spoken to
+Telegram** — written before the live run and never updated.
 
 **Open:** claude credential staleness (in flight), the live terminal view client
 half, `clients/` needing its own repo, profile logins (needs a person), and
