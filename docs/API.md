@@ -267,6 +267,16 @@ Returns queue depths and presence for a specific agent.
 a login prompt, an unattended dialog, a stopped process. More messages will pile
 up unread. It clears by itself when something is consumed again.
 
+⚠ **A brand-new agent will never report `blocked`, however stuck it is.** A
+delivery is judged only for an agent that has produced activity before; one that
+has never spoken is `unknown` and its delivery is not judged at all. **Do not
+wait for `blocked` to decide a new agent is unreachable** — it cannot arrive.
+
+⚠ **There is no retry.** A delivery judged unconsumed is not resent. The
+framework cannot tell text that never submitted from text sitting in a wedged
+CLI, so it surfaces the state rather than risk running an instruction twice. If
+you need a delivery guarantee, build it on your side.
+
 **Response (`200 OK`):**
 ```json
 {

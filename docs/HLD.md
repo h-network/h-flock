@@ -246,9 +246,22 @@ that and throw it away; it now retains it as `<prefix>:agent:<n>:blocked` —
 **set on unverified, deleted on verified.**
 
 ⚠ **`blocked` means: we delivered and it was not consumed.** Not "stuck", not
-"unhealthy". It catches a trust picker and a wedged process, and **misses a CLI
-that records input it does not act on** — a login prompt or a modal picker.
-Measured twice, and the only gap a screen read would ever be for.
+"unhealthy". Measured on a live tenant, each precondition proved on screen before
+delivering: it catches a wedged CLI, and it catches **both** claude and codex
+sitting at a login prompt.
+
+⚠ **A delivery is judged only for an agent that has produced activity before.**
+An agent that has never spoken is `unknown`, and its delivery is **unjudged** —
+neither verified nor blocked, logged as `delivery_unjudged`. Nothing observable
+exists at that moment, so a verdict would be invention. The cost is real and
+deliberate: **the first delivery to a new agent is never judged.**
+
+⚠ **This paragraph used to describe a gap that does not exist** — that a CLI
+records input it never acts on, so a login prompt verifies and `blocked` misses
+it. That came from a test asserting an *absence*, which passed whenever the
+router had not yet judged. Waiting for the verdict deterministically, both CLIs
+are caught. It was never a property of the system, and it was the only thing that
+ever argued for reading a screen.
 
 ⚠ **No screen is read to produce it.** An earlier design scraped for our own
 pasted marker and was abandoned: a consumed message stays visible in the

@@ -546,9 +546,13 @@ own delivery verdict retained instead of discarded: set on `unverified`, deleted
 on `verified`. One writer, and no screen is read to produce it.
 
 ⚠ **`blocked` does not mean "stuck".** It means *a delivery was judged unverified
-and nothing has been consumed since*. Measured: it catches a trust picker and a
-`SIGSTOP`ped process, and **misses a CLI that records input it does not act on** —
-a login prompt or a modal picker. Do not restate it as a general health signal.
+and nothing has been consumed since*. Measured with each precondition proved: it
+catches a wedged CLI, and both claude and codex at a login prompt. Do not restate
+it as a general health signal.
+
+⚠ **It is written only for an agent with activity history.** No history means no
+verdict — the marker is dropped and logged `delivery_unjudged`. A new agent
+therefore cannot be `blocked` until it has spoken once.
 
 ⚠ **`alerts` is tenant-level**, so `StopAgent` must not purge it. The rest are
 per-agent and are in the classified set the teardown test enforces

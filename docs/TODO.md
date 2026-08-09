@@ -6,7 +6,6 @@ Things decided-but-not-done, so they live somewhere other than a chat log.
 
 | | |
 |---|---|
-| **a CLI records input it does not act on** | login prompts and modal pickers. Verify passes them, `blocked` misses them. The only thing a screen scraper would ever be for |
 | **claude's seeded credential goes stale in place** | a copy we hand it does not refresh. Bit us live at 15:30. ⚠ **claude only** — codex and agy run for days on one token, so their `unknown` is the correct terminal state, not a coverage gap |
 | **a live terminal view** | wanted, and `:8081` already streams it — the client half is missing |
 | **`clients/` needs its own repo** | consumers sitting inside the framework for want of a remote |
@@ -190,11 +189,12 @@ for a worse one. Documented accurately in `API.md` in the meantime.
 28, from the router's own delivery verdict. The **watchdog** shipped in build 27
 and alerts a human, never an agent.
 
-⚠ **One class remains open**, and it is the same one twice: *the CLI records
-input it does not act on*. A claude at a login prompt or on a modal picker writes
-an `input` record for text it never processes, so verify passes the delivery and
-`blocked` never fires. Measured twice, independently. Scraping a pane is the only
-route known, and would only ever be for this.
+⚠ ~~One class remains open~~ — **closed in build 31, and it was never real.**
+The claim was that a CLI at a login prompt records input it never acts on, so
+verification passes. It came from a test asserting an *absence*, which passed
+whenever the router had not yet judged. With the verdict waited for
+deterministically, claude and codex are **both caught**. Nothing here needs a
+screen.
 
 The original entry: **Presence.** No busy / idle / wedged / login-expired signal. h-office calls it
 *"the single most expensive gap in a long session"* — every state looks
