@@ -4,7 +4,15 @@ import json
 import os
 from datetime import datetime, timezone
 
-_ENVELOPE_EVENTS = {"sent", "popped", "forwarded", "dead_lettered", "received", "opened"}
+_ENVELOPE_EVENTS = {
+    "sent",
+    "popped",
+    "forwarded",
+    "dead_lettered",
+    "received",
+    "opened",
+    "delivery_unverified",
+}
 
 
 def log_record(
@@ -18,12 +26,13 @@ def log_record(
     reason: str | None = None,
     count: int | None = None,
     task_id: str | None = None,
+    waited: int | float | None = None,
 ) -> None:
     """One JSON object per line on stdout. Fields absent when not known.
 
-    `stream_id` belongs to the six envelope events only — it is the join key for
-    one envelope's life, and a synthetic value on a lifecycle event makes the
-    four records of a real envelope harder to find. See CONTRACTS §3.
+    `stream_id` belongs to envelope events only — it is the join key for one
+    envelope's life, and a synthetic value on a lifecycle event makes the four
+    records of a real envelope harder to find. See CONTRACTS §3.
     """
     record = {
         "ts": datetime.now(timezone.utc).isoformat(timespec="milliseconds").replace("+00:00", "Z"),
@@ -39,6 +48,7 @@ def log_record(
         ("reason", reason),
         ("count", count),
         ("task_id", task_id),
+        ("waited", waited),
     ):
         if value is not None:
             record[field] = value

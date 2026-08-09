@@ -9,6 +9,7 @@ import redis
 
 from flock.bus import EnvelopeError, emit, is_member, members, parse, prefix
 from .activity import ActivityTailer
+from .verification import DeliveryVerifier
 
 
 class Router:
@@ -73,15 +74,23 @@ class Router:
         self._kick(recipient)
         return True
 
-    def run(self, activity_tailer: ActivityTailer | None = None, activity_poll_seconds: float = 2.0) -> None:
+    def run(
+        self,
+        activity_tailer: ActivityTailer | None = None,
+        activity_poll_seconds: float = 2.0,
+        delivery_verifier: DeliveryVerifier | None = None,
+    ) -> None:
         next_activity = 0.0
         while True:
             now = time.monotonic()
             if activity_tailer is not None and now >= next_activity:
                 try:
-                    activity_tailer.poll()
+                    agents = self._agents()
+                    activity_tailer.poll(agents)
+                    if delivery_verifier is not None:
+                        delivery_verifier.poll(agents)
                 except Exception as exc:
-                    emit("router", "error", {}, reason=f"activity poll failed: {type(exc).__name__}")
+                    emit("router", "error", {}, reason=f"activity/verification pass failed: {type(exc).__name__}")
                 next_activity = now + activity_poll_seconds
             timeout = self.poll_seconds
             if activity_tailer is not None:
@@ -114,4 +123,10 @@ def main() -> None:
     router.run(
         ActivityTailer(r, pod=router.pod, tenant=router.tenant),
         activity_poll_seconds=float(os.environ.get("ACTIVITY_POLL_SECONDS", "2")),
+        delivery_verifier=DeliveryVerifier(
+            r,
+            pod=router.pod,
+            tenant=router.tenant,
+            verify_after_seconds=float(os.environ.get("VERIFY_AFTER_SECONDS", "10")),
+        ),
     )

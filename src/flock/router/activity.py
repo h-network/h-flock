@@ -154,8 +154,9 @@ class ActivityTailer:
         state = json.dumps({"path": path_text, "offset": offset}, separators=(",", ":"))
         self.r.set(prefix(self.pod, self.tenant, agent, "activity.offset"), state)
 
-    def poll(self) -> None:
-        for agent in sorted(members(self.r, pod=self.pod, tenant=self.tenant)):
+    def poll(self, agents=None) -> None:
+        agents = members(self.r, pod=self.pod, tenant=self.tenant) if agents is None else agents
+        for agent in sorted(agents):
             try:
                 newest = self._newest(agent)
                 if newest is not None:
