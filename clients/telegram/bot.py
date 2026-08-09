@@ -390,6 +390,11 @@ def main() -> None:
     parser.add_argument("--dry-run", action="store_true", help="Run in dry-run mode (prints Telegram operations to stdout)")
     parser.add_argument("--prompt", type=str, default="", help="Prompt text to send in dry-run mode")
     parser.add_argument("--status", action="store_true", help="Check status in dry-run mode")
+    # A bot cannot start a conversation: Telegram only lets it reply to a chat
+    # it has already heard from. --chat-id supplies one directly so the bot can
+    # drive a known chat without waiting for an inbound message first.
+    parser.add_argument("--chat-id", type=str, default=os.getenv("TELEGRAM_CHAT_ID", ""),
+                        help="Drive this chat directly instead of polling for one")
 
     args = parser.parse_args()
 
@@ -418,6 +423,12 @@ def main() -> None:
         else:
             logger.info("Performing dry-run status check...")
             bot.handle_status_command("dry_run_chat")
+    elif args.chat_id and args.prompt:
+        bot.enrol()
+        bot.handle_user_prompt(args.chat_id, args.prompt)
+    elif args.chat_id and args.status:
+        bot.enrol()
+        bot.handle_status_command(args.chat_id)
     else:
         bot.run_polling()
 
