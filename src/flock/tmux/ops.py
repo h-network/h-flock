@@ -62,7 +62,7 @@ def generate_agents_md(agent_name: str, tenant: str = "default", lead: str | Non
     if lead and agent_name == lead:
         lead_sentence = (
             "You are the lead of this office. The other agents follow your direction, "
-            "and yours is the account that decides when something is done. "
+            "and yours is the account that decides when something is done.\n\n"
             "Before you hand out work, check `office status`. An agent that is `blocked` "
             "will not receive it — hold the work and say so. Do not try to fix the agent.\n\n"
         )
