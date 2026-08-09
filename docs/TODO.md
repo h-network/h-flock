@@ -7,7 +7,7 @@ Things decided-but-not-done, so they live somewhere other than a chat log.
 | | |
 |---|---|
 | **a CLI records input it does not act on** | login prompts and modal pickers. Verify passes them, `blocked` misses them. The only thing a screen scraper would ever be for |
-| **seeded credentials go stale in place** | a CLI refreshes its own token; a copy we hand it does not. Bit us live at 15:30 |
+| **claude's seeded credential goes stale in place** | a copy we hand it does not refresh. Bit us live at 15:30. ⚠ **claude only** — codex and agy run for days on one token, so their `unknown` is the correct terminal state, not a coverage gap |
 | **retry on `delivery_unverified`** | a decision, now with numbers behind it |
 | **a live terminal view** | wanted, and `:8081` already streams it — the client half is missing |
 | **`clients/` needs its own repo** | consumers sitting inside the framework for want of a remote |
