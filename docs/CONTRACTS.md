@@ -572,7 +572,11 @@ it as a general health signal.
 verdict — the marker is dropped and logged `delivery_unjudged`. A new agent
 therefore cannot be `blocked` until it has spoken once.
 
-⚠ **`alerts` is tenant-level**, so `StopAgent` must not purge it. The rest are
+⚠ **`alerts` and `credential.alerted` are tenant-level**, so `StopAgent` must not
+purge them. `credential.alerted` is a HASH keyed `<account>:<cli>` holding the
+last status alerted — `absent` / `unknown` / `expiring` / `expired` — so an alert
+fires once per **state change** rather than once per pass. It is tenant-level
+because one account can be shared by several agents. The rest are
 per-agent and are in the classified set the teardown test enforces —
 `AGENT_STATE_RESOURCES` and `AGENT_DATA_RESOURCES` in `bus/resources.py`.
 
