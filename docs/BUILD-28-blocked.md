@@ -93,6 +93,40 @@ passes is not evidence.
 here — it marked a healthy agent blocked because its consumed message was still
 on screen. If this version does that too, it is no better and we stop.
 
+## 5b. Measured, 2026-08-09 — the matrix
+
+| # | case | result |
+|---|---|---|
+| 1 | healthy, delivered and answered | **not blocked** ✅ the check the scrape failed |
+| 2 | no credential, *"Not logged in"* on screen | **MISS** — not blocked |
+| 3 | trust picker open | **blocked** ✅ |
+| 4 | `SIGSTOP`ped CLI | **blocked** ✅ |
+| 5 | `SIGCONT` then a consumed delivery | **cleared** ✅ |
+| 6 | `/model` picker | expected miss; the attempt was invalid (the command queued rather than opening a picker) — **unproven, not passed** |
+| 7 | bare shell | **never marked** ✅ no verify marker written |
+| 8 | agy | **never marked** ✅ |
+
+⚠ **Row 2 is the finding, and it widens the known hole.** A claude sitting at
+*"Not logged in"* still records an `input` when text is pasted, so verify passes
+the delivery and `blocked` never fires. That is the **same mechanism as the modal
+swallow**, observed independently: the CLI records that input arrived, not that it
+was acted on.
+
+**So the hole is not "modals". It is: any state where the CLI records input it
+does not act on.** Login prompts and modals are two instances; there may be more.
+
+⚠ **What it does catch is still worth having**, because row 1 passes. A trust
+picker and a wedged process are real, and the scrape version was disqualified by
+marking a *healthy* agent blocked — a false positive that would have made the
+lead withhold work from agents that were fine.
+
+### What this tells us about the screen
+
+A scraper would only be needed for the row-2 class — *input recorded, not acted
+on* — and nothing else. Rows 3, 4, 7 and 8 are already answered without one. That
+is a much smaller job than the general "detect a stuck agent" we were sizing
+earlier, and it is the only part still open.
+
 ## 6. Done when
 
 - every row of §5 is reported with its observed result
