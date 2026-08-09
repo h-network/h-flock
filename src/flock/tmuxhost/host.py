@@ -70,7 +70,7 @@ class TmuxHost:
                 cmd.extend(["-c", cwd])
 
             if initial_window != "__init__":
-                write_agent_guide(cwd, initial_window, self.tenant, lead=lead)
+                write_agent_guide(cwd, initial_window, self.tenant, lead=lead, profile=profile)
                 cmd_args = ["startAgent", cli] if cli else ["bash", "-il"]
                 cmd.extend(window_env(initial_window, tenant=self.tenant, cwd=cwd, profile=profile) + cmd_args)
 
@@ -108,7 +108,7 @@ class TmuxHost:
 
         ret, stdout, stderr = tmux_ops.create_window(
             self.session_name, agent_name, command=command, cwd=cwd, socket=self.socket,
-            lead=lead
+            lead=lead, profile=profile
         )
         if ret == 0:
             log_record("tmuxhost", "window_created", recipient=agent_name)

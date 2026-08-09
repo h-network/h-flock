@@ -431,3 +431,21 @@ def test_create_window_is_idempotent_by_name(mock_run_tmux, tmp_path):
 
     assert ret == 0
     assert not any("new-window" in c[0] for c in mock_run_tmux.call_args_list)
+
+
+def test_trust_is_written_where_the_profile_reads_it(tmp_path, monkeypatch):
+    """An agent with a profile reads trust from its own config dir.
+
+    ⚠ Measured on a live tenant: trust went to ~/.claude.json while the agent ran
+    with CLAUDE_CONFIG_DIR=~/.claude-work, so it met the "Yes, I trust this
+    folder" picker and sat on it — unreachable, while presence read `idle`.
+    """
+    from flock.tmux import ops as tmux_ops
+
+    monkeypatch.setenv("HOME", str(tmp_path))
+    tmux_ops.ensure_claude_project_trusted("/workdir/bad", profile="work")
+
+    profiled = tmp_path / ".claude-work" / ".claude.json"
+    assert profiled.exists(), "trust must land in the profile's config dir"
+    assert "/workdir/bad" in json.loads(profiled.read_text())["projects"]
+    assert not (tmp_path / ".claude.json").exists(), "and not in the default one"

@@ -92,10 +92,21 @@ knows what you are on.
 """
 
 
-def ensure_claude_project_trusted(cwd: str) -> None:
+def ensure_claude_project_trusted(cwd: str, profile: str | None = None) -> None:
+    """⚠ Trust is written where the CLI will read it, which the profile decides.
+
+    An agent with `profile=work` runs with CLAUDE_CONFIG_DIR=~/.claude-work and
+    reads its trust from there. Writing to ~/.claude.json trusted a directory for
+    an account the agent does not use — so it met the "Yes, I trust this folder"
+    picker and sat on it, unreachable, while presence read `idle`.
+    """
     try:
         home_dir = os.environ.get("HOME", "/home/ubuntu")
-        config_path = os.path.join(home_dir, ".claude.json")
+        if profile:
+            config_path = os.path.join(home_dir, f".claude-{profile}", ".claude.json")
+            os.makedirs(os.path.dirname(config_path), exist_ok=True)
+        else:
+            config_path = os.path.join(home_dir, ".claude.json")
         data = {}
         if os.path.exists(config_path):
             try:
@@ -119,10 +130,11 @@ def ensure_claude_project_trusted(cwd: str) -> None:
         pass
 
 
-def ensure_codex_project_trusted(cwd: str) -> None:
+def ensure_codex_project_trusted(cwd: str, profile: str | None = None) -> None:
+    """Same as the Claude one: CODEX_HOME moves with the profile."""
     try:
         home_dir = os.environ.get("HOME", "/home/ubuntu")
-        codex_dir = os.path.join(home_dir, ".codex")
+        codex_dir = os.path.join(home_dir, f".codex-{profile}" if profile else ".codex")
         os.makedirs(codex_dir, exist_ok=True)
         config_path = os.path.join(codex_dir, "config.toml")
 
@@ -207,7 +219,8 @@ def window_env(
 
 
 def write_agent_guide(
-    cwd: str, agent_name: str, tenant: str = "default", lead: str | None = None
+    cwd: str, agent_name: str, tenant: str = "default", lead: str | None = None,
+    profile: str | None = None,
 ) -> None:
     try:
         os.makedirs(cwd, exist_ok=True)
@@ -218,8 +231,8 @@ def write_agent_guide(
             with open(file_path, "w", encoding="utf-8") as f:
                 f.write(content)
 
-        ensure_claude_project_trusted(cwd)
-        ensure_codex_project_trusted(cwd)
+        ensure_claude_project_trusted(cwd, profile=profile)
+        ensure_codex_project_trusted(cwd, profile=profile)
         ensure_agy_project_trusted(cwd)
     except Exception:
         pass
@@ -232,6 +245,7 @@ def create_window(
     cwd: str | None = None,
     socket: str | None = None,
     lead: str | None = None,
+    profile: str | None = None,
 ) -> tuple[int, str, str]:
     """⚠ This writes the guide for every caller, so it needs the lead.
 
@@ -248,7 +262,7 @@ def create_window(
     except OSError:
         pass
 
-    write_agent_guide(cwd, agent_name, lead=lead)
+    write_agent_guide(cwd, agent_name, lead=lead, profile=profile)
 
     # ⚠ Idempotent by name. tmux happily creates a second window with the same
     # name, and then refuses to resolve it: `tmux -t hq:<name>` answers
