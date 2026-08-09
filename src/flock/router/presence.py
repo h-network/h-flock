@@ -38,9 +38,19 @@ class PresenceSampler:
         self.tenant = tenant
         self.working_seconds = working_seconds
 
-    def _last_activity(self, agent: str) -> datetime | None:
+    def _tailable(self, agent: str) -> bool:
+        """Whether this agent's CLI writes a session file we can read.
+
+        ⚠ The difference between "nothing to see" and "nothing seen yet".
+        Without it a freshly hired, authenticated agent reads `unknown` — the
+        same answer as a bare shell — so a client cannot tell a ready agent from
+        an unknowable one until it happens to do something.
+        """
         launch = _text(self.r.get(prefix(self.pod, self.tenant, agent, "launch")))
-        if launch not in ("claude", "codex"):
+        return launch in ("claude", "codex")
+
+    def _last_activity(self, agent: str) -> datetime | None:
+        if not self._tailable(agent):
             return None
         key = prefix(self.pod, self.tenant, agent, "activity")
         for _, fields in self.r.xrevrange(key, max="+", min="-", count=1000):
@@ -65,7 +75,10 @@ class PresenceSampler:
         for agent in sorted(agents):
             last = self._last_activity(agent)
             if last is None:
-                state = "unknown"
+                # A tailable CLI with an empty feed has not spoken yet; that is
+                # idle. Only an agent whose activity we could never see is
+                # unknown.
+                state = "idle" if self._tailable(agent) else "unknown"
                 entered = now
                 last_text = ""
             elif (now - last).total_seconds() <= self.working_seconds:

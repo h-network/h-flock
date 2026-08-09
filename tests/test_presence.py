@@ -104,3 +104,20 @@ def test_agy_is_unknown_even_when_an_old_activity_stream_exists():
     PresenceSampler(r, pod="acme", tenant="hq").poll({"sme-2"}, now=NOW)
     assert _presence(r, "sme-2")["state"] == "unknown"
     assert _presence(r, "sme-2")["last_activity"] == ""
+
+
+def test_a_fresh_tailable_agent_is_idle_not_unknown():
+    """A freshly hired claude agent has no activity yet — that is idle.
+
+    ⚠ Only an agent whose activity could never be seen is unknown. Without the
+    distinction a ready agent and a bare shell give a client the same answer,
+    and it cannot tell "nothing seen yet" from "nothing to see".
+    """
+    r = PresenceRedis()
+    r.values["pod:acme:tenant:hq:agent:fresh:launch"] = "claude"   # tailable, no activity
+    # 'shell' has no launch key at all
+
+    PresenceSampler(r, pod="acme", tenant="hq").poll({"fresh", "shell"})
+
+    assert r.hashes["pod:acme:tenant:hq:agent:fresh:presence"]["state"] == "idle"
+    assert r.hashes["pod:acme:tenant:hq:agent:shell:presence"]["state"] == "unknown"
