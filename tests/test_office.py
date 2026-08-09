@@ -107,6 +107,18 @@ def test_every_subcommand_has_environment_free_help(monkeypatch, command):
     assert exc.value.code == 0
 
 
+def test_clone_to_all_help_uses_no_hardcoded_agent_names(monkeypatch, capsys):
+    monkeypatch.delenv("AGENT_NAME", raising=False)
+    monkeypatch.setattr(cli.redis.Redis, "from_url", lambda url: pytest.fail("help connected to Redis"))
+    with pytest.raises(SystemExit) as exc:
+        cli.main(["cloneToAll", "--help"])
+    assert exc.value.code == 0
+    output = capsys.readouterr().out
+    assert "AGENT,..." in output
+    assert "ALICE" not in output
+    assert "BOB" not in output
+
+
 def test_send_treats_inner_flags_as_literal_message(office_env, monkeypatch, capsys):
     calls = []
     monkeypatch.setattr(cli, "send", lambda r, **kwargs: calls.append(kwargs) or "stream-one")
