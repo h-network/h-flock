@@ -11,7 +11,7 @@ An HTTP front door to a running tenant. A user can already reach an agent by
 typing into its window; the api is the other way in — it puts a correctly formed
 envelope on the bus, and the router does what it always does.
 
-It also reads state that already exists in Redis: boards, rosters, queue depths.
+It also reads state that already exists in Redis: boards, rosters, queue depths, presence, and activity feeds.
 Terminal output and live driving are handled by the separate `flock.session`
 service on port 8081.
 
@@ -21,7 +21,8 @@ envelope, reading keys, and handing back what comes the other way.
 ```
   HTTP ──► api ──send (with 'as')──► bus ──► router ──► agent
     ▲        │                                             │
-    │        └──► Redis reads (boards, roster, depths)     │
+    │        └──► Redis reads (boards, roster, depths,     │
+    │                         presence, activity)          │
     │                                                      │
     └──── receive ◄── client inbox ◄── deliver_api ◄─ router ◄─┘  agent replies to client name
 ```
@@ -44,10 +45,12 @@ restarted and deployed without disturbing the others.
 |---|---|---|
 | `GET` | `/health` | liveness |
 | `GET` | `/agents` | enrolled agents, from the roster |
-| `GET` | `/agents/{agent}` | queue depths |
+| `GET` | `/agents/{agent}` | queue depths and presence state (`working`, `idle`, `unknown`) |
 | `POST` | `/agents/{agent}/envelopes` | put an envelope on the bus, of any kind (optional `as`) |
 | `GET` | `/agents/{agent}/messages` | get stored inbox messages for an api client (`?after=<cursor>&limit=100`) |
 | `GET` | `/agents/{agent}/messages/stream` | live SSE stream of inbox messages (`?after=<cursor>`) |
+| `GET` | `/agents/{agent}/activity` | get stored activity feed events for an agent (`?after=<cursor>&limit=100`) |
+| `GET` | `/agents/{agent}/activity/stream` | live SSE stream of activity events (`?after=<cursor>`) |
 | `GET` | `/agents/{agent}/board` | that agent's board (`todo`, `doing`, `hold`, `done`) |
 | `GET` | `/board` | every agent's board (`todo`, `doing`, `hold`, `done`) |
 | `GET` | `/restdoc` | self-contained API documentation page |
@@ -112,13 +115,23 @@ Straight from Redis, every key built through `prefix()`. A request never names a
 key or a queue — the path selects a fixed shape and the agent name fills one
 segment.
 
-Board reads (`GET /agents/{agent}/board` and `GET /board`) return four columns
-(`todo`, `doing`, `hold`, `done`). Entries are JSON-decoded ticket objects (or
-raw strings for backwards compatibility), tolerant of both Build 10 and Build 11
-ticket schemas.
+- **Board reads** (`GET /agents/{agent}/board` and `GET /board`): Return four columns
+  (`todo`, `doing`, `hold`, `done`). Entries are JSON-decoded ticket objects (or raw
+  strings for backwards compatibility).
+- **Presence** (`GET /agents/{agent}`): Reads queue depths alongside presence status hash
+  `<prefix>:agent:<name>:presence` (`state`: `working` | `idle` | `unknown`, `since`, `last_activity`).
+  Updated by the router's 2-second pass. Enrolled agents holding no presence hash return `200 OK`
+  with state `"unknown"`.
+- **Activity Feed** (`GET /agents/{agent}/activity` and `GET /agents/{agent}/activity/stream`):
+  Served from stream key `<prefix>:agent:<name>:activity`, populated by the router tailing CLI session log files.
+  Structured events carry `{ "v": 1, "agent": "<name>", "ts": "<ISO>", "kind": "input" | "output" | "tool" [, "tool": "<Name>"] }`.
+- **Enrolled Membership & 404 Behavior**: Endpoint paths targeting `{agent}` check roster membership (`is_member`).
+  An unenrolled agent returns `404 Not Found`. An enrolled agent holding no tasks, mailbox messages, activity,
+  or presence returns `200 OK` with empty structures. `POST /agents/all/envelopes` is explicitly exempt from roster
+  checks because `all` is the reserved broadcast address.
 
-Reads are point-in-time — no subscriptions, no watches. That applies to *state* (boards, roster, queue depths);
-replies are the separate path in §4 and offer catch-up polling or an SSE stream (`GET /messages/stream`).
+Reads are point-in-time — no subscriptions, no watches. That applies to *state* (boards, roster, queue depths, presence);
+replies and activity feeds offer catch-up polling or SSE streams (`GET /messages/stream`, `GET /activity/stream`).
 
 ## 6. Transport & auth
 

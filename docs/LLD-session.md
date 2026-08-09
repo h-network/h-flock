@@ -161,9 +161,7 @@ So an app wanting both a live terminal *and* a readable account of what an agent
 is doing needs both feeds. Reconstructing "it ran `Bash`, then `Edit`" from
 terminal escape sequences is guesswork; watching a transcript tail is not live.
 
-⚠ Nothing serves transcripts today, and this module should not start — it moves
-terminal bytes. If a structured activity feed is wanted it is its own thing, and
-it reads three formats keyed three different ways.
+The Activity Feed is served by `flock.api` (`GET /agents/{agent}/activity` and `/stream`, Build 18), populated by the router tailing CLI session log files into Redis stream `<prefix>:agent:<agent>:activity`. `flock.session` remains strictly focused on moving live terminal bytes.
 
 ## 9. What this is not
 
