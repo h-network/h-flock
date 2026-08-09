@@ -24,7 +24,7 @@ silently simulates nothing is worse than no simulator.
 ## 2. Fixed sleeps, which the spec ruled out
 
 `sleep 4` after StartAgent and `sleep 12` for the verification pass, five times
-over. [`BUILD-30`](BUILD-30-unverified.md) §2 said poll, never sleep, and named
+over. **the build 30 spec** §2 said poll, never sleep, and named
 the three flakes in this repo that came from sleeping.
 
 `VERIFY_AFTER_SECONDS` is **10** and the router judges on its own pass, so 12 s
