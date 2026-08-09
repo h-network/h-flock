@@ -127,11 +127,7 @@ needed no profile of its own. That was wrong — it was reached by looking for
 under `~/.gemini/antigravity-cli`, including its **own OAuth token**. So profiles
 are **three** directories, not two, and agy costs its own login.
 
-⚠ **And it is not clear agy's home can be relocated at all.** `claude` has
-`CLAUDE_CONFIG_DIR` and `codex` has `CODEX_HOME`; agy exposes no documented
-equivalent, and `setupConfigDir` handles only the first two. **Verify before
-promising per-account agy** — if there is no such variable, agy is single-account
-per container and that is a constraint on the whole design, not a detail.
+⚠ **agy has no per-profile config directory.** `CLAUDE_CONFIG_DIR` and `CODEX_HOME` set per-profile config directories for `claude` and `codex`; `agy` keeps a single OAuth token at `~/.gemini/antigravity-cli` and has no equivalent relocation environment variable, so `agy` is outside the per-profile config directory mechanism.
 
 ⚠ **Relocating `CODEX_HOME` may duplicate 350 MB of `packages` per profile.**
 h-office's seeding copies only `config.toml` and `AGENTS.md`, which is right for

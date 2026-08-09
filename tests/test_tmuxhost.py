@@ -7,15 +7,19 @@ from flock.tmuxhost.host import TmuxHost, generate_agents_md, write_agent_guide,
 
 
 class MockRedis:
-    def __init__(self, roster_agents, vab_map=None, launch_map=None):
+    def __init__(self, roster_agents, vab_map=None, launch_map=None, profile_map=None):
         self.roster_agents = set(roster_agents)
         self.vab_map = vab_map or {a: "tmux" for a in roster_agents}
         self.launch_map = launch_map or {}
+        self.profile_map = profile_map or {}
 
     def get(self, key):
         for agent, cli in self.launch_map.items():
             if f":agent:{agent}:launch" in key:
                 return cli.encode("utf-8") if isinstance(cli, str) else cli
+        for agent, prof in self.profile_map.items():
+            if f":agent:{agent}:profile" in key:
+                return prof.encode("utf-8") if isinstance(prof, str) else prof
         return None
 
     def hkeys(self, key):
@@ -294,4 +298,53 @@ def test_write_agent_guide_trusts_all_clis():
                     adata = json.load(f)
                 assert adata["enableTelemetry"] is False
                 assert tmp_workdir in adata["trustedWorkspaces"]
+
+
+@patch("flock.tmux.ops.run_tmux")
+def test_tmuxhost_reconciles_profile_env_vars_when_set(mock_run_tmux):
+    mock_run_tmux.side_effect = [
+        (0, "", ""),  # has-session
+        (0, "", ""),  # exit-empty
+        (0, "", ""),  # default-size
+        (0, "", ""),  # history-limit
+        (0, "__init__", ""),  # list-windows 1
+        (0, "", ""),  # new-window alice
+        (0, "__init__\nalice", ""),  # list-windows 2
+        (0, "", ""),  # kill-window __init__
+    ]
+
+    r = MockRedis(["alice"], profile_map={"alice": "work"})
+    host = TmuxHost(pod="acme", tenant="hq", redis_url="redis://127.0.0.1:6379/0", session_name="hq")
+    host.reconcile_once(r)
+
+    calls = [c[0] for c in mock_run_tmux.call_args_list]
+    new_window_calls = [c for c in calls if "new-window" in c]
+    cmd_str = " ".join(new_window_calls[0])
+    assert "CLAUDE_CONFIG_DIR=/home/ubuntu/.claude-work" in cmd_str
+    assert "CODEX_HOME=/home/ubuntu/.codex-work" in cmd_str
+
+
+@patch("flock.tmux.ops.run_tmux")
+def test_tmuxhost_omits_profile_env_vars_when_not_set(mock_run_tmux):
+    mock_run_tmux.side_effect = [
+        (0, "", ""),  # has-session
+        (0, "", ""),  # exit-empty
+        (0, "", ""),  # default-size
+        (0, "", ""),  # history-limit
+        (0, "__init__", ""),  # list-windows 1
+        (0, "", ""),  # new-window alice
+        (0, "__init__\nalice", ""),  # list-windows 2
+        (0, "", ""),  # kill-window __init__
+    ]
+
+    r = MockRedis(["alice"])
+    host = TmuxHost(pod="acme", tenant="hq", redis_url="redis://127.0.0.1:6379/0", session_name="hq")
+    host.reconcile_once(r)
+
+    calls = [c[0] for c in mock_run_tmux.call_args_list]
+    new_window_calls = [c for c in calls if "new-window" in c]
+    cmd_str = " ".join(new_window_calls[0])
+    assert "CLAUDE_CONFIG_DIR" not in cmd_str
+    assert "CODEX_HOME" not in cmd_str
+
 
