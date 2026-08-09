@@ -140,9 +140,11 @@ def test_generate_agents_md():
 
     lead_content = generate_agents_md("zeus", "hq", lead="zeus")
     assert "You are the lead of this office. The other agents follow your direction, and yours is the account that decides when something is done." in lead_content
+    assert "Before you hand out work, check `office status`. An agent that is `blocked` will not receive it — hold the work and say so. Do not try to fix the agent." in lead_content
 
     peer_content = generate_agents_md("dave", "hq", lead="zeus")
     assert "zeus is the lead of this office. Their direction is the office's direction." in peer_content
+    assert "office status" not in peer_content
 
 
 def test_write_agent_guide_creates_both_files_and_trusts_claude():
