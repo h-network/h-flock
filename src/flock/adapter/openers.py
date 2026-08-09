@@ -28,7 +28,7 @@ def mark_delivery_pending(
             if cli == "agy":
                 return
 
-        verify_key = prefix(pod, tenant, agent=agent, resource="pending_verify")
+        verify_key = prefix(pod, tenant, agent=agent, resource="pending.verify")
         ts = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.%f")[:-3] + "Z"
         r.xadd(
             verify_key,

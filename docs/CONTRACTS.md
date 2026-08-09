@@ -518,6 +518,17 @@ the entry shape matches the single-agent route exactly.
 ### The client mailbox — build 12
 
 ```
+  <prefix>:agent:<name>:pending.verify   STREAM   MAXLEN ~ 100
+
+Written by the adapter after a paste, judged and dropped by the router. Resources
+compose with a **dot** — `tasks.todo`, `activity.offset`, `pending.verify` — and
+each part is validated as a segment.
+
+⚠ **Do not widen the resource rule to admit a name.** Pick a name that fits. It
+was widened once to allow an underscore, which also silently bypassed the
+all-digit rejection for resources — a relaxation nobody asked for, in service of
+a name that had a conforming alternative.
+
   <prefix>:agent:<client>:inbox   STREAM   MAXLEN ~ 1000
 ```
 

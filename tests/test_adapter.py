@@ -347,7 +347,7 @@ def test_message_opener_writes_pending_verify_marker_for_claude(mock_run_tmux, m
 
     message_opener(r, pod="acme", tenant="hq", agent="bob", envelope=env, session_name="hq")
 
-    verify_key = "pod:acme:tenant:hq:agent:bob:pending_verify"
+    verify_key = "pod:acme:tenant:hq:agent:bob:pending.verify"
     assert verify_key in r.streams
     assert len(r.streams[verify_key]) == 1
     _, fields = r.streams[verify_key][0]
@@ -369,7 +369,7 @@ def test_message_opener_skips_pending_verify_marker_for_agy(mock_run_tmux, mock_
 
     message_opener(r, pod="acme", tenant="hq", agent="bob", envelope=env, session_name="hq")
 
-    verify_key = "pod:acme:tenant:hq:agent:bob:pending_verify"
+    verify_key = "pod:acme:tenant:hq:agent:bob:pending.verify"
     assert verify_key not in r.streams
 
 
@@ -385,7 +385,7 @@ def test_add_ticket_opener_skips_pending_verify_marker(mock_run_tmux, mock_list_
 
     add_ticket_opener(r, pod="acme", tenant="hq", agent="backend", envelope=env, session_name="hq")
 
-    verify_key = "pod:acme:tenant:hq:agent:backend:pending_verify"
+    verify_key = "pod:acme:tenant:hq:agent:backend:pending.verify"
     assert verify_key not in r.streams
 
 

@@ -32,15 +32,15 @@ def _validate(value: str | None) -> str:
     return value
 
 
-RESOURCE_SEGMENT_REGEX = re.compile(r"^[a-z0-9][a-z0-9_-]{0,62}$")
-
-
 def _validate_resource(value: str | None) -> str:
+    # ⚠ Resources compose with a dot — `tasks.todo`, `activity.offset`,
+    # `pending.verify` — and each part is validated as a segment. Do not widen
+    # this to admit a name; pick a name that fits. Widening it once also
+    # bypassed the all-digit rejection above, which was not the intent.
     if not isinstance(value, str) or not value:
         raise KeyError(value)
     for segment in value.split("."):
-        if not RESOURCE_SEGMENT_REGEX.fullmatch(segment) or segment in RESERVED:
-            raise KeyError(value)
+        _validate(segment)
     return value
 
 
