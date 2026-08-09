@@ -26,7 +26,7 @@ class FakeRedis:
         self.lists = {}
         self.streams = {}
         self.hashes = {}
-        self.roster = {b"bob": b"tmux", b"alice": b"tmux", b"telegram": b"api"}
+        self.roster = {b"bob": b"tmux", b"alice": b"tmux", b"telegram": b"api", b"host": b"tmux", b"sme-2": b"tmux"}
 
     def hgetall(self, key):
         return self.hashes.get(key, {})
@@ -503,6 +503,43 @@ def test_get_agent_queues_and_presence_populated(client):
             "last_activity": "2026-08-09T13:15:00.000Z",
         },
     }
+
+
+def test_unknown_agent_returns_404_enrolled_agent_returns_200(client):
+    app, _ = client
+    # Unenrolled agent nosuchagent -> 404 Not Found across all agent routes
+    assert request(app, "GET", "/agents/nosuchagent", token="secret")[0] == 404
+    assert request(app, "GET", "/agents/nosuchagent/board", token="secret")[0] == 404
+    assert request(app, "GET", "/agents/nosuchagent/messages", token="secret")[0] == 404
+    assert request(app, "GET", "/agents/nosuchagent/activity", token="secret")[0] == 404
+    assert request(app, "POST", "/agents/nosuchagent/envelopes", token="secret", body={"text": "hi"})[0] == 404
+
+    # Enrolled agent holding nothing (e.g. sme-2 holding nothing) -> 200 OK
+    status, body = request(app, "GET", "/agents/sme-2", token="secret")
+    assert status == 200
+    assert body["agent"] == "sme-2"
+    assert body["depths"] == {"ingress": 0, "egress": 0, "dead": 0}
+
+    status, body = request(app, "GET", "/agents/sme-2/board", token="secret")
+    assert status == 200
+    assert body == {"agent": "sme-2", "todo": [], "doing": [], "hold": [], "done": []}
+
+    status, body = request(app, "GET", "/agents/sme-2/activity", token="secret")
+    assert status == 200
+    assert body["activity"] == []
+
+
+def test_post_envelopes_broadcast_all_and_host_work(client):
+    app, _ = client
+    # POST /agents/all/envelopes (broadcast) works even though 'all' is not in roster
+    status, body = request(app, "POST", "/agents/all/envelopes", token="secret", body={"text": "broadcast message"})
+    assert status == 202
+    assert "stream_id" in body
+
+    # POST /agents/host/envelopes (lifecycle) works because 'host' is in roster
+    status, body = request(app, "POST", "/agents/host/envelopes", token="secret", body={"kind": "StartAgent", "payload": {"agent": "carol"}})
+    assert status == 202
+    assert "stream_id" in body
 
 
 
