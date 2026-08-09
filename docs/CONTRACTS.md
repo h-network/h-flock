@@ -558,6 +558,7 @@ Set once by the container, inherited by everything (`LLD-container` §4).
 | `POD`, `TENANT` | the prefix every key is built from |
 | `AGENTS` | comma-separated `name:vab` pairs, seeds the roster |
 | `ROSTER_POLL_SECONDS` | default `5`. One value, three readers |
+| `ACTIVITY_POLL_SECONDS` | default `2`. How often the router tails CLI session files for the activity feed |
 | `REDIS_URL` | `redis://127.0.0.1:6379/0` — loopback, never published |
 | `AGENT_NAME` | in an agent's window only |
 | `API_TOKEN`, `API_BIND` | api only. Non-loopback bind with no token must refuse to start |

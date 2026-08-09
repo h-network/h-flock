@@ -108,4 +108,10 @@ def main() -> None:
         tenant=os.environ["TENANT"],
         poll_seconds=int(os.environ.get("ROSTER_POLL_SECONDS", "5")),
     )
-    router.run(ActivityTailer(r, pod=router.pod, tenant=router.tenant))
+    # Config for the same reason ROSTER_POLL_SECONDS is: two offices can
+    # legitimately trade feed latency against filesystem polling. A knob beside
+    # an existing knob is consistency; a knob on its own would be speculation.
+    router.run(
+        ActivityTailer(r, pod=router.pod, tenant=router.tenant),
+        activity_poll_seconds=float(os.environ.get("ACTIVITY_POLL_SECONDS", "2")),
+    )
