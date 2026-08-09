@@ -1,7 +1,8 @@
 # Plan — CLI profiles and multiple accounts
 
-> Not scheduled. This is the shape, taken from h-office's `field-feedback`
-> branch, which solved it in production. Nothing here is built.
+> **Status: built and running (Build 16/17).**
+>
+> Implemented via `AGENT_PROFILES`, `CLAUDE_CONFIG_DIR=/home/ubuntu/.claude-<profile>`, and `CODEX_HOME=/home/ubuntu/.codex-<profile>`.
 
 ## 1. The problem, and the unit that solves it
 

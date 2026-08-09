@@ -47,7 +47,7 @@ nothing needs discovery, and the whole tenant starts and stops as one thing.
 | redis | — | the bus. Loopback, no persistence needed for a skeleton |
 | router | `LLD-bus-and-router` | one per tenant, therefore one per container |
 | tmux host | `LLD-tmux-host` | creates the server, session and windows for `vab: tmux` entries |
-| tmux adapter | `LLD-adapter-tmux` | kicked per delivery; pastes into windows (`vab: tmux`), appends to mailbox stream (`vab: api`), exits |
+| tmux adapter | `LLD-adapter-tmux` | kicked per delivery; pastes into windows (`vab: tmux`), appends to mailbox stream (`vab: api`), writes pending.verify marker, exits |
 | api | `LLD-api` | envelopes in, state out, client mailbox polling & SSE streaming |
 | session | `LLD-session` | terminal output and keystrokes. Its own port |
 | agents | — | one per tmux window for `vab: tmux` roster entries |
@@ -101,6 +101,7 @@ The same channel carries the one setting more than one module has to agree on:
 |---|---|
 | `POD`, `TENANT` | the prefix every module builds keys from |
 | `ROSTER_POLL_SECONDS` | how often the roster is re-read. Default 5 |
+| `ACTIVITY_POLL_SECONDS` | how often activity session files are tailed. Default 2 |
 | `TMUX_TMPDIR` | where the tenant's tmux socket lives. `/home/ubuntu/.flock/tmux` |
 
 `TMUX_TMPDIR` is inherited rather than passed per invocation, which is the whole

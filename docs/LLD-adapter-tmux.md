@@ -139,15 +139,9 @@ creates a v1 ticket entry in the recipient agent's `tasks.todo` Redis list, reco
 the `add` event via `flock.bus.record_task_event`, and **pastes nothing** into the
 window.
 
-`AssignTask` is accepted as a deprecated alias (logged via `log_record`).
+### Verification Markers (`pending.verify`)
 
-An envelope whose `kind` has no opener for `vab: tmux` is dead-lettered under **this agent's own
-prefix** and logged. The failure happened at this end, and an adapter writing to
-the sender's prefix would reach outside its own agent's keys.
-
-### Verification Markers (`pending_verify`)
-
-After a successful `Message` or `Command` paste into a `vab: tmux` window, the adapter records a pending verification marker in Redis Stream `<prefix>:agent:<name>:pending_verify` via `XADD MAXLEN ~ 100`:
+After a successful `Message` or `Command` paste into a `vab: tmux` window, the adapter records a pending verification marker in Redis Stream `<prefix>:agent:<name>:pending.verify` via `XADD MAXLEN ~ 100`:
 ```json
 { "stream_id": "<stream_id>", "ts": "<ts>" }
 ```
