@@ -17,7 +17,7 @@ from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from flock.bus.doors import send
 from flock.bus.envelope import EnvelopeError
 from flock.bus.keys import prefix
-from flock.bus.roster import members, vab
+from flock.bus.roster import is_member, members, vab
 
 
 @dataclass(frozen=True)
@@ -538,6 +538,8 @@ def create_app(*, settings: Settings | None = None, redis_client: Any = None) ->
             presence_key = prefix(settings.pod, settings.tenant, agent, "presence")
         except KeyError as exc:
             raise HTTPException(status_code=404, detail="invalid agent") from exc
+        if not is_member(client, pod=settings.pod, tenant=settings.tenant, agent=agent):
+            raise HTTPException(status_code=404, detail="unknown agent")
         raw_presence = client.hgetall(presence_key) or {}
         state = _decode(raw_presence.get(b"state") or raw_presence.get("state")) or "unknown"
         since = _decode(raw_presence.get(b"since") or raw_presence.get("since")) or ""
@@ -563,6 +565,8 @@ def create_app(*, settings: Settings | None = None, redis_client: Any = None) ->
                 prefix(settings.pod, settings.tenant, agent)
             except KeyError as exc:
                 raise HTTPException(status_code=404, detail="invalid agent") from exc
+            if not is_member(client, pod=settings.pod, tenant=settings.tenant, agent=agent):
+                raise HTTPException(status_code=404, detail="unknown agent")
         producer = "api"
         if "as" in envelope:
             as_client = envelope["as"]
@@ -633,6 +637,8 @@ def create_app(*, settings: Settings | None = None, redis_client: Any = None) ->
             prefix(settings.pod, settings.tenant, agent)
         except KeyError as exc:
             raise HTTPException(status_code=404, detail="invalid agent") from exc
+        if not is_member(client, pod=settings.pod, tenant=settings.tenant, agent=agent):
+            raise HTTPException(status_code=404, detail="unknown agent")
         activity_key = prefix(settings.pod, settings.tenant, agent, "activity")
         activity = _read_stream_entries(client, activity_key, after=after, limit=limit, preferred_field="event")
         next_cursor = activity[-1]["cursor"] if activity else after
@@ -652,6 +658,8 @@ def create_app(*, settings: Settings | None = None, redis_client: Any = None) ->
             prefix(settings.pod, settings.tenant, agent)
         except KeyError as exc:
             raise HTTPException(status_code=404, detail="invalid agent") from exc
+        if not is_member(client, pod=settings.pod, tenant=settings.tenant, agent=agent):
+            raise HTTPException(status_code=404, detail="unknown agent")
         activity_key = prefix(settings.pod, settings.tenant, agent, "activity")
         return _stream_response(request, client, activity_key, "activity", after, "event")
 
@@ -675,7 +683,10 @@ def create_app(*, settings: Settings | None = None, redis_client: Any = None) ->
 
     @app.get("/agents/{agent}/board")
     def agent_board(agent: str) -> dict[str, Any]:
-        return board_response(agent, [client.lrange(key, 0, -1) for key in board_keys(agent)])
+        keys = board_keys(agent)
+        if not is_member(client, pod=settings.pod, tenant=settings.tenant, agent=agent):
+            raise HTTPException(status_code=404, detail="unknown agent")
+        return board_response(agent, [client.lrange(key, 0, -1) for key in keys])
 
     @app.get("/board")
     def all_boards() -> dict[str, list[dict[str, Any]]]:

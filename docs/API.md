@@ -264,12 +264,13 @@ Returns queue depths and presence status (`working`, `idle`, `unknown`) for a sp
 }
 ```
 
-**Error Response (`404 Not Found` for invalid agent segment name):**
+**Error Response (`404 Not Found` for unenrolled or invalid agent name):**
 ```json
 {
-  "detail": "invalid agent"
+  "detail": "unknown agent"
 }
 ```
+*Note on 404 vs 200:* An enrolled agent holding no tasks, mailbox messages, or presence feed returns `200 OK` with empty structures; `404 Not Found` indicates that no agent by that name is enrolled in the tenant roster (or the segment name is invalid).
 
 ---
 
