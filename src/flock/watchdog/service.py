@@ -69,6 +69,7 @@ class Watchdog:
         self.cooldown_seconds = cooldown_seconds
         self.credential_warn_days = credential_warn_days
         self.home_root = Path(home_root)
+        self._reported_blocks: set[tuple[str, str, str]] = set()
 
     def _agents(self) -> list[str]:
         return sorted(
@@ -118,6 +119,31 @@ class Watchdog:
     def _presence(self, agent: str) -> dict[str, str]:
         return _fields(self.r.hgetall(prefix(self.pod, self.tenant, agent, "presence")) or {})
 
+    def _blocked(self, agent: str, now: datetime) -> dict | None:
+        blocked = _fields(self.r.hgetall(prefix(self.pod, self.tenant, agent, "blocked")) or {})
+        since = _timestamp(blocked.get("since"))
+        if since is None:
+            return None
+        return {
+            "since": blocked["since"],
+            "stream_id": blocked.get("stream_id", ""),
+            "unconsumed_s": max(0, int((now - since).total_seconds())),
+        }
+
+    def _check_blocked(self, agents: list[str], now: datetime) -> None:
+        current = set()
+        for agent in agents:
+            blocked = self._blocked(agent, now)
+            if blocked is None:
+                continue
+            identity = (agent, blocked["since"], blocked["stream_id"])
+            current.add(identity)
+            if identity in self._reported_blocks:
+                continue
+            self._alert({"v": 1, "ts": _iso(now), "kind": "blocked", "agent": agent, **blocked})
+        self._reported_blocks.intersection_update(current)
+        self._reported_blocks.update(current)
+
     def _check_stalls(self, agents: list[str], windows: dict[str, int], now: datetime) -> None:
         now_s = now.timestamp()
         for agent in agents:
@@ -166,49 +192,11 @@ class Watchdog:
                 "no_output_s": no_output,
                 "unchecked": unchecked,
             }
+            blocked = self._blocked(agent, now)
+            if blocked is not None:
+                record["blocked"] = blocked
             self._alert(record)
             self.r.set(alerted_key, ticket_id, ex=self.cooldown_seconds)
-
-    def _pane_contains_delivery(self, agent: str) -> bool | None:
-        rc, output, _ = run_tmux(
-            "capture-pane", "-p", "-t", f"{self.session_name}:{agent}", socket=self.socket
-        )
-        if rc:
-            return None
-        return "[message from " in output
-
-    def _check_blocked(self, agents: list[str], now: datetime) -> None:
-        for agent in agents:
-            blocked_key = prefix(self.pod, self.tenant, agent, "blocked")
-            blocked = _fields(self.r.hgetall(blocked_key) or {})
-            unconsumed = self._pane_contains_delivery(agent)
-            if unconsumed is None:
-                continue
-            if not unconsumed:
-                if blocked:
-                    self.r.delete(blocked_key)
-                continue
-            if blocked:
-                continue
-            # A pending marker may still be present, but it is optional context,
-            # never the trigger: the router deletes it after ten seconds and a
-            # watchdog pass must remain correct after that.
-            markers = self.r.xrange(prefix(self.pod, self.tenant, agent, "pending.verify"), min="-", max="+")
-            marker = _fields(markers[-1][1]) if markers else {}
-            since = marker.get("ts") or _iso(now)
-            stream_id = marker.get("stream_id", "")
-            self.r.hset(blocked_key, mapping={"since": since, "stream_id": stream_id})
-            self._alert(
-                {
-                    "v": 1,
-                    "ts": _iso(now),
-                    "kind": "blocked",
-                    "agent": agent,
-                    "since": since,
-                    "stream_id": stream_id,
-                    "unsubmitted": "[message from ",
-                }
-            )
 
     def poll(self, *, now: datetime | None = None) -> None:
         now = (now or datetime.now(timezone.utc)).astimezone(timezone.utc)

@@ -62,6 +62,7 @@ class DeliveryVerifier:
 
         for agent in sorted(agents):
             pending_key = prefix(self.pod, self.tenant, agent, "pending.verify")
+            blocked_key = prefix(self.pod, self.tenant, agent, "blocked")
             pending = self.r.xrange(pending_key, min="-", max="+")
             eligible = []
             for entry_id, raw_fields in pending:
@@ -76,7 +77,17 @@ class DeliveryVerifier:
             input_times = self._input_times(agent)
             for entry_id, marker, marker_time in eligible:
                 verified = any(input_time > marker_time for input_time in input_times)
-                if not verified:
+                if verified:
+                    self.r.delete(blocked_key)
+                else:
+                    if not self.r.hgetall(blocked_key):
+                        self.r.hset(
+                            blocked_key,
+                            mapping={
+                                "since": marker.get("ts", ""),
+                                "stream_id": marker.get("stream_id", ""),
+                            },
+                        )
                     waited = self.verify_after_seconds
                     if float(waited).is_integer():
                         waited = int(waited)

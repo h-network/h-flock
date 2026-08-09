@@ -108,7 +108,7 @@ def test_stall_requires_old_ticket_nonworking_presence_and_silent_window(monkeyp
         "unchecked": [],
     }
     assert json.loads(capsys.readouterr().out) == alert
-    assert captures == ["hq:architect", "hq:sme-2"]
+    assert captures == []
 
     watchdog.poll(now=NOW)
     assert len(r.streams[prefix("acme", "hq", resource="alerts")]) == 1
@@ -124,7 +124,8 @@ def test_printing_window_or_working_presence_suppresses_stall(monkeypatch):
         if args[0] == "list-windows"
         else (0, "", ""),
     )
-    _watchdog(r).poll(now=NOW)
+    watchdog = _watchdog(r)
+    watchdog.poll(now=NOW)
     assert prefix("acme", "hq", resource="alerts") not in r.streams
 
     r.hashes[_key("sme-2", "presence")]["state"] = "working"
@@ -135,7 +136,7 @@ def test_printing_window_or_working_presence_suppresses_stall(monkeypatch):
         if args[0] == "list-windows"
         else (0, "", ""),
     )
-    _watchdog(r).poll(now=NOW)
+    watchdog.poll(now=NOW)
     assert prefix("acme", "hq", resource="alerts") not in r.streams
 
 
@@ -155,40 +156,59 @@ def test_unknown_activity_is_named_as_unchecked(monkeypatch):
     assert alert["unchecked"] == ["activity"]
 
 
-def test_blocked_scrapes_every_tmux_pane_without_delivery_evidence(monkeypatch):
+def test_blocked_alert_reads_router_verdict_without_scraping(monkeypatch):
     r = WatchRedis()
-    captures = []
-
-    def tmux(*args, socket=None):
-        if args[0] == "list-windows":
-            return 0, "architect\t1786284000\nsme-2\t1786284000", ""
-        captures.append(args[-1])
-        pane = "[message from architect] do the work" if args[-1].endswith(":sme-2") else "ready"
-        return 0, pane, ""
-
-    monkeypatch.setattr(service, "run_tmux", tmux)
-    _watchdog(r).poll(now=NOW)
-
-    assert captures == ["hq:architect", "hq:sme-2"]
-    assert r.hashes[_key("sme-2", "blocked")] == {
-        "since": "2026-08-09T14:00:00.000Z",
-        "stream_id": "",
+    r.hashes[_key("sme-2", "blocked")] = {
+        "since": "2026-08-09T13:53:00Z",
+        "stream_id": "delivery-1",
     }
-    alerts = r.streams[prefix("acme", "hq", resource="alerts")]
-    alert = json.loads(alerts[0][1]["alert"])
-    assert alert["kind"] == "blocked"
-    assert alert["unsubmitted"] == "[message from "
-    assert not any("egress" in str(write) for write in r.writes)
-
+    calls = []
     monkeypatch.setattr(
         service,
         "run_tmux",
-        lambda *args, socket=None: (0, "architect\t1786284000\nsme-2\t1786284000", "")
-        if args[0] == "list-windows"
-        else (0, "consumed", ""),
+        lambda *args, socket=None: calls.append(args) or (0, "architect\t1786284000\nsme-2\t1786284000", ""),
+    )
+    watchdog = _watchdog(r)
+    watchdog.poll(now=NOW)
+
+    assert all(call[0] == "list-windows" for call in calls)
+    alerts = r.streams[prefix("acme", "hq", resource="alerts")]
+    alert = json.loads(alerts[0][1]["alert"])
+    assert alert == {
+        "v": 1,
+        "ts": "2026-08-09T14:00:00.000Z",
+        "kind": "blocked",
+        "agent": "sme-2",
+        "since": "2026-08-09T13:53:00Z",
+        "stream_id": "delivery-1",
+        "unconsumed_s": 420,
+    }
+    assert not any("egress" in str(write) for write in r.writes)
+
+    watchdog.poll(now=NOW)
+    assert len(r.streams[prefix("acme", "hq", resource="alerts")]) == 1
+
+
+def test_stall_alert_includes_blocked_verdict(monkeypatch):
+    r = WatchRedis()
+    _stalled_agent(r)
+    r.hashes[_key("sme-2", "blocked")] = {
+        "since": "2026-08-09T13:53:00Z",
+        "stream_id": "delivery-1",
+    }
+    monkeypatch.setattr(
+        service,
+        "run_tmux",
+        lambda *args, socket=None: (0, "architect\t1786283999\nsme-2\t1786283580", ""),
     )
     _watchdog(r).poll(now=NOW)
-    assert _key("sme-2", "blocked") not in r.hashes
+    alert = json.loads(r.streams[prefix("acme", "hq", resource="alerts")][0][1]["alert"])
+    assert alert["kind"] == "stalled"
+    assert alert["blocked"] == {
+        "since": "2026-08-09T13:53:00Z",
+        "stream_id": "delivery-1",
+        "unconsumed_s": 420,
+    }
 
 
 def test_credentials_warn_on_claude_refresh_expiry_and_codex_is_unknown(tmp_path, capsys):

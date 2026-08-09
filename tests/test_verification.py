@@ -12,6 +12,7 @@ class VerifyRedis:
     def __init__(self):
         self.streams = {}
         self.deleted = []
+        self.hashes = {}
 
     def xrange(self, key, min="-", max="+"):
         return list(self.streams.get(key, []))
@@ -20,6 +21,15 @@ class VerifyRedis:
         self.deleted.append((key, entry_id))
         self.streams[key] = [entry for entry in self.streams.get(key, []) if entry[0] != entry_id]
         return 1
+
+    def hgetall(self, key):
+        return self.hashes.get(key, {})
+
+    def hset(self, key, mapping):
+        self.hashes[key] = dict(mapping)
+
+    def delete(self, key):
+        self.hashes.pop(key, None)
 
 
 def _key(resource):
@@ -42,10 +52,12 @@ def test_later_input_verifies_and_drops_marker_without_log(capsys):
     r = VerifyRedis()
     r.streams[_key("pending.verify")] = [_marker("delivered", "2026-08-09T12:00:00Z")]
     r.streams[_key("activity")] = [_activity("input", "2026-08-09T12:00:01Z")]
+    r.hashes[_key("blocked")] = {"since": "old", "stream_id": "old"}
 
     DeliveryVerifier(r, pod="acme", tenant="hq").poll({"sme-2"}, now=NOW)
 
     assert r.streams[_key("pending.verify")] == []
+    assert _key("blocked") not in r.hashes
     assert capsys.readouterr().out == ""
 
 
@@ -68,6 +80,21 @@ def test_missing_later_input_is_not_confirmed_never_reported_lost(capsys):
     assert record["reason"] == "not confirmed by a later input activity event"
     assert "lost" not in json.dumps(record)
     assert r.streams[_key("pending.verify")] == []
+    assert r.hashes[_key("blocked")] == {
+        "since": "2026-08-09T12:00:00Z",
+        "stream_id": "not-confirmed",
+    }
+
+
+def test_first_unverified_delivery_preserves_blocked_since_and_stream_id(capsys):
+    r = VerifyRedis()
+    r.hashes[_key("blocked")] = {"since": "2026-08-09T11:00:00Z", "stream_id": "first"}
+    r.streams[_key("pending.verify")] = [_marker("second", "2026-08-09T12:00:00Z")]
+
+    DeliveryVerifier(r, pod="acme", tenant="hq").poll({"sme-2"}, now=NOW)
+
+    assert r.hashes[_key("blocked")] == {"since": "2026-08-09T11:00:00Z", "stream_id": "first"}
+    capsys.readouterr()
 
 
 def test_marker_younger_than_threshold_remains_pending(capsys):
