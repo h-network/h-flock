@@ -95,3 +95,46 @@ second one.
 
 What you fixed, what you found in files you do not own, what you checked and
 found correct, **and the re-measured §1 table**.
+
+## 7. Closed — the re-measured table
+
+```
+                        unjudged  first-delivery  rebuild  no-retry
+  HLD.md                       2               1        0         0
+  CONTRACTS.md                 1               0        0         0
+  README.md                    0               1        1         0
+  API.md                       0               0        0         2
+  LLD-bus-and-router.md        1               1        0         1
+  LLD-container.md             0               0        4         0
+  LLD-adapter-tmux.md          1               1        0         0
+  LLD-watchdog.md              2               2        0         0
+  LLD-api.md                   2               1        0         0
+  TODO.md                      0               0        1         0
+```
+
+⚠ **The `login-gap` column is gone from the table on purpose.** Counting the
+phrase "login prompt" is useless now that the true statement contains it — the
+files should say a login prompt *is* caught. Searching for the **claim** instead
+(`records input it .* acts on`, `misses a CLI`) returns nothing outside this
+file, [`BUILD-30-FINDINGS`](BUILD-30-FINDINGS.md), and two deliberate retractions
+in `HLD` §8a and `TODO`.
+
+⚠ **A mention count cannot audit a deletion.** Both `README` and `LLD-adapter-tmux`
+scored zero for `login-gap` while still carrying the claim, because it was phrased
+without the words being counted — `README` said it in the watchdog paragraph and I
+missed it in my own first pass. Grep for the assertion, not the topic.
+
+**Deliberate zeros:** `LLD-tmux-host` and `LLD-session` have nothing to do with
+verdicts. `CONTRACTS` at zero for `first-delivery` is correct — it pins keys, and
+the hole is behaviour, described where the rule lives.
+
+## 8. Cross-lane findings, again measured at the branch point
+
+`bus` reported `HLD`, `CONTRACTS`, `TODO`, `LLD-adapter-tmux` and `API.md` as
+still carrying the claim. All were fixed before it looked — the same
+parallel-branch effect recorded in [`AUDIT-05`](AUDIT-05-docs.md) §7. Its own
+files were correct.
+
+⚠ **Two audits running, same surprise.** Worth building into the next one: state
+the base commit each lane measured from, so a stale finding is visible as stale
+rather than argued about.
