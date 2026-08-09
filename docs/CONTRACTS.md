@@ -271,7 +271,7 @@ the whole tenant.
 
 **Measured cost of a delivery: ~500 ms**, split `forwarded` → `received` 274 ms
 (process start, busy tag, `HGET`, `BLPOP`) and `received` → `opened` 226 ms (the
-paste, of which 150 ms is `PASTE_ENTER_DELAY`).
+paste, of which 500 ms is `PASTE_ENTER_DELAY`).
 
 So **process startup is the larger half**, not tmux. `LLD-adapter-tmux` §6
 predicted fork cost would be noise next to paste-and-settle; at these numbers it

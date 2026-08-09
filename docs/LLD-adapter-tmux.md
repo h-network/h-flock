@@ -165,9 +165,16 @@ shift+enter by interactive prompts.
 **Keep a small delay before Enter.** `paste-buffer -p` only emits the markers
 when the application has asked for bracketed paste mode; a CLI that never does
 gets the old behaviour, and the delay is what that case still relies on.
-**0.15s**, from `PASTE_ENTER_DELAY` — the value h-office settled on in the field
-after roughly one delivery in ten was left sitting in an input box. A shell never
-shows the difference; a real TUI does.
+**0.5s**, from `PASTE_ENTER_DELAY`. A shell never shows the difference; a real
+TUI does.
+
+⚠ **It was 0.15s until build 14** — the value h-office settled on in the field
+after roughly one delivery in ten was left sitting in an input box. Raised
+because ours was the outlier by an order of magnitude against measurements
+elsewhere for the same CLIs, and because the failure is silent: the Enter is
+swallowed, the message sits unsubmitted, and the agent looks idle. Half a second
+against a delivery that already takes ~500 ms is a bounded cost; the other side
+is not.
 
 **Newlines inside the brackets are content.** Without them a multi-line message
 submits its first line early and arrives split in two.
