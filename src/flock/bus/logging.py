@@ -52,7 +52,17 @@ def log_record(
     ):
         if value is not None:
             record[field] = value
-    print(json.dumps(record, separators=(",", ":")), flush=True)
+    line = json.dumps(record, separators=(",", ":"))
+    print(line, flush=True)
+    try:
+        path = os.environ.get("FLOCK_LOG_FILE")
+        agent_only = os.environ.get("FLOCK_LOG_FILE_AGENT_ONLY")
+        if path and (not agent_only or os.environ.get("AGENT_NAME")):
+            with open(path, "a", encoding="utf-8") as handle:
+                handle.write(line + "\n")
+    except Exception:
+        # A central observation failing must never turn into a failed command.
+        pass
 
 
 def emit(

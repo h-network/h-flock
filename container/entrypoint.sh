@@ -140,6 +140,11 @@ unset AGENT_CLIS AGENT_PROFILES
 unset AGENTS
 
 # ── tmux host ─────────────────────────────────────────────────────────────────
+# The tmux server inherits this and passes it to every agent window. tmuxhost
+# itself has no AGENT_NAME, so FLOCK_LOG_FILE_AGENT_ONLY keeps its already-
+# central lifecycle records out of the file and prevents duplicates.
+export FLOCK_LOG_FILE=/home/ubuntu/.flock/window.log.jsonl
+export FLOCK_LOG_FILE_AGENT_ONLY=1
 start tmuxhost python3 -m flock.tmuxhost
 
 # Windows lead routes. LLD-bus-and-router §3.2 names the one roster case that is
@@ -158,6 +163,10 @@ for agent in "${agents[@]}"; do
   done
 done
 echo "{\"module\":\"container\",\"event\":\"windows_ready\",\"count\":${#agents[@]}}"
+
+# Only the tmux server and its windows retain these. Processes started below
+# already write directly to container stdout and must not enter the tail file.
+unset FLOCK_LOG_FILE FLOCK_LOG_FILE_AGENT_ONLY
 
 # ── the rest ──────────────────────────────────────────────────────────────────
 start router  env REDIS_URL="${REDIS_URL:-redis://127.0.0.1:6379/0}" python3 -m flock.router

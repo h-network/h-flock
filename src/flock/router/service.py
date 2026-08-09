@@ -9,7 +9,9 @@ import redis
 
 from flock.bus import EnvelopeError, emit, is_member, members, parse, prefix
 from .activity import ActivityTailer
+from .presence import PresenceSampler
 from .verification import DeliveryVerifier
+from .windowlog import WindowLogTailer
 
 
 class Router:
@@ -79,6 +81,8 @@ class Router:
         activity_tailer: ActivityTailer | None = None,
         activity_poll_seconds: float = 2.0,
         delivery_verifier: DeliveryVerifier | None = None,
+        presence_sampler: PresenceSampler | None = None,
+        window_log_tailer: WindowLogTailer | None = None,
     ) -> None:
         next_activity = 0.0
         while True:
@@ -87,8 +91,12 @@ class Router:
                 try:
                     agents = self._agents()
                     activity_tailer.poll(agents)
+                    if presence_sampler is not None:
+                        presence_sampler.poll(agents)
                     if delivery_verifier is not None:
                         delivery_verifier.poll(agents)
+                    if window_log_tailer is not None:
+                        window_log_tailer.poll()
                 except Exception as exc:
                     emit("router", "error", {}, reason=f"activity/verification pass failed: {type(exc).__name__}")
                 next_activity = now + activity_poll_seconds
@@ -129,4 +137,11 @@ def main() -> None:
             tenant=router.tenant,
             verify_after_seconds=float(os.environ.get("VERIFY_AFTER_SECONDS", "10")),
         ),
+        presence_sampler=PresenceSampler(
+            r,
+            pod=router.pod,
+            tenant=router.tenant,
+            working_seconds=float(os.environ.get("PRESENCE_WORKING_SECONDS", "30")),
+        ),
+        window_log_tailer=WindowLogTailer(r, pod=router.pod, tenant=router.tenant),
     )
