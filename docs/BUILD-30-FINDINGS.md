@@ -180,3 +180,69 @@ would have failed even with a perfect setup.
 Case 2 additionally needs to prove *why* no picker appeared — whether claude in a
 fresh profile shows onboarding before trust, or the cwd was trusted by another
 path.
+
+---
+
+# Runs 4–7 — `PASS=13 FAIL=1`, and the race that produced our beliefs
+
+I took the harness over at this point. Three findings, and the first one
+undermines evidence we had been reasoning from.
+
+## 12. Asserting an absence was a race, and it invented a gap
+
+Case 3 asserts that `blocked` is **not** set. It did that by polling the key for
+20 s and calling an empty result a verdict. But an empty key also means *the
+router has not judged yet*, so the assertion passed whenever the pass was slow.
+That is why run 3 and run 4 disagreed with the same proven precondition.
+
+⚠ **The deterministic signal is the marker.** The router drops a `pending.verify`
+entry once it judges, so the verdict exists when the stream empties — with the
+same trap: an empty stream before the adapter writes is not a verdict either.
+`poll_judged` waits for the marker to **appear**, then to **go**. A probe without
+that reported *"judged after 1s"* with nothing delivered.
+
+⚠ **Prefer asserting a presence over an absence.** Every timing bug here lived in
+an absence check.
+
+## 13. The login-prompt gap did not reproduce
+
+With the race gone, `sim-nologin` — precondition proved, login prompt on screen —
+is **caught**: `blocked` is set.
+
+⚠ **`HLD` §8a and `TODO` both say this case is missed.** On this evidence, for
+codex at a login prompt, it is not. The claim needs re-testing for claude before
+either file changes, and **neither has been changed.**
+
+## 14. `blocked` fires on a healthy agent that is still starting
+
+The one remaining failure, and it is the product, not the harness:
+
+```
+  ok    sim-trust started without a trust picker (seeding works)
+  ok    sim-trust marker judged
+  FAIL  sim-trust delivery verified (blocked key empty) : got [since … stream_id …]
+```
+
+A fully trusted, correctly credentialed claude agent, delivered to shortly after
+`StartAgent`, is judged **unverified**. `VERIFY_AFTER_SECONDS` is 10 and a cold
+claude does not record an input event that fast, so the verdict lands before the
+CLI is ready.
+
+⚠ **This is a false positive on the one state clients are told to act on.** Over
+the api a user hiring an agent and messaging it immediately is told *"not
+accepting messages"* for a healthy agent — and after build 30's decision there is
+no retry behind it. Whether the paste itself survives a cold start is a separate
+question this run does not answer.
+
+## 15. Where the simulator ended up
+
+| case | how it is simulated | result |
+|---|---|---|
+| wedged CLI | pane respawned with a non-consuming process, `launch` left as claude | `blocked` set ✓ |
+| trust seeding | a normal profiled agent, asserted to show no picker | delivery **unverified** ✗ §14 |
+| login prompt | codex in a credential-free profile, prompt proved on screen | `blocked` set — gap not reproduced §13 |
+
+⚠ **SIGSTOP cannot wedge a tmux pane process here.** A plain `sleep` from a shell
+reaches state `T`; the same `sleep` as a tmux pane never does, and the
+process-group form fares no better. Three runs of case 1 silently simulated
+nothing on top of that.
