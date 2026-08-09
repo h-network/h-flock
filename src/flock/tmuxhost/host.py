@@ -42,8 +42,19 @@ class TmuxHost:
             return None
         return raw_prof.decode() if isinstance(raw_prof, bytes) else raw_prof
 
+    def get_lead(self, r: redis.Redis) -> str | None:
+        lead_key = prefix(self.pod, self.tenant, resource="lead")
+        raw_lead = r.get(lead_key)
+        if not raw_lead:
+            return None
+        return raw_lead.decode() if isinstance(raw_lead, bytes) else str(raw_lead)
+
     def ensure_server_and_session(
-        self, initial_window: str = "__init__", cli: str | None = None, profile: str | None = None
+        self,
+        initial_window: str = "__init__",
+        cli: str | None = None,
+        profile: str | None = None,
+        lead: str | None = None,
     ) -> None:
         ret, stdout, stderr = tmux_ops.run_tmux("has-session", "-t", self.session_name, socket=self.socket)
         if ret != 0:
@@ -59,7 +70,7 @@ class TmuxHost:
                 cmd.extend(["-c", cwd])
 
             if initial_window != "__init__":
-                write_agent_guide(cwd, initial_window, self.tenant)
+                write_agent_guide(cwd, initial_window, self.tenant, lead=lead)
                 cmd_args = ["startAgent", cli] if cli else ["bash", "-il"]
                 cmd.extend(window_env(initial_window, tenant=self.tenant, cwd=cwd, profile=profile) + cmd_args)
 
@@ -78,10 +89,17 @@ class TmuxHost:
         return tmux_ops.list_windows(self.session_name, socket=self.socket)
 
     def create_window(
-        self, agent_name: str, cli: str | None = None, profile: str | None = None, cwd: str | None = None
+        self,
+        agent_name: str,
+        cli: str | None = None,
+        profile: str | None = None,
+        cwd: str | None = None,
+        lead: str | None = None,
     ) -> bool:
         cwd = cwd or f"/workdir/{agent_name}"
         env_args = window_env(agent_name, tenant=self.tenant, cwd=cwd, profile=profile)
+
+        write_agent_guide(cwd, agent_name, self.tenant, lead=lead)
 
         if cli:
             command = env_args + ["startAgent", cli]
@@ -113,11 +131,12 @@ class TmuxHost:
             a for a in all_members
             if vab(r, pod=self.pod, tenant=self.tenant, agent=a) == "tmux"
         }
+        lead = self.get_lead(r)
         first_agent = sorted(list(roster_agents))[0] if roster_agents else "__init__"
         first_cli = self.get_agent_cli(r, first_agent) if first_agent != "__init__" else None
         first_profile = self.get_agent_profile(r, first_agent) if first_agent != "__init__" else None
 
-        self.ensure_server_and_session(initial_window=first_agent, cli=first_cli, profile=first_profile)
+        self.ensure_server_and_session(initial_window=first_agent, cli=first_cli, profile=first_profile, lead=lead)
 
         existing_windows = self.get_windows()
 
@@ -126,7 +145,7 @@ class TmuxHost:
             if agent not in existing_windows:
                 cli = self.get_agent_cli(r, agent)
                 profile = self.get_agent_profile(r, agent)
-                self.create_window(agent, cli=cli, profile=profile)
+                self.create_window(agent, cli=cli, profile=profile, lead=lead)
 
         # Re-fetch after creations to decide cleanup
         existing_windows = self.get_windows()

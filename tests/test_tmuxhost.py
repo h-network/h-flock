@@ -127,7 +127,6 @@ def test_generate_agents_md():
     assert "$TENANT" in content
     assert "$OFFICE_TOOLS" in content
     assert "office peers" in content
-    assert "This office has a lead — `office peers` shows who" in content
     assert "[message from <name>] …" in content
     assert "office send" in content
     assert "You have a task board." in content
@@ -135,6 +134,13 @@ def test_generate_agents_md():
     assert "office take" in content
     assert "office done" in content
     assert "Take a ticket *before* you start work" in content
+    assert "lead of this office" not in content
+
+    lead_content = generate_agents_md("zeus", "hq", lead="zeus")
+    assert "You are the lead of this office. The other agents follow your direction, and yours is the account that decides when something is done." in lead_content
+
+    peer_content = generate_agents_md("dave", "hq", lead="zeus")
+    assert "zeus is the lead of this office. Their direction is the office's direction." in peer_content
 
 
 def test_write_agent_guide_creates_both_files_and_trusts_claude():
