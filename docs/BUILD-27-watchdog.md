@@ -128,77 +128,23 @@ within hours and refreshes silently; alerting on it fires constantly and
 correctly, which is the cry-wolf failure again. Warn at
 `WATCHDOG_CREDENTIAL_WARN_DAYS` (default 7) before the *refresh* token expires.
 
-## 7. `blocked` — the one thing the screen is read for
+## 7. `blocked` — superseded by build 28
 
-**`blocked` means: we delivered, and it was not consumed.** One condition.
+⚠ **This section proposed finding `blocked` by scraping a pane, and it does not
+work.** Measured on the lab tenant: a consumed message stays visible in the
+transcript, so a whole-screen match for `[message from ` marks a *healthy* agent
+blocked. Separating transcript from input box needs to know where a CLI renders
+its input region — the render knowledge the whole design refuses.
 
-```
-  <prefix>:agent:<name>:blocked    watchdog only    { since, stream_id }
-```
+Bottom-N lines separates the common case and fails on a wrapped message whose
+prefix scrolls above the window. Cursor-row-only fails the same way.
 
-⚠ **Do not match failures. Check the expectation.** Matching means enumerating —
-trust dialog, login prompt, feedback survey, model picker, approval prompt, and
-whatever the next release adds, per CLI, per version. That is the swamp we
-refused to build. Checking that what we expected actually happened is one rule
-that never grows.
+→ [`BUILD-28-blocked.md`](BUILD-28-blocked.md) does it with no screen at all: the
+router already judges every delivery and throws the verdict away. Retaining it
+*is* "we delivered and it was not consumed".
 
-The expectation is already ours: after a delivery there should be an `input`
-event, and our `[message from …]` should **not** still be sitting in the pane.
-
-⚠ **Look only for a string we wrote.** `[message from ` and nothing else. Never a
-prompt, a footer, a spinner or a dialog title. If this ever needs to know what a
-CLI renders, it has become the thing we refused to build.
-
-⚠ **This covers every failure at once** — trust dialog, login, survey, modal,
-wedged process — because in all of them our own text sits unconsumed, and we
-never need to know which.
-
-⚠ **Only learnable after sending**, so an agent broken before anyone messages it
-reads `idle`. That is correct rather than a gap: the harm exists only when work
-is being sent, and that is when we find out.
-
-### Why it is not a presence state
-
-Presence is written by the router from files, every couple of seconds. `blocked`
-is written by the watchdog from a screen. **One writer per key** — two writers on
-one key has silently overwritten things twice already (the window environment,
-and the guide's lead sentence). `office status` and the api merge them and report
-`blocked` when set, because it is the more consequential fact.
-
-⚠ **It clears only when a later delivery is consumed**, never on a timer. A stale
-`blocked` holds work, which is safe. A stale `working` sends work into a hole,
-which is not.
-
-## 7b. Where it is used
-
-⚠ **Not in the delivery path.** The adapter does not check it and must not — that
-is invariant 7, and it would put a screen-derived value in front of every
-message.
-
-It is for the **lead's routing decision**: `office status` reports it, and the
-lead's guide says an agent that is `blocked` will not receive work, so hold it
-and say so rather than trying to fix the agent.
-
-### The trigger: every tmux agent, every pass
-
-⚠ **There is no delivery-evidence trigger, and there must not be one.** An earlier
-draft said "a delivery happened and no `input` followed". The only Redis record of
-that is `pending.verify`, which the router judges and deletes after
-`VERIFY_AFTER_SECONDS` (10) while the watchdog wakes every `WATCHDOG_INTERVAL`
-(30) — so the evidence appears and vanishes between passes and would be missed
-almost every time. Do not chase it, and **do not change the router to retain it**.
-
-So: **look at every tmux agent, every pass.** A `capture-pane` is around ten
-milliseconds and an office is a handful of windows; frequency was never the cost.
-
-⚠ **The rule was always about *what* is looked for, not *how often*.** One string
-we wrote ourselves, `[message from `. That is what keeps this from becoming
-per-CLI, and it holds whether it runs once an hour or twice a minute.
-
-⚠ **Scraping only on a stall would miss the case that matters most.** An agent
-blocked with no open ticket produces no stall, so it would read `idle` — and the
-lead, checking status before assigning, would hand work to a window that cannot
-take it. That is precisely the accident `blocked` exists to prevent.
+**Do not build the scrape.** If build 28 fails on its own terms we will come back
+knowing exactly why, which is worth more than guessing now.
 
 ## 8. Settings
 
