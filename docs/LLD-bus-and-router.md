@@ -345,6 +345,8 @@ The router sits on the opposite end of both.
 | `<prefix>:inbox` | STREAM | the `api` delivery routine | app clients, by cursor |
 | `<prefix>:activity` | STREAM | the router's session tailer | api reads and presence/verification sampling |
 | `<prefix>:pending.verify` | STREAM | the tmux delivery opener | the router's verifier |
+| `<prefix>:blocked` | HASH | the router's verifier | office and watchdog reads |
+| tenant `<prefix>:alerts` | STREAM | the watchdog | api polling and SSE, by cursor |
 
 Envelope transport uses lists, not pub/sub, so a backlog survives a consumer
 restart. The mailbox is retained, not consumed: `XRANGE` and `XREAD` let polling
@@ -372,9 +374,18 @@ second daemon and none of these jobs sits in an envelope's data path. Every
 3. **Judge delivery evidence.** A terminal delivery appends a marker to
    `<prefix>:pending.verify`. Once it is at least `VERIFY_AFTER_SECONDS` old
    (default 10), a later `input` activity event confirms it. Otherwise the
-   router logs `delivery_unverified`, then deletes the marker. This means **not
-   confirmed**, not lost: a busy agent may not begin a new turn. The observer
-   never retries, re-pastes, or dead-letters the envelope.
+   router logs `delivery_unverified` and retains that first verdict in
+   `<prefix>:blocked` as `{since, stream_id}`. A later verified delivery deletes
+   the hash; another unverified delivery does not reset `since`. Either way the
+   pending marker is deleted after judgment.
+
+   ⚠ **`blocked` means an unverified delivery and no verified delivery since.**
+   It does not mean the CLI is stuck. It catches a trust picker or stopped
+   process that records no later input, but misses a login prompt or modal
+   picker when the CLI records input it never acts on. `agy` and bare shells
+   produce no verifiable activity, so their deliveries are never marked and
+   they cannot acquire this state. The verifier never retries, re-pastes, or
+   dead-letters the envelope.
 4. **Carry window logs to stdout.** Agent-side `office` records are written to
    `/home/ubuntu/.flock/window.log.jsonl`; the router tails complete lines from
    a tenant byte offset so `sent` joins the central envelope log. If the spool
@@ -388,6 +399,20 @@ second daemon and none of these jobs sits in an envelope's data path. Every
 An exception in this pass is logged and the forwarding loop continues. That is
 also the boundary on its authority: observation may look and may only report;
 it does not change delivery decisions.
+
+### 3.5 The watchdog boundary
+
+`flock.watchdog` is a separate tenant process, not another router pass. It reads
+the router's `presence` and `blocked` state, board state, tmux window-activity
+metadata and credential files, then appends factual records to the tenant
+`<prefix>:alerts` Stream. It sends **no envelope**: alerts are for a human through
+the api's polling and SSE routes, never for the lead or another agent. Keeping
+it out of this loop means a slow external observation cannot stall forwarding.
+
+This is the bus-facing boundary, not the watchdog's complete design. Its
+three-signal stall rule, credential/account walk, cooldowns, alert shapes and
+failure policy belong to a dedicated watchdog LLD; they are independent of the
+addressing and custody decisions this document owns.
 
 **Having written an ingress queue, the router kicks delivery for that
 participant.**
@@ -629,7 +654,7 @@ reading the payload — §6.4 holds.
    observation records use Streams where cursors or later judgment require
    them; they are not envelope queues.
 7. **Nothing in the data path reads a terminal.** Delivery never branches on
-   terminal rendering. Observation may inspect session files and may only
+   terminal rendering. Observation may inspect session files or tmux metadata and may only
    report, on its own schedule; it never changes the path an envelope travels.
 8. **The router knows nothing about how a participant is implemented.** It reads
    the roster's *fields*, never its *values*, so it cannot know a participant's

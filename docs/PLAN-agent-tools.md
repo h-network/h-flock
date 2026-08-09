@@ -26,6 +26,7 @@ envelope protocol.
 | `office send -a <agent> <text>…` | message one agent | `Message` |
 | `office broadcast <text>…` | message every terminal peer | N × `Message` |
 | `office peers` | list peer agents | roster read |
+| `office status [<agent>]` | show tmux-agent presence, open work and last activity | roster, presence, blocked and board reads |
 | `office hire <name> [--cli <cli>]` | enrol and start an agent | `StartAgent` to `host` |
 | `office letGo <name>` | retire an agent and clear lifecycle state | `StopAgent` to `host` |
 | `office pause <name>` | stop the CLI without retiring the agent | `PauseAgent` to `host` |
@@ -61,6 +62,19 @@ a conversational broadcast means.
 so it is read from the roster rather than copied into a window. It reads the
 tenant's `<prefix>:lead` marker and labels that roster member rather than
 assuming the lexically first name is in charge. `AGENT_PEERS` does not exist.
+
+`office status` is the matching live-state view for work assignment. With no
+argument it lists every tmux participant, including the caller; with a name it
+prints one or errors if that name is not a tmux agent. Each row combines current
+presence, the one `doing` ticket and its age, and last activity. An unknown feed
+is reported as unknown rather than idle. If the router's `<prefix>:blocked` hash
+exists, `blocked` replaces the displayed presence state.
+
+⚠ **That word is deliberately narrow.** It means a delivery was judged
+unverified and nothing has been verified since, not that the agent is known to
+be stuck. A CLI can record input without acting on it at a login prompt or modal
+picker; that delivery verifies and the state remains clear. `office status` is
+a read only: it never creates, clears or repairs any of these signals.
 
 Named app clients are roster participants with VAB `api`, but they are not
 terminal peers: they have a retained mailbox and no window, home or CLI. The VAB
@@ -135,6 +149,12 @@ peer list that could go stale.
 The two files are deliberately duplicated. An `@AGENTS.md` include in
 `CLAUDE.md` creates a per-project approval gate in Claude Code; duplicating a
 small guide is cheaper than leaving a headless agent at that prompt.
+
+Only the lead's guide adds the assignment rule: check `office status`, hold work
+from a `blocked` agent, and do not try to fix it. This is a pull by the lead, not
+a watchdog message. Watchdog alerts go to a human through the alerts API and
+never arrive as an envelope to any agent; messaging the lead would invite an
+automated repair and could erase the silence that made a stall visible.
 
 Claude Code's trust state is per working directory, so it cannot be baked into
 the image for dynamically hired agents. Window creation writes
