@@ -20,6 +20,8 @@ h-office's answer, and the sentence worth keeping:
 So: **profiles are a level above agents.** Many agents → one profile. `default`
 is free.
 
+⚠ **Do not duplicate `.credentials.json` across private per-agent copies.** Anthropic OAuth enforces **Refresh Token Rotation (RTR)**: every token refresh yields a new access token and single-use refresh token while invalidating the old one (measured in `BUILD-32-FINDINGS.md`). If multiple agents duplicate credentials into separate directories, the first agent to refresh invalidates all other copies within 1 hour. All agents sharing an account **must share the single profile config directory** (`CLAUDE_CONFIG_DIR=~/.claude-<profile>`).
+
 ⚠ **A profile is an account — an email — not a framework.** Which CLI an agent
 runs is a separate axis: an agent has both, and they vary independently. Do not
 collapse `AGENT_PROFILES` and the CLI choice into one declaration just because

@@ -151,6 +151,9 @@ with `AGENT_GUIDE=/workdir/<agent>/AGENTS.md` and `OFFICE_TOOLS=office` in the e
 and pre-approves project trust across all three CLIs in a **profile-aware** manner (`.claude-<profile>.json`, `.codex-<profile>/config.toml`, `.gemini/.../settings.json`). Blind to profiles, a profiled agent sits at a workspace trust prompt while presence reads `idle`.
 When a CLI is configured, window creation routes through `startAgent <cli>` so permission and auto-approval flags apply.
 
+⚠ **OAuth Refresh Token Rotation (RTR) & Profile Credential Sharing (Build 32):**
+Anthropic OAuth enforces Refresh Token Rotation (RTR): every token refresh yields a new access token and a new single-use refresh token, while invalidating the old refresh token (`BUILD-32-FINDINGS.md`). Duplicating `.credentials.json` into multiple per-agent config directories is structurally broken, as the first agent to refresh invalidates all other copies within 1 hour. Therefore, agents assigned to the same account profile share the single profile config directory (`CLAUDE_CONFIG_DIR=~/.claude-<profile>`). Distinct profiles maintain separate directories with their own independent OAuth logins.
+
 ## 6. Lifecycle
 
 tmux restarts nothing. A window whose process exits stays dead; a server that
