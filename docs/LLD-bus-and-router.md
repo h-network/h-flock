@@ -406,9 +406,10 @@ second daemon and none of these jobs sits in an envelope's data path. Every
    `since`. Either way the pending marker is deleted after judgment.
 
    ⚠ **`blocked` means an unverified delivery and no verified delivery since.**
-   It does not mean the CLI is stuck. It catches a trust picker or stopped
-   process that records no later input, but misses a login prompt or modal
-   picker when the CLI records input it never acts on. `agy` and bare shells
+   It does not mean the CLI is stuck. Credential-free Claude and Codex were both
+   measured at their login prompts, with prior activity making them judgeable;
+   both deliveries were unverified and set `blocked`. By contrast, an agent
+   with no activity history receives no verdict at all. `agy` and bare shells
    produce no verifiable activity, so their deliveries are never marked and
    they cannot acquire this state.
 
@@ -417,13 +418,6 @@ second daemon and none of these jobs sits in an envelope's data path. Every
    observed"; it cannot distinguish an unsubmitted paste from text that landed
    in a stopped process, picker or slow CLI. A retry cannot help while the block
    remains, and after a human clears it both copies may be consumed.
-
-   ⚠ **This does not rest on a measurement.** An earlier draft cited "the
-   measured wedged-process and trust-picker cases"; those cases were never
-   measured — the simulator that was to produce them fails against a live tenant
-   ([`BUILD-30-FINDINGS`](BUILD-30-FINDINGS.md)), and its wedged case stopped the
-   pane's shell rather than the CLI. The argument stands on the verifier's own
-   limits and needs no run behind it. Do not re-add the claim.
 
    The choice is therefore possible loss over possible duplication: preserve
    at-most-once delivery, retain `<prefix>:blocked`, emit the watchdog alert and

@@ -72,9 +72,9 @@ exists, `blocked` replaces the displayed presence state.
 
 ⚠ **That word is deliberately narrow.** It means a delivery was judged
 unverified and nothing has been verified since, not that the agent is known to
-be stuck. A CLI can record input without acting on it at a login prompt or modal
-picker; that delivery verifies and the state remains clear. `office status` is
-a read only: it never creates, clears or repairs any of these signals.
+be stuck. A new agent with no activity history is `unknown`; its first delivery
+is unjudged and cannot set `blocked`. `office status` is a read only: it never
+creates, clears or repairs any of these signals.
 
 Named app clients are roster participants with VAB `api`, but they are not
 terminal peers: they have a retained mailbox and no window, home or CLI. The VAB
