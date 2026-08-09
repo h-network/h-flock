@@ -2,6 +2,25 @@
 
 Things decided-but-not-done, so they live somewhere other than a chat log.
 
+## Open right now
+
+| | |
+|---|---|
+| **a CLI records input it does not act on** | login prompts and modal pickers. Verify passes them, `blocked` misses them. The only thing a screen scraper would ever be for |
+| **seeded credentials go stale in place** | a CLI refreshes its own token; a copy we hand it does not. Bit us live at 15:30 |
+| **retry on `delivery_unverified`** | a decision, now with numbers behind it |
+| **a live terminal view** | wanted, and `:8081` already streams it — the client half is missing |
+| **`clients/` needs its own repo** | consumers sitting inside the framework for want of a remote |
+| **profile logins** | one interactive login per account. Not buildable — a person has to do it |
+| **security, parked deliberately** | TLS, CORS, per-client tokens, Redis ACLs |
+
+⚠ **This index has been wrong four times in one day.** Each time a build closed
+an item and nobody told this file — the correction arrived in a later audit
+rather than with the work. **A build that closes an item marks it in the same
+commit.** Do not leave it for a sweep.
+
+## Everything below is closed
+
 ⚠ **A struck-through or `SHIPPED` heading is a record of the time it was
 written**, kept because the reasoning is why the fix went the way it did. Those
 sections name commands that no longer exist — `sendMessage`, `sendBroadcast`,
@@ -137,11 +156,8 @@ still there. Costs one extra Enter that an empty prompt ignores.
 ## ~~An unknown agent reads as "exists, idle"~~ — SHIPPED in build 25
 
 `404` for a name not in the roster, `200` for an enrolled agent holding nothing,
-and `all` exempt because it is the broadcast address rather than a member.
-
-The original entry:
-
-## An unknown agent reads as "exists, idle"
+and `all` exempt because it is the broadcast address rather than a member. The
+reasoning below is why it sat open as long as it did.
 
 `GET /agents/<name>` returns **`200` with zero depths** for a name that is not
 enrolled, and `404` only when the name breaks the segment rule. So a client
