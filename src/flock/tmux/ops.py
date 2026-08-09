@@ -11,6 +11,7 @@ from typing import Set
 # still relies on. 0.5 is the margin decision across CLIs (Claude Code Ink,
 # codex, agy) to ensure Enter keystrokes are never swallowed into input boxes.
 ENTER_DELAY = float(os.environ.get("PASTE_ENTER_DELAY", "0.5"))
+OFFICE_TOOLS_ENV = "OFFICE_TOOLS=office"
 
 
 class AmbientTmuxError(RuntimeError):
@@ -174,6 +175,30 @@ def ensure_agy_project_trusted(cwd: str) -> None:
         pass
 
 
+def window_env(
+    agent_name: str,
+    *,
+    tenant: str = "default",
+    cwd: str | None = None,
+    profile: str | None = None,
+) -> list[str]:
+    """Single place where a window environment is constructed for all execution paths."""
+    cwd = cwd or f"/workdir/{agent_name}"
+    guide_path = f"{cwd}/AGENTS.md"
+    env_vars = [
+        "env",
+        f"AGENT_NAME={agent_name}",
+        OFFICE_TOOLS_ENV,
+        f"AGENT_GUIDE={guide_path}",
+    ]
+    if profile:
+        env_vars.extend([
+            f"CLAUDE_CONFIG_DIR=/home/ubuntu/.claude-{profile}",
+            f"CODEX_HOME=/home/ubuntu/.codex-{profile}",
+        ])
+    return env_vars
+
+
 def write_agent_guide(cwd: str, agent_name: str, tenant: str = "default") -> None:
     try:
         os.makedirs(cwd, exist_ok=True)
@@ -209,7 +234,7 @@ def create_window(
     write_agent_guide(cwd, agent_name)
 
     if not command:
-        command = ["env", f"AGENT_NAME={agent_name}", "bash", "-il"]
+        command = window_env(agent_name, cwd=cwd) + ["bash", "-il"]
 
     args = ["new-window", "-t", f"{session_name}:", "-n", agent_name, "-c", cwd]
     args.extend(command)

@@ -27,6 +27,10 @@ class RecordingRedis:
         self.events.append(("hget", key, field))
         return self.roster_vab
 
+    def get(self, key):
+        self.events.append(("get", key))
+        return None
+
     def delete(self, *keys):
         self.events.append(("delete", *keys))
 
@@ -202,7 +206,14 @@ def test_resume_agent_deletes_marker_then_resumes_without_touching_roster():
                 "create",
                 "hq",
                 "dave",
-                ["env", "AGENT_NAME=dave", "startAgent", "claude"],
+                [
+                    "env",
+                    "AGENT_NAME=dave",
+                    "OFFICE_TOOLS=office",
+                    "AGENT_GUIDE=/workdir/dave/AGENTS.md",
+                    "startAgent",
+                    "claude",
+                ],
                 "/tmp/tmux.sock",
             ),
         ),
@@ -224,6 +235,7 @@ def test_resume_agent_deletes_marker_then_resumes_without_touching_roster():
 )
 def test_deliver_one_dispatches_control_kinds(monkeypatch, kind, expected_tmux):
     events = []
+    from flock.tmux.ops import window_env
     fake_tmux = types.ModuleType("flock.tmux")
     fake_tmux.create_window = lambda session, agent, command=None, socket=None: (
         events.append(("create", session, agent, command, socket)) or (0, "", "")
@@ -234,6 +246,7 @@ def test_deliver_one_dispatches_control_kinds(monkeypatch, kind, expected_tmux):
     fake_tmux.run_tmux = lambda *args, socket=None, **kwargs: (
         events.append(("keys", *args, socket)) or (0, "", "")
     )
+    fake_tmux.window_env = window_env
     monkeypatch.setitem(sys.modules, "flock.tmux", fake_tmux)
 
     def fake_receive(r, **kwargs):
@@ -253,10 +266,12 @@ def test_deliver_one_dispatches_control_kinds(monkeypatch, kind, expected_tmux):
 
 def test_tmux_failure_raises_after_desired_state_is_written(monkeypatch):
     events = []
+    from flock.tmux.ops import window_env
     fake_tmux = types.ModuleType("flock.tmux")
     fake_tmux.create_window = lambda *args, **kwargs: (1, "", "no server")
     fake_tmux.kill_window = lambda *args, **kwargs: (0, "", "")
     fake_tmux.run_tmux = lambda *args, **kwargs: (0, "", "")
+    fake_tmux.window_env = window_env
     monkeypatch.setitem(sys.modules, "flock.tmux", fake_tmux)
 
     def fake_receive(r, **kwargs):
@@ -274,4 +289,44 @@ def test_tmux_failure_raises_after_desired_state_is_written(monkeypatch):
     assert events == [
         ("hset", prefix("acme", "hq", resource="roster"), "dave", "tmux"),
         ("set", prefix("acme", "hq", "dave", "launch"), "claude"),
+        ("get", prefix("acme", "hq", "dave", "profile")),
     ]
+
+
+def test_deliver_one_hired_agent_with_profile(monkeypatch):
+    events = []
+    from flock.tmux.ops import window_env
+    fake_tmux = types.ModuleType("flock.tmux")
+    fake_tmux.create_window = lambda session, agent, command=None, socket=None: (
+        events.append(("create", session, agent, command, socket)) or (0, "", "")
+    )
+    fake_tmux.kill_window = lambda session, agent, socket=None: (0, "", "")
+    fake_tmux.run_tmux = lambda *args, socket=None, **kwargs: (0, "", "")
+    fake_tmux.window_env = window_env
+    monkeypatch.setitem(sys.modules, "flock.tmux", fake_tmux)
+
+    class ProfileRedis(RecordingRedis):
+        def get(self, key):
+            if "profile" in key:
+                return b"work"
+            return None
+
+    def fake_receive(r, **kwargs):
+        kwargs["openers"]["StartAgent"]({"payload": {"agent": "iris", "cli": "claude"}})
+
+    monkeypatch.setattr(runner, "receive", fake_receive)
+    deliver_one(
+        ProfileRedis(events),
+        pod="acme",
+        tenant="hq",
+        agent="host",
+        session_name="hq",
+        socket="/tmp/tmux.sock",
+    )
+    create_event = [e for e in events if e[0] == "create"][0]
+    cmd = create_event[3]
+    assert "CLAUDE_CONFIG_DIR=/home/ubuntu/.claude-work" in cmd
+    assert "CODEX_HOME=/home/ubuntu/.codex-work" in cmd
+    assert "OFFICE_TOOLS=office" in cmd
+    assert "AGENT_GUIDE=/workdir/iris/AGENTS.md" in cmd
+
