@@ -7,7 +7,7 @@
 [![One tenant per container](https://img.shields.io/badge/one_tenant-per_container-06B6D4?style=for-the-badge)](#-quick-start)
 ![Bus](https://img.shields.io/badge/bus-Redis_lists-DC382D?style=for-the-badge&logo=redis&logoColor=white)
 [![Apps](https://img.shields.io/badge/apps-REST_%2B_SSE-0EA5E9?style=for-the-badge)](docs/API.md)
-![License](https://img.shields.io/badge/license-internal-64748b?style=for-the-badge)
+[![License](https://img.shields.io/badge/license-MIT-22C55E?style=for-the-badge)](LICENSE)
 
 ![Python](https://img.shields.io/badge/Python-3.12-3776AB?style=flat-square&logo=python&logoColor=white)
 ![Docker](https://img.shields.io/badge/Docker-single_image-2496ED?style=flat-square&logo=docker&logoColor=white)
