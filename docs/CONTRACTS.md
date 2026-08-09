@@ -1,5 +1,8 @@
 # Contracts
 
+> System-level view is [`HLD.md`](HLD.md) — read that first if you are new.
+> This file is the narrower thing: what more than one module depends on.
+
 > **Cross-module agreements.** Everything here is depended on by more than one
 > lane, which is the only reason it is centralised. Anything one module can
 > decide alone belongs in that module's LLD, not here.

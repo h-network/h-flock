@@ -23,7 +23,7 @@ directory and one command — `office` — for everything it can do. Everything 
 is a switch: envelopes are forwarded by name, and nothing in the middle reads a
 payload.
 
-[Quick start](#-quick-start) · [How it works](#️-how-it-works) · [What an agent sees](#-what-an-agent-sees) · [Build an app](#-build-an-app) · [API reference](docs/API.md)
+[Quick start](#-quick-start) · [How it works](#️-how-it-works) · [What an agent sees](#-what-an-agent-sees) · [Build an app](#-build-an-app) · [Architecture](docs/HLD.md) · [API reference](docs/API.md)
 
 </div>
 
@@ -278,6 +278,7 @@ went the way it did rather than only what it was.
 
 | | |
 |---|---|
+| [`HLD.md`](docs/HLD.md) | **start here** — how the pieces fit, and the invariants |
 | [`API.md`](docs/API.md) | **for app developers** — the whole HTTP surface, no repo needed |
 | [`LLD-bus-and-router.md`](docs/LLD-bus-and-router.md) | addressing, the envelope, the two doors, the invariants |
 | [`LLD-adapter-tmux.md`](docs/LLD-adapter-tmux.md) | how text actually gets into a terminal, and why each rule is load-bearing |

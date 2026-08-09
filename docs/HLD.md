@@ -1,0 +1,190 @@
+# h-flock — High Level Design
+
+> How the pieces fit. The five LLDs each describe one module in depth and
+> [`CONTRACTS.md`](CONTRACTS.md) pins what more than one of them depends on —
+> this is the layer in between, which nothing else covered.
+>
+> Read this before an LLD. Read `CONTRACTS` before changing one.
+
+---
+
+## 1. The one idea
+
+**h-flock is a switch.** Producers emit envelopes; a router forwards them by
+`recipient` and never opens one. Everything else follows from that, and the L2
+analogy is load-bearing rather than decorative:
+
+| L2 switch | h-flock |
+|---|---|
+| destination MAC | `recipient` — the only thing forwarding depends on |
+| source MAC | `producer` — derived from the queue it was popped from, never from content |
+| MAC table | the **roster** — `name → VAB` |
+| port config | the **VAB** — a property of the port, not of the frame |
+| ethertype | `kind` — the router ignores it; an opener at the far edge reads it |
+| L3 and above | `payload` — invisible to everything in the middle |
+
+A switch never learns what is plugged into a port. That ignorance is the whole
+design: **adding a kind of participant is writing one delivery routine** — not
+changing the router, the bus, or any command. It is why an app became a
+first-class participant in one build rather than a subsystem.
+
+## 2. Participants
+
+Everything addressable is a name in the roster. What is *behind* the name is its
+**VAB** — the virtual agent base it runs on:
+
+| VAB | is | gets an envelope by |
+|---|---|---|
+| `tmux` | an AI CLI in a terminal window | having it pasted into the window |
+| `api` | an app — web, phone, Telegram bot | having it stored in a mailbox it reads |
+| `control` | the tenant's own lifecycle endpoint (`host`) | acting on it |
+
+⚠ **The router cannot see this column.** It reads roster *fields*, never values
+(invariant 8) — so it forwards to a name and something at the far edge decides
+what that means. This is structural rather than a convention: the router has no
+code path that could dispatch on VAB even if someone wanted it to.
+
+## 3. The parts
+
+```
+   agent window          agent window              app (web / phone / bot)
+        │  office send        ▲                          ▲   GET /messages
+        ▼                     │ paste                    │        │ POST
+   ┌─────────┐                │                     ┌────┴────────▼───┐
+   │ egress  │            ┌───┴────┐                │   api  :8080    │
+   └────┬────┘            │adapter │                └────┬────────────┘
+        │                 └───▲────┘                     │
+        ▼                     │ kick                     ▼
+   ╔═════════════════════════════════════════════════════════════════╗
+   ║  ROUTER — pops every egress, resolves the name, writes ingress  ║
+   ╚═════════════════════════════════════════════════════════════════╝
+                              │
+                       ┌──────┴───────┐
+                  ingress          mailbox            board
+                  (a queue)        (a stream)         (four lists)
+```
+
+| module | what it is | notes |
+|---|---|---|
+| `flock.bus` | library — keys, envelopes, `send`/`receive`, roster reads | shared |
+| `flock.tmux` | library — windows, and the paste sequence | shared |
+| `flock.router` | **the one daemon** | blocks on every egress |
+| `flock.adapter` | invoked per delivery, dispatches on VAB, exits | not a daemon |
+| `flock.control` | `StartAgent` / `StopAgent` / pause / resume openers | reached only via the bus |
+| `flock.tmuxhost` | the tmux server, session, windows | |
+| `flock.office` | the one agent-facing command | imports `flock.bus` only |
+| `flock.api` | REST — `:8080` | |
+| `flock.session` | WebSocket terminals — `:8081` | |
+
+`flock.bus` and `flock.tmux` are the only shared libraries. Nothing else imports
+anything else, which is what lets a lane own a module outright.
+
+## 4. Why adapters are kicked, not running
+
+**The router blocks on egress queues; nothing blocks on an ingress queue.**
+Agents produce whenever they like, so something must wait on their output. But
+the router *writes* ingress — it already knows an envelope arrived, so waiting on
+it would be waiting to be told something it just did. Instead it `RPUSH`es and
+spawns `flock.adapter <agent>` fire-and-forget. The adapter delivers **one
+envelope** and exits.
+
+⚠ **The alternative moves the backlog into RAM.** A long-running consumer per
+agent, popping eagerly, drains a durable queue into process memory: delivery
+takes hundreds of milliseconds, arrivals are not rate-limited, and nothing is
+inspectable when it goes wrong. Keeping the backlog in Redis is the point.
+
+Consequences worth knowing: an office of idle agents costs nothing, because there
+are no processes between deliveries; and a **busy tag** in Redis serialises
+delivery per agent, since two adapters pasting into one window would interleave.
+
+## 5. How an envelope travels
+
+```
+office send -a bob …        the agent's own command, its only surface
+   → …:alice:egress         it writes its OWN queue, never bob's
+   → router                 pops, resolves bob in the roster, RPUSHes
+   → …:bob:ingress          and kicks an adapter
+   → adapter                reads bob's VAB, dispatches, exits
+   → opener                 tmux → paste · api → mailbox · control → act
+```
+
+Four log records mark the path — `popped`, `forwarded`, `received`, `opened` —
+so a lost envelope is locatable rather than merely absent.
+
+⚠ **Nothing writes another agent's keys.** Not a queue, not a board, not a
+mailbox. It sends an envelope and the far edge writes its own. That is invariant
+3, generalised in build 12 from queues to every per-agent key, and it is what
+keeps "who did this" answerable.
+
+## 6. Two doors, and what each is for
+
+| | | |
+|---|---|---|
+| **api** | `:8080` | envelopes in, messages and state out — REST, bearer token |
+| **session** | `:8081` | terminal output and keystrokes — WebSocket |
+
+Separate processes and separate ports, so publishing one is a decision that does
+not drag the other with it.
+
+⚠ **An app must never parse a terminal to obtain an answer.** `:8081` streams a
+TUI for *watching*; it is not a data format. Answers are messages, and they come
+from the mailbox. That line is why an app is a participant rather than a
+spectator, and it is the single most important rule for anyone building a client.
+
+⚠ Both doors can execute code in an agent's window — the api through the
+`Command` kind, the session through keystrokes. Neither is the safe one.
+
+## 7. Two things that are pulled, not pushed
+
+**Boards.** A ticket waits until an agent asks. Nothing notifies, nothing
+pastes — so an agent holds only what it pulled, which is *why* it has at most one
+ticket in `doing` rather than a rule imposed on it. The board carries *what*; a
+message carries *now*.
+
+**Mailboxes.** An app reads its own, by cursor. `POST` returns `202`; a reply, if
+one ever comes, arrives later.
+
+⚠ **A reply may never come.** An agent can be busy, stopped, or simply not
+answer. Every client must be built for silence, and nothing in the system
+promises otherwise.
+
+## 8. One container is one tenant
+
+Redis, the router, the tmux server, both doors, and one window per agent — in one
+image that converges when brought up twice. Redis is internal and unpublished.
+
+⚠ **The container is the boundary, and nothing inside it is.** Agents run with
+`sudo` deliberately. Tools and a clean environment remove the *reason* to go
+looking, not the ability — an agent that never encounters a queue, a token or a
+roster has no reason to hunt for one.
+
+## 9. The invariants
+
+The short list that everything else assumes:
+
+1. **The router forwards on `recipient` alone** — never on content.
+2. **`producer` is derived from the queue**, never taken from the envelope.
+3. **Nothing writes another agent's keys** — it sends an envelope.
+4. **The router reads roster fields, never values.** It cannot know a VAB.
+5. **Adapters do not exist between deliveries.**
+6. **The api does not validate `kind`** — which kinds are openable is a fact
+   about adapters, discovered at the far edge.
+7. **Nothing reads a terminal to make a decision.**
+
+⚠ Breaking any of these is a design change, not a patch. Several started as
+sentences someone thought were obvious and are load-bearing in ways that only
+show up later — `CONTRACTS` §8 promised an atomic `LMOVE` for a year before
+anyone noticed tickets had started being mutated in flight.
+
+## 10. Where to go next
+
+| | |
+|---|---|
+| [`API.md`](API.md) | building an app against it — no repository needed |
+| [`CONTRACTS.md`](CONTRACTS.md) | what more than one module depends on |
+| [`LLD-bus-and-router.md`](LLD-bus-and-router.md) | addressing, the envelope, the invariants in full |
+| [`LLD-adapter-tmux.md`](LLD-adapter-tmux.md) | how text actually gets into a terminal |
+| [`LLD-tmux-host.md`](LLD-tmux-host.md) · [`LLD-container.md`](LLD-container.md) | windows, and the tenant |
+| [`LLD-api.md`](LLD-api.md) · [`LLD-session.md`](LLD-session.md) | the two doors |
+| [`PLAN-boards.md`](PLAN-boards.md) | the board, and why it is pulled |
+| [`TODO.md`](TODO.md) · [`SPRINTS-next.md`](SPRINTS-next.md) | what is parked, and why |
