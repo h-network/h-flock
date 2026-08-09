@@ -91,13 +91,46 @@ case "$MODE" in
     ;;
 
   check)
-    for rel in "${CRED_PATHS[@]}"; do
-        if docker exec "$CONTAINER" test -s "$IN_CONTAINER/$rel" 2>/dev/null; then
-            echo "  logged in     $rel"
-        else
-            echo "  NEEDS LOGIN   $rel"
-        fi
-    done
+    docker exec "$CONTAINER" bash -c '
+        profiles=("default")
+        for d in /home/ubuntu/.claude-* /home/ubuntu/.codex-*; do
+            [ -d "$d" ] || continue
+            base="$(basename "$d")"
+            p="${base#.*-}"
+            [ -n "$p" ] && [[ " ${profiles[*]} " != *" $p "* ]] && profiles+=("$p")
+        done
+
+        for p in "${profiles[@]}"; do
+            if [ "$p" = "default" ]; then
+                claude_path="/home/ubuntu/.claude/.credentials.json"
+                codex_path="/home/ubuntu/.codex/auth.json"
+                agy_path="/home/ubuntu/.gemini/antigravity-cli/antigravity-oauth-token"
+            else
+                claude_path="/home/ubuntu/.claude-$p/.credentials.json"
+                codex_path="/home/ubuntu/.codex-$p/auth.json"
+                agy_path=""
+            fi
+
+            if [ -s "$claude_path" ]; then
+                printf "  %-9s %-7s %s\n" "$p" "claude" "logged in"
+            else
+                printf "  %-9s %-7s %s\n" "$p" "claude" "NEEDS LOGIN"
+            fi
+
+            if [ -s "$codex_path" ]; then
+                printf "  %-9s %-7s %s\n" "$p" "codex" "logged in"
+            else
+                printf "  %-9s %-7s %s\n" "$p" "codex" "NEEDS LOGIN"
+            fi
+
+            if [ -n "$agy_path" ]; then
+                if [ -s "$agy_path" ]; then
+                    printf "  %-9s %-7s %s\n" "$p" "agy" "logged in"
+                else
+                    printf "  %-9s %-7s %s\n" "$p" "agy" "NEEDS LOGIN"
+                fi
+            fi
+        done'
     ;;
 
   *) echo "usage: seed-home.sh [in|out|check] [container]" >&2; exit 2 ;;
