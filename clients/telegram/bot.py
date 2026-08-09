@@ -168,6 +168,16 @@ class TelegramClient:
         res = self.request("getUpdates", params)
         if res.get("ok"):
             return res.get("result", [])
+        # ⚠ 409 means another process is polling this token. Telegram allows
+        # exactly one getUpdates per bot, and the loser receives nothing —
+        # forever, while looking perfectly healthy. Swallowing it cost an
+        # afternoon: the bot was up, the log was quiet, and no message ever
+        # arrived.
+        if res.get("error_code") == 409:
+            raise RuntimeError(
+                "another instance is polling this bot token — stop it first "
+                "(Telegram allows one getUpdates per bot)"
+            )
         return []
 
 
