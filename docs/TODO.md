@@ -453,8 +453,23 @@ front of both doors is where it goes (`LLD-container` §3).
 preflight — and it looks like the api being down rather than a header missing.
 One middleware, once an origin is known.
 
-**Redis ACLs — now a prerequisite, not a nicety.** `REDIS_URL` is in every agent
-window because `send` needs it, so an agent can bypass both doors and write any
+⚠ **Corrected: `REDIS_URL` is *not* in agent windows.** Build 08 took it out —
+measured on a live tenant, an agent's environment has no `REDIS_URL` at all, and
+`office` reaches Redis through `flock.bus`'s own default rather than a variable
+handed to the window. It was removed after an agent asked where its peers were,
+found the variable, and went to `redis-cli` for the answer.
+
+⚠ **But the ability is unchanged.** Measured in the same tenant:
+`redis-cli -h 127.0.0.1 DBSIZE` → `24`. Redis listens on loopback with no auth,
+`redis-cli` is on `PATH`, and the default URL is a fact about a tenant rather
+than a secret. **Removing the variable removed the signpost, not the door** —
+which is exactly what the design claims to do and no more.
+
+So ACLs remain the only thing that would actually *prevent* it, and the entry
+below still stands on its conclusion even though its reason was wrong.
+
+**Redis ACLs.** The original entry read: `REDIS_URL` is in every agent window
+because `send` needs it, so an agent can bypass both doors and write any
 queue directly. Invariant 3 is a convention `send` honours, not something
 enforced.
 
