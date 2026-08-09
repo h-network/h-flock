@@ -93,7 +93,12 @@ ck  "and only one"     "$(cu "$A/agents/telegram/messages?after=$CUR" | python3 
 echo "== 8. isolation between clients =="
 cu -X POST -H 'Content-Type: application/json' -d '{"kind":"StartAgent","payload":{"agent":"webapp","vab":"api"}}' $A/agents/host/envelopes >/dev/null
 sleep 3
-ck "webapp mailbox empty" "$(cu $A/agents/webapp/messages | python3 -c 'import sys,json;print(len(json.load(sys.stdin)["messages"]))')" "0"
+# ⚠ Isolation is "webapp did not get telegram's message", not "webapp's mailbox
+# is empty". A raw broadcast to `all` reaches app clients too — documented
+# behaviour — so an emptiness assertion fails for a correct system the moment
+# anything broadcasts. It did.
+ck "webapp did not get telegram's mail" \
+   "$(cu $A/agents/webapp/messages?limit=1000 | grep -c "reply-from-$AG1-99" || true)" "0"
 
 echo "== 9. lifecycle =="
 cu -X POST -H 'Content-Type: application/json' -d '{"kind":"StartAgent","payload":{"agent":"dave"}}' $A/agents/host/envelopes >/dev/null
