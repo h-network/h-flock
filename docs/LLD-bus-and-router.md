@@ -25,6 +25,7 @@ above it.
   ├──────────────────────────────────────────────────────────────┤
   │  L2  ROUTER    subscribe set · sender from the queue key     │
   │                resolve recipient → queue · dead-letter       │
+  │                observation and retention pass                │
   ├──────────────────────────────────────────────────────────────┤
   │  L3  EDGE      adapters: send onto <prefix>:egress           │
   │                          receive from <prefix>:ingress       │
@@ -193,12 +194,17 @@ without adding depth:
   pod:acme:tenant:hq:agent:backend     : tasks.todo
   pod:acme:tenant:hq:agent:backend     : tasks.doing
   pod:acme:tenant:hq:agent:telegram  : inbox         an app client's mailbox
+  pod:acme:tenant:hq:agent:backend     : activity      privacy-reduced CLI events
+  pod:acme:tenant:hq:agent:backend     : pending.verify delivery evidence to judge
 ```
 
 An address at any level can carry resources, so tenant-level and pod-level state
-have a home without a special case. `inbox` is the only Redis Stream in the
-system; every queue is a LIST. The exception exists for cursors: a queue is
-consumed once, while a retained mailbox can be read at independent positions.
+have a home without a special case. Envelope queues are LISTs. Retained or
+independently judged observations use Streams: an app `inbox`, an agent's
+`activity`, and its transient `pending.verify` markers. The distinction is the
+reader model: a queue is consumed once, while a mailbox or observation feed can
+be read at independent positions and verification markers are deleted only
+after judgment.
 
 Address-segment rule: `^[a-z0-9][a-z0-9-]{0,62}$` — lowercase alnum and dash. No glob
 metacharacters, so a prefix is safe to drop into a Redis `SCAN MATCH`. No
@@ -235,6 +241,12 @@ source of membership: the router builds its egress subscribe set from it, and
 anything that needs "every participant in this tenant" — aggregating a board,
 fanning out a raw broadcast — walks the same list rather than scanning the
 keyspace. One source, several readers.
+
+The tenant also has a scalar `<prefix>:lead`. Boot writes the **first ordered
+name in `AGENTS`**, rather than deriving authority from the roster hash or a
+sorted name. The router does not route on it; `office peers` and the generated
+agent guides read it so leadership remains stable when names happen to sort in
+a different order.
 
 Since several modules read it, its shape is part of the contract:
 
@@ -282,19 +294,21 @@ legitimate (§5), but the sender has no business knowing this in the first place
 each re-reads it. There is no notification to enable, and no obligation on
 whatever writes the roster beyond writing it.
 
-Two long-lived readers need polling and one does not. The **router** re-reads on
-its own `BLPOP` timeout — one loop, one re-read, and the timeout doubles as how
-long shutdown takes. The **tmux host**, with no queue to block on, polls on a
-loop of its own. The **adapter** does not poll at all: it holds nothing between
-deliveries, so it has no set to keep in step. It is told which participant to
-deliver for, by the thing that just wrote to that participant.
+Two long-lived readers need polling and one does not. The **router** reads the
+roster when it builds each `BLPOP` set and once for each maintenance pass. The
+**tmux host**, with no queue to block on, polls on a loop of its own. The
+**adapter** does not poll at all: it holds nothing between deliveries, so it has
+no set to keep in step. It is told which participant to deliver for, by the
+thing that just wrote to that participant.
 
-**The interval is `ROSTER_POLL_SECONDS`, from the environment** (`LLD-container`
-§4), default 5. Both readers take the same value from the same place, so their
-staleness windows agree by construction rather than by two modules remembering
-to.
+`ROSTER_POLL_SECONDS`, from the environment (`LLD-container` §4), defaults to 5
+and bounds the router's blocking pop and the tmux host's reconciliation loop.
+The router's maintenance cadence is separately configurable as
+`ACTIVITY_POLL_SECONDS`, default 2; it shortens the router's block when its next
+pass is due. These are distinct controls because roster convergence and
+filesystem observation have different costs.
 
-Staleness is bounded by that interval and is harmless in the two obvious
+Staleness is bounded by the relevant polling interval and is harmless in the two obvious
 directions. A participant added a moment ago is simply not routed to yet; once a
 removed recipient disappears from the router's next roster read, new envelopes
 addressed to it dead-letter at their senders. Neither is a race worth closing,
@@ -307,13 +321,15 @@ whichever module starts it, not to membership.
 
 Lifecycle branches on VAB. For `tmux`, desired state comes before actual state
 in both directions: `StartAgent` writes the roster row and launch key before
-creating the window; `StopAgent` removes the roster row and per-agent state
-before killing it. That ordering makes a crash recoverable through tmux-host
+creating the window; `StopAgent` reads the VAB, removes the roster row, purges
+all classified identity state, and only then kills the window. Queues and board
+columns are retained data, so re-hiring the same name gets a clean identity and
+its old work. That ordering makes a crash recoverable through tmux-host
 reconciliation. There remains a narrow start interval in which delivery can
 reach the roster row before its window exists and dead-letter; reversing the
 order would instead make a crash lose the desired state entirely. For `api`,
 enrolment writes only the roster row — no launch key, home, window or CLI — and
-stopping removes the row and mailbox without touching tmux.
+stopping performs the same identity purge without touching tmux.
 
 ### 3.3 Queues
 
@@ -327,12 +343,51 @@ The router sits on the opposite end of both.
 | `<prefix>:ingress` | LIST | the router | the participant's adapter |
 | `<prefix>:dead` | LIST | the router, or an edge adapter | entries by hand; depth by `api` |
 | `<prefix>:inbox` | STREAM | the `api` delivery routine | app clients, by cursor |
+| `<prefix>:activity` | STREAM | the router's session tailer | api reads and presence/verification sampling |
+| `<prefix>:pending.verify` | STREAM | the tmux delivery opener | the router's verifier |
 
 Envelope transport uses lists, not pub/sub, so a backlog survives a consumer
-restart. The mailbox is the system's one Redis Stream because it is retained,
-not consumed: `XRANGE` and `XREAD` let polling and SSE readers keep independent
-cursors. Delivery appends one field named `envelope`, capped approximately at
-1,000 entries; the stream entry ID is the cursor.
+restart. The mailbox is retained, not consumed: `XRANGE` and `XREAD` let polling
+and SSE readers keep independent cursors. Delivery appends one field named
+`envelope`, capped approximately at 1,000 entries; the stream entry ID is the
+cursor. The other two Streams carry observation rather than envelopes and are
+described below.
+
+### 3.4 The router's maintenance pass
+
+The router uses its existing loop for observation and retention; there is no
+second daemon and none of these jobs sits in an envelope's data path. Every
+`ACTIVITY_POLL_SECONDS` (default 2), one roster snapshot drives five jobs:
+
+1. **Tail session files.** For each Claude or Codex agent, the tailer reads only
+   bytes after the stored `activity.offset` in the newest session JSONL. It
+   appends privacy-reduced events to `<prefix>:activity`: `input`, `output`, or
+   `tool`, with a tool's **name only**. Arguments, paths and content have no
+   field in the event. The Stream is approximately capped at 1,000 entries.
+   CLIs without a supported session format produce no feed.
+2. **Sample presence.** The newest activity timestamp becomes a per-agent
+   `presence` hash with `state` (`working`, `idle`, or `unknown`), `since`, and
+   `last_activity`. `PRESENCE_WORKING_SECONDS`, default 30, is the working
+   horizon; `since` is preserved while the state does not change.
+3. **Judge delivery evidence.** A terminal delivery appends a marker to
+   `<prefix>:pending.verify`. Once it is at least `VERIFY_AFTER_SECONDS` old
+   (default 10), a later `input` activity event confirms it. Otherwise the
+   router logs `delivery_unverified`, then deletes the marker. This means **not
+   confirmed**, not lost: a busy agent may not begin a new turn. The observer
+   never retries, re-pastes, or dead-letters the envelope.
+4. **Carry window logs to stdout.** Agent-side `office` records are written to
+   `/home/ubuntu/.flock/window.log.jsonl`; the router tails complete lines from
+   a tenant byte offset so `sent` joins the central envelope log. If the spool
+   exceeds `WINDOW_LOG_MAX_BYTES` (default 8 MiB), it is truncated only after
+   the offset has reached the current end. A partial tail is left intact, so a
+   record cannot be dropped between passes.
+5. **Apply retention.** One pipeline trims each agent's `tasks.done` and `dead`
+   LISTs to the newest `BOARD_DONE_MAX` and `DEAD_MAX` entries (both default
+   500). Centralising the caps here covers every writer.
+
+An exception in this pass is logged and the forwarding loop continues. That is
+also the boundary on its authority: observation may look and may only report;
+it does not change delivery decisions.
 
 **Having written an ingress queue, the router kicks delivery for that
 participant.**
@@ -570,15 +625,19 @@ reading the payload — §6.4 holds.
    change to what a message means becomes a change to the router.
 5. **The bus is lifecycle-agnostic.** It moves opaque strings. Task state,
    correlation and session context live above it.
-6. **Queues are lists, not pub/sub.** The retained app mailbox is the sole Redis
-   Stream; it is not consumed like a queue.
-7. **One bad envelope never stops the loop.** Malformed JSON, an unparseable
-   queue name, an unresolvable recipient: log and skip or dead-letter, per
-   envelope.
+6. **Envelope queues are lists, not pub/sub.** Retained mailboxes and
+   observation records use Streams where cursors or later judgment require
+   them; they are not envelope queues.
+7. **Nothing in the data path reads a terminal.** Delivery never branches on
+   terminal rendering. Observation may inspect session files and may only
+   report, on its own schedule; it never changes the path an envelope travels.
 8. **The router knows nothing about how a participant is implemented.** It reads
    the roster's *fields*, never its *values*, so it cannot know a participant's
    VAB. It kicks one fixed command with a name. This is structural, not a
    convention anyone has to remember.
+9. **One bad envelope never stops the loop.** Malformed JSON, an unparseable
+   queue name, an unresolvable recipient: log and skip or dead-letter, per
+   envelope.
 
 ## 7. Built extensions and deferred work
 
@@ -629,7 +688,8 @@ writer and establishes the initial fixed and tmux rows.
 `StartAgent` also accepts `vab: "api"`. That path writes the named client's
 roster row and nothing tmux-related. Replies addressed to that name route through
 the same ingress and kick, then the API delivery routine appends the envelope to
-`…:agent:<client>:inbox`. `StopAgent` removes the row and mailbox. The switch
+`…:agent:<client>:inbox`. `StopAgent` removes the row and every classified item
+of per-agent identity state; queues and board data remain. The switch
 does not change for any of this; it still routes a name without reading its VAB.
 
 **Subscribe-set fairness.** `BLPOP` returns from the first non-empty key in

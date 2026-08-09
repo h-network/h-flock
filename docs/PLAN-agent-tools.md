@@ -37,6 +37,7 @@ envelope protocol.
 | `office cancel [<id>]` | finish it as cancelled | board move |
 | `office hold [<id>]` | park the open ticket | board move |
 | `office delete <id>` | remove one ticket | board removal |
+| `office cloneToAll <repo-url> [-a <agent>,…] [--dry-run]` | clone one repository into terminal-agent workspaces | roster and filesystem |
 
 Every subcommand has environment-free `--help`. Message text after the recipient
 is literal: flags inside a message are data, so an agent can explain an `office`
@@ -57,8 +58,9 @@ sends of a small envelope on loopback are cheaper than teaching the switch what
 a conversational broadcast means.
 
 `office peers` applies the same tmux-only filter. Peer membership is live state,
-so it is read from the roster rather than copied into a window. `AGENT_PEERS`
-does not exist.
+so it is read from the roster rather than copied into a window. It reads the
+tenant's `<prefix>:lead` marker and labels that roster member rather than
+assuming the lexically first name is in charge. `AGENT_PEERS` does not exist.
 
 Named app clients are roster participants with VAB `api`, but they are not
 terminal peers: they have a retained mailbox and no window, home or CLI. The VAB
@@ -93,6 +95,15 @@ hosting decision their focused tool does not need.
 Pause is not retirement. It preserves the roster row, window, queues, board,
 home and address while stopping the CLI. Letting an agent go removes desired
 state before killing the window so tmux-host reconciliation cannot recreate it.
+It purges every classified identity-state resource (including launch, profile,
+pause, mailbox, activity, presence and pending verification) while retaining
+queues and board data for a later hire of the same name.
+
+`office cloneToAll` is the filesystem-shaped exception to the otherwise
+message-and-state surface. It selects tmux participants from the live roster,
+fetches the repository once, clones subsequent workspaces locally, and resets
+every clone's `origin` to the supplied upstream URL. Existing target directories
+are skipped; `--dry-run` performs no writes.
 
 ## 5. Accounts arrive through profiles
 
@@ -110,9 +121,10 @@ rather than copied into the environment.
 
 `/workdir/<agent>/AGENTS.md` and `/workdir/<agent>/CLAUDE.md` contain the same
 short guide, and `AGENT_GUIDE` points at the former for CLIs that need an
-explicit path. Only the agent's own name is baked in. The guide tells it to use
-`office peers`, `office send`, and the pulled board verbs; it contains no peer
-list that could go stale.
+explicit path. The agent's own name and the tenant lead are baked in; the lead
+is stable tenant state, while the changing peer set is not. The guide tells it
+to use `office peers`, `office send`, and the pulled board verbs; it contains no
+peer list that could go stale.
 
 | CLI | How it finds the guide |
 |---|---|
