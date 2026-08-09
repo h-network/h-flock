@@ -129,10 +129,9 @@ network downloads the same objects N times.
 
 ## 3. The watchdog, and folding `verify` into it
 
-> ⚠ **Unblocked as of build 11.** This was written when boards did not exist and
-> the watchdog had nothing to read. It now has both halves: a ticket in `doing`
-> with a `started_ts`, and window silence. Nothing below has changed — it is
-> simply buildable now.
+> ⚠ **Unblocked as of build 11**, when boards gave it something to read. There is
+> now a **third** signal too — see *A third signal* below, which is the part that
+> stops it crying wolf.
 
 h-office's watchdog lives in the courier and is four settings:
 
@@ -166,6 +165,60 @@ after every Enter, and it catches other failures too.
 ⚠ But it is *detection*, not prevention — the message still sits unsent until
 someone acts. h-office does **both**: verify at delivery, watchdog for what
 verify misses. Do not treat the watchdog as a replacement.
+
+### A third signal: the CLIs count their own tokens
+
+Two signals cannot separate **thinking hard** from **wedged**. A long
+model call renders nothing and prints nothing — it looks exactly like a hung
+process, and that ambiguity is what teaches a lead to ignore the alert.
+
+**The CLIs write their own token counts to disk**, so the third signal is a file
+read — no screen parsing, no API, nothing version-specific:
+
+| CLI | where |
+|---|---|
+| claude | its session JSONL, per call |
+| codex | `~/.codex*/sessions/**/rollout-*.jsonl`, last `token_count` event |
+| agy | **nothing** — Antigravity does not persist counts |
+
+Taken from h-office's `usage.py`, which already does exactly this to show usage
+and estimated cost per agent. Cost is estimated — neither CLI records dollars, so
+tokens are multiplied by a rate table.
+
+**What the combination buys:**
+
+| `doing` age | window | tokens | reading |
+|---|---|---|---|
+| old | quiet | **climbing** | working — a long call. Do not alert |
+| old | quiet | **flat** | stuck. Alert |
+| old | printing | either | working. Do not alert |
+
+⚠ **It also catches the blocked-at-a-prompt case**, which the other two miss
+entirely: an agent sitting on an approval dialog or a trust picker burns no
+tokens and prints nothing, and is indistinguishable from a wedge on the first two
+signals alone.
+
+⚠ **agy has only two signals**, so it is more likely to produce a false alert.
+Say so in the message rather than pretending otherwise — an alert that admits
+what it could not check is one a lead keeps trusting.
+
+⚠ **Read the file, never the screen.** Deriving an agent's state by parsing its
+TUI is a per-CLI, per-version commitment that does not end: a comparable project
+spends ~1,200 lines on it, needs a capability flag per provider for whether
+detection is even possible, and its own comments admit some states are not
+screen-detectable. h-flock has never read a pane to make a decision and this is
+not the place to start.
+
+⚠ **Do not gate delivery on any of this.** The same project only delivers mail
+when its detector says a terminal is idle, so a misread does not merely mislabel
+an agent — it silently stalls its messages. Ours delivers immediately and lets
+the TUI buffer. The watchdog observes; it must never sit in the delivery path.
+
+### Do not classify *why*
+
+Report what is true — took work, has not finished, has not spoken, has not spent
+a token — and let a person look. Every attempt to say *why* an agent is stuck is
+where the cost goes, and it is the part that cannot be done from outside.
 
 Prerequisite: the watchdog is task-shaped (`doing` column), so it needs boards.
 The window-silence half needs only `presence`, which has no dependencies at all.
