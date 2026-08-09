@@ -145,9 +145,9 @@ what keeps a new agent's first envelope from being dead-lettered.
 What runs in the window is configuration, not this module's opinion. It starts
 what it is told to start, in the working directory `/workdir/<agent>` it is told to use,
 with `AGENT_GUIDE=/workdir/<agent>/AGENTS.md` and `OFFICE_TOOLS=office` in the environment.
-`write_agent_guide` generates both `AGENTS.md` and `CLAUDE.md` and pre-approves
-Claude project trust in `.claude.json`. When a CLI is configured, window creation routes
-through `startAgent <cli>` so permission and auto-approval flags apply.
+`write_agent_guide` generates both `AGENTS.md` and `CLAUDE.md` (rendering lead guidance based on `<prefix>:lead`)
+and pre-approves project trust across all three CLIs (`.claude.json`, `.codex/config.toml`, and `.gemini/.../settings.json`).
+When a CLI is configured, window creation routes through `startAgent <cli>` so permission and auto-approval flags apply.
 
 ## 6. Lifecycle
 
