@@ -186,7 +186,12 @@ LAUNCH=$(dx redis-cli GET "pod:$POD:tenant:$TENANT:agent:sim-wedged:launch" 2>/d
 if [ "$PANE_COMM" = "sleep" ] && [ "$LAUNCH" = "claude" ]; then
     ck "sim-wedged precondition proved (pane consumes nothing, still marked claude)" "0" "0"
 
-    cu -X POST -H 'Content-Type: application/json' -d '{"text":"wake up","as":"telegram"}' "$A/agents/sim-wedged/envelopes" >/dev/null
+    # Build 31 judges only agents with prior observable activity. This case is
+    # about a later wedge; Case 2 owns the genuinely fresh/unknown path.
+    dx redis-cli SET "pod:$POD:tenant:$TENANT:agent:sim-wedged:activity.offset" \
+        '{"path":"simulated-prior-session","offset":0}' >/dev/null
+
+    cu -X POST -H 'Content-Type: application/json' -d '{"text":"wake up"}' "$A/agents/sim-wedged/envelopes" >/dev/null
 
     echo "  polling for router verification pass (blocked Redis key)..."
     BLOCKED_KEY=$(poll_blocked_key "sim-wedged")
@@ -233,7 +238,7 @@ for _ in $(seq 1 20); do
 done
 ck "sim-trust started without a trust picker (seeding works)" "$NO_PICKER" "1"
 
-cu -X POST -H 'Content-Type: application/json' -d '{"text":"hello trusted agent","as":"telegram"}' "$A/agents/sim-trust/envelopes" >/dev/null
+cu -X POST -H 'Content-Type: application/json' -d '{"text":"hello trusted agent"}' "$A/agents/sim-trust/envelopes" >/dev/null
 
 # The delivery should verify, so the blocked key must stay empty. poll_blocked_key
 # returns as soon as it sees a value, so an empty result here means the router
@@ -274,7 +279,12 @@ done
 if [ "$PROVED_NOLOGIN" -eq 1 ]; then
     ck "sim-nologin precondition proved (login prompt shown)" "0" "0"
 
-    cu -X POST -H 'Content-Type: application/json' -d '{"text":"hello login prompt","as":"telegram"}' "$A/agents/sim-nologin/envelopes" >/dev/null
+    # Force a verdict rather than the Build 31 first-delivery skip. This case
+    # asks whether the prompt records input, not whether the agent is new.
+    dx redis-cli SET "pod:$POD:tenant:$TENANT:agent:sim-nologin:activity.offset" \
+        '{"path":"simulated-prior-session","offset":0}' >/dev/null
+
+    cu -X POST -H 'Content-Type: application/json' -d '{"text":"hello login prompt"}' "$A/agents/sim-nologin/envelopes" >/dev/null
 
     echo "  waiting for the router to judge the marker..."
     poll_judged "sim-nologin"
@@ -302,6 +312,9 @@ ck "sim-nologin window cleaned up" "$?" "0"
 echo "== Case 4: login_prompt_claude (unauthenticated claude profile) =="
 dx redis-cli SET "pod:$POD:tenant:$TENANT:agent:sim-nologin-claude:profile" "simnologinclaude" >/dev/null
 dx bash -c "rm -rf /home/ubuntu/.claude-simnologinclaude" 2>/dev/null || true
+# Skip theme onboarding without supplying a credential. StartAgent merges the
+# project trust entry into this file, leaving login as the first visible gate.
+dx bash -c "mkdir -p /home/ubuntu/.claude-simnologinclaude && printf '%s' '{\"hasCompletedOnboarding\":true}' > /home/ubuntu/.claude-simnologinclaude/.claude.json && chown -R ubuntu:ubuntu /home/ubuntu/.claude-simnologinclaude" 2>/dev/null
 
 cu -X POST -H 'Content-Type: application/json' -d '{"kind":"StartAgent","payload":{"agent":"sim-nologin-claude","cli":"claude"}}' "$A/agents/host/envelopes" >/dev/null
 poll_window_ready "sim-nologin-claude"
@@ -321,7 +334,10 @@ done
 if [ "$PROVED_CLAUDELOGIN" -eq 1 ]; then
     ck "sim-nologin-claude precondition proved (login prompt shown)" "0" "0"
 
-    cu -X POST -H 'Content-Type: application/json' -d '{"text":"hello claude login prompt","as":"telegram"}' "$A/agents/sim-nologin-claude/envelopes" >/dev/null
+    dx redis-cli SET "pod:$POD:tenant:$TENANT:agent:sim-nologin-claude:activity.offset" \
+        '{"path":"simulated-prior-session","offset":0}' >/dev/null
+
+    cu -X POST -H 'Content-Type: application/json' -d '{"text":"hello claude login prompt"}' "$A/agents/sim-nologin-claude/envelopes" >/dev/null
 
     echo "  waiting for the router to judge the marker..."
     poll_judged "sim-nologin-claude"
