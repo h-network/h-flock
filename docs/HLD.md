@@ -346,6 +346,7 @@ documentation audit went looking for exactly this kind of claim.
 | | |
 |---|---|
 | [`API.md`](API.md) | building an app against it — no repository needed |
+| [`../clients/`](../clients) | a Telegram bot and a browser UI, built from `API.md` alone |
 | [`CONTRACTS.md`](CONTRACTS.md) | what more than one module depends on |
 | [`LLD-bus-and-router.md`](LLD-bus-and-router.md) | addressing, the envelope, the invariants in full |
 | [`LLD-adapter-tmux.md`](LLD-adapter-tmux.md) | how text actually gets into a terminal |

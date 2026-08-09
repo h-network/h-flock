@@ -203,6 +203,11 @@ nothing about an app is special from the window side.
 
 📖 **[Full API reference for app developers →](docs/API.md)**
 
+Two working clients live in [`clients/`](clients/) — a **Telegram bot** and a
+**browser UI** — both built from that document and a token, with no access to
+this source. They exist as much to test the reference as to be useful: between
+them they found eight things it did not say.
+
 ## 🚪 The two doors
 
 Separate processes, separate ports, so publishing is one decision per door and
