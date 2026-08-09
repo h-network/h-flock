@@ -12,6 +12,7 @@ AGENT_STATE_RESOURCES = frozenset(
         "inbox",
         "activity",
         "activity.offset",
+        "alerted",
         "presence",
         "pending.verify",
     }
