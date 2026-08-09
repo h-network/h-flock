@@ -48,6 +48,7 @@ nothing needs discovery, and the whole tenant starts and stops as one thing.
 | router | `LLD-bus-and-router` | one per tenant, therefore one per container |
 | tmux host | `LLD-tmux-host` | creates the server, session and windows for `vab: tmux` entries |
 | tmux adapter | `LLD-adapter-tmux` | kicked per delivery; pastes into windows (`vab: tmux`), appends to mailbox stream (`vab: api`), writes pending.verify marker, exits |
+| watchdog | `flock.watchdog` | background process; samples presence, tasks, activity; writes alerts for human operator |
 | api | `LLD-api` | envelopes in, state out, client mailbox polling & SSE streaming |
 | session | `LLD-session` | terminal output and keystrokes. Its own port |
 | agents | — | one per tmux window for `vab: tmux` roster entries |
@@ -128,6 +129,7 @@ Order matters only where a dependency is real:
   redis            first — everything else connects to it
   tmux host        creates the server, session and one window per tmux agent
   router           needs redis; subscribe set comes from the roster
+  watchdog         needs redis; samples presence, tasks, activity; writes alerts
   api              needs redis
   session          needs the tmux server; holds one control-mode client
                    the doors last, so neither is reachable before the
