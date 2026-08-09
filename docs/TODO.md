@@ -15,6 +15,13 @@ Deferred *design* questions stay in each LLD's §7. This is the operational list
 
 ## Agents in windows
 
+⚠ **This was wrong, and build 15 disproved it by testing rather than reading.**
+Both have seedable state: codex trusts a directory via `[projects."<cwd>"]
+trust_level = "trusted"` in `config.toml`, and agy is suppressed entirely by
+`cache/onboarding.json`. Both are seeded now and both CLIs start unattended.
+
+The original entry, kept because the reasoning is why it went unchecked so long:
+
 **Onboarding for `codex` and `agy` — checked, and there is nothing to seed.**
 Run headless in a fresh container, both go **straight to a login prompt**:
 codex offers "Sign in with ChatGPT / Device Code / API key", agy offers "Google
@@ -126,6 +133,13 @@ already popped off the queue"*. That is a silent loss path: `opened` is logged,
 the envelope is gone from Redis, and the message was never submitted.
 → check the bottom rows for the message's tail after Enter, press it again if
 still there. Costs one extra Enter that an empty prompt ignores.
+
+## ~~An unknown agent reads as "exists, idle"~~ — SHIPPED in build 25
+
+`404` for a name not in the roster, `200` for an enrolled agent holding nothing,
+and `all` exempt because it is the broadcast address rather than a member.
+
+The original entry:
 
 ## An unknown agent reads as "exists, idle"
 
@@ -299,6 +313,9 @@ the pane too, as the agent's own confirmation.
 
 First live test with an authenticated Claude Code in a window. Delivery worked —
 the envelope reached the TUI, was read, and acted on. Three findings:
+
+⚠ **1 is fixed** — `create_window` writes the guide and trust for every caller,
+and build 17 gave both paths one `window_env`. 2 and 3 below still stand.
 
 **1. `hire` never writes the guide or the trust entry.** Two code paths create
 windows: `flock.tmuxhost.create_window` writes the guide, the `CLAUDE.md` copy
