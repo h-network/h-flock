@@ -120,10 +120,12 @@ segment.
 - **Board reads** (`GET /agents/{agent}/board` and `GET /board`): Return four columns
   (`todo`, `doing`, `hold`, `done`). Entries are JSON-decoded ticket objects (or raw
   strings for backwards compatibility).
-- **Presence** (`GET /agents/{agent}`): Reads queue depths alongside presence status hash
+- **Presence & Blocked Status** (`GET /agents/{agent}`): Reads queue depths alongside presence status hash
   `<prefix>:agent:<name>:presence` (`state`: `working` | `idle` | `unknown`, `since`, `last_activity`).
-  Updated by the router's 2-second pass. Enrolled agents holding no presence hash return `200 OK`
-  with state `"unknown"`.
+  Folded over by the router's `blocked` hash `<prefix>:agent:<name>:blocked` when set, so `presence.state` returns `"blocked"`
+  when a delivery is judged unverified. An agent that has never produced activity (presence `"unknown"`) has its first delivery
+  left **unjudged** (`delivery_unjudged`), so it will never report `"blocked"` until it has spoken at least once.
+  Enrolled agents holding no presence hash return `200 OK` with state `"unknown"`.
 - **Activity Feed** (`GET /agents/{agent}/activity` and `GET /agents/{agent}/activity/stream`):
   Served from stream key `<prefix>:agent:<name>:activity`, populated by the router tailing CLI session log files.
   Structured events carry `{ "v": 1, "agent": "<name>", "ts": "<ISO>", "kind": "input" | "output" | "tool" [, "tool": "<Name>"] }`.
@@ -135,9 +137,6 @@ segment.
   (which rejects reserved names `"pod"`, `"tenant"`, `"agent"`, `"all"`, all-digit names such as `"2"`, and invalid characters).
   An enrolled agent holding no tasks, mailbox messages, activity, or presence returns `200 OK` with empty structures.
   `POST /agents/all/envelopes` is explicitly exempt from roster membership checks because `all` is the reserved broadcast address.
-- **Blocked Status Note**: `blocked` (`<prefix>:agent:<name>:blocked`) is set by the router when a delivery is judged
-  unverified (`delivery_unverified`). It indicates an unconsumed message sitting in an agent's window. It does not mean
-  "stuck" (it catches modal dialogs and unconsumed input, but misses CLIs that consume input without acting).
 
 Reads are point-in-time — no subscriptions, no watches. That applies to *state* (boards, roster, queue depths, presence);
 replies, activity feeds, and watchdog alerts offer catch-up polling or SSE streams (`GET /messages/stream`, `GET /activity/stream`, `GET /alerts/stream`).
