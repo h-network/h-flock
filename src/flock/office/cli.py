@@ -137,12 +137,15 @@ def _peers_command(argv: list[str]) -> None:
     parser = _operation_parser("peers", "List peer agents in this office.")
     parser.parse_args(argv)
     r, pod, tenant, producer = _context()
-    peer_names = sorted(
+    all_agents = sorted(members(r, pod=pod, tenant=tenant))
+    lead = all_agents[0] if all_agents else None
+    peer_names = [
         agent
-        for agent in members(r, pod=pod, tenant=tenant)
+        for agent in all_agents
         if agent != producer and vab(r, pod=pod, tenant=tenant, agent=agent) == "tmux"
-    )
-    print(", ".join(peer_names))
+    ]
+    formatted = [f"{agent} (lead)" if agent == lead else agent for agent in peer_names]
+    print(", ".join(formatted))
 
 
 def _control_command(command: str, argv: list[str]) -> None:

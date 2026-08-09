@@ -150,6 +150,12 @@ def test_peers_prints_only_other_tmux_agents(office_env, capsys):
     assert capsys.readouterr().out.strip() == "backend"
 
 
+def test_peers_marks_lead_agent(office_env, capsys):
+    office_env.roster = {"architect": "tmux", "backend": "tmux", "frontend": "tmux"}
+    cli.main(["peers"])
+    assert capsys.readouterr().out.strip() == "architect (lead), backend"
+
+
 @pytest.mark.parametrize(
     ("argv", "kind", "payload"),
     [

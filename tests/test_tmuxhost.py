@@ -127,6 +127,7 @@ def test_generate_agents_md():
     assert "$TENANT" in content
     assert "$OFFICE_TOOLS" in content
     assert "office peers" in content
+    assert "This office has a lead — `office peers` shows who" in content
     assert "[message from <name>] …" in content
     assert "office send" in content
     assert "You have a task board." in content

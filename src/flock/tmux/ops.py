@@ -71,6 +71,8 @@ Run any of those with --help. To see who you can talk to:
 
     office peers
 
+This office has a lead — `office peers` shows who, and their direction is the office's direction.
+
 A message arrives in your terminal as `[message from <name>] …` — reply by name
 with `office send -a <name> <message>`. This directory is yours; work in it.
 
