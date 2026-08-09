@@ -60,7 +60,8 @@ Copy only what is missing, so an agent that already has its own keeps it.
 `$HOME/.claude.json` covers the **default profile only**. Our current Dockerfile
 seeds exactly that one — so the moment a second profile exists, its first
 `startAgent` lands on the theme picker again. This is the bug h-office fixed in
-`4b88096`, and we would reintroduce it.
+`4b88096`. Trust seeding must explicitly accept `profile=...` so `.claude-<profile>.json`
+and `.codex-<profile>/config.toml` are seeded; otherwise profiled agents sit at trust prompts while presence reads `idle`.
 
 Written minimally rather than copied, deliberately: the real file accumulates
 project history, `userID` and `machineID` — session state a separate account is

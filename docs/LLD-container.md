@@ -103,6 +103,7 @@ The same channel carries the one setting more than one module has to agree on:
 | `POD`, `TENANT` | the prefix every module builds keys from |
 | `ROSTER_POLL_SECONDS` | how often the roster is re-read. Default 5 |
 | `ACTIVITY_POLL_SECONDS` | how often activity session files are tailed. Default 2 |
+| `AGENT_PROFILES` | agent account profile assignments (`agent=profile,...`) |
 | `TMUX_TMPDIR` | where the tenant's tmux socket lives. `/home/ubuntu/.flock/tmux` |
 
 `TMUX_TMPDIR` is inherited rather than passed per invocation, which is the whole
