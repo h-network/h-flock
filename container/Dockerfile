@@ -53,8 +53,12 @@ RUN mkdir -p /home/ubuntu/.claude \
 # Suppresses the "Update available!" startup dialog whose default option runs
 # `npm install -g @openai/codex` globally inside the container.
 # Merged rather than overwritten so any existing config.toml keys survive.
+# ⚠ Written FIRST, not appended. In TOML a bare key after a [section] header
+# belongs to that section — appending it to a config.toml that carries
+# [profiles.<name>] blocks (which container/home may deliver) would bury it
+# inside the last one, where it parses cleanly and does nothing.
 RUN mkdir -p /home/ubuntu/.codex \
- && python3 -c "import os; p='/home/ubuntu/.codex/config.toml'; content=open(p).read() if os.path.exists(p) else ''; lines=[l for l in content.splitlines() if not l.strip().startswith('check_for_update_on_startup')]; lines.append('check_for_update_on_startup = false'); open(p, 'w').write('\n'.join(lines) + '\n')" \
+ && python3 -c "import os; p='/home/ubuntu/.codex/config.toml'; old=open(p).read() if os.path.exists(p) else ''; keep=[l for l in old.splitlines() if not l.strip().startswith('check_for_update_on_startup')]; open(p,'w').write('\n'.join(['check_for_update_on_startup = false'] + keep) + '\n')" \
  && chown -R ubuntu:ubuntu /home/ubuntu/.codex
 
 # The base runs as ubuntu (uid 1000), and the agent CLIs expect that home. The
