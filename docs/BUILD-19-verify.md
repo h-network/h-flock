@@ -98,6 +98,37 @@ watchdog design spends its length avoiding. Skip it and say so in the docs.
 - the router's pass is not measurably slower
 - `TODO.md` records the false-positive question as open, pending numbers
 
+## 6b. Measured, 2026-08-09 — what it catches and what it does not
+
+Run against a live tenant with an authenticated claude agent.
+
+| | result |
+|---|---|
+| **6 deliveries to an idle agent** | **0 unverified**, all 6 replies received |
+| **an unsubmitted paste** (text left in the input box) | **caught** — reported unverified |
+| **a delivery into an open `/model` modal** | **missed** — reported nothing |
+
+⚠ **The modal case is a false negative and the reason matters.** With the picker
+open the Enter selected a model, the message was consumed, and the recipient
+never saw it — yet claude still wrote `input` records at that instant. **The
+`input` event confirms text reached the CLI's input handling, not that it was
+processed as a prompt.** So verify cannot separate the two.
+
+**What it is therefore worth:** it catches the *Enter-not-taken* case — the one
+h-office measured at roughly one delivery in ten — and it does so with no false
+positives on the happy path. It does not catch a modal swallow. Both halves of
+that are worth knowing before anyone builds retry on top of it.
+
+⚠ **Two bugs found only by measuring**, neither visible to unit tests:
+
+1. The skip rule was a denylist (*"not agy"*) where the docstring said allowlist
+   (*"claude/codex only"*), so bare-shell windows got markers that could never be
+   confirmed. Three of the first four unverified records were bash windows.
+2. The marker was written *after* the paste, and the CLI records its input at
+   essentially the same instant — so the comparison lost a sub-second race. Six
+   deliveries all landed and five read unverified. Marking before the paste fixed
+   it outright.
+
 ## 7. Reporting
 
 `jira done`, then message `architect` with the key, the marker shape, the log

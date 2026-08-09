@@ -54,6 +54,11 @@ instead?`. Delivering to a busy agent is the normal case and a picker collision
 is rare, so the mitigation destroys real work far more often than it saves a
 message. The trade runs the wrong way.
 
+⚠ **Built in build 19, and it does not catch this case.** Measured: with a modal
+open the message was consumed and never seen, yet claude wrote `input` records
+anyway, so verify passed it. Verify catches an unsubmitted paste, not a modal
+swallow. The modal hole is still open.
+
 → **What would actually help is `verify`** — confirm the text landed after
 delivering, and re-deliver when it did not. Already parked above as the missing
 step h-office added after measuring ~1 delivery in 10 left unsubmitted. It
