@@ -190,6 +190,31 @@ And a process that *does* read stdin behaves differently — a real CLI takes th
 text straight into its input box, which is what we want, and is why this is a
 partial answer.
 
+### The input box is a queue, and a modal is not
+
+Two behaviours found by delivering into live CLIs, which pull in opposite
+directions:
+
+**A CLI's input box queues.** Text pasted while the agent is working is held and
+picked up when the current turn ends — this is the behaviour the whole design
+leans on when it says a message to a busy agent waits rather than being lost. An
+`Escape` cancels only the **turn in flight**; anything already queued behind it
+still gets picked up afterwards. Observed on agy, and reported as consistent
+across claude and codex.
+
+**A modal does not queue — it swallows.** With a picker or approval dialog
+focused, a delivered message is *gone*: the text never reaches the input box and
+the Enter actions the highlighted row. Verified on agy with a `/model` picker
+open — no trace of the message in 2000 lines of scrollback, no reply, and the bus
+recorded `opened`. The mechanism is not agy-specific; every CLI here has modals.
+
+⚠ **`Escape` before pasting is not the fix.** It does clear a modal, and a
+message delivered immediately after one arrives intact — but against an agent
+mid-generation it **aborts the work** (`Interrupted · What should Antigravity CLI
+do instead?`). Delivering to a busy agent is the ordinary case and a modal
+collision is rare, so it would destroy real work far more often than it rescued a
+message. Tested and rejected; see [`TODO.md`](TODO.md).
+
 Beyond that it does **not** try to establish whether the agent is mid-turn.
 tmux's `window_activity` is available for a whole tenant in a single
 `list-windows -F` call and needs no cooperation from any CLI, so if delivery

@@ -31,7 +31,34 @@ Their post-login approval gates are already covered: `startAgent` passes
 So all three need only **credentials**, which
 [`container/seed-home.sh`](../container/seed-home.sh) now handles.
 
-**agy paste hazard — known limitation.** agy's first-run approval dialogs and pickers consume pasted text as input. Because `flock.adapter` pastes as soon as the busy tag clears, an incoming message intended for an agent while a picker is up would be read as a menu selection. This can cause silent wrong actions on the agent's behalf (worse than a dropped message). Safe orchestration of agy requires screen/dialog detection before pasting.
+**A delivery arriving while a modal is open is lost — every CLI, not just agy.**
+
+Measured on 2026-08-09 against a live tenant. A `/model` picker was opened in an
+agy window and a normal `office send` was delivered into it:
+
+- **the message vanished** — no trace in 2000 lines of scrollback, no reply to
+  the sender, and the bus logged `opened` and considered it delivered
+- **the Enter selected the highlighted row.** Benign here, because the highlight
+  sat on the current model. It need not have been
+
+⚠ **Originally filed as an agy problem, and that was too narrow.** agy surfaces
+it often because its pickers are everywhere, but the mechanism — a modal has
+focus, so the paste goes nowhere and the Enter actions the modal — is true of
+claude and codex too. Any CLI, any modal.
+
+⚠ **`Escape` before pasting was tested and rejected. Do not re-propose it.**
+It does close a picker, and a message delivered straight after one landed
+correctly. But sending it to an agent that is *mid-generation* **aborts the
+work** — verified: the pane showed `Interrupted · What should Antigravity CLI do
+instead?`. Delivering to a busy agent is the normal case and a picker collision
+is rare, so the mitigation destroys real work far more often than it saves a
+message. The trade runs the wrong way.
+
+→ **What would actually help is `verify`** — confirm the text landed after
+delivering, and re-deliver when it did not. Already parked above as the missing
+step h-office added after measuring ~1 delivery in 10 left unsubmitted. It
+catches the silent loss. It does **not** prevent the stray menu selection, and
+nothing short of reading the screen before every paste would.
 
 **Credentials and profiles — mechanism SHIPPED, logins outstanding.**
 `container/seed-home.sh in|out|check` copies keys and credentials into a running
