@@ -225,6 +225,22 @@ landed deliveries, and it catches a paste whose `Enter` was swallowed. It does
 **not** catch a message eaten by an open modal — the CLI writes an `input` record
 anyway. That hole is known and open.
 
+### 8a. `blocked` — the delivery verdict, kept
+
+The router judges every delivery against a later `input` event. It used to log
+that and throw it away; it now retains it as `<prefix>:agent:<n>:blocked` —
+**set on unverified, deleted on verified.**
+
+⚠ **`blocked` means: we delivered and it was not consumed.** Not "stuck", not
+"unhealthy". It catches a trust picker and a wedged process, and **misses a CLI
+that records input it does not act on** — a login prompt or a modal picker.
+Measured twice, and the only gap a screen read would ever be for.
+
+⚠ **No screen is read to produce it.** An earlier design scraped for our own
+pasted marker and was abandoned: a consumed message stays visible in the
+transcript, so it marked *healthy* agents blocked, and telling transcript from
+input box needs the CLI-render knowledge invariant 7 refuses.
+
 ### 8b. The router's maintenance pass
 
 The one daemon does more than forward. On a timer, for the whole tenant in one
@@ -234,6 +250,29 @@ tail the window log to stdout, and trim what would otherwise grow.
 ⚠ **Cheap bounded reads only.** Anything that needs to *look* at a terminal is
 observation and belongs beside the system, not in it — the router is the data
 path, and a `capture-pane` that hangs would stall forwarding for everyone.
+
+### 8c. The watchdog, and who it tells
+
+Its own process, beside the router — not a step in the router's pass, because a
+`capture-pane` that hangs would stall forwarding, and the router is the data
+path. It reads the board, presence, window activity and the credential files.
+
+**It speaks only when a ticket is old *and* presence is not working *and* the
+window is silent.** Any one alone fires identically for a long build and a wedge,
+which is how a lead learns to ignore alerts and then ignores a real one.
+
+```
+  <prefix>:alerts   →   GET /alerts, /alerts/stream, and the log
+```
+
+⚠ **It alerts a human, and never an agent.** "Reports, never repairs" constrains
+the watchdog and says nothing about what an agent does next — and an agent told
+something is wrong will try to fix it. Worse, a lead messaging a stalled agent
+produces the activity that resets the silence timer, so **the alert would clear
+its own symptom** with nothing fixed.
+
+The lead has the other half: `office status`, a **pull**, and a guide telling it
+to check before assigning and hold work rather than repair.
 
 ## 9. Two things that are pulled, not pushed
 

@@ -307,6 +307,7 @@ office send -a <recipient> <text>...    # kind defaults to Message
 office broadcast <text>...              # tenant broadcast, everyone but you
 office peers | hire | letGo | pause | resume
 office add | list | take | done | cancel | hold | delete
+office status [<agent>]                 # presence, open ticket, last activity
 ```
 
 ⚠ **Corrected in build 09 — this was seven separate binaries** (`send`,
@@ -524,6 +525,29 @@ GET /agents                 { "agents": ["backend", "frontend", "systems"] }
 A list rather than a map for `GET /board`, so roster order is expressible and
 the entry shape matches the single-agent route exactly.
 
+### Observation keys — builds 18, 20, 27, 28
+
+```
+  <prefix>:agent:<name>:activity          STREAM   the CLI's own records, tailed
+  <prefix>:agent:<name>:activity.offset   STRING   where the tail has read to
+  <prefix>:agent:<name>:presence          HASH     working | idle | unknown
+  <prefix>:agent:<name>:blocked           HASH     { since, stream_id }
+  <prefix>:alerts                         STREAM   tenant-level, MAXLEN ~ 1000
+```
+
+⚠ **`blocked` is written by the router, not the watchdog.** It is the router's
+own delivery verdict retained instead of discarded: set on `unverified`, deleted
+on `verified`. One writer, and no screen is read to produce it.
+
+⚠ **`blocked` does not mean "stuck".** It means *a delivery was judged unverified
+and nothing has been consumed since*. Measured: it catches a trust picker and a
+`SIGSTOP`ped process, and **misses a CLI that records input it does not act on** —
+a login prompt or a modal picker. Do not restate it as a general health signal.
+
+⚠ **`alerts` is tenant-level**, so `StopAgent` must not purge it. The rest are
+per-agent and are in the classified set the teardown test enforces
+([`BUILD-22`](BUILD-22-state-truth.md)).
+
 ### The client mailbox — build 12
 
 ```
@@ -581,6 +605,12 @@ Set once by the container, inherited by everything (`LLD-container` §4).
 | `ROSTER_POLL_SECONDS` | default `5`. One value, three readers |
 | `ACTIVITY_POLL_SECONDS` | default `2`. How often the router tails CLI session files for the activity feed |
 | `VERIFY_AFTER_SECONDS` | default `10`. How long a delivery marker waits for a later `input` event before being reported unconfirmed |
+| `WATCHDOG_ENABLED` | default `1`. `0` exits the process cleanly |
+| `WATCHDOG_INTERVAL` | default `30`. Seconds between passes |
+| `WATCHDOG_STALL_SEC` | default `600`. A ticket open longer than this **may** alert |
+| `WATCHDOG_SILENCE_SEC` | default `300`. …**and** the window quiet this long |
+| `WATCHDOG_COOLDOWN_SEC` | default `3600`. One alert per ticket within this |
+| `WATCHDOG_CREDENTIAL_WARN_DAYS` | default `7`. Warn before a **refresh** token expires |
 | `BOARD_DONE_MAX` | default `500`. Newest finished tickets retained per agent |
 | `DEAD_MAX` | default `500`. Newest dead-lettered envelopes retained per agent |
 | `WINDOW_LOG_MAX_BYTES` | default `8388608` (8 MB). Consumed window-log spool size before truncation |
