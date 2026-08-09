@@ -61,6 +61,13 @@ RUN mkdir -p /home/ubuntu/.codex \
  && python3 -c "import os; p='/home/ubuntu/.codex/config.toml'; old=open(p).read() if os.path.exists(p) else ''; keep=[l for l in old.splitlines() if not l.strip().startswith('check_for_update_on_startup')]; open(p,'w').write('\n'.join(['check_for_update_on_startup = false'] + keep) + '\n')" \
  && chown -R ubuntu:ubuntu /home/ubuntu/.codex
 
+# Seed agy jetski_state.pbtxt with post_onboarding completed steps.
+# Suppresses the onboarding colour-scheme picker gate. Writes only the
+# post_onboarding block if the file is absent or post_onboarding is missing.
+RUN mkdir -p /home/ubuntu/.gemini/antigravity-cli \
+ && python3 -c "import os; p='/home/ubuntu/.gemini/antigravity-cli/jetski_state.pbtxt'; content=open(p).read() if os.path.exists(p) else ''; block='post_onboarding:  {\n  completed_steps:  POST_ONBOARDING_STEP_TYPE_MANAGER_WELCOME\n  completed_steps:  POST_ONBOARDING_STEP_TYPE_USAGE_MODE\n  completed_steps:  POST_ONBOARDING_STEP_TYPE_AGENT_CONFIGURATION\n  completed_steps:  POST_ONBOARDING_STEP_TYPE_ADD_WORKSPACE\n}'; (open(p, 'a').write('\n' + block + '\n') if 'post_onboarding' not in content else None)" \
+ && chown -R ubuntu:ubuntu /home/ubuntu/.gemini
+
 # The base runs as ubuntu (uid 1000), and the agent CLIs expect that home. The
 # tmux socket therefore lives somewhere that user owns — /run is root's.
 # /workdir is where each agent gets its own home (LLD-tmux-host §5). The host
