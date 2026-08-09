@@ -86,7 +86,7 @@ def _render_restdoc_html(app: FastAPI) -> str:
             "curl": 'curl -H "Authorization: Bearer $API_TOKEN" http://localhost:8080/agents',
         },
         "/agents/{agent}": {
-            "desc": "Get depth counts for an agent's ingress, egress, and dead queues.",
+            "desc": "Get queue depths and presence state (working, idle, unknown) for an agent.",
             "curl": 'curl -H "Authorization: Bearer $API_TOKEN" http://localhost:8080/agents/sme-2',
         },
         "/agents/{agent}/envelopes": {
@@ -535,14 +535,24 @@ def create_app(*, settings: Settings | None = None, redis_client: Any = None) ->
             ingress = prefix(settings.pod, settings.tenant, agent, "ingress")
             egress = prefix(settings.pod, settings.tenant, agent, "egress")
             dead = prefix(settings.pod, settings.tenant, agent, "dead")
+            presence_key = prefix(settings.pod, settings.tenant, agent, "presence")
         except KeyError as exc:
             raise HTTPException(status_code=404, detail="invalid agent") from exc
+        raw_presence = client.hgetall(presence_key) or {}
+        state = _decode(raw_presence.get(b"state") or raw_presence.get("state")) or "unknown"
+        since = _decode(raw_presence.get(b"since") or raw_presence.get("since")) or ""
+        last_activity = _decode(raw_presence.get(b"last_activity") or raw_presence.get("last_activity")) or ""
         return {
             "agent": agent,
             "depths": {
                 "ingress": client.llen(ingress),
                 "egress": client.llen(egress),
                 "dead": client.llen(dead),
+            },
+            "presence": {
+                "state": state,
+                "since": since,
+                "last_activity": last_activity,
             },
         }
 

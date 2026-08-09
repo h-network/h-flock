@@ -25,7 +25,11 @@ class FakeRedis:
         self.lengths = {}
         self.lists = {}
         self.streams = {}
+        self.hashes = {}
         self.roster = {b"bob": b"tmux", b"alice": b"tmux", b"telegram": b"api"}
+
+    def hgetall(self, key):
+        return self.hashes.get(key, {})
 
     def llen(self, key):
         return self.lengths.get(key, 0)
@@ -403,7 +407,11 @@ def test_hyphenated_agent_names_with_digits(client):
     # 1. Queue depths for sme-2
     status_code, body = request(app, "GET", "/agents/sme-2", token="secret")
     assert status_code == 200
-    assert body == {"agent": "sme-2", "depths": {"ingress": 0, "egress": 0, "dead": 0}}
+    assert body == {
+        "agent": "sme-2",
+        "depths": {"ingress": 0, "egress": 0, "dead": 0},
+        "presence": {"state": "unknown", "since": "", "last_activity": ""},
+    }
 
     # 2. Post envelope to sme-2
     status_code, body = request(app, "POST", "/agents/sme-2/envelopes", token="secret", body={"text": "hello sme-2"})
@@ -474,6 +482,28 @@ def test_get_activity_invalid_agent_returns_404(client):
     assert status_code == 404
     status_code, _ = request(app, "GET", "/agents/123/activity", token="secret")
     assert status_code == 404
+
+
+def test_get_agent_queues_and_presence_populated(client):
+    app, redis = client
+    presence_key = "pod:test:tenant:office:agent:sme-2:presence"
+    redis.hashes[presence_key] = {
+        b"state": b"working",
+        b"since": b"2026-08-09T13:00:00.000Z",
+        b"last_activity": b"2026-08-09T13:15:00.000Z",
+    }
+    status_code, body = request(app, "GET", "/agents/sme-2", token="secret")
+    assert status_code == 200
+    assert body == {
+        "agent": "sme-2",
+        "depths": {"ingress": 0, "egress": 0, "dead": 0},
+        "presence": {
+            "state": "working",
+            "since": "2026-08-09T13:00:00.000Z",
+            "last_activity": "2026-08-09T13:15:00.000Z",
+        },
+    }
+
 
 
 
