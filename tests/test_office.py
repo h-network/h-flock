@@ -1,5 +1,6 @@
 import ast
 import json
+import subprocess
 import tomllib
 from pathlib import Path
 
@@ -89,13 +90,14 @@ def test_root_help_lists_whole_surface_without_environment_or_redis(monkeypatch,
         "hold",
         "delete",
         "add",
+        "cloneToAll",
     ):
         assert command in output
 
 
 @pytest.mark.parametrize(
     "command",
-    ["send", "broadcast", "peers", "hire", "letGo", "pause", "resume", "list", "take", "done", "cancel", "hold", "delete", "add"],
+    ["send", "broadcast", "peers", "hire", "letGo", "pause", "resume", "list", "take", "done", "cancel", "hold", "delete", "add", "cloneToAll"],
 )
 def test_every_subcommand_has_environment_free_help(monkeypatch, command):
     monkeypatch.delenv("AGENT_NAME", raising=False)
@@ -239,6 +241,89 @@ def test_add_sends_envelope_and_never_writes_recipient_board(office_env, monkeyp
         }
     ]
     assert office_env.moves == []
+
+
+def test_clone_to_all_fetches_once_then_resets_every_origin(office_env, monkeypatch, tmp_path, capsys):
+    office_env.roster["worker"] = "tmux"
+    workdir = tmp_path / "workdir"
+    for agent in ("backend", "frontend", "worker"):
+        (workdir / agent).mkdir(parents=True)
+    upstream = tmp_path / "upstream" / "project.git"
+    upstream.parent.mkdir()
+    subprocess.run(["git", "init", "--bare", str(upstream)], check=True, capture_output=True)
+    monkeypatch.setattr(cli, "_WORKDIR_ROOT", workdir)
+
+    real_run = subprocess.run
+    clone_sources = []
+
+    def recording_run(command, **kwargs):
+        if command[:2] == ["git", "clone"]:
+            clone_sources.append(command[2])
+        return real_run(command, **kwargs)
+
+    monkeypatch.setattr(cli.subprocess, "run", recording_run)
+    cli.main(["cloneToAll", str(upstream)])
+
+    first = workdir / "backend" / "project"
+    assert clone_sources == [str(upstream), str(first), str(first)]
+    for agent in ("backend", "frontend", "worker"):
+        target = workdir / agent / "project"
+        remote = real_run(
+            ["git", "-C", str(target), "remote", "get-url", "origin"],
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+        assert remote.stdout.strip() == str(upstream)
+    assert "summary: cloned=3 skipped=0 failed=0" in capsys.readouterr().out
+
+    clone_sources.clear()
+    cli.main(["cloneToAll", str(upstream)])
+    assert clone_sources == []
+    assert "summary: cloned=0 skipped=3 failed=0" in capsys.readouterr().out
+
+
+def test_clone_to_all_dry_run_filters_roster_and_writes_nothing(office_env, monkeypatch, tmp_path, capsys):
+    workdir = tmp_path / "workdir"
+    (workdir / "backend" / "project").mkdir(parents=True)
+    monkeypatch.setattr(cli, "_WORKDIR_ROOT", workdir)
+    monkeypatch.setattr(cli.subprocess, "run", lambda *args, **kwargs: pytest.fail("dry-run invoked git"))
+
+    cli.main(["cloneToAll", "git@example.test:team/project.git", "--dry-run"])
+
+    output = capsys.readouterr().out
+    assert "backend: exists, would skip" in output
+    assert "frontend: would clone" in output
+    assert "api" not in output
+    assert "host" not in output
+    assert not (workdir / "frontend").exists()
+
+
+def test_clone_to_all_subset_accepts_only_tmux_agents(office_env, monkeypatch, tmp_path, capsys):
+    monkeypatch.setattr(cli, "_WORKDIR_ROOT", tmp_path)
+    with pytest.raises(SystemExit) as exc:
+        cli.main(["cloneToAll", "project.git", "-a", "backend,api"])
+    assert exc.value.code == 1
+    assert "not a tmux agent: api" in capsys.readouterr().err
+
+
+def test_clone_to_all_removes_partial_directory_after_failure(office_env, monkeypatch, tmp_path, capsys):
+    workdir = tmp_path / "workdir"
+    (workdir / "backend").mkdir(parents=True)
+    monkeypatch.setattr(cli, "_WORKDIR_ROOT", workdir)
+
+    def failed_clone(command, **kwargs):
+        Path(command[3]).mkdir()
+        return subprocess.CompletedProcess(command, 1, "", "network unavailable")
+
+    monkeypatch.setattr(cli.subprocess, "run", failed_clone)
+    with pytest.raises(SystemExit) as exc:
+        cli.main(["cloneToAll", "git@example.test:team/project.git", "-a", "backend"])
+    assert exc.value.code == 1
+    assert not (workdir / "backend" / "project").exists()
+    output = capsys.readouterr()
+    assert "summary: cloned=0 skipped=0 failed=1" in output.out
+    assert "1 clone operation(s) failed" in output.err
 
 
 def test_hold_then_take_by_prefix(office_env, monkeypatch, tmp_path, capsys):
