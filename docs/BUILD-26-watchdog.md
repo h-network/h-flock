@@ -152,19 +152,8 @@ It is for the **lead's routing decision**: `office status` reports it, and the
 lead's guide says an agent that is `blocked` will not receive work, so hold it
 and say so rather than trying to fix the agent.
 
-This is the only place in the system permitted to read a pane, because it is
-observation and out-of-band (HLD invariant 7).
-
-**One job:** an agent that is alerting on the three signals **and** has our
-`[message from …]` text visible in its input box is a message that was never
-submitted. Say so in the alert — it is directly actionable, and it is the one
-failure a human fixes in a second.
-
-⚠ **Look only for our own marker.** `[message from ` and nothing else. No modal
-detection, no prompt parsing, no state inference from chrome. The moment this
-grows a per-CLI pattern it has become the thing we refused to build.
-
-⚠ **Only when already alerting.** Not on every pass, not for healthy agents.
+⚠ **Scrape only when there is reason to.** A delivery happened and no `input`
+followed — that is the trigger. Not every pass, and never for a healthy agent.
 
 ## 8. Settings
 
