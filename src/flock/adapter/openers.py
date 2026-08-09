@@ -83,8 +83,15 @@ def message_opener(
 
     text = payload.get("text", "")
     formatted_msg = f"[message from {producer}] {text}\n"
-    paste_text(session_name, agent, formatted_msg, stream_id=stream_id, socket=socket)
+    # ⚠ Mark BEFORE pasting. The CLI records its input the instant the text is
+    # submitted, so a marker written afterwards can carry a later timestamp than
+    # the very event meant to confirm it — a sub-second race the comparison then
+    # loses. Measured: six deliveries all landed and five read unverified.
+    #
+    # Marking first costs nothing if the paste fails: the delivery genuinely did
+    # not happen, and unverified is the right answer.
     mark_delivery_pending(r, pod, tenant, agent, stream_id)
+    paste_text(session_name, agent, formatted_msg, stream_id=stream_id, socket=socket)
 
 
 def command_opener(
@@ -118,8 +125,15 @@ def command_opener(
 
     text = payload.get("text", "")
     formatted_msg = f"{text}\n"
-    paste_text(session_name, agent, formatted_msg, stream_id=stream_id, socket=socket)
+    # ⚠ Mark BEFORE pasting. The CLI records its input the instant the text is
+    # submitted, so a marker written afterwards can carry a later timestamp than
+    # the very event meant to confirm it — a sub-second race the comparison then
+    # loses. Measured: six deliveries all landed and five read unverified.
+    #
+    # Marking first costs nothing if the paste fails: the delivery genuinely did
+    # not happen, and unverified is the right answer.
     mark_delivery_pending(r, pod, tenant, agent, stream_id)
+    paste_text(session_name, agent, formatted_msg, stream_id=stream_id, socket=socket)
 
 
 def add_ticket_opener(
