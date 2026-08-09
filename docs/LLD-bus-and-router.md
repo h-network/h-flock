@@ -402,9 +402,15 @@ second daemon and none of these jobs sits in an envelope's data path. Every
    ⚠ **An unverified delivery is surfaced and never re-pasted.** Verification
    distinguishes "a later input was observed" from "no later input was
    observed"; it cannot distinguish an unsubmitted paste from text that landed
-   in a stopped process, picker or slow CLI. In the measured wedged-process and
-   trust-picker cases the first paste remains queued. A retry cannot help while
-   the block remains, and after a human clears it both copies may be consumed.
+   in a stopped process, picker or slow CLI. A retry cannot help while the block
+   remains, and after a human clears it both copies may be consumed.
+
+   ⚠ **This does not rest on a measurement.** An earlier draft cited "the
+   measured wedged-process and trust-picker cases"; those cases were never
+   measured — the simulator that was to produce them fails against a live tenant
+   ([`BUILD-30-FINDINGS`](BUILD-30-FINDINGS.md)), and its wedged case stopped the
+   pane's shell rather than the CLI. The argument stands on the verifier's own
+   limits and needs no run behind it. Do not re-add the claim.
 
    The choice is therefore possible loss over possible duplication: preserve
    at-most-once delivery, retain `<prefix>:blocked`, emit the watchdog alert and
