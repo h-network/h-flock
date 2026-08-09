@@ -37,6 +37,9 @@ ckc "board has hold col" "$(cu $A/agents/bob/board)" '"hold"'
 ckc "bob takes it"       "$(dx bash -lc 'cd /workdir/bob && AGENT_NAME=bob office take' 2>&1)" "plumb-ticket"
 ckc "now in doing"       "$(cu $A/agents/bob/board)" '"doing":\['
 ckc "task record file"   "$(dx bash -lc 'cat /home/ubuntu/.flock/tasks.jsonl 2>/dev/null | tail -2')" '"event"'
+# ⚠ Finish it, or the next run finds bob still holding one and `take` correctly
+# refuses — a failing check that is the board working exactly as designed.
+dx bash -lc 'cd /workdir/bob && AGENT_NAME=bob office done' >/dev/null 2>&1
 
 echo "== 4. app client =="
 cu -X POST -H 'Content-Type: application/json' -d '{"kind":"StartAgent","payload":{"agent":"telegram","vab":"api"}}' $A/agents/host/envelopes >/dev/null
@@ -84,6 +87,18 @@ echo "== 10. dead-letter =="
 cu -X POST -H 'Content-Type: application/json' -d '{"text":"nobody home"}' $A/agents/ghost/envelopes >/dev/null
 sleep 2
 ckc "unroutable dead-lettered" "$(dx docker logs 2>/dev/null || true; dx redis-cli KEYS 'pod:acme:tenant:hq:agent:*:dead')" "dead"
+
+echo "== 11. booted and hired agents get the same environment =="
+# ⚠ The one check that would have caught the build 17 drift. Two code paths built
+# a window environment, each was individually correct, each passed its own unit
+# tests — only their EQUALITY was wrong, and nothing compared them. Comparing the
+# two at the level where they actually differ is the whole point.
+penv() { dx bash -c "tr '\0' '\n' < /proc/\$(TMUX_TMPDIR=/home/ubuntu/.flock/tmux tmux list-panes -t hq:$1 -F '#{pane_pid}' | head -1)/environ" \
+         | grep -E '^(OFFICE_TOOLS|AGENT_GUIDE|CLAUDE_CONFIG_DIR|CODEX_HOME)=' | sed "s|/$1|/<agent>|g" | sort; }
+cu -X POST -H 'Content-Type: application/json' -d '{"kind":"StartAgent","payload":{"agent":"envprobe"}}' $A/agents/host/envelopes >/dev/null
+sleep 6
+ck "hired env == booted env" "$(penv envprobe)" "$(penv alice)"
+cu -X POST -H 'Content-Type: application/json' -d '{"kind":"StopAgent","payload":{"agent":"envprobe"}}' $A/agents/host/envelopes >/dev/null
 
 echo
 echo "PASS=$pass FAIL=$fail"
