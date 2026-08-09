@@ -95,26 +95,24 @@ only reads the verdict, reports its age, and may include it in a stall alert.
 
 ### Measured limits
 
-The lab matrix established the boundary:
+The deterministic lab run established the boundary:
 
 | state | observed result |
 |---|---|
-| healthy agent delivered to and answering | not blocked |
-| Claude at `Not logged in` | **miss**: not blocked |
-| trust picker | blocked |
-| stopped CLI process | blocked |
-| resumed CLI followed by a consumed delivery | block cleared |
+| healthy new Claude with no activity history | delivery unjudged; not blocked |
+| non-consuming pane with prior activity history | blocked |
+| credential-free Codex at its login prompt, with prior activity | blocked |
+| credential-free Claude at its login prompt, with prior activity | blocked |
 | bare shell | never marked |
 | agy | never marked |
 
-The login miss is the important limit. Claude records an input event even though
-the login screen does not act on the pasted message, so verification passes.
-Any CLI state that records input without acting on it is in this same blind
-class; modal pickers are a known example, although the `/model` matrix attempt
-did not validly exercise one and remains unproven. Bare shells and agy are not
-verified at all, so they cannot become `blocked`.
+The limit is history, not a special terminal screen. The router judges only an
+agent that has previously produced an activity offset or feed. A new agent's
+first delivery is dropped unjudged even if the agent is unable to consume it;
+the watchdog therefore has no `blocked` verdict to report. Bare shells and agy
+are not verified at all, so they cannot become `blocked`.
 
-No screen is scraped to fill this gap. Measurement showed that a consumed
+No screen is scraped to fill that limit. Measurement showed that a consumed
 message remains visible in terminal scrollback, making it indistinguishable
 from pending input without CLI-specific rendering knowledge. That approach
 marked a healthy agent blocked and was removed.
