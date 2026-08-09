@@ -11,7 +11,7 @@ An HTTP front door to a running tenant. A user can already reach an agent by
 typing into its window; the api is the other way in — it puts a correctly formed
 envelope on the bus, and the router does what it always does.
 
-It also reads state that already exists in Redis: boards, rosters, queue depths, presence, and activity feeds.
+It also reads state that already exists in Redis: boards, rosters, queue depths, presence, activity feeds, and watchdog alerts.
 Terminal output and live driving are handled by the separate `flock.session`
 service on port 8081.
 
@@ -22,7 +22,7 @@ envelope, reading keys, and handing back what comes the other way.
   HTTP ──► api ──send (with 'as')──► bus ──► router ──► agent
     ▲        │                                             │
     │        └──► Redis reads (boards, roster, depths,     │
-    │                         presence, activity)          │
+    │                         presence, activity, alerts)  │
     │                                                      │
     └──── receive ◄── client inbox ◄── deliver_api ◄─ router ◄─┘  agent replies to client name
 ```
@@ -53,6 +53,8 @@ restarted and deployed without disturbing the others.
 | `GET` | `/agents/{agent}/activity/stream` | live SSE stream of activity events (`?after=<cursor>`) |
 | `GET` | `/agents/{agent}/board` | that agent's board (`todo`, `doing`, `hold`, `done`) |
 | `GET` | `/board` | every agent's board (`todo`, `doing`, `hold`, `done`) |
+| `GET` | `/alerts` | get stored watchdog alert events across the tenant (`?after=<cursor>&limit=100`) |
+| `GET` | `/alerts/stream` | live SSE stream of watchdog alert events (`?after=<cursor>`) |
 | `GET` | `/restdoc` | self-contained API documentation page |
 | `GET` | `/docs` | OpenAPI Swagger UI documentation |
 | `GET` | `/redoc` | OpenAPI ReDoc documentation |
@@ -125,13 +127,19 @@ segment.
 - **Activity Feed** (`GET /agents/{agent}/activity` and `GET /agents/{agent}/activity/stream`):
   Served from stream key `<prefix>:agent:<name>:activity`, populated by the router tailing CLI session log files.
   Structured events carry `{ "v": 1, "agent": "<name>", "ts": "<ISO>", "kind": "input" | "output" | "tool" [, "tool": "<Name>"] }`.
+- **Watchdog Alerts Feed** (`GET /alerts` and `GET /alerts/stream`): Served from tenant stream key
+  `<prefix>:alerts`, populated by `flock.watchdog`. Alerts notify human operators (never agents) of stalled
+  tickets, wedged processes, or expiring credentials (`{ "v": 1, "ts": "<ISO>", "kind": "stalled"|..., ... }`).
 - **Enrolled Membership & 404 Behavior**: Endpoint paths targeting `{agent}` check roster membership (`is_member`).
   An unenrolled agent returns `404 Not Found`. An enrolled agent holding no tasks, mailbox messages, activity,
   or presence returns `200 OK` with empty structures. `POST /agents/all/envelopes` is explicitly exempt from roster
   checks because `all` is the reserved broadcast address.
+- **Blocked Status Note**: `blocked` (`<prefix>:agent:<name>:blocked`) is set by the router when a delivery is judged
+  unverified (`delivery_unverified`). It indicates an unconsumed message sitting in an agent's window. It does not mean
+  "stuck" (it catches modal dialogs and unconsumed input, but misses CLIs that consume input without acting).
 
 Reads are point-in-time — no subscriptions, no watches. That applies to *state* (boards, roster, queue depths, presence);
-replies and activity feeds offer catch-up polling or SSE streams (`GET /messages/stream`, `GET /activity/stream`).
+replies, activity feeds, and watchdog alerts offer catch-up polling or SSE streams (`GET /messages/stream`, `GET /activity/stream`, `GET /alerts/stream`).
 
 ## 6. Transport & auth
 

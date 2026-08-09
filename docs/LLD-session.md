@@ -85,6 +85,8 @@ everything.
 current contents, then `%output` from that point, so a terminal opens with
 scrollback rather than blank until the next keypress.
 
+⚠ `capture-pane` is used exclusively by this module to render terminal scrollback snapshots to human operators over the session door. Observation modules outside the session door (watchdog, router, adapters) never execute `capture-pane`.
+
 ## 4. Writing: keystrokes
 
 The same socket carries input, issued as `send-keys` through the same
