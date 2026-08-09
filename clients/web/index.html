@@ -1,0 +1,34 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>h-flock office</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <main class="office">
+    <aside>
+      <header><h1>office</h1><span id="connection" class="muted">connecting</span></header>
+      <nav id="agents" aria-label="Agents"></nav>
+      <section class="alerts">
+        <h2>alerts</h2>
+        <ol id="alerts"></ol>
+      </section>
+    </aside>
+    <section class="conversation">
+      <header>
+        <div><h2 id="agent-title">Select an agent</h2><span id="agent-state" class="muted"></span></div>
+        <button id="boards-toggle" type="button">boards</button>
+      </header>
+      <section id="board" hidden></section>
+      <ol id="chat" aria-live="polite"></ol>
+      <form id="composer">
+        <textarea id="message" rows="2" placeholder="type here…" disabled></textarea>
+        <button id="send" type="submit" disabled>send</button>
+      </form>
+    </section>
+  </main>
+  <script src="app.js"></script>
+</body>
+</html>
