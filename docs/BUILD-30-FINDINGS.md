@@ -62,3 +62,58 @@ the whole tenant unsafe for the duration.
 
 `bash container/sim-blocked.sh` reports **FAIL=0 against the lab tenant**, with
 the run pasted into the report — not unit tests. Case 3 still asserts the gap.
+
+---
+
+# Run 2 — `PASS=6 FAIL=4`, and a structural problem
+
+The process walk, deadline polling, key-level assertion and profile isolation all
+landed, and the shared tenant config is no longer touched. The cases still do not
+reproduce, and the run says something more important than its score.
+
+## 6. Only case 1 checks its own precondition — and it fails
+
+```
+  FAIL  CLI process is stopped (state T) : expected [0] got [1]
+  ...
+  FAIL  sim-wedged is blocked : [idle] lacks [blocked]
+```
+
+The precondition assertion is exactly right, and it reports that **the CLI was
+never stopped**. `get_cli_pid` walks "first child, else first grandchild", which
+is a guess: it takes the first branch it meets rather than the process whose
+command matches the agent's launch. Resolve by **matching the launch value**
+(`…:agent:<n>:launch`) against the descendants' `comm`, and stop that.
+
+⚠ **A failed precondition must abort the case, not continue.** Having reported
+the CLI was not stopped, the script went on to assert `blocked` anyway and
+reported a second failure. That second line is noise — nothing was wedged, so
+`idle` is the *correct* product behaviour. **A case whose setup did not happen
+has no verdict to report.**
+
+⚠ **Cases 2 and 3 assert no precondition at all.** Nothing checks that `sim-trust`
+actually sat at a trust picker, or that `sim-nologin` actually reached a login
+prompt. Their results therefore mean nothing in either direction.
+
+## 7. What the run appears to say, and why we are not acting on it
+
+| case | documented in `HLD` §8a | run 2 |
+|---|---|---|
+| trust picker | caught — `blocked` set | **not caught** — `idle` |
+| login prompt | **missed** — the known gap | **caught** — `blocked` set |
+
+That is the documented matrix inverted. ⚠ **Do not change `HLD` on this
+evidence.** With no precondition checks, the likeliest explanation is that
+neither agent was in the state its case is named for — a claude that started
+fine, and a codex that exited rather than waiting at a prompt.
+
+⚠ **This is why preconditions come first.** Without them a run cannot tell a
+product bug from a simulator that set up nothing, and we came one step from
+rewriting an architecture document to match an artefact.
+
+## 8. Done when
+
+Each case proves its own setup, aborts if the setup fails, and only then judges.
+Then `FAIL=0` against the lab **with the run pasted in**. If a case proves its
+precondition and still contradicts §8a, that is a real finding — report it and
+change nothing until we have looked together.
