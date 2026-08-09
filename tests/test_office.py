@@ -2,6 +2,7 @@ import ast
 import json
 import subprocess
 import tomllib
+from datetime import datetime, timezone
 from pathlib import Path
 
 import pytest
@@ -33,6 +34,9 @@ class MockRedis:
     def hget(self, key, field):
         value = self.roster.get(field)
         return value.encode() if value else None
+
+    def hgetall(self, key):
+        return self.values.get(key, {})
 
     def hexists(self, key, field):
         return field in self.roster
@@ -94,6 +98,7 @@ def test_root_help_lists_whole_surface_without_environment_or_redis(monkeypatch,
         "send",
         "broadcast",
         "peers",
+        "status",
         "hire",
         "letGo",
         "pause",
@@ -112,7 +117,7 @@ def test_root_help_lists_whole_surface_without_environment_or_redis(monkeypatch,
 
 @pytest.mark.parametrize(
     "command",
-    ["send", "broadcast", "peers", "hire", "letGo", "pause", "resume", "list", "take", "done", "cancel", "hold", "delete", "add", "cloneToAll"],
+    ["send", "broadcast", "peers", "status", "hire", "letGo", "pause", "resume", "list", "take", "done", "cancel", "hold", "delete", "add", "cloneToAll"],
 )
 def test_every_subcommand_has_environment_free_help(monkeypatch, command):
     monkeypatch.delenv("AGENT_NAME", raising=False)
@@ -179,6 +184,62 @@ def test_peers_reads_configured_first_agent_instead_of_sorting(office_env, capsy
     office_env.values["pod:acme:tenant:hq:lead"] = b"zeus"
     cli.main(["peers"])
     assert capsys.readouterr().out.strip() == "alpha, zeus (lead)"
+
+
+def test_status_lists_tmux_agents_with_presence_ticket_and_activity(office_env, monkeypatch, capsys):
+    office_env.values["pod:acme:tenant:hq:agent:frontend:presence"] = {
+        b"state": b"working",
+        b"since": b"2026-08-09T13:59:56.000Z",
+        b"last_activity": b"2026-08-09T13:59:56.000Z",
+    }
+    office_env.values["pod:acme:tenant:hq:agent:backend:presence"] = {
+        b"state": b"idle",
+        b"since": b"2026-08-09T13:55:30.000Z",
+        b"last_activity": b"2026-08-09T13:54:00.000Z",
+    }
+    office_env.lists[_task("frontend", "doing")] = [
+        b'{"id":"work","title":"review the auth change","started_ts":"2026-08-09T13:46:00.000Z"}'
+    ]
+
+    class FixedDateTime(datetime):
+        @classmethod
+        def now(cls, tz=None):
+            return cls(2026, 8, 9, 14, 0, tzinfo=timezone.utc)
+
+    monkeypatch.setattr(cli, "datetime", FixedDateTime)
+    before_values = dict(office_env.values)
+    before_lists = {key: list(values) for key, values in office_env.lists.items()}
+
+    cli.main(["status"])
+
+    assert capsys.readouterr().out.splitlines() == [
+        "  backend     idle      —                                  last activity 6m ago",
+        '  frontend    working   "review the auth change" 14m       last activity 4s ago',
+    ]
+    assert office_env.values == before_values
+    assert office_env.lists == before_lists
+
+
+def test_status_unknown_feed_and_optional_blocked_override(office_env, monkeypatch, capsys):
+    office_env.values["pod:acme:tenant:hq:agent:backend:presence"] = {
+        b"state": b"working",
+        b"since": b"2026-08-09T13:59:00.000Z",
+        b"last_activity": b"2026-08-09T13:59:00.000Z",
+    }
+    cli.main(["status", "frontend"])
+    assert capsys.readouterr().out == "  frontend    unknown   —                                  no activity feed\n"
+
+    office_env.values["pod:acme:tenant:hq:agent:backend:blocked"] = b"watchdog reason"
+    cli.main(["status", "backend"])
+    assert "backend     blocked" in capsys.readouterr().out
+
+
+def test_status_rejects_non_tmux_or_unknown_agent(office_env, capsys):
+    for agent in ("api", "missing"):
+        with pytest.raises(SystemExit) as exc:
+            cli.main(["status", agent])
+        assert exc.value.code == 1
+        assert f"unknown tmux agent '{agent}'" in capsys.readouterr().err
 
 
 @pytest.mark.parametrize(

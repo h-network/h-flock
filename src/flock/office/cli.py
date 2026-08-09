@@ -20,6 +20,7 @@ _COMMANDS = (
     "send",
     "broadcast",
     "peers",
+    "status",
     "hire",
     "letGo",
     "pause",
@@ -49,6 +50,7 @@ def _root_parser() -> argparse.ArgumentParser:
         "send": "send a message to one agent",
         "broadcast": "send a message to every peer agent",
         "peers": "list peer agents",
+        "status": "show agent presence and open work",
         "hire": "enrol a new agent",
         "letGo": "retire an agent",
         "pause": "pause an agent's CLI",
@@ -147,6 +149,78 @@ def _peers_command(argv: list[str]) -> None:
     ]
     formatted = [f"{agent} (lead)" if agent == lead else agent for agent in peer_names]
     print(", ".join(formatted))
+
+
+def _timestamp(value) -> datetime | None:
+    if not value:
+        return None
+    try:
+        parsed = datetime.fromisoformat(_text(value).replace("Z", "+00:00"))
+    except (AttributeError, TypeError, ValueError):
+        return None
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=timezone.utc)
+    return parsed.astimezone(timezone.utc)
+
+
+def _age(value, *, now: datetime) -> str | None:
+    timestamp = _timestamp(value)
+    if timestamp is None:
+        return None
+    seconds = max(0, int((now - timestamp).total_seconds()))
+    if seconds < 60:
+        return f"{seconds}s"
+    if seconds < 60 * 60:
+        return f"{seconds // 60}m"
+    if seconds < 24 * 60 * 60:
+        return f"{seconds // (60 * 60)}h"
+    return f"{seconds // (24 * 60 * 60)}d"
+
+
+def _status_row(r, *, pod: str, tenant: str, agent: str, now: datetime) -> str:
+    presence = r.hgetall(prefix(pod, tenant, agent=agent, resource="presence")) or {}
+    decoded_presence = {_text(field): _text(value) for field, value in presence.items()}
+
+    # The watchdog owns this key. Status only observes it, and absence before
+    # build 27 is the normal case.
+    blocked = r.get(prefix(pod, tenant, agent=agent, resource="blocked"))
+    presence_state = decoded_presence.get("state") or "unknown"
+    state = "blocked" if blocked is not None else presence_state
+
+    doing_key = prefix(pod, tenant, agent=agent, resource="tasks.doing")
+    raw_ticket = next(iter(r.lrange(doing_key, 0, 0)), None)
+    if raw_ticket is None:
+        task = "—"
+    else:
+        ticket = _ticket(raw_ticket, state="doing")
+        opened = _age(ticket.get("started_ts"), now=now)
+        task = f'"{ticket["title"]}"' + (f" {opened}" if opened else "")
+
+    if presence_state == "unknown":
+        activity = "no activity feed"
+    else:
+        last = _age(decoded_presence.get("last_activity"), now=now)
+        activity = f"last activity {last} ago" if last else "no activity yet"
+    return f"  {agent:<12}{state:<10}{task:<35}{activity}"
+
+
+def _status_command(argv: list[str]) -> None:
+    parser = _operation_parser("status", "Show agent presence and open work.")
+    parser.add_argument("agent", nargs="?", help="one tmux agent (default: all)")
+    args = parser.parse_args(argv)
+    r, pod, tenant, _ = _context()
+    tmux_agents = sorted(
+        agent
+        for agent in members(r, pod=pod, tenant=tenant)
+        if vab(r, pod=pod, tenant=tenant, agent=agent) == "tmux"
+    )
+    if args.agent is not None:
+        if args.agent not in tmux_agents:
+            raise OfficeError(f"unknown tmux agent {args.agent!r}")
+        tmux_agents = [args.agent]
+    now = datetime.now(timezone.utc)
+    for agent in tmux_agents:
+        print(_status_row(r, pod=pod, tenant=tenant, agent=agent, now=now))
 
 
 def _control_command(command: str, argv: list[str]) -> None:
@@ -512,6 +586,8 @@ def main(argv: Sequence[str] | None = None) -> None:
             _broadcast_command(remainder)
         elif command == "peers":
             _peers_command(remainder)
+        elif command == "status":
+            _status_command(remainder)
         elif command in ("hire", "letGo", "pause", "resume"):
             _control_command(command, remainder)
         elif command == "list":
