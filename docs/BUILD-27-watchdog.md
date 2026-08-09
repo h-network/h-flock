@@ -3,7 +3,8 @@
 > Design is [`SPRINTS-next.md`](SPRINTS-next.md) §3, written before any of its
 > signals existed. They all exist now.
 >
-> **Base on `main`.** Branch `bus/build-27-watchdog`, push to origin.
+> **Base on `main`.** Branch `<lane>/build-27-watchdog`, push to origin.
+> `bus` builds the watchdog and the alerts stream; `api` serves the two routes.
 
 ## 1. Its own process
 
@@ -63,29 +64,55 @@ wallpaper.
 ⚠ Add `alerted` to the per-agent resource set from build 22, or the classification
 test will fail — which is exactly what it is for.
 
-## 5. Who it tells, and how
-
-An envelope to the **lead**, read from `<prefix>:lead`. Through the bus like
-anything else.
-
-The message states facts and stops:
+## 5. Who it tells — a human, not an agent
 
 ```
-[watchdog] sme-2 took "review the auth change" 14m ago, has not finished it,
-has produced no model activity for 9m and no terminal output for 7m.
+  <prefix>:alerts        STREAM, MAXLEN ~ 1000      the record, with a cursor
+  GET /alerts            ?after=<cursor>&limit=     catch-up
+  GET /alerts/stream     SSE                        live
+  the container log      one line each
+```
+
+⚠ **No envelope to the lead. No envelope to anyone.** The rule "reports, never
+repairs" constrains the watchdog and says nothing about what happens next — and
+what happens next, if an agent is told, is an LLM with `office` on its PATH
+deciding to help. The system would repair; it would just do it through a proxy
+with no accountability.
+
+⚠ **The alert would clear its own symptom.** Told *"sme-2 stalled, window silent
+7m"*, a lead messages sme-2 to ask. That paste produces window activity and an
+`input` event. Silence resets, presence flips to `working`, the condition
+evaporates — **and nothing was fixed.** We would have built a machine that
+reliably converts a stall into a hidden stall.
+
+⚠ **And a false positive would become an action.** The three-signal rule exists
+because a long `Bash` looks identical to a wedge. A human reading that waits and
+looks; an agent interrupts an agent that was working fine.
+
+The lead already has the pull half: `office status`, and a guide telling it to
+check before assigning and to hold work rather than fix. **Push goes to a person;
+pull belongs to the lead.**
+
+⚠ Notifying an agent later is a separate decision with its own answer to "and
+then what?" — much easier to make once alerts exist and someone has read a few.
+
+### What an alert says
+
+Facts, then stop:
+
+```json
+{"v":1,"ts":"…","kind":"stalled","agent":"sme-2",
+ "ticket":"review the auth change","doing_age_s":840,
+ "no_activity_s":540,"no_output_s":420,"unchecked":[]}
 ```
 
 ⚠ **Do not classify why.** Not "stuck", not "wedged", not "probably waiting on
-approval". Every attempt to say *why* is a guess made from outside, and a wrong
-one costs more than the alert is worth. Report what is true and let a person
-look.
+approval". Every *why* is a guess from outside, and a wrong one costs more than
+the alert is worth.
 
-⚠ **Say what could not be checked.** An agy agent has no activity feed, so
-presence is `unknown` and one of the three signals is missing. The alert must say
-so rather than implying three-signal confidence. Same for a bare shell.
-
-⚠ **No lead, no alert.** If `<prefix>:lead` is unset, log it and stay quiet
-rather than picking someone.
+⚠ **`unchecked` is not decoration.** An agy agent has no activity feed, so one of
+the three signals is missing and the alert must say which. An alert that quietly
+omits what it could not see is how a signal stops being trusted.
 
 ## 6. Credentials expiring — a slower, separate check
 
@@ -171,13 +198,15 @@ watchdog nobody trusts gets turned off, and it should be turnable off.
 
 ## 9. Done when
 
-- a stalled ticket with a silent window and no activity produces **one** alert to
-  the lead
+- a stalled ticket with a silent window and no activity produces **one** alert on
+  the stream, and **no envelope to any agent**
 - the same ticket does not alert again within the cooldown
 - an agent working a long `Bash` — silent presence, printing window — produces
   **no** alert
 - an agy agent's alert says which signal was unavailable
-- an unset lead produces a log line and no alert
+- `GET /alerts` returns it with a cursor; `/alerts/stream` delivers one live
+- a `blocked` agent is reported by `office status` without the watchdog writing
+  anything else
 - a credential within the warning window produces an alert naming the account
 - codex reports `unknown` rather than `fine`
 - an unsubmitted `[message from …]` in a pane appears in the alert
