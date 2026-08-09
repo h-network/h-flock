@@ -1,0 +1,32 @@
+:root { color-scheme: dark; font: 15px/1.45 system-ui, sans-serif; background: #11151b; color: #e8edf2; }
+* { box-sizing: border-box; }
+body { margin: 0; }
+button, textarea { font: inherit; }
+.office { min-height: 100vh; display: grid; grid-template-columns: minmax(230px, 28%) 1fr; }
+aside { border-right: 1px solid #303945; display: flex; flex-direction: column; }
+header { min-height: 64px; padding: 14px 18px; border-bottom: 1px solid #303945; display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+h1, h2 { font-size: 1rem; margin: 0; }
+.muted { color: #8d9aaa; font-size: .85rem; }
+#agents { padding: 10px; }
+.agent { width: 100%; border: 0; border-radius: 6px; padding: 9px; display: flex; gap: 9px; align-items: center; color: inherit; background: transparent; text-align: left; cursor: pointer; }
+.agent:hover, .agent.selected { background: #222a34; }
+.mark { width: 1.2em; text-align: center; color: #8d9aaa; }
+.working .mark { color: #50d890; }.blocked .mark { color: #ff7373; }.idle .mark { color: #9ca8b5; }
+.alerts { margin-top: auto; border-top: 1px solid #303945; padding: 14px 18px; max-height: 35vh; overflow: auto; }
+.alerts ol { margin: 10px 0 0; padding: 0; list-style: none; }
+.alerts li { color: #f0b76d; margin: 8px 0; }
+.conversation { min-width: 0; display: grid; grid-template-rows: auto auto 1fr auto; height: 100vh; }
+#chat { margin: 0; padding: 20px; list-style: none; overflow-y: auto; }
+#chat li { max-width: 75ch; margin: 0 0 14px; white-space: pre-wrap; overflow-wrap: anywhere; }
+#chat .mine { margin-left: auto; background: #244866; padding: 10px 12px; border-radius: 10px; }
+#chat .reply { background: #222a34; padding: 10px 12px; border-radius: 10px; }
+#chat .activity { color: #aeb9c5; font-size: .9rem; }
+#composer { display: flex; gap: 10px; padding: 16px; border-top: 1px solid #303945; }
+textarea { flex: 1; resize: vertical; color: inherit; background: #191f27; border: 1px solid #3b4653; border-radius: 8px; padding: 10px; }
+button { color: inherit; background: #2b638d; border: 0; border-radius: 6px; padding: 8px 14px; cursor: pointer; }
+button:disabled { cursor: default; opacity: .45; }
+#board { padding: 12px 18px; border-bottom: 1px solid #303945; max-height: 35vh; overflow: auto; }
+.columns { display: grid; grid-template-columns: repeat(4, minmax(120px, 1fr)); gap: 10px; }
+.columns ul { padding-left: 18px; }
+.error { color: #ff8a8a; }
+@media (max-width: 700px) { .office { grid-template-columns: 1fr; } aside { max-height: 42vh; border-right: 0; border-bottom: 1px solid #303945; } .conversation { height: 58vh; } }

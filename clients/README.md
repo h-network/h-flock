@@ -34,3 +34,12 @@ one. Nothing here may be imported by `flock.*`, ever.
 | the framework says **what it is doing** | `/activity/stream` — `tool: Bash`, live |
 | and **whether it can** | presence: `working` / `idle` / `unknown` / `blocked` |
 | a reply **may never come** | every client is built for silence |
+
+## Why the web client includes a server
+
+h-flock sends no CORS headers, so a browser page hosted on another origin is
+refused. Browser `EventSource` also cannot attach the Bearer header required by
+the SSE endpoints. `web/server.py` serves the page and proxies authenticated API
+requests from the same origin, solving both without exposing the token to
+browser JavaScript. It is a standard-library server, not another framework
+service.
