@@ -9,7 +9,8 @@ Things decided-but-not-done, so they live somewhere other than a chat log.
 | **claude's seeded credential goes stale in place** | ⚠ **Not solved — mechanism still unmeasured.** Rotation (RTR) is the leading hypothesis and the timing supports it: the source refreshed at 15:25:48Z and a live agent on a copy died ~15:30. But no before/after token value was recorded and no rejection observed — see [`BUILD-32-ARCHITECT-CHECK`](BUILD-32-ARCHITECT-CHECK.md) §4. The proposed fix (agents on one account share `CLAUDE_CONFIG_DIR`) is **provisional**. ⚠ Also measured: the access token lives **8 hours**, not the 1 hour the findings claim |
 | **a live terminal view** | wanted, and `:8081` already streams it — the client half is missing |
 | **`clients/` needs its own repo** | consumers sitting inside the framework for want of a remote |
-| **profile logins** | one interactive login per account. Not buildable — a person has to do it |
+| **profile logins** | one interactive login per account. Not buildable — a person has to do it. ⚠ **Checked: nobody has solved this.** NVIDIA OpenShell treats credentials as named providers injected as env vars — API-key shaped — and its own tutorial says *"You must authenticate with your own account… It prints an authentication link. Open it in your browser… When prompted, trust the `/sandbox` workspace."* The browser flow and the trust prompt are exactly what we hit |
+| **logins do not survive a rebuild** | `container/seed-home.sh out` saves them and `in` restores; without it a rebuild leaves every CLI at `Not logged in`, which is what happened to the lab tenant. See the rebuild rule in [`LLD-container`](LLD-container.md) |
 | **security, parked deliberately** | TLS, CORS, per-client tokens, Redis ACLs |
 
 ⚠ **This index has been wrong four times in one day.** Each time a build closed
