@@ -173,6 +173,9 @@ unset FLOCK_LOG_FILE FLOCK_LOG_FILE_AGENT_ONLY
 
 # ── the rest ──────────────────────────────────────────────────────────────────
 start router  env REDIS_URL="${REDIS_URL:-redis://127.0.0.1:6379/0}" python3 -m flock.router
+if [ "${WATCHDOG_ENABLED:-1}" != "0" ]; then
+  start watchdog env REDIS_URL="${REDIS_URL:-redis://127.0.0.1:6379/0}" python3 -m flock.watchdog
+fi
 # No adapter here. It is not a service — the router kicks `flock.adapter <agent>`
 # per delivery and it exits (LLD-adapter-tmux §2). Starting one at boot would be
 # the daemon this build exists to remove.
