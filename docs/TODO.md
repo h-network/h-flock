@@ -108,8 +108,16 @@ just means every window stops on a prompt.
 
 ## Delivery
 
-**The `verify` step.** `LLD-adapter-tmux` §4 says "verify, optionally" and we
-took the option. h-office enables it by default after *"roughly one delivery in
+**~~The `verify` step~~ — SHIPPED in build 19, and it covers half of this.**
+Measured: 0 false positives over 6 landed deliveries, catches the
+Enter-not-taken case below, **misses a modal swallow** — claude writes an `input`
+record even when a picker eats the message. Details and numbers in
+[`BUILD-19-verify.md`](BUILD-19-verify.md) §6b. **It reports only; nothing
+retries.** Whether to re-deliver on `delivery_unverified` is still open and now
+has numbers behind it.
+
+The original entry, for the reasoning: `LLD-adapter-tmux` §4 says "verify,
+optionally" and we took the option. h-office enables it by default after *"roughly one delivery in
 ten left its message sitting in the recipient's input box, marked delivered and
 already popped off the queue"*. That is a silent loss path: `opened` is logged,
 the envelope is gone from Redis, and the message was never submitted.
