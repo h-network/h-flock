@@ -61,7 +61,7 @@ class DeliveryVerifier:
         now = now.astimezone(timezone.utc)
 
         for agent in sorted(agents):
-            pending_key = prefix(self.pod, self.tenant, agent, "pending_verify")
+            pending_key = prefix(self.pod, self.tenant, agent, "pending.verify")
             pending = self.r.xrange(pending_key, min="-", max="+")
             eligible = []
             for entry_id, raw_fields in pending:

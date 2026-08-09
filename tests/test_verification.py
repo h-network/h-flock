@@ -40,18 +40,18 @@ NOW = datetime(2026, 8, 9, 12, 0, 20, tzinfo=timezone.utc)
 
 def test_later_input_verifies_and_drops_marker_without_log(capsys):
     r = VerifyRedis()
-    r.streams[_key("pending_verify")] = [_marker("delivered", "2026-08-09T12:00:00Z")]
+    r.streams[_key("pending.verify")] = [_marker("delivered", "2026-08-09T12:00:00Z")]
     r.streams[_key("activity")] = [_activity("input", "2026-08-09T12:00:01Z")]
 
     DeliveryVerifier(r, pod="acme", tenant="hq").poll({"sme-2"}, now=NOW)
 
-    assert r.streams[_key("pending_verify")] == []
+    assert r.streams[_key("pending.verify")] == []
     assert capsys.readouterr().out == ""
 
 
 def test_missing_later_input_is_not_confirmed_never_reported_lost(capsys):
     r = VerifyRedis()
-    r.streams[_key("pending_verify")] = [_marker("not-confirmed", "2026-08-09T12:00:00Z")]
+    r.streams[_key("pending.verify")] = [_marker("not-confirmed", "2026-08-09T12:00:00Z")]
     r.streams[_key("activity")] = [
         _activity("input", "2026-08-09T11:59:59Z", b"1-0"),
         _activity("output", "2026-08-09T12:00:05Z", b"2-0"),
@@ -67,24 +67,29 @@ def test_missing_later_input_is_not_confirmed_never_reported_lost(capsys):
     assert record["waited"] == 10
     assert record["reason"] == "not confirmed by a later input activity event"
     assert "lost" not in json.dumps(record)
-    assert r.streams[_key("pending_verify")] == []
+    assert r.streams[_key("pending.verify")] == []
 
 
 def test_marker_younger_than_threshold_remains_pending(capsys):
     r = VerifyRedis()
     marker = _marker("young", "2026-08-09T12:00:15Z")
-    r.streams[_key("pending_verify")] = [marker]
+    r.streams[_key("pending.verify")] = [marker]
     r.streams[_key("activity")] = [_activity("input", "2026-08-09T12:00:16Z")]
 
     DeliveryVerifier(r, pod="acme", tenant="hq", verify_after_seconds=10).poll({"sme-2"}, now=NOW)
 
-    assert r.streams[_key("pending_verify")] == [marker]
+    assert r.streams[_key("pending.verify")] == [marker]
     assert r.deleted == []
     assert capsys.readouterr().out == ""
 
 
-def test_pending_verify_is_the_pinned_key_exception():
-    assert _key("pending_verify") == "pod:acme:tenant:hq:agent:sme-2:pending_verify"
+def test_pending_verify_key_follows_the_dotted_resource_convention():
+    """Resources compose with a dot, like tasks.todo and activity.offset.
+
+    Pinned here because the adapter writes this key and the router reads it —
+    two lanes, two files. They briefly disagreed, each with passing tests.
+    """
+    assert _key("pending.verify") == "pod:acme:tenant:hq:agent:sme-2:pending.verify"
 
 
 def test_router_tails_then_verifies_same_roster_in_existing_pass():

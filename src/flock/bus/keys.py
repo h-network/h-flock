@@ -39,11 +39,6 @@ def _validate_resource(value: str | None) -> str:
     # bypassed the all-digit rejection above, which was not the intent.
     if not isinstance(value, str) or not value:
         raise KeyError(value)
-    # Build 19 pins this underscore spelling as an inter-module contract. Keep
-    # the one narrow exception here so callers still use the sole key
-    # constructor rather than assembling it.
-    if value == "pending_verify":
-        return value
     for segment in value.split("."):
         _validate(segment)
     return value

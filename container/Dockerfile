@@ -96,6 +96,7 @@ RUN mkdir -p /home/ubuntu/.flock/tmux /workdir \
 ENV PYTHONUNBUFFERED=1 \
     ROSTER_POLL_SECONDS=5 \
     ACTIVITY_POLL_SECONDS=2 \
+    VERIFY_AFTER_SECONDS=10 \
     TMUX_TMPDIR=/home/ubuntu/.flock/tmux \
     API_PORT=8080 \
     SESSION_PORT=8081
