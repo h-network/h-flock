@@ -153,7 +153,7 @@ write another agent's keys directly, which is what h-office does.
 This generalises invariant 3 from queues to every per-agent key: **nothing writes
 another agent's keys — it sends an envelope.** And it pays for itself three ways:
 
-- the four log records every envelope already gets, so "who added what, when" is
+- the five log records every envelope already gets, so "who added what, when" is
   answerable from the log rather than only the task JSONL
 - it works from the api and an app unchanged — `POST /agents/backend/envelopes`
   with `kind: AddTicket` is adding a ticket, no new endpoint

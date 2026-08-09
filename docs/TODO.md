@@ -261,6 +261,8 @@ that the watchdog needed them.
 Two documented claims are therefore false as written:
 
 - `LLD-bus-and-router` §4 — *"four records across a delivered envelope's life"*.
+  ⚠ **Corrected in build 20: it is five**, and the four was arithmetic that only
+  looked right because the missing one was the one nobody could see.
   True for api-sent envelopes; agent-sent ones have three centrally and one in a
   terminal. The crash-detectability argument does not cover the agent's end.
 - `PLAN-boards.md` — *"there is no second place to look"*. Was true and is now

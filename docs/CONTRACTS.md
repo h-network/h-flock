@@ -219,7 +219,7 @@ Events, in the order they occur:
 A module may also log its own **lifecycle** — `started`, `stopped`, `error` —
 which is not about any envelope. Those carry no `stream_id`: it is the join key
 for one envelope's life, and a synthetic value like `"system"` in that field
-makes the four records of a real envelope harder to find, not easier. `stream_id`
+makes the five records of a real envelope harder to find, not easier. `stream_id`
 is required on the six events above and absent on the rest.
 
 ⚠ **Never log a payload.** Invariant 4 says the router does not read one; the

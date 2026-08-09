@@ -482,8 +482,25 @@ loss is visible. That trade is the decision; revisit it if losses turn out to be
 common rather than theoretical.
 
 `send` and `receive` log at their own ends too, so a delivered envelope leaves
-four records across its life. The pair-per-component is what matters: each
-component records that it took custody and what it then did.
+**five** records across its life:
+
+```
+  sent        the producer's own end            (flock.bus.doors)
+  popped      the router took custody           (router)
+  forwarded   … and what it then did            (router)
+  received    the adapter took custody          (adapter)
+  opened      … and what it then did            (adapter)
+```
+
+The pair-per-component is what matters: each component records that it took
+custody and what it then did. `send` has no pair because it has no custody to
+hand on — it is the origin.
+
+⚠ **This said "four" until build 20, and the arithmetic never worked**: two
+paired components plus `send` is 1+2+2. It read as true only because `sent` was
+written into an agent's pane and never reached the log, so four was what anyone
+counting actually saw. The claim was corrected when the record it was missing
+started arriving.
 
 **The router does not read payloads.** It forwards on `recipient`, and derives
 the sender from the queue the envelope was popped from. Nothing else in the
