@@ -500,6 +500,49 @@ data: {"v": 1, "agent": "sme-2", "ts": "2026-08-09T12:00:00.000Z", "kind": "tool
 
 ---
 
+### Watchdog Alerts Feed
+
+Tenant-level alerts produced by `flock.watchdog` when an agent is stalled, wedged, or has expiring credentials.
+
+#### `GET /alerts`
+
+Returns stored watchdog alert events across the tenant (`?after=<cursor>&limit=100`).
+
+**Response (`200 OK`):**
+```json
+{
+  "alerts": [
+    {
+      "cursor": "1723150000000-0",
+      "v": 1,
+      "ts": "2026-08-09T15:00:00.000Z",
+      "kind": "stalled",
+      "agent": "sme-2",
+      "ticket": "review the auth change",
+      "doing_age_s": 840,
+      "no_activity_s": 540,
+      "no_output_s": 420,
+      "unchecked": []
+    }
+  ],
+  "next_cursor": "1723150000000-0"
+}
+```
+
+#### `GET /alerts/stream`
+
+Live Server-Sent Events (SSE) stream of watchdog alert events across the tenant (`?after=<cursor>`).
+
+**Example SSE Event Stream Output:**
+```text
+id: 1723150000000-0
+event: alert
+data: {"v": 1, "ts": "2026-08-09T15:00:00.000Z", "kind": "stalled", "agent": "sme-2", "ticket": "review the auth change", "doing_age_s": 840, "no_activity_s": 540, "no_output_s": 420, "unchecked": [], "cursor": "1723150000000-0"}
+
+```
+
+---
+
 ## 6. Terminal Session WebSocket Door (`:8081`)
 
 **The two doors split by who consumes them.** The REST API is for your code:
