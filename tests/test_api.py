@@ -34,6 +34,10 @@ class FakeRedis:
         assert (start, end) == (0, -1)
         return self.lists.get(key, [])
 
+    def rpush(self, key, value):
+        self.lists.setdefault(key, []).append(value.encode() if isinstance(value, str) else value)
+        return len(self.lists[key])
+
     def pipeline(self, transaction=False):
         assert transaction is False
         return FakePipeline(self)
@@ -389,5 +393,41 @@ def test_get_messages_non_api_agent_returns_404(client):
     # bob is vab "tmux", so GET /agents/bob/messages should return 404
     status_code, _ = request(app, "GET", "/agents/bob/messages", token="secret")
     assert status_code == 404
+
+
+def test_hyphenated_agent_names_with_digits(client):
+    app, redis = client
+    # Set up sme-2 in roster as api client
+    redis.roster[b"sme-2"] = b"api"
+
+    # 1. Queue depths for sme-2
+    status_code, body = request(app, "GET", "/agents/sme-2", token="secret")
+    assert status_code == 200
+    assert body == {"agent": "sme-2", "depths": {"ingress": 0, "egress": 0, "dead": 0}}
+
+    # 2. Post envelope to sme-2
+    status_code, body = request(app, "POST", "/agents/sme-2/envelopes", token="secret", body={"text": "hello sme-2"})
+    assert status_code == 202
+    assert "stream_id" in body
+
+    # 3. Post envelope as sme-2
+    status_code, body = request(app, "POST", "/agents/alice/envelopes", token="secret", body={"text": "from sme-2", "as": "sme-2"})
+    assert status_code == 202
+
+    # 4. Board read for sme-2
+    status_code, body = request(app, "GET", "/agents/sme-2/board", token="secret")
+    assert status_code == 200
+    assert body == {"agent": "sme-2", "todo": [], "doing": [], "hold": [], "done": []}
+
+    # 5. Messages for sme-2
+    inbox_key = "pod:test:tenant:office:agent:sme-2:inbox"
+    env = {"v": 1, "producer": "architect", "recipient": "sme-2", "kind": "Message", "payload": {"text": "task for sme-2"}}
+    redis.streams[inbox_key] = [(b"2000-0", {b"envelope": json.dumps(env).encode()})]
+    status_code, body = request(app, "GET", "/agents/sme-2/messages", token="secret")
+    assert status_code == 200
+    assert body["agent"] == "sme-2"
+    assert len(body["messages"]) == 1
+    assert body["messages"][0]["recipient"] == "sme-2"
+
 
 

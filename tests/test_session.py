@@ -207,3 +207,20 @@ def test_refresh_panes_uses_session_scope_flag():
     assert mapping == {"alice": "%0", "bob": "%1"}
 
 
+def test_refresh_panes_handles_hyphenated_names_with_digits():
+    async def scenario():
+        controller = ControlModeClient("hq")
+
+        async def command(*args):
+            return ["%0\tarchitect", "%1\tsme-2", "%2\tsme-3"]
+
+        controller.command = command
+        await controller.refresh_panes()
+        return controller.agent_to_pane, controller.pane_to_agent
+
+    agent_to_pane, pane_to_agent = asyncio.run(scenario())
+    assert agent_to_pane == {"architect": "%0", "sme-2": "%1", "sme-3": "%2"}
+    assert pane_to_agent == {"%0": "architect", "%1": "sme-2", "%2": "sme-3"}
+
+
+
