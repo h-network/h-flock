@@ -392,6 +392,85 @@ def _render_restdoc_html(app: FastAPI) -> str:
 </html>"""
 
 
+def _read_stream_entries(
+    client: Any,
+    key: str,
+    after: str | None,
+    limit: int,
+    preferred_field: str = "envelope",
+) -> list[dict[str, Any]]:
+    min_id = f"({after}" if after else "-"
+    try:
+        raw_entries = client.xrange(key, min=min_id, max="+", count=limit)
+    except Exception as exc:
+        if isinstance(exc, redis.exceptions.RedisError):
+            raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)) from exc
+        return []
+
+    entries = []
+    b_pref = preferred_field.encode()
+    s_pref = preferred_field
+
+    for entry_id, fields in raw_entries:
+        cid = entry_id.decode() if isinstance(entry_id, bytes) else str(entry_id)
+        raw_val = None
+        if b_pref in fields:
+            raw_val = fields[b_pref]
+        elif s_pref in fields:
+            raw_val = fields[s_pref]
+        elif fields:
+            raw_val = next(iter(fields.values()))
+        if not raw_val:
+            continue
+        val_str = raw_val.decode() if isinstance(raw_val, bytes) else str(raw_val)
+        try:
+            val_dict = json.loads(val_str)
+        except (json.JSONDecodeError, TypeError):
+            continue
+        val_dict["cursor"] = cid
+        entries.append(val_dict)
+    return entries
+
+
+def _stream_response(
+    request: Request,
+    client: Any,
+    key: str,
+    event_name: str,
+    after: str | None,
+    preferred_field: str,
+) -> StreamingResponse:
+    header_last_id = request.headers.get("last-event-id")
+    cursor = after or header_last_id
+
+    async def event_generator():
+        nonlocal cursor
+        while True:
+            if await request.is_disconnected():
+                break
+            entries = _read_stream_entries(
+                client, key, after=cursor, limit=100, preferred_field=preferred_field
+            )
+            if entries:
+                for entry in entries:
+                    cid = entry["cursor"]
+                    cursor = cid
+                    data_json = json.dumps(entry)
+                    yield f"id: {cid}\nevent: {event_name}\ndata: {data_json}\n\n"
+            else:
+                await asyncio.sleep(0.1)
+
+    return StreamingResponse(
+        event_generator(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+        },
+    )
+
+
 def create_app(*, settings: Settings | None = None, redis_client: Any = None) -> FastAPI:
     settings = settings or Settings.from_env()
     settings.validate()
@@ -507,26 +586,7 @@ def create_app(*, settings: Settings | None = None, redis_client: Any = None) ->
         if vab(client, pod=settings.pod, tenant=settings.tenant, agent=agent) != "api":
             raise HTTPException(status_code=404, detail="invalid client agent")
         inbox_key = prefix(settings.pod, settings.tenant, agent, "inbox")
-        min_id = f"({after}" if after else "-"
-        try:
-            raw_entries = client.xrange(inbox_key, min=min_id, max="+", count=limit)
-        except redis.exceptions.RedisError as exc:
-            raise HTTPException(status_code=422, detail=str(exc)) from exc
-
-        messages = []
-        for entry_id, fields in raw_entries:
-            cid = entry_id.decode() if isinstance(entry_id, bytes) else str(entry_id)
-            raw_env = fields.get(b"envelope") if b"envelope" in fields else fields.get("envelope")
-            if not raw_env:
-                continue
-            env_str = raw_env.decode() if isinstance(raw_env, bytes) else str(raw_env)
-            try:
-                env_dict = json.loads(env_str)
-            except (json.JSONDecodeError, TypeError):
-                continue
-            env_dict["cursor"] = cid
-            messages.append(env_dict)
-
+        messages = _read_stream_entries(client, inbox_key, after=after, limit=limit, preferred_field="envelope")
         next_cursor = messages[-1]["cursor"] if messages else after
         return {
             "agent": agent,
@@ -542,48 +602,40 @@ def create_app(*, settings: Settings | None = None, redis_client: Any = None) ->
     ) -> StreamingResponse:
         if vab(client, pod=settings.pod, tenant=settings.tenant, agent=agent) != "api":
             raise HTTPException(status_code=404, detail="invalid client agent")
-
-        header_last_id = request.headers.get("last-event-id")
-        cursor = after or header_last_id
         inbox_key = prefix(settings.pod, settings.tenant, agent, "inbox")
+        return _stream_response(request, client, inbox_key, "message", after, "envelope")
 
-        async def event_generator():
-            nonlocal cursor
-            while True:
-                if await request.is_disconnected():
-                    break
-                min_id = f"({cursor}" if cursor else "-"
-                try:
-                    raw_entries = client.xrange(inbox_key, min=min_id, max="+", count=100)
-                except Exception:
-                    raw_entries = []
-                if raw_entries:
-                    for entry_id, fields in raw_entries:
-                        cid = entry_id.decode() if isinstance(entry_id, bytes) else str(entry_id)
-                        cursor = cid
-                        raw_env = fields.get(b"envelope") if b"envelope" in fields else fields.get("envelope")
-                        if not raw_env:
-                            continue
-                        env_str = raw_env.decode() if isinstance(raw_env, bytes) else str(raw_env)
-                        try:
-                            env_dict = json.loads(env_str)
-                        except (json.JSONDecodeError, TypeError):
-                            continue
-                        env_dict["cursor"] = cid
-                        data_json = json.dumps(env_dict)
-                        yield f"id: {cid}\nevent: message\ndata: {data_json}\n\n"
-                else:
-                    await asyncio.sleep(0.1)
+    @app.get("/agents/{agent}/activity")
+    def get_activity(
+        agent: str,
+        after: str | None = None,
+        limit: int = Query(default=100, ge=1, le=1000),
+    ) -> dict[str, Any]:
+        try:
+            prefix(settings.pod, settings.tenant, agent)
+        except KeyError as exc:
+            raise HTTPException(status_code=404, detail="invalid agent") from exc
+        activity_key = prefix(settings.pod, settings.tenant, agent, "activity")
+        activity = _read_stream_entries(client, activity_key, after=after, limit=limit, preferred_field="event")
+        next_cursor = activity[-1]["cursor"] if activity else after
+        return {
+            "agent": agent,
+            "activity": activity,
+            "next_cursor": next_cursor,
+        }
 
-        return StreamingResponse(
-            event_generator(),
-            media_type="text/event-stream",
-            headers={
-                "Cache-Control": "no-cache",
-                "Connection": "keep-alive",
-                "X-Accel-Buffering": "no",
-            },
-        )
+    @app.get("/agents/{agent}/activity/stream", include_in_schema=False)
+    async def stream_activity(
+        agent: str,
+        request: Request,
+        after: str | None = None,
+    ) -> StreamingResponse:
+        try:
+            prefix(settings.pod, settings.tenant, agent)
+        except KeyError as exc:
+            raise HTTPException(status_code=404, detail="invalid agent") from exc
+        activity_key = prefix(settings.pod, settings.tenant, agent, "activity")
+        return _stream_response(request, client, activity_key, "activity", after, "event")
 
     def board_keys(agent: str) -> tuple[str, str, str, str]:
         try:
