@@ -74,11 +74,26 @@ poll_blocked_key() {
 poll_judged() {
     local agent="$1"
     local key="pod:$POD:tenant:$TENANT:agent:$agent:pending.verify"
+    local n
+
+    # ⚠ Two phases, and the first one is not optional. An empty stream means
+    # "judged" only after a marker has been in it — before the adapter writes,
+    # it is empty too. Treating that as a verdict is what made an earlier probe
+    # report "judged after 1s" with nothing yet delivered.
+    local marked=1
+    for _ in $(seq 1 60); do
+        n=$(dx redis-cli XLEN "$key" 2>/dev/null | tr -d '\r\n' || true)
+        if [ "${n:-0}" -gt 0 ]; then marked=0; break; fi
+        sleep 0.5
+    done
+    if [ "$marked" -ne 0 ]; then
+        echo "  (no verify marker was ever written for $agent)"
+        return 2
+    fi
+
     for _ in $(seq 1 120); do
-        local n=$(dx redis-cli XLEN "$key" 2>/dev/null | tr -d '\r\n' || true)
-        if [ "$n" = "0" ] || [ -z "$n" ]; then
-            return 0
-        fi
+        n=$(dx redis-cli XLEN "$key" 2>/dev/null | tr -d '\r\n' || true)
+        if [ "${n:-0}" -eq 0 ]; then return 0; fi
         sleep 0.5
     done
     return 1
