@@ -182,7 +182,11 @@ Open a persistent Server-Sent Events (SSE) stream to receive messages in real ti
 
 - **Query Parameters / Headers:**
   - `after` (optional query parameter): Cursor ID to resume from.
-  - `Last-Event-ID` (optional HTTP header): Alternative standard SSE resume header.
+  - `Last-Event-ID` (optional HTTP header): the standard SSE resume header.
+
+⚠ **`after` wins if both are given.** Browser `EventSource` cannot set headers,
+so a browser client resumes with `?after=`; `Last-Event-ID` is sent automatically
+by `EventSource` on its own reconnect, which is why both exist.
 
 **Example Request:**
 ```bash
@@ -245,7 +249,23 @@ Returns the list of all currently enrolled agents in the tenant roster.
 ```
 
 #### `GET /agents/{agent}`
-Returns queue depths and presence status (`working`, `idle`, `unknown`) for a specific agent.
+Returns queue depths and presence for a specific agent.
+
+**`state` is one of four:**
+
+| state | means | what to do |
+|---|---|---|
+| `working` | producing model activity right now | show a busy indicator |
+| `idle` | ready, nothing in flight | send |
+| `unknown` | **nothing can be said** — the agent runs no CLI we can read, or has not spoken yet | it may never reply; do not present it as ready |
+| `blocked` | **a message was delivered and not consumed** | do not send more; tell the user |
+
+⚠ **`unknown` is not `idle`.** Some agents write nothing we can read. Rendering
+`unknown` as "ready" will have your users waiting on a reply that cannot come.
+
+⚠ **`blocked` is the one to act on.** It means a delivery was judged unconsumed —
+a login prompt, an unattended dialog, a stopped process. More messages will pile
+up unread. It clears by itself when something is consumed again.
 
 **Response (`200 OK`):**
 ```json
@@ -327,6 +347,10 @@ Lifecycle commands are sent as envelopes addressed to the `host` agent: `POST /a
 
 #### Enrol Application Client (`StartAgent` with `vab: api`)
 
+⚠ **Enrolling a name that already exists is safe.** It re-registers and changes
+nothing else — no mailbox is cleared, no messages are lost. Clients are expected
+to enrol on every start rather than track whether they have before.
+
 Registers an external application client without creating a terminal window or starting a CLI process:
 
 ```json
@@ -374,6 +398,12 @@ Removes an application or agent from the roster, cleaning up its mailbox and sta
 Task boards consist of four columns: `todo`, `doing`, `hold`, and `done`.
 
 #### `GET /agents/{agent}/board`
+
+⚠ **A board entry is usually an object, and may be a bare string.** Older tenants
+hold entries written before tickets had a shape. Handle both: if it is not an
+object, treat it as a title with no other fields. Entries the server cannot parse
+are skipped rather than failing the response, so a board may be shorter than the
+agent believes.
 Returns the task board for a specific agent.
 
 **Response (`200 OK`):**
@@ -450,6 +480,20 @@ The activity feed streams real-time execution facts about what an agent is doing
   - `tool`: CLI tool invoked (includes `tool` field, e.g. `"tool": "Bash"`).
 - **Privacy & Safety Non-Leakage Invariants:** Tool arguments, file paths, shell command lines, and message content are **deliberately absent** from the activity feed.
 - **Absence of Activity:** Absence of activity is not an error. Agents with no activity entries or `agy` CLI agents (which keep no session append log) return `200 OK` with an empty activity list `{"agent": agent, "activity": [], "next_cursor": after}`.
+
+**`kind` is one of exactly three**, and the set will not grow without notice:
+
+| kind | means | `tool` field |
+|---|---|---|
+| `input` | the agent received something and began a turn | absent |
+| `output` | the agent produced a response | absent |
+| `tool` | the agent called a tool | **present** — the tool's name |
+
+⚠ **`tool` appears only on `kind: "tool"`.** Do not read it on the others.
+
+⚠ **Tool *names* only — never arguments, paths or content.** There is no field
+they could occupy. If you need to show a user what an agent is doing, the name is
+what you have: `Bash`, `Read`, `Edit`.
 
 #### Catch-Up Polling: `GET /agents/{agent}/activity`
 
