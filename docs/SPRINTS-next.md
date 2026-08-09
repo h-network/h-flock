@@ -258,7 +258,33 @@ signals alone.
 Say so in the message rather than pretending otherwise — an alert that admits
 what it could not check is one a lead keeps trusting.
 
-⚠ **Read the file, never the screen.** Deriving an agent's state by parsing its
+### The watchdog is where a screen may be read
+
+Invariant 7 splits by **position, not technique**: nothing in the data path reads
+a terminal, and observation may look but may only report. The watchdog is
+observation, so it is the one place a screen scraper is allowed.
+
+What that buys, and what it does not:
+
+| | |
+|---|---|
+| **can** notice a message sitting unsubmitted in an input box | after the fact |
+| **can** notice a modal has been open for a long time | after the fact |
+| **cannot** stop the `Enter` that selected a menu item | that already happened |
+
+⚠ **Prevention was on the table and was rejected deliberately.** Checking the
+pane between `paste` and `Enter` would have stopped a delivery from actioning a
+picker — genuinely safer for that one case — and it was turned down because it
+puts a screen read in the delivery path, where every message then depends on a
+`capture-pane` succeeding and on a CLI rendering as expected. **A clean data path
+is worth more than that one save.**
+
+⚠ **So it reports; it never repairs.** No re-pressing `Enter`, no re-pasting. If
+a message needs re-sending, that is an envelope through the normal path, decided
+by whoever reads the report.
+
+⚠ **Read the file, never the screen** — *inside the data path*. Everything below
+still holds there: Deriving an agent's state by parsing its
 TUI is a per-CLI, per-version commitment that does not end: a comparable project
 spends ~1,200 lines on it, needs a capability flag per provider for whether
 detection is even possible, and its own comments admit some states are not

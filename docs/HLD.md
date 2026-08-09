@@ -230,7 +230,20 @@ The short list that everything else assumes:
 5. **Adapters do not exist between deliveries.**
 6. **The api does not validate `kind`** — which kinds are openable is a fact
    about adapters, discovered at the far edge.
-7. **Nothing reads a terminal to make a decision.**
+7. **Nothing in the data path reads a terminal.** Delivery is `paste → Enter`,
+   with no branching on what a pane says. **Observation may look, and may only
+   report** — out-of-band, on its own schedule, never in the path an envelope
+   travels.
+
+⚠ **The split in 7 is the philosophy, not a caveat.** Communication and data
+processing stay deterministic: same inputs, same result, no dependence on how a
+CLI happens to render. Anything that needs to *look* — is the message sitting
+unsubmitted, is a modal open, is this agent stuck — runs beside the system and
+hands back a report. It can be as ugly as it needs to be, because nothing
+depends on it being right for a message to be delivered.
+
+That is what makes a screen scraper acceptable in a watchdog and unacceptable in
+an adapter. Not the technique — the position.
 
 ⚠ **Cite these by name, never by number.** `LLD-bus-and-router` keeps its own,
 longer list — *roster fields, never values* is its **8** and this document's
