@@ -286,3 +286,9 @@ went the way it did rather than only what it was.
 | [`LLD-container.md`](docs/LLD-container.md) | one container is one tenant |
 | [`PLAN-boards.md`](docs/PLAN-boards.md) | the jira board — tickets, columns, why it is pulled |
 | [`CONTRACTS.md`](docs/CONTRACTS.md) | what more than one module depends on |
+
+---
+
+MIT licensed — see [`LICENSE`](LICENSE). The name and logo are trademarks; what
+you may do with them without asking, and the short list that needs permission, is
+in [`TRADEMARKS.md`](TRADEMARKS.md).
