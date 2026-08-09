@@ -397,8 +397,23 @@ second daemon and none of these jobs sits in an envelope's data path. Every
    process that records no later input, but misses a login prompt or modal
    picker when the CLI records input it never acts on. `agy` and bare shells
    produce no verifiable activity, so their deliveries are never marked and
-   they cannot acquire this state. The verifier never retries, re-pastes, or
-   dead-letters the envelope.
+   they cannot acquire this state.
+
+   ⚠ **An unverified delivery is surfaced and never re-pasted.** Verification
+   distinguishes "a later input was observed" from "no later input was
+   observed"; it cannot distinguish an unsubmitted paste from text that landed
+   in a stopped process, picker or slow CLI. In the measured wedged-process and
+   trust-picker cases the first paste remains queued. A retry cannot help while
+   the block remains, and after a human clears it both copies may be consumed.
+
+   The choice is therefore possible loss over possible duplication: preserve
+   at-most-once delivery, retain `<prefix>:blocked`, emit the watchdog alert and
+   log `delivery_unverified` with the explicit no-retry reason. This also obeys
+   the operational ceiling without adding a retry queue or timer. The trade is
+   deliberate because an agent may execute a duplicated instruction twice,
+   while a surfaced unverified instruction can be assessed and resent by a
+   human who knows whether that is safe. The verifier never retries, re-pastes,
+   or dead-letters the envelope.
 4. **Carry window logs to stdout.** Agent-side `office` records are written to
    `/home/ubuntu/.flock/window.log.jsonl`; the router tails complete lines from
    a tenant byte offset so `sent` joins the central envelope log. If the spool
