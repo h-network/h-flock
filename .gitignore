@@ -1,19 +1,14 @@
 __pycache__/
 *.py[cod]
-<<<<<<< HEAD
-.pytest_cache/
-.venv/
-=======
 *$py.class
 *.egg-info/
 .pytest_cache/
 .venv/
 build/
 dist/
->>>>>>> origin/tmux/skeleton-tmuxhost-adapter
-__pycache__/
-*.pyc
-.venv/
+
 container/.env
+
+# Credentials arrive here by docker cp and must never be committed.
 container/home/*
 !container/home/README.md
