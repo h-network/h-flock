@@ -430,4 +430,51 @@ def test_hyphenated_agent_names_with_digits(client):
     assert body["messages"][0]["recipient"] == "sme-2"
 
 
+def test_get_activity_empty(client):
+    app, _ = client
+    # Any valid agent segment name returns 200 with empty activity feed when no stream entries exist
+    status_code, body = request(app, "GET", "/agents/sme-2/activity", token="secret")
+    assert status_code == 200
+    assert body == {"agent": "sme-2", "activity": [], "next_cursor": None}
+
+
+def test_get_activity_with_events_and_cursor(client):
+    app, redis = client
+    act1 = {"v": 1, "agent": "sme-2", "ts": "2026-08-09T10:00:00Z", "kind": "input"}
+    act2 = {"v": 1, "agent": "sme-2", "ts": "2026-08-09T10:00:01Z", "kind": "tool", "tool": "Bash"}
+    act_key = "pod:test:tenant:office:agent:sme-2:activity"
+    redis.streams[act_key] = [
+        (b"1000-0", {b"event": json.dumps(act1).encode()}),
+        (b"1001-0", {b"event": json.dumps(act2).encode()}),
+    ]
+
+    # Read all
+    status_code, body = request(app, "GET", "/agents/sme-2/activity", token="secret")
+    assert status_code == 200
+    assert body["agent"] == "sme-2"
+    assert len(body["activity"]) == 2
+    assert body["activity"][0]["cursor"] == "1000-0"
+    assert body["activity"][0]["kind"] == "input"
+    assert body["activity"][1]["cursor"] == "1001-0"
+    assert body["activity"][1]["tool"] == "Bash"
+    assert body["next_cursor"] == "1001-0"
+
+    # Catch-up with cursor
+    status_code, body = request(app, "GET", "/agents/sme-2/activity?after=1000-0", token="secret")
+    assert status_code == 200
+    assert len(body["activity"]) == 1
+    assert body["activity"][0]["cursor"] == "1001-0"
+    assert body["next_cursor"] == "1001-0"
+
+
+def test_get_activity_invalid_agent_returns_404(client):
+    app, _ = client
+    # "all" or invalid segment names return 404
+    status_code, _ = request(app, "GET", "/agents/all/activity", token="secret")
+    assert status_code == 404
+    status_code, _ = request(app, "GET", "/agents/123/activity", token="secret")
+    assert status_code == 404
+
+
+
 

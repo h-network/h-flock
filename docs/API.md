@@ -434,6 +434,66 @@ Adds a ticket to an agent's board without interrupting or notifying the agent:
 
 ---
 
+### Agent Activity Feed
+
+The activity feed streams real-time execution facts about what an agent is doing (e.g., executing commands, reading files, generating responses). It is available for any agent in the tenant roster (not only `vab: "api"` clients).
+
+- **Kinds Vocabulary (`kind`):**
+  - `input`: User or incoming prompt input received.
+  - `output`: Agent output generated.
+  - `tool`: CLI tool invoked (includes `tool` field, e.g. `"tool": "Bash"`).
+- **Privacy & Safety Non-Leakage Invariants:** Tool arguments, file paths, shell command lines, and message content are **deliberately absent** from the activity feed.
+- **Absence of Activity:** Absence of activity is not an error. Agents with no activity entries or `agy` CLI agents (which keep no session append log) return `200 OK` with an empty activity list `{"agent": agent, "activity": [], "next_cursor": after}`.
+
+#### Catch-Up Polling: `GET /agents/{agent}/activity`
+
+Retrieve activity feed events for an agent starting after a specified cursor.
+
+- **Query Parameters:**
+  - `after` (optional): Cursor ID to read after.
+  - `limit` (optional): Maximum number of entries to return (default: `100`, max: `1000`).
+
+**Example Request:**
+```bash
+curl -H "Authorization: Bearer $API_TOKEN" \
+  "http://HOST:8080/agents/sme-2/activity?limit=50"
+```
+
+**Example Response (`200 OK`):**
+```json
+{
+  "agent": "sme-2",
+  "activity": [
+    {
+      "v": 1,
+      "agent": "sme-2",
+      "ts": "2026-08-09T12:00:00.000Z",
+      "kind": "tool",
+      "tool": "Bash",
+      "cursor": "1786231900000-0"
+    }
+  ],
+  "next_cursor": "1786231900000-0"
+}
+```
+
+#### Live SSE Stream: `GET /agents/{agent}/activity/stream`
+
+Opens a real-time Server-Sent Events stream of activity events for an agent.
+
+- **Query Parameter:** `after` (optional)
+- **Header:** `Last-Event-ID` (optional)
+
+**Example SSE Event Stream Output:**
+```text
+id: 1786231900000-0
+event: activity
+data: {"v": 1, "agent": "sme-2", "ts": "2026-08-09T12:00:00.000Z", "kind": "tool", "tool": "Bash", "cursor": "1786231900000-0"}
+
+```
+
+---
+
 ## 6. Terminal Session WebSocket Door (`:8081`)
 
 **The two doors split by who consumes them.** The REST API is for your code:
