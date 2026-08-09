@@ -342,6 +342,7 @@ def test_message_opener_writes_pending_verify_marker_for_claude(mock_run_tmux, m
     mock_run_tmux.return_value = (0, "", "")
 
     r = MockRedis()
+    r.set("pod:acme:tenant:hq:agent:bob:launch", "claude")
     env = build_envelope(kind="Message", producer="alice", recipient="bob", payload={"text": "hello"})
     env["stream_id"] = "12345-0"
 
@@ -406,3 +407,24 @@ def test_mark_delivery_pending_swallows_redis_exceptions(mock_run_tmux, mock_lis
     # Must complete cleanly without raising exception
     message_opener(r, pod="acme", tenant="hq", agent="bob", envelope=env, session_name="hq")
 
+
+
+@patch("flock.adapter.openers.list_windows")
+@patch("flock.tmux.ops.run_tmux")
+def test_no_marker_for_a_window_running_no_cli(mock_run_tmux, mock_list_windows):
+    """A bare shell writes no session file, so a delivery to it can never be
+    confirmed. Marking it reported unverified forever.
+
+    Measured: with a denylist that skipped only agy, three of the first four
+    unverified records in a live run were bash windows.
+    """
+    mock_list_windows.return_value = {"alice", "bob"}
+    mock_run_tmux.return_value = (0, "", "")
+
+    r = MockRedis()  # no launch key at all
+    env = build_envelope(kind="Message", producer="alice", recipient="bob", payload={"text": "hi"})
+    env["stream_id"] = "12345-0"
+
+    message_opener(r, pod="acme", tenant="hq", agent="bob", envelope=env, session_name="hq")
+
+    assert "pod:acme:tenant:hq:agent:bob:pending.verify" not in r.streams

@@ -9,6 +9,11 @@ from flock.tmux import list_windows, paste_text, run_tmux
 # Backwards compatibility helper for existing tests
 get_tmux_windows = list_windows
 
+# The CLIs that write a session file the router can tail. An agent running
+# anything else — agy, a bare shell — produces no activity, so a delivery to it
+# can never be confirmed and must not be marked.
+VERIFIABLE_CLIS = frozenset({"claude", "codex"})
+
 
 def mark_delivery_pending(
     r,
@@ -21,12 +26,19 @@ def mark_delivery_pending(
     try:
         if not stream_id:
             return
+        # ⚠ An allowlist, not "everything except agy". A marker is only useful
+        # for a CLI whose activity we can tail, and anything else can never be
+        # confirmed — so it would report unverified forever.
+        #
+        # Measured: a denylist marked bash windows too (an agent with no launch
+        # key at all), and three of the first four unverified records in a live
+        # run were those. A CLI we cannot tail must be skipped by default, not
+        # by having been remembered.
         launch_key = prefix(pod, tenant, agent=agent, resource="launch")
         raw_cli = r.get(launch_key)
-        if raw_cli:
-            cli = raw_cli.decode() if isinstance(raw_cli, bytes) else str(raw_cli)
-            if cli == "agy":
-                return
+        cli = (raw_cli.decode() if isinstance(raw_cli, bytes) else str(raw_cli)) if raw_cli else ""
+        if cli not in VERIFIABLE_CLIS:
+            return
 
         verify_key = prefix(pod, tenant, agent=agent, resource="pending.verify")
         ts = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.%f")[:-3] + "Z"
