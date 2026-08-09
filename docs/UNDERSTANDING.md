@@ -109,6 +109,13 @@ the point. An office of idle agents costs nothing.
 ⚠ **A busy tag serialises delivery per agent** — two adapters pasting into one
 window would interleave.
 
+⚠ **A broadcast keeps `recipient: "all"` on the wire.** The router pushes `raw`
+unchanged to **every roster member except the sender** — api clients and
+`control` included, because it fans out over roster *fields* and by the
+*roster fields, never values* invariant it cannot filter by VAB. `office
+broadcast` reaches only tmux agents because **the command** filters before
+sending, not the router.
+
 ## 6. Kinds
 
 | kind | opened by | does |
