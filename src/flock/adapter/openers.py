@@ -10,6 +10,36 @@ from flock.tmux import list_windows, paste_text, run_tmux
 get_tmux_windows = list_windows
 
 
+def mark_delivery_pending(
+    r,
+    pod: str,
+    tenant: str,
+    agent: str,
+    stream_id: str,
+) -> None:
+    """Record a pending delivery verification marker for a tmux paste (claude/codex only)."""
+    try:
+        if not stream_id:
+            return
+        launch_key = prefix(pod, tenant, agent=agent, resource="launch")
+        raw_cli = r.get(launch_key)
+        if raw_cli:
+            cli = raw_cli.decode() if isinstance(raw_cli, bytes) else str(raw_cli)
+            if cli == "agy":
+                return
+
+        verify_key = prefix(pod, tenant, agent=agent, resource="pending_verify")
+        ts = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.%f")[:-3] + "Z"
+        r.xadd(
+            verify_key,
+            {"stream_id": stream_id, "ts": ts},
+            maxlen=100,
+            approximate=True,
+        )
+    except Exception:
+        pass
+
+
 def message_opener(
     r,
     pod: str,
@@ -42,6 +72,7 @@ def message_opener(
     text = payload.get("text", "")
     formatted_msg = f"[message from {producer}] {text}\n"
     paste_text(session_name, agent, formatted_msg, stream_id=stream_id, socket=socket)
+    mark_delivery_pending(r, pod, tenant, agent, stream_id)
 
 
 def command_opener(
@@ -76,6 +107,7 @@ def command_opener(
     text = payload.get("text", "")
     formatted_msg = f"{text}\n"
     paste_text(session_name, agent, formatted_msg, stream_id=stream_id, socket=socket)
+    mark_delivery_pending(r, pod, tenant, agent, stream_id)
 
 
 def add_ticket_opener(

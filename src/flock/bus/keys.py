@@ -32,11 +32,15 @@ def _validate(value: str | None) -> str:
     return value
 
 
+RESOURCE_SEGMENT_REGEX = re.compile(r"^[a-z0-9][a-z0-9_-]{0,62}$")
+
+
 def _validate_resource(value: str | None) -> str:
     if not isinstance(value, str) or not value:
         raise KeyError(value)
     for segment in value.split("."):
-        _validate(segment)
+        if not RESOURCE_SEGMENT_REGEX.fullmatch(segment) or segment in RESERVED:
+            raise KeyError(value)
     return value
 
 

@@ -333,3 +333,76 @@ def test_run_adapter_unroutable_vab_pops_and_dead_letters(mock_redis_cls):
     assert len(mock_r.lists.get(ingress_key, [])) == 0
     dead_key = "pod:acme:tenant:hq:agent:host:dead"
     assert len(mock_r.lists.get(dead_key, [])) == 1
+
+
+@patch("flock.adapter.openers.list_windows")
+@patch("flock.tmux.ops.run_tmux")
+def test_message_opener_writes_pending_verify_marker_for_claude(mock_run_tmux, mock_list_windows):
+    mock_list_windows.return_value = {"alice", "bob"}
+    mock_run_tmux.return_value = (0, "", "")
+
+    r = MockRedis()
+    env = build_envelope(kind="Message", producer="alice", recipient="bob", payload={"text": "hello"})
+    env["stream_id"] = "12345-0"
+
+    message_opener(r, pod="acme", tenant="hq", agent="bob", envelope=env, session_name="hq")
+
+    verify_key = "pod:acme:tenant:hq:agent:bob:pending_verify"
+    assert verify_key in r.streams
+    assert len(r.streams[verify_key]) == 1
+    _, fields = r.streams[verify_key][0]
+    assert fields["stream_id"] == "12345-0"
+    assert "ts" in fields
+
+
+@patch("flock.adapter.openers.list_windows")
+@patch("flock.tmux.ops.run_tmux")
+def test_message_opener_skips_pending_verify_marker_for_agy(mock_run_tmux, mock_list_windows):
+    mock_list_windows.return_value = {"alice", "bob"}
+    mock_run_tmux.return_value = (0, "", "")
+
+    r = MockRedis()
+    launch_key = "pod:acme:tenant:hq:agent:bob:launch"
+    r.set(launch_key, "agy")
+    env = build_envelope(kind="Message", producer="alice", recipient="bob", payload={"text": "hello"})
+    env["stream_id"] = "12345-0"
+
+    message_opener(r, pod="acme", tenant="hq", agent="bob", envelope=env, session_name="hq")
+
+    verify_key = "pod:acme:tenant:hq:agent:bob:pending_verify"
+    assert verify_key not in r.streams
+
+
+@patch("flock.adapter.openers.list_windows")
+@patch("flock.tmux.ops.run_tmux")
+def test_add_ticket_opener_skips_pending_verify_marker(mock_run_tmux, mock_list_windows):
+    mock_list_windows.return_value = {"architect", "backend"}
+    mock_run_tmux.return_value = (0, "", "")
+
+    r = MockRedis()
+    env = build_envelope(kind="AddTicket", producer="architect", recipient="backend", payload={"title": "task"})
+    env["stream_id"] = "12345-0"
+
+    add_ticket_opener(r, pod="acme", tenant="hq", agent="backend", envelope=env, session_name="hq")
+
+    verify_key = "pod:acme:tenant:hq:agent:backend:pending_verify"
+    assert verify_key not in r.streams
+
+
+@patch("flock.adapter.openers.list_windows")
+@patch("flock.tmux.ops.run_tmux")
+def test_mark_delivery_pending_swallows_redis_exceptions(mock_run_tmux, mock_list_windows):
+    mock_list_windows.return_value = {"alice", "bob"}
+    mock_run_tmux.return_value = (0, "", "")
+
+    class FaultyRedis(MockRedis):
+        def xadd(self, *args, **kwargs):
+            raise RuntimeError("Redis stream error")
+
+    r = FaultyRedis()
+    env = build_envelope(kind="Message", producer="alice", recipient="bob", payload={"text": "hello"})
+    env["stream_id"] = "12345-0"
+
+    # Must complete cleanly without raising exception
+    message_opener(r, pod="acme", tenant="hq", agent="bob", envelope=env, session_name="hq")
+

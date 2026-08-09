@@ -145,6 +145,16 @@ An envelope whose `kind` has no opener for `vab: tmux` is dead-lettered under **
 prefix** and logged. The failure happened at this end, and an adapter writing to
 the sender's prefix would reach outside its own agent's keys.
 
+### Verification Markers (`pending_verify`)
+
+After a successful `Message` or `Command` paste into a `vab: tmux` window, the adapter records a pending verification marker in Redis Stream `<prefix>:agent:<name>:pending_verify` via `XADD MAXLEN ~ 100`:
+```json
+{ "stream_id": "<stream_id>", "ts": "<ts>" }
+```
+- **Skipped for `AddTicket`**: `AddTicket` pastes nothing into the window and is not verified via activity inputs.
+- **Skipped for `agy`**: Agents running `agy` have no session log file or activity feed, so markers are skipped to avoid false unverified alerts.
+- **Fail-safe**: Marker creation is wrapped in `try...except` so stream write failures never impact envelope delivery.
+
 ## 4. Getting text into a window
 
 The mechanics matter more than they look, and each rule here is load-bearing.
