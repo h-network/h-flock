@@ -371,13 +371,26 @@ second daemon and none of these jobs sits in an envelope's data path. Every
    `presence` hash with `state` (`working`, `idle`, or `unknown`), `since`, and
    `last_activity`. `PRESENCE_WORKING_SECONDS`, default 30, is the working
    horizon; `since` is preserved while the state does not change.
-3. **Judge delivery evidence.** A terminal delivery appends a marker to
-   `<prefix>:pending.verify`. Once it is at least `VERIFY_AFTER_SECONDS` old
-   (default 10), a later `input` activity event confirms it. Otherwise the
-   router logs `delivery_unverified` and retains that first verdict in
-   `<prefix>:blocked` as `{since, stream_id}`. A later verified delivery deletes
-   the hash; another unverified delivery does not reset `since`. Either way the
-   pending marker is deleted after judgment.
+3. **Judge delivery evidence.** Before pasting a `Message`, the tmux adapter
+   appends a marker to `<prefix>:pending.verify` when the agent's launch CLI is
+   in the explicit `{claude, codex}` allowlist. The marker is written **before**
+   the paste: the CLI can record the resulting `input` in less time than a
+   post-paste write takes, making the event appear older than its marker and a
+   successful delivery look unverified. Measured live, that race misclassified
+   five of six messages.
+
+   ⚠ **The allowlist is a capability claim, not a list of exceptions.** A CLI
+   is marked only when the router can tail its session format. The old rule
+   "anything except agy" also marked bare shell windows, whose deliveries can
+   never be confirmed. An unknown future CLI must therefore remain unmarked
+   until its activity feed is supported.
+
+   Once a marker is at least `VERIFY_AFTER_SECONDS` old (default 10), a later
+   `input` activity event confirms it. Otherwise the router logs
+   `delivery_unverified` and retains that first verdict in `<prefix>:blocked` as
+   `{since, stream_id}`. A later verified delivery deletes the hash; another
+   unverified delivery does not reset `since`. Either way the pending marker is
+   deleted after judgment.
 
    ⚠ **`blocked` means an unverified delivery and no verified delivery since.**
    It does not mean the CLI is stuck. It catches a trust picker or stopped

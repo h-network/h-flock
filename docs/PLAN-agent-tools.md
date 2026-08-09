@@ -159,5 +159,15 @@ automated repair and could erase the silence that made a stall visible.
 Claude Code's trust state is per working directory, so it cannot be baked into
 the image for dynamically hired agents. Window creation writes
 `hasTrustDialogAccepted` and `hasCompletedProjectOnboarding` for the new
-`/workdir/<agent>` path. Without that, the roster and router say an agent is
-live while its CLI is waiting at a first-run question.
+`/workdir/<agent>` path. It writes them in the selected profile's config
+directory (`~/.claude-<profile>/.claude.json`), or the default config when no
+profile is selected. Trusting the default account while launching with
+`CLAUDE_CONFIG_DIR=~/.claude-work` leaves the actual account at the trust picker:
+the roster says the agent is live while presence misleadingly reads `idle`.
+
+⚠ **Trust seeding is durable configuration; copied credentials are not.** A CLI
+refreshes the credential in the config directory it is using. A credential
+copied into another profile directory does not receive those later refreshes
+and can expire in place; that ended a measured live session mid-run. Profile
+selection and trust are wired, but keeping seeded account credentials current
+remains open in [`TODO.md`](TODO.md).
