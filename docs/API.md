@@ -502,7 +502,9 @@ data: {"v": 1, "agent": "sme-2", "ts": "2026-08-09T12:00:00.000Z", "kind": "tool
 
 ### Watchdog Alerts Feed
 
-Tenant-level alerts produced by `flock.watchdog` when an agent is stalled, wedged, or has expiring credentials.
+Tenant-level alerts produced by `flock.watchdog`: an agent that took work and has since produced neither model activity nor terminal output, a delivery that was not consumed, or a credential nearing expiry.
+
+**Alerts state facts and do not diagnose.** There is no "wedged" or "stuck" — an alert reports what was observed and what could not be checked, and leaves the conclusion to you.
 
 #### `GET /alerts`
 

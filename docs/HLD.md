@@ -321,8 +321,13 @@ unsubmitted, is a modal open, is this agent stuck — runs beside the system and
 hands back a report. It can be as ugly as it needs to be, because nothing
 depends on it being right for a message to be delivered.
 
-That is what makes a screen scraper acceptable in a watchdog and unacceptable in
-an adapter. Not the technique — the position.
+That is what would make a screen scraper acceptable in a watchdog and
+unacceptable in an adapter. Not the technique — the position.
+
+⚠ **And in the end nothing scrapes.** A scraping `blocked` was designed, built and
+abandoned: a consumed message stays visible in the transcript, so it marked
+*healthy* agents blocked. The verdict the router already computed turned out to
+be the answer. The rule stands as a rule; it is not describing anything we do.
 
 ⚠ **Cite these by name, never by number.** `LLD-bus-and-router` keeps its own,
 longer list — *roster fields, never values* is its **8** and this document's

@@ -275,7 +275,8 @@ Measured, not assumed: 100 envelopes at 10/s with none lost, ordering preserved,
 A **watchdog** runs beside the router: a ticket open too long, with no model
 activity and a silent window, raises one alert — to `GET /alerts` and the log,
 never to an agent. It also warns before a login expires, and marks an agent
-`blocked` when a delivery was not consumed.
+`blocked` when a delivery was not consumed — which catches a wedged process, and
+does not catch a CLI that records input it never acts on.
 
 Not built: per-client tokens, TLS, CORS. See
 [`docs/TODO.md`](docs/TODO.md), which says why for each.
