@@ -131,9 +131,10 @@ segment.
   `<prefix>:alerts`, populated by `flock.watchdog`. Alerts notify human operators (never agents) of stalled
   tickets, wedged processes, or expiring credentials (`{ "v": 1, "ts": "<ISO>", "kind": "stalled"|..., ... }`).
 - **Enrolled Membership & 404 Behavior**: Endpoint paths targeting `{agent}` check roster membership (`is_member`).
-  An unenrolled agent returns `404 Not Found`. An enrolled agent holding no tasks, mailbox messages, activity,
-  or presence returns `200 OK` with empty structures. `POST /agents/all/envelopes` is explicitly exempt from roster
-  checks because `all` is the reserved broadcast address.
+  An unenrolled agent returns `404 Not Found`. All `{agent}` segment parameters are validated via `keys.prefix()`
+  (which rejects reserved names `"pod"`, `"tenant"`, `"agent"`, `"all"`, all-digit names such as `"2"`, and invalid characters).
+  An enrolled agent holding no tasks, mailbox messages, activity, or presence returns `200 OK` with empty structures.
+  `POST /agents/all/envelopes` is explicitly exempt from roster membership checks because `all` is the reserved broadcast address.
 - **Blocked Status Note**: `blocked` (`<prefix>:agent:<name>:blocked`) is set by the router when a delivery is judged
   unverified (`delivery_unverified`). It indicates an unconsumed message sitting in an agent's window. It does not mean
   "stuck" (it catches modal dialogs and unconsumed input, but misses CLIs that consume input without acting).
