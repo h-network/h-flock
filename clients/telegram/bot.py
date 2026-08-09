@@ -203,6 +203,17 @@ class TelegramBot:
         code, body = self.flock.enrol()
         logger.info(f"Enrolled application '{self.flock.app_name}': status={code}, body={body}")
 
+        # ⚠ With no stored cursor, start at the END of the mailbox, not the
+        # beginning. Messages that arrived before this process started are not
+        # answers to anything it asked — replaying them makes every prompt get
+        # the previous exchange's reply, which is indistinguishable from lag.
+        if self.cursor is None:
+            code, data = self.flock.get_messages(after=None)
+            if code == 200 and data.get("next_cursor"):
+                self.cursor = data["next_cursor"]
+                self.cursor_store.save(self.cursor)
+                logger.info(f"No stored cursor; starting from newest ({self.cursor})")
+
     def render_progress_message(self, tools_list: list[str], status: str = "working",
                                 started: float | None = None) -> str:
         """Collapse consecutive repeats and count them.
@@ -326,13 +337,21 @@ class TelegramBot:
             msg_code, msg_data = self.flock.get_messages(after=self.cursor)
             if msg_code == 200:
                 msgs = msg_data.get("messages", [])
+                # ⚠ Drain the whole batch. Breaking on the first reply left the
+                # rest queued, so one extra message — an agent sending twice, or
+                # a reply arriving between prompts — put the bot permanently one
+                # behind: every prompt then answered with the PREVIOUS reply, and
+                # it never caught up because each prompt consumed exactly one.
+                replies = []
                 for m in msgs:
                     self.cursor = m.get("cursor", self.cursor)
-                    self.cursor_store.save(self.cursor)
                     if m.get("producer") == self.target_agent:
-                        reply_message_text = m.get("payload", {}).get("text", str(m.get("payload")))
-                        completed = True
-                        break
+                        replies.append(m.get("payload", {}).get("text", str(m.get("payload"))))
+                if msgs:
+                    self.cursor_store.save(self.cursor)
+                if replies:
+                    reply_message_text = "\n\n".join(replies)
+                    completed = True
 
             if not completed:
                 # Re-check presence to catch if agent becomes blocked
