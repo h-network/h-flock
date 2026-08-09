@@ -214,6 +214,31 @@ when its detector says a terminal is idle, so a misread does not merely mislabel
 an agent — it silently stalls its messages. Ours delivers immediately and lets
 the TUI buffer. The watchdog observes; it must never sit in the delivery path.
 
+### A fourth thing to read: credentials expiring
+
+The same shape as the token counts — a file read, nothing version-specific — and
+the only alert here that is about the *future* rather than the present.
+
+| CLI | field | usable |
+|---|---|---|
+| claude | `claudeAiOauth.refreshTokenExpiresAt` | yes |
+| agy | `token.expiry` | yes |
+| codex | — only `last_refresh` | **no expiry is recorded at all** |
+
+⚠ **Alert on the refresh token, never the access token.** claude's access token
+expires within *hours* and the CLI silently refreshes it — alerting on that would
+fire constantly and correctly, which is precisely the cry-wolf failure this
+section exists to avoid. What matters is the refresh token: when it goes, no file
+copied from anywhere helps and a human has to complete an OAuth flow.
+
+⚠ **One alert per account, not per agent.** A profile is a config dir is a
+login, and several agents share one. Alerting per agent turns one expiry into N
+identical messages.
+
+⚠ **codex cannot be checked**, so say "unknown" rather than "fine". An alert that
+quietly omits a third of the fleet is worse than one that admits the gap — same
+rule as agy having only two liveness signals.
+
 ### Do not classify *why*
 
 Report what is true — took work, has not finished, has not spoken, has not spent
