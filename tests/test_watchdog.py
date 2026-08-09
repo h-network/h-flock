@@ -214,6 +214,18 @@ def test_credentials_warn_on_claude_refresh_expiry_and_codex_is_unknown(tmp_path
     assert len(capsys.readouterr().out.splitlines()) == 2
 
 
+def test_profile_codex_is_unknown_even_without_an_auth_file(tmp_path, capsys):
+    r = WatchRedis()
+    (tmp_path / ".codex-work").mkdir()
+    Watchdog(r, pod="acme", tenant="hq", session_name="hq", home_root=tmp_path).check_credentials(now=NOW)
+    alerts = [json.loads(fields["alert"]) for _, fields in r.streams[prefix("acme", "hq", resource="alerts")]]
+    assert any(
+        alert["account"] == "work" and alert["cli"] == "codex" and alert["status"] == "unknown"
+        for alert in alerts
+    )
+    capsys.readouterr()
+
+
 def test_disabled_main_exits_without_connecting(monkeypatch):
     monkeypatch.setenv("WATCHDOG_ENABLED", "0")
     monkeypatch.setattr(service.redis.Redis, "from_url", lambda url: (_ for _ in ()).throw(AssertionError))

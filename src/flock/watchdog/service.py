@@ -223,10 +223,19 @@ class Watchdog:
             ("default", "agy", self.home_root / ".gemini/antigravity-cli/antigravity-oauth-token"),
             ("default", "codex", self.home_root / ".codex" / "auth.json"),
         ]
-        for path in sorted(self.home_root.glob(".claude-*/.credentials.json")):
-            result.append((path.parent.name.removeprefix(".claude-"), "claude", path))
-        for path in sorted(self.home_root.glob(".codex-*/auth.json")):
-            result.append((path.parent.name.removeprefix(".codex-"), "codex", path))
+        profiles = {
+            path.name.removeprefix(".claude-")
+            for path in self.home_root.glob(".claude-*")
+            if path.is_dir()
+        }
+        profiles.update(
+            path.name.removeprefix(".codex-")
+            for path in self.home_root.glob(".codex-*")
+            if path.is_dir()
+        )
+        for profile in sorted(profiles):
+            result.append((profile, "claude", self.home_root / f".claude-{profile}" / ".credentials.json"))
+            result.append((profile, "codex", self.home_root / f".codex-{profile}" / "auth.json"))
         return result
 
     def check_credentials(self, *, now: datetime | None = None) -> None:
