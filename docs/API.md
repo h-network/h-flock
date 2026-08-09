@@ -380,7 +380,7 @@ Returns the task board for a specific agent.
       "id": "a1b2c3d4",
       "title": "Review authentication pipeline",
       "description": "Verify Bearer token middleware on all routes",
-      "created_by": "architect",
+      "created_by": "alice",
       "status": "todo",
       "created_ts": "2026-08-08T22:00:00Z",
       "priority": "high"
@@ -453,6 +453,7 @@ Port `:8081` provides WebSocket terminal access for rendering live terminal wind
 | `401 Unauthorized` | Unauthorized | Missing or invalid Bearer token | Check `Authorization: Bearer <TOKEN>` header |
 | `404 Not Found` | Not Found | Unknown route, invalid agent segment name, or reading `/messages` for a non-`api` agent | Verify agent name and roster enrolment |
 | `422 Unprocessable Content` | Validation Error | Invalid `"as"` client name (not enrolled or `vab != "api"`), or malformed payload | Correct request payload |
+| `5xx` | Server error | The tenant is failing or restarting — not a fault in your request | **Retry with backoff.** The same request will succeed once it recovers |
 
 **No reply is not an error.** There is no status code for it, because nothing
 failed. If you have sent a message and your mailbox stays empty, the envelope was

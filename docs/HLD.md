@@ -40,7 +40,7 @@ Everything addressable is a name in the roster. What is *behind* the name is its
 | `control` | the tenant's own lifecycle endpoint (`host`) | acting on it |
 
 ⚠ **The router cannot see this column.** It reads roster *fields*, never values
-(invariant 8) — so it forwards to a name and something at the far edge decides
+(invariant 4 below) — so it forwards to a name and something at the far edge decides
 what that means. This is structural rather than a convention: the router has no
 code path that could dispatch on VAB even if someone wanted it to.
 
@@ -116,7 +116,49 @@ mailbox. It sends an envelope and the far edge writes its own. That is invariant
 3, generalised in build 12 from queues to every per-agent key, and it is what
 keeps "who did this" answerable.
 
-## 6. Two doors, and what each is for
+## 6. Kinds — the capability list
+
+`kind` says what sort of thing an envelope is. The router ignores it; an opener
+at the far edge reads it. **Adding a capability is adding an opener**, which is
+the same sentence as §1 from a different angle.
+
+| kind | opened by | does |
+|---|---|---|
+| `Message` | `tmux` | `[message from …] <text>` into the window |
+| `Command` | `tmux` | pasted bare — **it executes** |
+| `AddTicket` | `tmux` | writes a ticket to that agent's board, and **pastes nothing** |
+| `StartAgent` | `control` | enrols: roster row, and for a tmux agent a home, window and CLI |
+| `StopAgent` | `control` | reverses whatever `StartAgent` created for that VAB |
+| `PauseAgent` | `control` | stops the CLI, keeps the agent, its queues and its board |
+| `ResumeAgent` | `control` | starts the CLI again and drains what queued while it was paused |
+
+⚠ **An app client's mailbox takes every kind**, not just `Message`. The api does
+not decide which kinds are interesting — the same rule that stops the router
+reading payloads. A client filters on `kind` itself.
+
+⚠ **Pause is not retire.** `PauseAgent` leaves the roster row, the queues and the
+board intact; envelopes keep arriving and wait. `StopAgent` removes the agent.
+Confusing the two loses work.
+
+### Broadcast: two different things with one word
+
+| | reaches | filtered by |
+|---|---|---|
+| `office broadcast …` | **tmux agents only**, minus you | the command, client-side, on `vab == "tmux"` |
+| an envelope to `recipient: "all"` | **every roster row** — agents *and* app clients | nothing |
+
+```bash
+office broadcast standup in five                    # colleagues
+POST /agents/all/envelopes  {"text":"…"}            # everyone, clients included
+```
+
+⚠ **The router cannot filter a broadcast by VAB and never will.** It fans out
+over roster *fields*, and by invariant 4 it cannot read a value — so `all` means
+all. `office broadcast` selects tmux agents *before* sending, which is why the
+two differ. If you want colleagues, use the command; if you address `all`, expect
+an app to receive it.
+
+## 7. Two doors, and what each is for
 
 | | | |
 |---|---|---|
@@ -134,7 +176,7 @@ spectator, and it is the single most important rule for anyone building a client
 ⚠ Both doors can execute code in an agent's window — the api through the
 `Command` kind, the session through keystrokes. Neither is the safe one.
 
-## 7. Two things that are pulled, not pushed
+## 8. Two things that are pulled, not pushed
 
 **Boards.** A ticket waits until an agent asks. Nothing notifies, nothing
 pastes — so an agent holds only what it pulled, which is *why* it has at most one
@@ -148,7 +190,7 @@ one ever comes, arrives later.
 answer. Every client must be built for silence, and nothing in the system
 promises otherwise.
 
-## 8. One container is one tenant
+## 9. One container is one tenant
 
 Redis, the router, the tmux server, both doors, and one window per agent — in one
 image that converges when brought up twice. Redis is internal and unpublished.
@@ -158,7 +200,7 @@ image that converges when brought up twice. Redis is internal and unpublished.
 looking, not the ability — an agent that never encounters a queue, a token or a
 roster has no reason to hunt for one.
 
-## 9. The invariants
+## 10. The invariants
 
 The short list that everything else assumes:
 
@@ -171,12 +213,16 @@ The short list that everything else assumes:
    about adapters, discovered at the far edge.
 7. **Nothing reads a terminal to make a decision.**
 
+⚠ **These numbers are this document's.** `LLD-bus-and-router` keeps its own,
+longer list with its own numbering — the roster-fields rule is its *invariant 8*
+and this document's *4*. Cite the file along with the number.
+
 ⚠ Breaking any of these is a design change, not a patch. Several started as
 sentences someone thought were obvious and are load-bearing in ways that only
 show up later — `CONTRACTS` §8 promised an atomic `LMOVE` for a year before
 anyone noticed tickets had started being mutated in flight.
 
-## 10. Where to go next
+## 11. Where to go next
 
 | | |
 |---|---|

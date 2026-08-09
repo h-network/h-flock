@@ -36,7 +36,7 @@ h-office's shape, plus one field:
   "id": "<hex>",
   "title": "one line naming the deliverable",
   "description": "the brief — as long as it needs to be",
-  "created_by": "architect",
+  "created_by": "alice",
   "status": "todo" | "doing" | "done",
   "created_ts": "…",
   "started_ts": "…",     set by take
@@ -44,6 +44,11 @@ h-office's shape, plus one field:
   "priority": "…"        optional
 }
 ```
+
+⚠ **`created_by` is the `producer` of the `AddTicket` envelope** — whoever asked
+for the ticket, resolved by the bus rather than supplied by the caller. For an
+app client it is that client's name, so a ticket added by a Telegram wrapper says
+so. It is not the assignee: the assignee is whose board it is on.
 
 ⚠ **`description` is ours, and it is a deliberate difference.** h-office keeps
 the ticket to a title pointing at a spec file, because *"ticket text is echoed
