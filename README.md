@@ -271,7 +271,12 @@ Measured, not assumed: 100 envelopes at 10/s with none lost, ordering preserved,
 3 KB messages intact, delivery into a busy window buffered rather than dropped,
 ~500 ms per delivery of which startup is the larger half.
 
-Not built: a stall watchdog, per-client tokens, TLS, CORS. See
+A **watchdog** runs beside the router: a ticket open too long, with no model
+activity and a silent window, raises one alert — to `GET /alerts` and the log,
+never to an agent. It also warns before a login expires, and marks an agent
+`blocked` when a delivery was not consumed.
+
+Not built: per-client tokens, TLS, CORS. See
 [`docs/TODO.md`](docs/TODO.md), which says why for each.
 
 ⚠ Agents run with `sudo` in the container, deliberately. Nothing inside it is a
