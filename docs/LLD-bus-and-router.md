@@ -411,8 +411,8 @@ it out of this loop means a slow external observation cannot stall forwarding.
 
 This is the bus-facing boundary, not the watchdog's complete design. Its
 three-signal stall rule, credential/account walk, cooldowns, alert shapes and
-failure policy belong to a dedicated watchdog LLD; they are independent of the
-addressing and custody decisions this document owns.
+failure policy are specified in [`LLD-watchdog.md`](LLD-watchdog.md); they are
+independent of the addressing and custody decisions this document owns.
 
 **Having written an ingress queue, the router kicks delivery for that
 participant.**
