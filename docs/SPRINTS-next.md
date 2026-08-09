@@ -7,10 +7,39 @@
 
 ## 1. Authority, naming, and pausing an office
 
-### The lead is positional
+### The lead is positional — ⚠ except the roster has no position
 
 **The first agent is always the architect.** No configuration, no
 `AGENT_LEAD` variable to keep in step — position in the roster *is* the answer.
+
+⚠ **Measured, and the word "position" is doing work the data cannot support.**
+The roster is a Redis **HASH**, which has no order. Every "first agent" in the
+codebase is `sorted(...)[0]` — `flock.tmuxhost` picking the first window since
+the skeleton, and `office peers` marking the lead since build 20. So the lead is
+the **alphabetically first** agent, not the one entered first at `setup.sh`.
+
+```
+  roster        zeus, backend, frontend       (setup.sh: agent #1 was zeus)
+  sorted()[0]   backend                        ← the lead, silently
+```
+
+It works today because `architect` sorts early, which is luck rather than design.
+h-office does not have this problem because it reads `offices.yaml`, a file that
+*has* an order.
+
+**Three ways out, none taken yet:**
+
+1. **Say what is true** — the lead is the alphabetically first agent. Zero
+   machinery, and `architect` keeps working. Surprising for anyone who names
+   their lead `zeus`.
+2. **Give the roster an order** — the entrypoint knows the `AGENTS` sequence.
+   Costs a second key to keep in step with hire and letGo, which is the derived
+   state `AGENT_PEERS` was removed for.
+3. **Convention over position** — the lead is `architect` when present, else
+   alphabetically first. No new state, but it is magic tied to a name.
+
+⚠ Do not resolve this by adding `AGENT_LEAD`. That was specced, built and
+reverted once already, and the reasoning below still holds.
 
 Corroborated by h-office, which arrived at the same rule independently:
 
