@@ -183,7 +183,15 @@ def _status_row(r, *, pod: str, tenant: str, agent: str, now: datetime) -> str:
 
     # The watchdog owns this key. Status only observes it, and absence before
     # build 27 is the normal case.
-    blocked = r.get(prefix(pod, tenant, agent=agent, resource="blocked"))
+    #
+    # ⚠ It is a HASH — {since, stream_id} — and this must not crash if it is
+    # anything else. Reading it with GET raised WRONGTYPE against a hash and
+    # took the whole command down, which is a poor way for a read-only status
+    # view to behave. A key it cannot make sense of means "not blocked".
+    try:
+        blocked = r.hgetall(prefix(pod, tenant, agent=agent, resource="blocked")) or None
+    except Exception:
+        blocked = None
     presence_state = decoded_presence.get("state") or "unknown"
     state = "blocked" if blocked is not None else presence_state
 

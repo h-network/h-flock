@@ -500,3 +500,18 @@ def test_only_office_agent_command_is_packaged():
     assert "flock.adapter" in scripts
     for old in ("sendMessage", "sendBroadcast", "peers", "hire", "letGo", "pause", "resume"):
         assert old not in scripts
+
+
+def test_status_survives_a_blocked_key_of_the_wrong_type(office_env, capsys):
+    """A read-only view must not crash on data it did not write.
+
+    ⚠ Measured: `blocked` planted as a HASH — the shape the spec describes —
+    against a reader using GET raised WRONGTYPE and took the whole command down.
+    The watchdog owns that key and writes it in a later build; status must
+    tolerate whatever it finds and treat nonsense as "not blocked".
+    """
+    office_env.roster = {"architect": "tmux", "worker": "tmux"}
+
+    office_env.values["pod:acme:tenant:hq:agent:worker:blocked"] = {"since": "now"}
+    cli.main(["status", "worker"])
+    assert "worker" in capsys.readouterr().out
