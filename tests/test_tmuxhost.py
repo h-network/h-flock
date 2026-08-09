@@ -43,6 +43,7 @@ def test_tmuxhost_reconciliation(mock_run_tmux):
         (0, "", ""),  # default-size
         (0, "", ""),  # history-limit
         (0, "__init__", ""),  # list-windows 1
+        (0, "__init__", ""),  # list-windows — create_window's idempotence check
         (0, "", ""),  # new-window alice
         (0, "__init__\nalice", ""),  # list-windows 2
         (0, "", ""),  # kill-window __init__
@@ -104,6 +105,7 @@ def test_tmuxhost_reconciles_office_tools_and_agent_guide_env(mock_run_tmux):
         (0, "", ""),  # default-size
         (0, "", ""),  # history-limit
         (0, "__init__", ""),  # list-windows 1
+        (0, "__init__", ""),  # list-windows — create_window's idempotence check
         (0, "", ""),  # new-window alice
         (0, "__init__\nalice", ""),  # list-windows 2
         (0, "", ""),  # kill-window __init__
@@ -315,6 +317,7 @@ def test_tmuxhost_reconciles_profile_env_vars_when_set(mock_run_tmux):
         (0, "", ""),  # default-size
         (0, "", ""),  # history-limit
         (0, "__init__", ""),  # list-windows 1
+        (0, "__init__", ""),  # list-windows — create_window's idempotence check
         (0, "", ""),  # new-window alice
         (0, "__init__\nalice", ""),  # list-windows 2
         (0, "", ""),  # kill-window __init__
@@ -339,6 +342,7 @@ def test_tmuxhost_omits_profile_env_vars_when_not_set(mock_run_tmux):
         (0, "", ""),  # default-size
         (0, "", ""),  # history-limit
         (0, "__init__", ""),  # list-windows 1
+        (0, "__init__", ""),  # list-windows — create_window's idempotence check
         (0, "", ""),  # new-window alice
         (0, "__init__\nalice", ""),  # list-windows 2
         (0, "", ""),  # kill-window __init__
@@ -407,3 +411,23 @@ def test_create_window_does_not_overwrite_the_lead_sentence(mock_run_tmux, tmp_p
 
     guide = (tmp_path / "zeus" / "AGENTS.md").read_text()
     assert "You are the lead of this office." in guide
+
+
+@patch("flock.tmux.ops.run_tmux")
+def test_create_window_is_idempotent_by_name(mock_run_tmux, tmp_path):
+    """A second window with the same name makes the agent unaddressable.
+
+    ⚠ tmux creates the duplicate happily and then refuses to resolve it —
+    `tmux -t hq:<name>` answers "can't find window" on an ambiguous target, so
+    every delivery to that agent fails silently from then on.
+
+    Measured on a live tenant: hiring an existing name left three windows called
+    `rehire`, and capture-pane could no longer find any of them.
+    """
+    from flock.tmux import ops as tmux_ops
+
+    mock_run_tmux.return_value = (0, "rehire", "")   # the window already exists
+    ret, _, _ = tmux_ops.create_window("hq", "rehire", cwd=str(tmp_path / "rehire"))
+
+    assert ret == 0
+    assert not any("new-window" in c[0] for c in mock_run_tmux.call_args_list)

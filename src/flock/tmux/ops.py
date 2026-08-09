@@ -250,6 +250,21 @@ def create_window(
 
     write_agent_guide(cwd, agent_name, lead=lead)
 
+    # ⚠ Idempotent by name. tmux happily creates a second window with the same
+    # name, and then refuses to resolve it: `tmux -t hq:<name>` answers
+    # "can't find window" on an ambiguous target. Every delivery to that agent
+    # fails from then on, silently.
+    #
+    # Measured: hiring an existing name three times left three windows called
+    # `rehire` and made the agent unaddressable. Re-writing the guide above is
+    # deliberate and harmless — it refreshes the lead sentence — but a second
+    # window is not.
+    try:
+        if agent_name in list_windows(session_name, socket=socket):
+            return 0, "", ""
+    except Exception:
+        pass
+
     if not command:
         command = window_env(agent_name, cwd=cwd) + ["bash", "-il"]
 
