@@ -141,12 +141,14 @@ window.
 
 ### Verification Markers (`pending.verify`)
 
-After a successful `Message` or `Command` paste into a `vab: tmux` window, the adapter records a pending verification marker in Redis Stream `<prefix>:agent:<name>:pending.verify` via `XADD MAXLEN ~ 100`:
+Before pasting a `Message` or `Command` into a `vab: tmux` window, the adapter records a pending verification marker in Redis Stream `<prefix>:agent:<name>:pending.verify` via `XADD MAXLEN ~ 100`:
 ```json
 { "stream_id": "<stream_id>", "ts": "<ts>" }
 ```
+- **Ordering**: The marker is written *before* the paste sequence into the window. Writing it before paste prevents a sub-second race where a fast agent's reply arrives before the marker lands in Redis.
+- **Allowlist `{claude, codex}`**: Markers are recorded only for CLIs on an explicit allowlist (`claude`, `codex`).
 - **Skipped for `AddTicket`**: `AddTicket` pastes nothing into the window and is not verified via activity inputs.
-- **Skipped for `agy`**: Agents running `agy` have no session log file or activity feed, so markers are skipped to avoid false unverified alerts.
+- **Skipped for `agy` and `bash`**: `agy` has no session log file / activity feed and `bash` has no CLI turn records, so markers are skipped to avoid false unverified alerts.
 - **Fail-safe**: Marker creation is wrapped in `try...except` so stream write failures never impact envelope delivery.
 - **`blocked` state**: The router checks these markers on its pass. If a delivery is unverified and no activity has been consumed since, the router writes `<prefix>:agent:<name>:blocked`. ⚠ `blocked` does not mean "stuck" — it means a delivery was judged unverified and nothing has been consumed since. It catches a trust picker or wedged process, but misses a CLI that records input it does not act on (such as a login prompt or modal picker).
 
@@ -163,19 +165,15 @@ in which it happens.
 **Enter is a separate call.** Combined with the text it is swallowed as
 shift+enter by interactive prompts.
 
-**Keep a small delay before Enter.** `paste-buffer -p` only emits the markers
-when the application has asked for bracketed paste mode; a CLI that never does
-gets the old behaviour, and the delay is what that case still relies on.
-**0.5s**, from `PASTE_ENTER_DELAY`. A shell never shows the difference; a real
-TUI does.
+**Keep a small delay before Enter.** Sending the paste and Enter together causes
+the CLI's input handling to coalesce them into a single input line, swallowing the submit.
+The delay is **0.5s**, from `PASTE_ENTER_DELAY`. ⚠ It is **not** a fix for slow
+terminals or waiting for the terminal to be ready — it is two distinct writes because
+of CLI input coalescing. A shell never shows the difference; a real TUI does.
 
-⚠ **It was 0.15s until build 14** — the value h-office settled on in the field
-after roughly one delivery in ten was left sitting in an input box. Raised
-because ours was the outlier by an order of magnitude against measurements
-elsewhere for the same CLIs, and because the failure is silent: the Enter is
-swallowed, the message sits unsubmitted, and the agent looks idle. Half a second
-against a delivery that already takes ~500 ms is a bounded cost; the other side
-is not.
+⚠ **It was 0.15s until build 14** — raised because ours was the outlier by an order of
+magnitude against measurements elsewhere for the same CLIs, and because the failure is
+silent: the Enter is swallowed, the message sits unsubmitted, and the agent looks idle.
 
 **Newlines inside the brackets are content.** Without them a multi-line message
 submits its first line early and arrives split in two.

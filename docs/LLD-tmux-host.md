@@ -142,11 +142,13 @@ for why that value is shared, and for the one case where being a poll behind
 still hurts: windows should lead routes, so this module reconciling promptly is
 what keeps a new agent's first envelope from being dead-lettered.
 
+⚠ **`create_window` is idempotent by name.** Before spawning a window, it checks `list_windows` and returns if a window with that exact name already exists. If duplicate windows with the same name were created, tmux target specifications (e.g. `hq:sme-2`) would become ambiguous and every delivery to that agent would fail with `can't find window`. Idempotence means *by name*, ensuring convergence on a single window per agent.
+
 What runs in the window is configuration, not this module's opinion. It starts
 what it is told to start, in the working directory `/workdir/<agent>` it is told to use,
 with `AGENT_GUIDE=/workdir/<agent>/AGENTS.md` and `OFFICE_TOOLS=office` in the environment.
 `write_agent_guide` generates both `AGENTS.md` and `CLAUDE.md` (rendering lead guidance based on `<prefix>:lead`, including instructing the lead to check `office status` and hold work if an agent is `blocked`)
-and pre-approves project trust across all three CLIs (`.claude.json`, `.codex/config.toml`, and `.gemini/.../settings.json`).
+and pre-approves project trust across all three CLIs in a **profile-aware** manner (`.claude-<profile>.json`, `.codex-<profile>/config.toml`, `.gemini/.../settings.json`). Blind to profiles, a profiled agent sits at a workspace trust prompt while presence reads `idle`.
 When a CLI is configured, window creation routes through `startAgent <cli>` so permission and auto-approval flags apply.
 
 ## 6. Lifecycle
