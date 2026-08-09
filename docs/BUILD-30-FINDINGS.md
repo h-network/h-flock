@@ -117,3 +117,66 @@ Each case proves its own setup, aborts if the setup fails, and only then judges.
 Then `FAIL=0` against the lab **with the run pasted in**. If a case proves its
 precondition and still contradicts §8a, that is a real finding — report it and
 change nothing until we have looked together.
+
+---
+
+# Run 3 — `PASS=7 FAIL=3`, and the harness finally earns its keep
+
+Every case now proves its setup and aborts if it fails. The suite stopped lying,
+and immediately produced two findings — one real product bug, one about the gap
+we thought we had.
+
+## 9. The api never surfaces `blocked` — clients cannot see it at all
+
+⚠ **`GET /agents/<name>` can never return `blocked`.** `api/app.py` builds
+`presence.state` from the presence hash alone (line ~552) and never reads
+`…:agent:<n>:blocked`. Only `office/cli.py` §192 folds it in, so the state exists
+for the CLI and is invisible over HTTP.
+
+⚠ **`API.md` documents it as a presence value and says "`blocked` is the one to
+act on".** Both clients in `clients/` implement that path. It is dead code — the
+Telegram bot's *"not accepting messages"* branch, a stated done-when of build 29,
+can never fire.
+
+This is the state the entire verification path exists to produce, and the only
+consumers that matter cannot observe it.
+
+## 10. The login-prompt gap did not reproduce
+
+Case 3 **proved its precondition** — the login prompt was on screen — and
+`blocked` was set:
+
+```
+  ok    sim-nologin precondition proved (login prompt shown)
+  FAIL  known gap: blocked key is empty : got [since … stream_id …]
+```
+
+⚠ **The documented gap is at least too broad.** For codex at a login prompt the
+delivery was judged unverified and `blocked` was set — caught, not missed.
+`HLD` §8a and `TODO` both say this case is missed.
+
+⚠ **Nothing changes in `HLD` or `TODO` yet.** One CLI in one state is not the
+claim either file makes, and cases 1 and 2 still cannot set up. The gap was
+originally seen with claude, and that is the case still unproven.
+
+## 11. Why cases 1 and 2 cannot set up
+
+⚠ **The pane process *is* the CLI.** Measured on a live agent:
+
+```
+  PID  PPID STAT COMMAND
+   33    32 Ssl+ claude --dangerously-skip-permissions --tools Bash Read …
+```
+
+`pane_pid` is claude itself — there is no shell child. `get_cli_pid` walks
+*descendants*, so it stops one of claude's own subprocesses and leaves claude
+running. **Check the pane process first** and only walk down if its `comm` does
+not match the launch value.
+
+⚠ **Cases 1 and 2 poll `presence.state` for `blocked`, which §9 shows is
+impossible over the api.** Assert the key directly, as case 3 already does. Both
+would have failed even with a perfect setup.
+
+Case 2 additionally needs to prove *why* no picker appeared — whether claude in a
+fresh profile shows onboarding before trust, or the cwd was trusted by another
+path.
