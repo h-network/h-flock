@@ -35,8 +35,15 @@ class TmuxHost:
             return None
         return raw_cli.decode() if isinstance(raw_cli, bytes) else raw_cli
 
+    def get_agent_profile(self, r: redis.Redis, agent: str) -> str | None:
+        profile_key = prefix(self.pod, self.tenant, agent=agent, resource="profile")
+        raw_prof = r.get(profile_key)
+        if not raw_prof:
+            return None
+        return raw_prof.decode() if isinstance(raw_prof, bytes) else raw_prof
+
     def ensure_server_and_session(
-        self, initial_window: str = "__init__", cli: str | None = None
+        self, initial_window: str = "__init__", cli: str | None = None, profile: str | None = None
     ) -> None:
         ret, stdout, stderr = tmux_ops.run_tmux("has-session", "-t", self.session_name, socket=self.socket)
         if ret != 0:
@@ -55,12 +62,18 @@ class TmuxHost:
                 guide_path = f"/workdir/{initial_window}/AGENTS.md"
                 write_agent_guide(cwd, initial_window, self.tenant)
                 cmd_args = ["startAgent", cli] if cli else ["bash", "-il"]
-                cmd.extend([
+                env_vars = [
                     "env",
                     f"AGENT_NAME={initial_window}",
                     OFFICE_TOOLS_ENV,
                     f"AGENT_GUIDE={guide_path}",
-                ] + cmd_args)
+                ]
+                if profile:
+                    env_vars.extend([
+                        f"CLAUDE_CONFIG_DIR=/home/ubuntu/.claude-{profile}",
+                        f"CODEX_HOME=/home/ubuntu/.codex-{profile}",
+                    ])
+                cmd.extend(env_vars + cmd_args)
 
             code, out, err = tmux_ops.run_tmux(*cmd, socket=self.socket)
             if code != 0:
@@ -77,7 +90,7 @@ class TmuxHost:
         return tmux_ops.list_windows(self.session_name, socket=self.socket)
 
     def create_window(
-        self, agent_name: str, cli: str | None = None, cwd: str | None = None
+        self, agent_name: str, cli: str | None = None, profile: str | None = None, cwd: str | None = None
     ) -> bool:
         cwd = cwd or f"/workdir/{agent_name}"
         guide_path = f"{cwd}/AGENTS.md"
@@ -88,6 +101,12 @@ class TmuxHost:
             OFFICE_TOOLS_ENV,
             f"AGENT_GUIDE={guide_path}",
         ]
+        if profile:
+            env_args.extend([
+                f"CLAUDE_CONFIG_DIR=/home/ubuntu/.claude-{profile}",
+                f"CODEX_HOME=/home/ubuntu/.codex-{profile}",
+            ])
+
         if cli:
             command = env_args + ["startAgent", cli]
         else:
@@ -120,8 +139,9 @@ class TmuxHost:
         }
         first_agent = sorted(list(roster_agents))[0] if roster_agents else "__init__"
         first_cli = self.get_agent_cli(r, first_agent) if first_agent != "__init__" else None
+        first_profile = self.get_agent_profile(r, first_agent) if first_agent != "__init__" else None
 
-        self.ensure_server_and_session(initial_window=first_agent, cli=first_cli)
+        self.ensure_server_and_session(initial_window=first_agent, cli=first_cli, profile=first_profile)
 
         existing_windows = self.get_windows()
 
@@ -129,7 +149,8 @@ class TmuxHost:
         for agent in sorted(list(roster_agents)):
             if agent not in existing_windows:
                 cli = self.get_agent_cli(r, agent)
-                self.create_window(agent, cli=cli)
+                profile = self.get_agent_profile(r, agent)
+                self.create_window(agent, cli=cli, profile=profile)
 
         # Re-fetch after creations to decide cleanup
         existing_windows = self.get_windows()
