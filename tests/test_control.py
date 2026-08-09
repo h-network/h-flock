@@ -3,7 +3,7 @@ import types
 
 import pytest
 
-from flock.bus import prefix
+from flock.bus import AGENT_STATE_RESOURCES, prefix
 from flock.control import deliver_one, pause_agent, resume_agent, start_agent, stop_agent
 from flock.control import runner
 
@@ -98,12 +98,8 @@ def test_stop_agent_orders_roster_launch_then_window():
     assert events == [
         ("hget", prefix("acme", "hq", resource="roster"), "dave"),
         ("hdel", prefix("acme", "hq", resource="roster"), "dave"),
-        (
-            "delete",
-            prefix("acme", "hq", "dave", "launch"),
-            prefix("acme", "hq", "dave", "profile"),
-            prefix("acme", "hq", "dave", "paused"),
-        ),
+        ("delete", *(prefix("acme", "hq", "dave", resource) for resource in sorted(AGENT_STATE_RESOURCES))),
+        ("hdel", prefix("acme", "hq", resource="delivering"), "dave"),
         ("kill_window", "dave"),
     ]
 
@@ -120,7 +116,8 @@ def test_stop_api_client_removes_roster_and_mailbox_without_tmux():
     assert events == [
         ("hget", prefix("acme", "hq", resource="roster"), "telegram"),
         ("hdel", prefix("acme", "hq", resource="roster"), "telegram"),
-        ("delete", prefix("acme", "hq", "telegram", "inbox")),
+        ("delete", *(prefix("acme", "hq", "telegram", resource) for resource in sorted(AGENT_STATE_RESOURCES))),
+        ("hdel", prefix("acme", "hq", resource="delivering"), "telegram"),
     ]
 
 
@@ -329,4 +326,3 @@ def test_deliver_one_hired_agent_with_profile(monkeypatch):
     assert "CODEX_HOME=/home/ubuntu/.codex-work" in cmd
     assert "OFFICE_TOOLS=office" in cmd
     assert "AGENT_GUIDE=/workdir/iris/AGENTS.md" in cmd
-

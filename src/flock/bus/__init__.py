@@ -5,6 +5,14 @@ from .envelope import EnvelopeError, build, parse
 from .keys import RESERVED, SEGMENT_REGEX, prefix
 from .logging import emit, log_record, record_task_event
 from .roster import is_member, members, vab
+from .resources import (
+    AGENT_DATA_RESOURCES,
+    AGENT_STATE_RESOURCES,
+    DYNAMIC_RESOURCE_PATTERNS,
+    PER_AGENT_RESOURCES,
+    TENANT_RESOURCES,
+    purge_agent,
+)
 
 __all__ = [
     "EnvelopeError",
@@ -21,4 +29,10 @@ __all__ = [
     "receive",
     "send",
     "vab",
+    "AGENT_DATA_RESOURCES",
+    "AGENT_STATE_RESOURCES",
+    "DYNAMIC_RESOURCE_PATTERNS",
+    "PER_AGENT_RESOURCES",
+    "TENANT_RESOURCES",
+    "purge_agent",
 ]
