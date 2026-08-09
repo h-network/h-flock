@@ -90,3 +90,48 @@ absent from the framework LLDs. Do not add it to them.
 What you fixed, what you found in files you do not own, what you checked and
 found correct, **and the re-measured §1 table**. A column still at zero is either
 a real gap or a deliberate silence, and saying which is part of the job.
+
+## 6. Closed — the re-measured table
+
+```
+                       enter-delay  idempotent  profile  verify-order  allowlist  digit-names
+  HLD.md                         0           1        0             1          0            1
+  CONTRACTS.md                   1           2        0             1          1            1
+  LLD-adapter-tmux.md            1           0        0             2          1            0
+  LLD-tmux-host.md               0           1        1             0          0            2
+  LLD-bus-and-router.md          0           0        0             1          2            0
+  LLD-watchdog.md                0           0        1             0          0            0
+  LLD-container.md               0           0        1             0          0            0
+  LLD-api.md                     0           0        0             0          0            1
+  LLD-session.md                 0           0        1             0          0            0
+```
+
+**The remaining zeros are deliberate silences, and here is the ruling**, because
+three lanes reported them differently:
+
+- **`LLD-container`** stays at zero for paste mechanics. It documents what
+  *processes* run in a tenant and what environment they get. Enter-delay, verify
+  order and the allowlist are adapter behaviour, and repeating them there would
+  create a second place to keep them true. `bus` called these real gaps; they are
+  not, and the file is correct as it stands.
+- **`LLD-api`, `LLD-session`, `LLD-watchdog`, `LLD-bus-and-router`** at zero for
+  tmux-specific columns — none of them paste into a window.
+
+⚠ **Two errors, not gaps, were found in `CONTRACTS`** — it described the verify
+marker as written *after* the paste, which is the bug rather than the fix, and
+carried a delivery-cost measurement predating `PASTE_ENTER_DELAY = 0.5` that put
+a 500 ms delay inside a 226 ms half. An audit that only counts mentions would
+have scored both as present.
+
+## 7. Two lane reports that did not hold
+
+⚠ **Most cross-lane findings were already closed.** `bus` reported `CONTRACTS`,
+`LLD-adapter-tmux` and `LLD-tmux-host` as stale, having measured before the other
+branches merged. Three lanes auditing in parallel each see a tree without the
+others' work — **read cross-lane findings as of the branch point**, and re-check
+before acting.
+
+⚠ **`bus` reported that plain `pytest` fails collection** on
+`tests/test_telegram_client.py`. It does not reproduce — clean environment, repo
+root and `tests/` alike, before and after the merges. `pytest.ini` sets
+`pythonpath`. Nothing was changed for it.
