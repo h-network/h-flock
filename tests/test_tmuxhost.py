@@ -202,3 +202,96 @@ def test_tmuxhost_launches_cli_via_startagent(mock_run_tmux):
     calls = [c[0] for c in mock_run_tmux.call_args_list]
     new_window_calls = [c for c in calls if "new-window" in c]
     assert any("startAgent" in c and "claude" in c for c in new_window_calls)
+
+
+def test_ensure_codex_project_trusted_hiring_twice():
+    with tempfile.TemporaryDirectory() as tmp_home:
+        with patch.dict(os.environ, {"HOME": tmp_home}):
+            from flock.tmux.ops import ensure_codex_project_trusted
+
+            codex_dir = os.path.join(tmp_home, ".codex")
+            os.makedirs(codex_dir, exist_ok=True)
+            config_path = os.path.join(codex_dir, "config.toml")
+            with open(config_path, "w", encoding="utf-8") as f:
+                f.write("check_for_update_on_startup = false\n")
+
+            # Hire agent 1 (alice)
+            ensure_codex_project_trusted("/workdir/alice")
+            with open(config_path, "r", encoding="utf-8") as f:
+                content = f.read()
+            assert 'check_for_update_on_startup = false' in content
+            assert '[projects."/workdir/alice"]' in content
+            assert 'trust_level = "trusted"' in content
+
+            # Hire agent 2 (bob)
+            ensure_codex_project_trusted("/workdir/bob")
+            with open(config_path, "r", encoding="utf-8") as f:
+                content = f.read()
+            assert '[projects."/workdir/alice"]' in content
+            assert '[projects."/workdir/bob"]' in content
+
+            # Re-hire agent 1 (alice) — verify no duplicate tables
+            ensure_codex_project_trusted("/workdir/alice")
+            with open(config_path, "r", encoding="utf-8") as f:
+                content = f.read()
+            assert content.count('[projects."/workdir/alice"]') == 1
+            assert content.count('[projects."/workdir/bob"]') == 1
+
+
+def test_ensure_agy_project_trusted_hiring_twice():
+    with tempfile.TemporaryDirectory() as tmp_home:
+        with patch.dict(os.environ, {"HOME": tmp_home}):
+            from flock.tmux.ops import ensure_agy_project_trusted
+
+            # Hire agent 1 (alice)
+            ensure_agy_project_trusted("/workdir/alice")
+            settings_path = os.path.join(tmp_home, ".gemini", "antigravity-cli", "settings.json")
+            assert os.path.exists(settings_path)
+            with open(settings_path, "r", encoding="utf-8") as f:
+                data = json.load(f)
+            assert data["enableTelemetry"] is False
+            assert data["trustedWorkspaces"] == ["/workdir/alice"]
+
+            # Hire agent 2 (bob)
+            ensure_agy_project_trusted("/workdir/bob")
+            with open(settings_path, "r", encoding="utf-8") as f:
+                data = json.load(f)
+            assert data["enableTelemetry"] is False
+            assert data["trustedWorkspaces"] == ["/workdir/alice", "/workdir/bob"]
+
+            # Re-hire agent 1 (alice) — verify no duplicate workspace entries
+            ensure_agy_project_trusted("/workdir/alice")
+            with open(settings_path, "r", encoding="utf-8") as f:
+                data = json.load(f)
+            assert data["trustedWorkspaces"] == ["/workdir/alice", "/workdir/bob"]
+
+
+def test_write_agent_guide_trusts_all_clis():
+    with tempfile.TemporaryDirectory() as tmp_workdir:
+        with tempfile.TemporaryDirectory() as tmp_home:
+            with patch.dict(os.environ, {"HOME": tmp_home}):
+                write_agent_guide(tmp_workdir, "dave", "hq")
+
+                # Check Claude trust
+                claude_config = os.path.join(tmp_home, ".claude.json")
+                assert os.path.exists(claude_config)
+                with open(claude_config, "r", encoding="utf-8") as f:
+                    cdata = json.load(f)
+                assert cdata["projects"][tmp_workdir]["hasTrustDialogAccepted"] is True
+
+                # Check Codex trust
+                codex_config = os.path.join(tmp_home, ".codex", "config.toml")
+                assert os.path.exists(codex_config)
+                with open(codex_config, "r", encoding="utf-8") as f:
+                    ccontent = f.read()
+                assert f'[projects."{tmp_workdir}"]' in ccontent
+                assert 'trust_level = "trusted"' in ccontent
+
+                # Check AGY trust
+                agy_settings = os.path.join(tmp_home, ".gemini", "antigravity-cli", "settings.json")
+                assert os.path.exists(agy_settings)
+                with open(agy_settings, "r", encoding="utf-8") as f:
+                    adata = json.load(f)
+                assert adata["enableTelemetry"] is False
+                assert tmp_workdir in adata["trustedWorkspaces"]
+

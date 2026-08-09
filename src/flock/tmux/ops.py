@@ -111,6 +111,69 @@ def ensure_claude_project_trusted(cwd: str) -> None:
         pass
 
 
+def ensure_codex_project_trusted(cwd: str) -> None:
+    try:
+        home_dir = os.environ.get("HOME", "/home/ubuntu")
+        codex_dir = os.path.join(home_dir, ".codex")
+        os.makedirs(codex_dir, exist_ok=True)
+        config_path = os.path.join(codex_dir, "config.toml")
+
+        header = f'[projects."{cwd}"]'
+        entry = f'{header}\ntrust_level = "trusted"\n'
+
+        if not os.path.exists(config_path):
+            with open(config_path, "w", encoding="utf-8") as f:
+                f.write(entry)
+            return
+
+        with open(config_path, "r", encoding="utf-8") as f:
+            content = f.read()
+
+        if header in content:
+            return
+
+        with open(config_path, "a", encoding="utf-8") as f:
+            if not content.endswith("\n"):
+                f.write("\n")
+            f.write(f"\n{entry}")
+    except Exception:
+        pass
+
+
+def ensure_agy_project_trusted(cwd: str) -> None:
+    try:
+        home_dir = os.environ.get("HOME", "/home/ubuntu")
+        agy_dir = os.path.join(home_dir, ".gemini", "antigravity-cli")
+        os.makedirs(agy_dir, exist_ok=True)
+        config_path = os.path.join(agy_dir, "settings.json")
+
+        data = {}
+        if os.path.exists(config_path):
+            try:
+                with open(config_path, "r", encoding="utf-8") as f:
+                    data = json.load(f)
+            except Exception:
+                data = {}
+
+        if not isinstance(data, dict):
+            data = {}
+
+        data["enableTelemetry"] = False
+
+        workspaces = data.get("trustedWorkspaces", [])
+        if not isinstance(workspaces, list):
+            workspaces = []
+
+        if cwd not in workspaces:
+            workspaces.append(cwd)
+        data["trustedWorkspaces"] = workspaces
+
+        with open(config_path, "w", encoding="utf-8") as f:
+            json.dump(data, f, indent=2)
+    except Exception:
+        pass
+
+
 def write_agent_guide(cwd: str, agent_name: str, tenant: str = "default") -> None:
     try:
         os.makedirs(cwd, exist_ok=True)
@@ -122,6 +185,8 @@ def write_agent_guide(cwd: str, agent_name: str, tenant: str = "default") -> Non
                 f.write(content)
 
         ensure_claude_project_trusted(cwd)
+        ensure_codex_project_trusted(cwd)
+        ensure_agy_project_trusted(cwd)
     except Exception:
         pass
 
