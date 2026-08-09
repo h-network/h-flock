@@ -3,15 +3,19 @@
 import argparse
 import json
 import os
+import shutil
+import subprocess
 import sys
 from collections.abc import Sequence
 from datetime import datetime, timezone
+from pathlib import Path
 
 import redis
 
 from flock.bus import is_member, log_record, members, prefix, record_task_event, send, vab
 
 _REDIS_URL = "redis://127.0.0.1:6379/0"
+_WORKDIR_ROOT = Path("/workdir")
 _COMMANDS = (
     "send",
     "broadcast",
@@ -27,6 +31,7 @@ _COMMANDS = (
     "hold",
     "delete",
     "add",
+    "cloneToAll",
 )
 
 
@@ -55,6 +60,7 @@ def _root_parser() -> argparse.ArgumentParser:
         "hold": "put your open task on hold",
         "delete": "permanently remove a task",
         "add": "add a task to another agent's board",
+        "cloneToAll": "clone a repository into agent workspaces",
     }
     for name in _COMMANDS:
         subcommands.add_parser(name, help=descriptions[name], add_help=False)
@@ -385,6 +391,105 @@ def _add_command(argv: list[str]) -> None:
     print(stream_id)
 
 
+def _repo_name(repo_url: str) -> str:
+    tail = repo_url.rstrip("/").rsplit("/", 1)[-1].rsplit(":", 1)[-1]
+    if tail.endswith(".git"):
+        tail = tail[:-4]
+    if not tail or tail in (".", ".."):
+        raise OfficeError(f"cannot determine repository name from {repo_url!r}")
+    return tail
+
+
+def _clone_agents(r, *, pod: str, tenant: str, requested: str | None) -> list[str]:
+    tmux_agents = {
+        agent
+        for agent in members(r, pod=pod, tenant=tenant)
+        if vab(r, pod=pod, tenant=tenant, agent=agent) == "tmux"
+    }
+    if requested is None:
+        return sorted(tmux_agents)
+
+    selected = list(dict.fromkeys(name.strip() for name in requested.split(",") if name.strip()))
+    if not selected:
+        raise OfficeError("-a requires at least one agent")
+    invalid = [name for name in selected if name not in tmux_agents]
+    if invalid:
+        raise OfficeError(f"not a tmux agent: {', '.join(invalid)}")
+    return selected
+
+
+def _git_clone(source: str, target: Path, upstream: str) -> tuple[bool, str]:
+    try:
+        clone = subprocess.run(
+            ["git", "clone", source, str(target)],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        if clone.returncode:
+            detail = clone.stderr.strip() or clone.stdout.strip() or "git clone failed"
+            return False, detail
+        remote = subprocess.run(
+            ["git", "-C", str(target), "remote", "set-url", "origin", upstream],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        if remote.returncode:
+            detail = remote.stderr.strip() or remote.stdout.strip() or "could not set origin"
+            return False, detail
+        return True, ""
+    except OSError as exc:
+        return False, str(exc)
+
+
+def _clone_to_all_command(argv: list[str]) -> None:
+    parser = _operation_parser("cloneToAll", "Clone one repository into agent workspaces.")
+    parser.add_argument("repo_url", metavar="REPO-URL")
+    parser.add_argument("-a", "--agents", metavar="ALICE,BOB", help="comma-separated tmux agents")
+    parser.add_argument("--dry-run", action="store_true", help="show actions without writing")
+    args = parser.parse_args(argv)
+
+    r, pod, tenant, _ = _context()
+    agents = _clone_agents(r, pod=pod, tenant=tenant, requested=args.agents)
+    repo_name = _repo_name(args.repo_url)
+    targets = [(agent, _WORKDIR_ROOT / agent / repo_name) for agent in agents]
+
+    if args.dry_run:
+        skipped = 0
+        for agent, target in targets:
+            if target.exists():
+                skipped += 1
+                print(f"{agent}: exists, would skip")
+            else:
+                print(f"{agent}: would clone")
+        print(f"summary: cloned=0 skipped={skipped} failed=0")
+        return
+
+    cloned = skipped = failed = 0
+    local_source = next((target for _, target in targets if target.exists()), None)
+    for agent, target in targets:
+        if target.exists():
+            skipped += 1
+            print(f"{agent}: exists, skipped")
+            continue
+
+        source = str(local_source) if local_source is not None else args.repo_url
+        ok, detail = _git_clone(source, target, args.repo_url)
+        if ok:
+            cloned += 1
+            local_source = local_source or target
+            print(f"{agent}: cloned")
+        else:
+            failed += 1
+            if target.exists():
+                shutil.rmtree(target)
+            print(f"{agent}: failed: {detail}")
+    print(f"summary: cloned={cloned} skipped={skipped} failed={failed}")
+    if failed:
+        raise OfficeError(f"{failed} clone operation(s) failed")
+
+
 def main(argv: Sequence[str] | None = None) -> None:
     args = list(sys.argv[1:] if argv is None else argv)
     parser = _root_parser()
@@ -419,6 +524,8 @@ def main(argv: Sequence[str] | None = None) -> None:
             _delete_command(remainder)
         elif command == "add":
             _add_command(remainder)
+        elif command == "cloneToAll":
+            _clone_to_all_command(remainder)
         else:
             parser.error(f"unknown command: {command}")
     except OfficeError as exc:
