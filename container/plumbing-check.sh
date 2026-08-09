@@ -116,9 +116,20 @@ done
 ck "dave window gone"   "$(dx bash -c 'TMUX_TMPDIR=/home/ubuntu/.flock/tmux tmux list-windows -t hq' | grep -c dave)" "0"
 
 echo "== 10. dead-letter =="
-dx bash -lc "cd /workdir/$AG1 && AGENT_NAME=$AG1 office send -a ghost nobody-home-deadletter" >/dev/null 2>&1
-sleep 3
+# ⚠ Written straight onto an egress queue, deliberately. Both supported doors
+# refuse an unknown recipient before an envelope exists — the api returns 404 and
+# `office send` errors with "unknown recipient agent" — so neither can reach the
+# router's dead-letter path. This is a test of the ROUTER, so the envelope is
+# placed where the router pops from. Nothing in the product may do this.
+DEAD_ENV="{\"v\":1,\"kind\":\"Message\",\"stream_id\":\"plumbingdead1\",\"correlation_id\":\"plumbingdead1\",\"ts\":\"2026-01-01T00:00:00.000Z\",\"producer\":\"$AG1\",\"recipient\":\"ghost\",\"payload\":{\"text\":\"nobody home\"}}"
+dx redis-cli DEL "pod:$POD:tenant:$TENANT:agent:$AG1:dead" >/dev/null
+dx redis-cli RPUSH "pod:$POD:tenant:$TENANT:agent:$AG1:egress" "$DEAD_ENV" >/dev/null
+for _ in $(seq 1 20); do
+    [ "$(dx redis-cli LLEN "pod:$POD:tenant:$TENANT:agent:$AG1:dead" | tr -d '\r')" != "0" ] && break
+    sleep 0.5
+done
 ckc "unroutable dead-lettered" "$(dx redis-cli KEYS "pod:$POD:tenant:$TENANT:agent:*:dead")" "dead"
+dx redis-cli DEL "pod:$POD:tenant:$TENANT:agent:$AG1:dead" >/dev/null
 
 echo "== 11. booted and hired agents get the same environment =="
 # ⚠ The one check that would have caught the build 17 drift. Two code paths built
