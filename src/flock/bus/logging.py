@@ -27,6 +27,7 @@ def log_record(
     count: int | None = None,
     task_id: str | None = None,
     waited: int | float | None = None,
+    byte_count: int | None = None,
 ) -> None:
     """One JSON object per line on stdout. Fields absent when not known.
 
@@ -49,6 +50,7 @@ def log_record(
         ("count", count),
         ("task_id", task_id),
         ("waited", waited),
+        ("bytes", byte_count),
     ):
         if value is not None:
             record[field] = value

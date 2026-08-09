@@ -113,3 +113,40 @@ def test_window_log_tailer_uses_byte_offset_and_waits_for_complete_line(tmp_path
         output.write(b'"}\n')
     tailer.poll()
     assert capsys.readouterr().out.splitlines() == ['{"event":"two"}']
+
+
+def test_window_log_truncates_only_at_consumed_end_and_later_record_still_arrives(tmp_path, capsys):
+    r = LogRedis()
+    path = tmp_path / "window.jsonl"
+    initial = b'{"event":"first"}\n{"event":"second"}\n'
+    path.write_bytes(initial)
+    tailer = WindowLogTailer(r, pod="acme", tenant="hq", path=path, max_bytes=25)
+
+    tailer.poll()
+    lines = capsys.readouterr().out.splitlines()
+    assert lines[:2] == ['{"event":"first"}', '{"event":"second"}']
+    truncation = json.loads(lines[2])
+    assert truncation["module"] == "router"
+    assert truncation["event"] == "window_log_truncated"
+    assert truncation["bytes"] == len(initial)
+    assert path.read_bytes() == b""
+    assert r.values[tailer.offset_key] == 0
+
+    with path.open("ab") as output:
+        output.write(b'{"event":"after"}\n')
+    tailer.poll()
+    assert capsys.readouterr().out.splitlines() == ['{"event":"after"}']
+
+
+def test_window_log_over_cap_is_not_truncated_before_partial_tail_is_consumed(tmp_path, capsys):
+    r = LogRedis()
+    path = tmp_path / "window.jsonl"
+    partial = b'{"event":"an-unconsumed-record"}'
+    path.write_bytes(partial)
+    tailer = WindowLogTailer(r, pod="acme", tenant="hq", path=path, max_bytes=10)
+
+    tailer.poll()
+
+    assert capsys.readouterr().out == ""
+    assert path.read_bytes() == partial
+    assert r.values[tailer.offset_key] == 0

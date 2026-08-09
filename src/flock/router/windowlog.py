@@ -2,7 +2,7 @@
 
 from pathlib import Path
 
-from flock.bus import prefix
+from flock.bus import log_record, prefix
 
 
 class WindowLogTailer:
@@ -13,9 +13,13 @@ class WindowLogTailer:
         pod: str,
         tenant: str,
         path: str | Path = "/home/ubuntu/.flock/window.log.jsonl",
+        max_bytes: int = 8 * 1024 * 1024,
     ):
+        if max_bytes < 1:
+            raise ValueError("window log cap must be positive")
         self.r = r
         self.path = Path(path)
+        self.max_bytes = max_bytes
         self.offset_key = prefix(pod, tenant, resource="window.log.offset")
 
     def poll(self) -> None:
@@ -34,6 +38,11 @@ class WindowLogTailer:
                     print(raw.decode("utf-8").rstrip("\n"), flush=True)
                     committed = source.tell()
             self.r.set(self.offset_key, committed)
+            current_size = self.path.stat().st_size
+            if current_size > self.max_bytes and committed == current_size:
+                self.path.write_bytes(b"")
+                self.r.set(self.offset_key, 0)
+                log_record("router", "window_log_truncated", byte_count=current_size)
         except (OSError, UnicodeDecodeError, TypeError, ValueError):
             # A missing/rotating file is an absent observation, never a router
             # failure. The next existing pass tries again from the same offset.
