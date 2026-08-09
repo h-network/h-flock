@@ -87,11 +87,11 @@ def _render_restdoc_html(app: FastAPI) -> str:
         },
         "/agents/{agent}": {
             "desc": "Get depth counts for an agent's ingress, egress, and dead queues.",
-            "curl": 'curl -H "Authorization: Bearer $API_TOKEN" http://localhost:8080/agents/bob',
+            "curl": 'curl -H "Authorization: Bearer $API_TOKEN" http://localhost:8080/agents/sme-2',
         },
         "/agents/{agent}/envelopes": {
             "desc": "Post an envelope of any kind to a specific agent or broadcast to 'all'. Accepts standard envelope shape, sugar `{\"text\": \"...\"}` for Message, and optional `\"as\"` for api client producer identity.",
-            "curl": 'curl -X POST -H "Authorization: Bearer $API_TOKEN" -H "Content-Type: application/json" -d \'{"text": "hello", "as": "telegram"}\' http://localhost:8080/agents/bob/envelopes',
+            "curl": 'curl -X POST -H "Authorization: Bearer $API_TOKEN" -H "Content-Type: application/json" -d \'{"text": "hello", "as": "telegram"}\' http://localhost:8080/agents/sme-2/envelopes',
         },
         "/agents/{agent}/messages": {
             "desc": "Get stored inbox messages for an api client. Supports cursor catch-up (`?after=<cursor>`) and limit.",
@@ -101,9 +101,17 @@ def _render_restdoc_html(app: FastAPI) -> str:
             "desc": "Live Server-Sent Events (SSE) stream of inbox messages for an api client. Supports cursor (`?after=<cursor>`).",
             "curl": 'curl -H "Authorization: Bearer $API_TOKEN" "http://localhost:8080/agents/telegram/messages/stream"',
         },
+        "/agents/{agent}/activity": {
+            "desc": "Get stored activity feed events for an agent. Supports cursor catch-up (`?after=<cursor>`) and limit.",
+            "curl": 'curl -H "Authorization: Bearer $API_TOKEN" "http://localhost:8080/agents/sme-2/activity?after=1723150000000-0&limit=50"',
+        },
+        "/agents/{agent}/activity/stream": {
+            "desc": "Live Server-Sent Events (SSE) stream of activity events for an agent. Supports cursor (`?after=<cursor>`).",
+            "curl": 'curl -H "Authorization: Bearer $API_TOKEN" "http://localhost:8080/agents/sme-2/activity/stream"',
+        },
         "/agents/{agent}/board": {
             "desc": "Get task board lists (todo, doing, hold, done) for a specific agent.",
-            "curl": 'curl -H "Authorization: Bearer $API_TOKEN" http://localhost:8080/agents/bob/board',
+            "curl": 'curl -H "Authorization: Bearer $API_TOKEN" http://localhost:8080/agents/sme-2/board',
         },
         "/board": {
             "desc": "Get task boards for all enrolled agents across the tenant.",
@@ -363,17 +371,17 @@ def _render_restdoc_html(app: FastAPI) -> str:
       <tbody>
         <tr>
           <td>Client &rarr; Server</td>
-          <td><code>{{"subscribe": ["alice", "bob"], "mode": "read-only" | "read-write"}}</code></td>
+          <td><code>{{"subscribe": ["architect", "sme-2"], "mode": "read-only" | "read-write"}}</code></td>
           <td>Subscribe to output from listed agents. Mode defaults to <code>read-write</code> if omitted.</td>
         </tr>
         <tr>
           <td>Client &rarr; Server</td>
-          <td><code>{{"agent": "alice", "data": "&lt;keystrokes&gt;"}}</code></td>
+          <td><code>{{"agent": "sme-2", "data": "&lt;keystrokes&gt;"}}</code></td>
           <td>Send keystrokes to agent's terminal window. Refused with error if mode is <code>read-only</code>.</td>
         </tr>
         <tr>
           <td>Server &rarr; Client</td>
-          <td><code>{{"agent": "alice", "data": "&lt;output bytes&gt;"}}</code></td>
+          <td><code>{{"agent": "sme-2", "data": "&lt;output bytes&gt;"}}</code></td>
           <td>Terminal output stream bytes or initial scrollback snapshot.</td>
         </tr>
         <tr>
