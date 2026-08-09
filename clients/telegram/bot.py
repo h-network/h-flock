@@ -53,7 +53,7 @@ class FlockClient:
         except Exception as exc:
             return 500, {"detail": str(exc)}
 
-    def enrol() -> tuple[int, dict]:
+    def enrol(self) -> tuple[int, dict]:
         """Enrol application client with host using StartAgent and vab: api."""
         return self.request(
             "POST",
