@@ -12,7 +12,15 @@
 set -uo pipefail
 
 MODE="${1:-in}"
-CONTAINER="${2:-h-flock-hq-tenant-1}"
+# Pod, tenant and container name come from container/.env — the same file the
+# tenant was built from — rather than being hardcoded here. setup.sh names the
+# compose project "h-flock-<tenant>", so the container is "<project>-tenant-1".
+# Override either by exporting POD/TENANT, or by passing the container name.
+_here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+[ -f "$_here/.env" ] && . "$_here/.env"
+POD="${POD:-acme}"
+TENANT="${TENANT:-hq}"
+CONTAINER="${2:-h-flock-${TENANT}-tenant-1}"
 HOME_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/home"
 IN_CONTAINER="/home/ubuntu"
 

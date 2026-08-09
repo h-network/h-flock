@@ -13,12 +13,21 @@
 # ⚠ A pasted message is executed by the shell in a CLI-less window, so
 # "command not found" in a pane is the expected result and not a failure — the
 # check is that the text arrived at all.
-C=h-flock-hq-tenant-1
+# Pod, tenant and container name come from container/.env — the same file the
+# tenant was built from — rather than being hardcoded here. setup.sh names the
+# compose project "h-flock-<tenant>", so the container is "<project>-tenant-1".
+# Override either by exporting POD/TENANT, or by passing the container name.
+_here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+[ -f "$_here/.env" ] && . "$_here/.env"
+POD="${POD:-acme}"
+TENANT="${TENANT:-hq}"
+C="${CONTAINER:-h-flock-${TENANT}-tenant-1}"
+ROSTER="pod:$POD:tenant:$TENANT:roster"
 T=$(docker exec $C printenv API_TOKEN)
 # Agent names come from the roster, not from this file. The default tenant is
 # architect/sme-2/sme-3 and any real one is named for its jobs, so hardcoding
 # two names makes the check work on exactly one office.
-read -r AG1 AG2 <<<"$(docker exec $C redis-cli --no-raw HGETALL pod:acme:tenant:hq:roster \
+read -r AG1 AG2 <<<"$(docker exec $C redis-cli --no-raw HGETALL $ROSTER \
   | paste - - | grep '"tmux"' | awk -F'"' '{print $2}' | sort | head -2 | tr '\n' ' ')"
 [ -n "${AG1:-}" ] && [ -n "${AG2:-}" ] || { echo "plumbing-check: need two tmux agents in the roster" >&2; exit 2; }
 echo "using agents: $AG1 (sender) and $AG2 (recipient)"
@@ -55,7 +64,7 @@ dx bash -lc "cd /workdir/$AG2 && AGENT_NAME=$AG2 office done" >/dev/null 2>&1
 echo "== 4. app client =="
 cu -X POST -H 'Content-Type: application/json' -d '{"kind":"StartAgent","payload":{"agent":"telegram","vab":"api"}}' $A/agents/host/envelopes >/dev/null
 sleep 3
-ckc "client enrolled"    "$(dx redis-cli HGET pod:acme:tenant:hq:roster telegram)" "api"
+ckc "client enrolled"    "$(dx redis-cli HGET $ROSTER telegram)" "api"
 ck  "no window made"     "$(dx bash -c 'TMUX_TMPDIR=/home/ubuntu/.flock/tmux tmux list-windows -t hq' | grep -c telegram)" "0"
 ckc "peers hides client" "$(dx bash -lc "cd /workdir/$AG1 && AGENT_NAME=$AG1 office peers")" "$AG2"
 ck  "peers really hides" "$(dx bash -lc "cd /workdir/$AG1 && AGENT_NAME=$AG1 office peers" | grep -c telegram)" "0"
@@ -97,7 +106,7 @@ ck "dave window gone"   "$(dx bash -c 'TMUX_TMPDIR=/home/ubuntu/.flock/tmux tmux
 echo "== 10. dead-letter =="
 cu -X POST -H 'Content-Type: application/json' -d '{"text":"nobody home"}' $A/agents/ghost/envelopes >/dev/null
 sleep 2
-ckc "unroutable dead-lettered" "$(dx docker logs 2>/dev/null || true; dx redis-cli KEYS 'pod:acme:tenant:hq:agent:*:dead')" "dead"
+ckc "unroutable dead-lettered" "$(dx docker logs 2>/dev/null || true; dx redis-cli KEYS "pod:$POD:tenant:$TENANT:agent:*:dead")" "dead"
 
 echo "== 11. booted and hired agents get the same environment =="
 # ⚠ The one check that would have caught the build 17 drift. Two code paths built
