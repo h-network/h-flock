@@ -61,11 +61,21 @@ RUN mkdir -p /home/ubuntu/.codex \
  && python3 -c "import os; p='/home/ubuntu/.codex/config.toml'; old=open(p).read() if os.path.exists(p) else ''; keep=[l for l in old.splitlines() if not l.strip().startswith('check_for_update_on_startup')]; open(p,'w').write('\n'.join(['check_for_update_on_startup = false'] + keep) + '\n')" \
  && chown -R ubuntu:ubuntu /home/ubuntu/.codex
 
-# Seed agy jetski_state.pbtxt with post_onboarding completed steps.
-# Suppresses the onboarding colour-scheme picker gate. Writes only the
-# post_onboarding block if the file is absent or post_onboarding is missing.
-RUN mkdir -p /home/ubuntu/.gemini/antigravity-cli \
- && python3 -c "import os; p='/home/ubuntu/.gemini/antigravity-cli/jetski_state.pbtxt'; content=open(p).read() if os.path.exists(p) else ''; block='post_onboarding:  {\n  completed_steps:  POST_ONBOARDING_STEP_TYPE_MANAGER_WELCOME\n  completed_steps:  POST_ONBOARDING_STEP_TYPE_USAGE_MODE\n  completed_steps:  POST_ONBOARDING_STEP_TYPE_AGENT_CONFIGURATION\n  completed_steps:  POST_ONBOARDING_STEP_TYPE_ADD_WORKSPACE\n}'; (open(p, 'a').write('\n' + block + '\n') if 'post_onboarding' not in content else None)" \
+# agy shows three first-run gates — a colour-scheme picker, a pre-checked
+# consent to send interaction data to Google, and a workspace-trust prompt — and
+# a headless agent stops dead on the first. All three are suppressed by ONE
+# marker, written when onboarding completes:
+#
+# ⚠ Found by clearing the prompts by hand in a live tenant and diffing the disk.
+# jetski_state.pbtxt's post_onboarding block looks like the right place and is
+# not: seeding it changed nothing, and completing onboarding wrote only this
+# file. Do not "restore" the pbtxt seeding.
+#
+# Image-level because it carries no path. The per-directory half — trust, and
+# enableTelemetry=false — is written per agent by flock.tmux.ops at window
+# creation, since trustedWorkspaces needs the agent's own directory.
+RUN mkdir -p /home/ubuntu/.gemini/antigravity-cli/cache \
+ && python3 -c "import json, os; p='/home/ubuntu/.gemini/antigravity-cli/cache/onboarding.json'; d=json.load(open(p)) if os.path.exists(p) else {}; d.update({'consumerOnboardingComplete': True, 'enterpriseOnboardingComplete': False, 'onboardingComplete': True}); json.dump(d, open(p,'w'), indent=2)" \
  && chown -R ubuntu:ubuntu /home/ubuntu/.gemini
 
 # The base runs as ubuntu (uid 1000), and the agent CLIs expect that home. The

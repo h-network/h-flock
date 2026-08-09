@@ -64,8 +64,28 @@ person behind it.
 ⚠ `trustedWorkspaces` is a **list** — append the agent's directory, keep the
 existing entries. Every agent in the tenant shares this file.
 
-**`jetski_state.pbtxt`** — the onboarding steps, which is what the colour-scheme
-picker sets:
+**`cache/onboarding.json`** — the marker that suppresses *all three* gates:
+
+```json
+{ "consumerOnboardingComplete": true,
+  "enterpriseOnboardingComplete": false,
+  "onboardingComplete": true }
+```
+
+⚠ **Corrected after testing.** This spec originally named `jetski_state.pbtxt`
+and it was wrong. Seeding its `post_onboarding` block changed nothing — a fresh
+agy agent still met the picker, and then the consent screen **despite
+`enableTelemetry: false` already being on disk**. Completing onboarding by hand
+wrote exactly one file, the one above. Verified by seeding it and hiring a new
+agy agent, which reached its prompt with zero keypresses.
+
+`enableTelemetry: false` in §3 is still right and still required — it is what
+keeps telemetry off once the consent screen is skipped rather than answered.
+
+<details><summary>The wrong turn, kept because it looks so plausible</summary>
+
+`jetski_state.pbtxt` carries exactly the block you would expect to be the
+record:
 
 ```
 post_onboarding:  {
@@ -76,15 +96,13 @@ post_onboarding:  {
 }
 ```
 
-This one is **image-level, not per-agent** — it carries no path. Seed it in the
-Dockerfile with the Claude keys. It also holds `installation_uuid` and a
-`migrations` block: **write only the `post_onboarding` block if the file is
-absent, and leave an existing file alone.** Do not fabricate a uuid.
+It reads as the onboarding record, it is written when onboarding completes, and
+seeding it does nothing at all. agy writes it either way.
 
-⚠ **Verify this one rather than trusting the spec.** It is protobuf text, it is
-the least documented of the three, and it may prove to need the uuid to be
-honoured at all. If seeding it does not suppress the colour-scheme picker, say
-so — a partial result is fine and the other two are the valuable ones.
+</details>
+
+`onboarding.json` is **image-level, not per-agent** — it carries no path, so it
+belongs in the Dockerfile beside the Claude keys.
 
 ## 4. What is now known-good
 
