@@ -116,9 +116,9 @@ done
 ck "dave window gone"   "$(dx bash -c 'TMUX_TMPDIR=/home/ubuntu/.flock/tmux tmux list-windows -t hq' | grep -c dave)" "0"
 
 echo "== 10. dead-letter =="
-cu -X POST -H 'Content-Type: application/json' -d '{"text":"nobody home"}' $A/agents/ghost/envelopes >/dev/null
-sleep 2
-ckc "unroutable dead-lettered" "$(dx docker logs 2>/dev/null || true; dx redis-cli KEYS "pod:$POD:tenant:$TENANT:agent:*:dead")" "dead"
+dx bash -lc "cd /workdir/$AG1 && AGENT_NAME=$AG1 office send -a ghost nobody-home-deadletter" >/dev/null 2>&1
+sleep 3
+ckc "unroutable dead-lettered" "$(dx redis-cli KEYS "pod:$POD:tenant:$TENANT:agent:*:dead")" "dead"
 
 echo "== 11. booted and hired agents get the same environment =="
 # ⚠ The one check that would have caught the build 17 drift. Two code paths built
