@@ -7,6 +7,13 @@
 
 ## 1. Authority, naming, and pausing an office
 
+### ~~The lead is positional~~ — SHIPPED in build 21
+
+**The lead is the first name in `AGENTS`**, recorded once at boot as
+`<prefix>:lead`, named in every agent's guide, and marked by `office peers`.
+Verified with a first agent that does not sort first. The section below is the
+reasoning that got there, including the alphabetical trap it walked into.
+
 ### The lead is positional — ⚠ except the roster has no position
 
 **The first agent is always the architect.** No configuration, no
@@ -133,18 +140,38 @@ many times. The agent gets everything it missed, back to back.
 simpler version of this — it is the wrong behaviour. An agent that was paused for
 an hour should come back to its inbox, not to one message from it.
 
-### `StopAgent` must clear the per-agent state
+### `StopAgent` must clear the per-agent state — ⚠ and five keys have accrued since
 
-⚠ `letGo` deletes the roster field and the launch key. It must also **`DEL` the
-`paused` marker**, or pausing an agent, retiring it, and hiring the same name
-again brings it back paused with nothing saying why.
+`paused` is cleared now. **Five newer per-agent keys are not**, every one added
+today:
+
+```
+  activity          the agent's feed — a re-hire inherits the old agent's history
+  activity.offset   a byte offset into a session file that no longer exists
+  presence          says "working" about an agent that was retired mid-task
+  pending.verify    markers judged against activity from a different agent
+  delivering        the busy tag — a stale one serialises deliveries forever
+```
+
+⚠ **`presence` is the one that bites first**: retire an agent while it is
+working, hire the name back, and it reads `working` until something overwrites
+it — with a `since` from before it existed.
+
+This is exactly the rule below, now with instances. The fix is one `DEL`; the
+lesson is that the list grows every time a build adds a key, so **the teardown
+belongs next to whatever creates the key**, not in a list somebody remembers to
+extend.
+
+The original note: `letGo` deletes the roster field and the launch key. It must
+also **`DEL` the `paused` marker**, or pausing an agent, retiring it, and hiring
+the same name again brings it back paused with nothing saying why.
 
 The general rule, since this will recur: **any per-agent key `StopAgent` does not
 clear becomes a booby trap for the next agent with that name.** Roster field,
 `launch`, `profile`, `paused` — all of it goes. Queues and boards are data and
 are a separate question; state is not.
 
-## 2. `cloneToAll`
+## 2. ~~`cloneToAll`~~ — SHIPPED in build 16
 
 Wanted. Specified in [`BUILD-16-profiles-and-clone.md`](BUILD-16-profiles-and-clone.md)
 §B — three small changes to h-office's version: roster from `flock.bus.roster` instead of `offices.yaml`, filter to VAB
