@@ -45,12 +45,12 @@ only thing that knows an envelope just landed on one. Having written it, it
 kicks off delivery for that agent.
 
 ```
-  router  ──RPUSH──►  …:alice:ingress
+  router  ──RPUSH──►  …:backend:ingress
      │
-     └──kick──►  adapter for alice ──► pop ──► open ──► paste into window (vab=tmux)
+     └──kick──►  adapter for backend ──► pop ──► open ──► paste into window (vab=tmux)
                  (runs, delivers, exits)              or write mailbox Stream (vab=api)
 
-  alice's delivery already in flight?  the envelope stays in the queue
+  backend's delivery already in flight?  the envelope stays in the queue
 ```
 
 The agent is not involved and its state is irrelevant — an idle agent is the
@@ -69,13 +69,13 @@ should be. It is durable there, it is visible there, and depth per agent is a
 number anything can read.
 
 **One delivery per agent at a time, and this is the one thing the kick does not
-give for free.** The number of adapters running for alice is the number of kicks
+give for free.** The number of adapters running for backend is the number of kicks
 the router fired, so two envelopes arriving close together start two of them.
 For tmux windows, tmux calls interleave against one window:
 
 ```
-  A: paste-buffer -t hq:bob      "[message from alice] …"
-  B: paste-buffer -t hq:bob      "[message from carol] …"   appended
+  A: paste-buffer -t hq:frontend      "[message from backend] …"
+  B: paste-buffer -t hq:frontend      "[message from systems] …"   appended
   A: send-keys Enter             submits both lines as one input
   B: send-keys Enter             submits an empty prompt
 ```
@@ -107,7 +107,7 @@ here.
 For a tmux message, the rendered line names the sender:
 
 ```
-  [message from alice] can you review the auth change?
+  [message from backend] can you review the auth change?
 ```
 
 That prefix is the entire reply mechanism. The agent reads a name and replies

@@ -36,7 +36,7 @@ h-office's shape, plus one field:
   "id": "<hex>",
   "title": "one line naming the deliverable",
   "description": "the brief — as long as it needs to be",
-  "created_by": "alice",
+  "created_by": "backend",
   "status": "todo" | "doing" | "done",
   "created_ts": "…",
   "started_ts": "…",     set by take

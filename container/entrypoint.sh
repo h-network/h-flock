@@ -63,7 +63,7 @@ until redis-cli -h 127.0.0.1 ping >/dev/null 2>&1; do sleep 0.2; done
 # is the MAC table: a HASH of agent -> VAB (§3.2). HSET is idempotent, so
 # bringing the container up twice converges (LLD-container §5).
 #
-# AGENTS is name:vab pairs — AGENTS=alice:tmux,bob:tmux,carol:tmux
+# AGENTS is name:vab pairs — AGENTS=backend:tmux,frontend:tmux,systems:tmux
 roster_key="pod:${POD}:tenant:${TENANT}:roster"
 IFS=',' read -ra entries <<< "$AGENTS"
 agents=()
@@ -89,7 +89,7 @@ fields+=("host" "control")
 redis-cli -h 127.0.0.1 HSET "$roster_key" "${fields[@]}" >/dev/null
 echo "{\"module\":\"container\",\"event\":\"roster_seeded\",\"count\":$(( ${#fields[@]} / 2 ))}"
 
-# Per-agent CLI and account, as exceptions only — "alice=codex", "bob=work".
+# Per-agent CLI and account, as exceptions only — "backend=codex", "frontend=work".
 # Both land as agent resources rather than roster values: the roster is the MAC
 # table and holds membership plus VAB, nothing else (LLD-bus-and-router §3.2).
 map_each() {   # $1=map  $2=resource ; SETs pod:…:agent:<name>:<resource>

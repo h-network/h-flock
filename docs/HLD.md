@@ -100,11 +100,11 @@ delivery per agent, since two adapters pasting into one window would interleave.
 ## 5. How an envelope travels
 
 ```
-office send -a bob …        the agent's own command, its only surface
-   → …:alice:egress         it writes its OWN queue, never bob's
-   → router                 pops, resolves bob in the roster, RPUSHes
-   → …:bob:ingress          and kicks an adapter
-   → adapter                reads bob's VAB, dispatches, exits
+office send -a frontend …        the agent's own command, its only surface
+   → …:backend:egress         it writes its OWN queue, never frontend's
+   → router                 pops, resolves frontend in the roster, RPUSHes
+   → …:frontend:ingress          and kicks an adapter
+   → adapter                reads frontend's VAB, dispatches, exits
    → opener                 tmux → paste · api → mailbox · control → act
 ```
 

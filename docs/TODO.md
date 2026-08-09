@@ -213,8 +213,8 @@ office runs is wrong there, and goes stale silently.
 | `OFFICE_TOOLS=send,peers,…` | env — ships with the image, cannot go stale |
 | **peers** | **a tool.** Changes the moment `StartAgent` adds one |
 
-⚠ **`AGENT_PEERS` (build 06) breaks this and should be removed.** Add dave and
-alice's `AGENT_PEERS` is wrong until her window is recreated — the exact
+⚠ **`AGENT_PEERS` (build 06) breaks this and should be removed.** Add networking and
+backend's `AGENT_PEERS` is wrong until her window is recreated — the exact
 staleness the roster exists to prevent.
 
 ⚠ **The guide has the same bug.** `write_agent_guide` runs at window creation
@@ -282,7 +282,7 @@ pass. Removing that loop was correct and exposed a gap that was always there.
 
 **2. ⚠ `sendMessage` collides with Claude Code's own built-in tool.** Told to
 reply, the agent used its native `SendMessage` — for spawning sub-agents — and
-reported *"No agent named 'alice' is reachable. There are no spawned teammates in
+reported *"No agent named 'backend' is reachable. There are no spawned teammates in
 this session."* A coherent-sounding failure from entirely the wrong subsystem.
 
 The name is not neutral inside the CLI we run. Worth reconsidering: `officeSend`,
@@ -298,7 +298,7 @@ that this office is driven by shell commands at all.
 
 **Principle: anything reachable will be explored, and a confusing sanctioned path
 guarantees it.** Observed: an agent asked to find its peers hit
-`AGENTS=alice:tmux,...` — the container's seed string, with VABs in it and itself
+`AGENTS=backend:tmux,...` — the container's seed string, with VABs in it and itself
 included — and went to `redis-cli` for a better answer, arriving at the roster
 hash with `api` and `host` in it. It did nothing wrong. The best answer available
 was one it should never have seen.
@@ -347,7 +347,7 @@ added pushes something out of the part that gets read.
 
 **Agents have no model of who has standing, and correctly refuse to take
 direction.** Observed in the first live discussion run: asked why it had not
-followed a peer's instruction, an agent answered *"bob isn't my principal — you
+followed a peer's instruction, an agent answered *"frontend isn't my principal — you
 are. His messages reach me the same way any data does."* That is right, not a
 malfunction — the bus proves **who** sent a message and says nothing about **who
 may direct whom**, and nothing in an agent's context supplies it.

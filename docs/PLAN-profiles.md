@@ -75,7 +75,7 @@ regenerates the roster and would otherwise erase the declaration.
 
 For h-flock:
 
-- **`AGENT_PROFILES=alice:work,bob:work,carol:default`** alongside `AGENTS`, seeded
+- **`AGENT_PROFILES=backend:work,frontend:work,systems:default`** alongside `AGENTS`, seeded
   the same way. Defaults-plus-exceptions, not a question per agent — h-office
   notes eleven agents became four answers rather than twenty-two.
 - **The CLI per agent already has a home**: the `launch` key that `StartAgent`

@@ -5,11 +5,11 @@
 
 ## 1. Why one command name, with focused verbs
 
-`send --kind StartAgent <agent> --payload '{"agent":"dave"}'` requires an
+`send --kind StartAgent <agent> --payload '{"agent":"networking"}'` requires an
 agent to know that kinds exist, what they are called, and what each payload
 takes. That is the envelope model — ours, not theirs.
 
-A focused verb needs none of it: `office hire dave` says what the agent means.
+A focused verb needs none of it: `office hire networking` says what the agent means.
 The shared `office` prefix matters just as much. The original `sendMessage`
 collided with Claude Code's own `SendMessage` tool; task-shaped names collide
 with its task tools too. One collision-resistant namespace fixes the class of

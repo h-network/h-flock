@@ -15,10 +15,22 @@ read -rp "Tenant name [hq]: " TENANT; TENANT="$(slug "${TENANT:-hq}")"
 
 read -rp "How many agents? [3]: " N; N="${N:-3}"
 [[ "$N" =~ ^[1-9][0-9]*$ ]] || { echo "error: expected a positive number, got '$N'" >&2; exit 2; }
+# Window 1 is always the architect — the lead, by position rather than by
+# configuration. Everything after it defaults to sme-N, a subject matter expert
+# you are meant to rename.
+#
+# N is the window number, not a count from one: window 2 is `sme-2`. Same shape
+# as h-office's `agent-$i`, and it means a name tells you where its window is.
+#
+# Rename them. Agents are named for what they are responsible for, not for
+# people: an agent told "you are backend, your peers are frontend and redis"
+# knows what it is for and who to ask from its name alone. `sme-2` conveys
+# nothing, and neither did `alice` — the placeholder at least admits it.
 AGENTS=()
 for i in $(seq 1 "$N"); do
-    read -rp "  Agent #$i name: " A
-    A="$(slug "$A")"
+    if [ "$i" -eq 1 ]; then def="architect"; else def="sme-$i"; fi
+    read -rp "  Agent #$i name [$def]: " A
+    A="$(slug "${A:-$def}")"
     [ -n "$A" ] || { echo "  error: an agent needs a name" >&2; exit 2; }
     AGENTS+=("$A")
 done

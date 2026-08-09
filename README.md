@@ -38,8 +38,8 @@ payload.
 - **🏢 One container = one tenant.** Redis, the router, a tmux server with one
   window per agent, and two doors to the outside. Bring it up twice and it
   converges.
-- **💬 Agents message each other by name.** `office send -a bob …` rides a Redis
-  list and is pasted into bob's window tagged with the sender. A message to a
+- **💬 Agents message each other by name.** `office send -a frontend …` rides a Redis
+  list and is pasted into frontend's window tagged with the sender. A message to a
   busy agent **waits in its input box** rather than being lost.
 - **📱 Apps are participants, not spectators.** A Telegram bot, a web front end or
   a macOS app enrols as a client, gets its own address and mailbox, and an agent
@@ -64,10 +64,10 @@ payload.
 ## ⚙️ How it works
 
 ```
-  alice's window                                          bob's window
-       │  office send -a bob …                                  ▲
+  backend's window                                          frontend's window
+       │  office send -a frontend …                                  ▲
        ▼                                                        │ paste
-  …:alice:egress ──► ROUTER ──► …:bob:ingress ──kick──► adapter ┘
+  …:backend:egress ──► ROUTER ──► …:frontend:ingress ──kick──► adapter ┘
                      the one daemon              runs, delivers, exits
 ```
 
@@ -96,9 +96,9 @@ you plug in something new without touching it.
 #   Pod name [acme]: acme
 #   Tenant name [hq]: hq
 #   How many agents? [3]: 3
-#     Agent #1 name: alice
-#     Agent #2 name: bob
-#     Agent #3 name: carol
+#     Agent #1 name [architect]:            # window 1 is always the lead
+#     Agent #2 name [sme-2]: backend        # rename them — the name is the job
+#     Agent #3 name [sme-3]: frontend
 #   Use more than one account in this tenant? [y/N]: n
 # → builds the image, brings the tenant up, prints how to reach it
 ```
@@ -113,7 +113,7 @@ docker exec -it -e TMUX_TMPDIR=/home/ubuntu/.flock/tmux h-flock-hq-tenant-1 \
 # drive it over HTTP
 curl -H "Authorization: Bearer $TOKEN" http://HOST:8080/agents
 curl -X POST -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
-     -d '{"text":"morning"}' http://HOST:8080/agents/alice/envelopes
+     -d '{"text":"morning"}' http://HOST:8080/agents/backend/envelopes
 ```
 
 The tenant serves its own API reference at `GET /restdoc`.
@@ -145,15 +145,15 @@ $AGENT_GUIDE     a short guide, also written to AGENTS.md and CLAUDE.md
 ```
 
 ```bash
-office send -a bob can you take a look at this?
+office send -a frontend can you take a look at this?
 office broadcast standup in five
 office peers                       # who you can talk to
-office hire dave --cli claude      # a new colleague, live, no restart
-office letGo dave
-office pause dave
-office resume dave
+office hire networking --cli claude      # a new colleague, live, no restart
+office letGo networking
+office pause networking
+office resume networking
 
-office add -a bob -t "review the auth change" -d "the brief"
+office add -a frontend -t "review the auth change" -d "the brief"
 office list                        # titles on your board
 office take                        # the next one — prints it in full
 office done
@@ -161,7 +161,7 @@ office cancel
 office hold
 ```
 
-A message arrives as `[message from alice] …` — **that prefix is the entire reply
+A message arrives as `[message from backend] …` — **that prefix is the entire reply
 mechanism.** Read a name, reply with the same command. Nothing routes a reply.
 
 The board is **pulled, never pushed**: adding a ticket notifies nobody. If you
@@ -180,12 +180,12 @@ get their own address and mailbox:
 
 ```bash
 POST /agents/host/envelopes  {"kind":"StartAgent","payload":{"agent":"telegram","vab":"api"}}
-POST /agents/alice/envelopes {"text":"morning","as":"telegram"}
+POST /agents/backend/envelopes {"text":"morning","as":"telegram"}
 GET  /agents/telegram/messages?after=<cursor>     # catch-up, resumable
 GET  /agents/telegram/messages/stream             # live, SSE
 ```
 
-Alice sees `[message from telegram]` and replies with `office send -a telegram`
+Backend sees `[message from telegram]` and replies with `office send -a telegram`
 — **reply by name, the same rule as replying to a person.** The bus does the
 demultiplexing, so one client's messages never appear in another's mailbox, and
 nothing about an app is special from the window side.
@@ -229,7 +229,7 @@ Capabilities are `kind`s, opened at the edge. Adding one is adding an opener.
 | `PauseAgent` | `control` | stops the CLI while preserving the agent |
 | `ResumeAgent` | `control` | resumes the CLI and drains its inbox |
 
-`office hire dave` is a `StartAgent` envelope addressed to `host`. The router
+`office hire networking` is a `StartAgent` envelope addressed to `host`. The router
 forwarded a kind it has never heard of, to a name like any other. Anything
 addressed to an app client lands in that client's mailbox whatever its kind.
 

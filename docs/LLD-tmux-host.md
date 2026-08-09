@@ -15,7 +15,7 @@ everything else can assume they are there.
 
 It knows nothing about the bus. It does not read queues, does not deliver, does
 not know what an envelope is. Its entire output is "there is a window named
-`alice` and something is running in it".
+`backend` and something is running in it".
 
 ## 2. Headless is the normal state
 

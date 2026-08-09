@@ -71,8 +71,8 @@ some TUI.
 which agents it wants; it can change that without reconnecting.
 
 ```json
-  → {"subscribe": ["alice", "bob"]}
-  ← {"agent": "alice", "data": "<bytes>"}
+  → {"subscribe": ["backend", "frontend"]}
+  ← {"agent": "backend", "data": "<bytes>"}
 ```
 
 A dashboard showing every window opens one connection rather than one per agent,
@@ -100,7 +100,7 @@ is explicit that the bus is not a general transport.
 the client and enforced here, not a convention:
 
 ```json
-  {"subscribe": ["alice"], "mode": "read-only"}
+  {"subscribe": ["backend"], "mode": "read-only"}
 ```
 
 Watching the office is the common case and must not carry execution rights. This
@@ -116,7 +116,7 @@ scheme would be a second thing to get wrong. Checked once, on connect.
 keystrokes over this socket — and only the first produces envelope log records.
 This module logs **one record per connection**, not per keystroke: who connected,
 which agents, read-only or not, and when it closed. Enough to answer "who was
-typing in bob's window", without a log line per character.
+typing in frontend's window", without a log line per character.
 
 ## 6. Lifecycle
 

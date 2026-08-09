@@ -30,12 +30,12 @@ that does not function.
 
 ### Agents are named for responsibilities, not people
 
-**Not `alice` / `bob` / `carol` — `frontend`, `backend`, `systems`, `networking`,
+**Not `backend` / `frontend` / `systems` — `frontend`, `backend`, `systems`, `networking`,
 `redis`.** What the engineering team is responsible for.
 
 This is not cosmetic. An agent told *"you are `backend`, your peers are
 `frontend` and `redis`"* knows what it is for and who to ask, from its name
-alone. `alice` conveys nothing and needs a guide to say what a name could have
+alone. `backend` conveys nothing and needs a guide to say what a name could have
 said. The guide, the roster and `peers` all get more useful for free.
 
 ⚠ Placeholders in every doc and example need replacing, and `setup.sh` should

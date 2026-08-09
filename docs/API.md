@@ -8,7 +8,7 @@ Documentation for external developers building web interfaces, mobile clients, d
 
 An **h-flock** tenant is a message bus for terminal agents and external applications. Every participant in a tenant is an **agent**, identified by a unique **name**.
 
-- **Addresses:** An agent's name (e.g. `alice`, `bob`, `telegram`) is its sole address. All communication happens by addressing messages to names.
+- **Addresses:** An agent's name (e.g. `backend`, `frontend`, `telegram`) is its sole address. All communication happens by addressing messages to names.
 - **Applications as Participants:** External applications enrol as named participants on the bus with an `api` environment (`vab: api`). Once enrolled, terminal agents can address replies to your app by name (e.g. `office send -a telegram hello`).
 - **Envelopes & Kinds:** Messages travel inside structured **envelopes**. The **kind** indicates what sort of message it is (e.g. `Message`, `AddTicket`, `StartAgent`).
 - **Asynchronous Delivery:** `POST` operations return `202 Accepted` immediately. Agents process envelopes asynchronously over seconds to minutes. A reply, if generated, is delivered to your app's inbox stream.
@@ -88,7 +88,7 @@ curl -X POST \
 
 ### Step 2: Send a Message to an Agent
 
-Send a message to an agent (e.g. `alice`), specifying your enrolled app name in the `"as"` parameter so replies route back to you:
+Send a message to an agent (e.g. `backend`), specifying your enrolled app name in the `"as"` parameter so replies route back to you:
 
 ```bash
 curl -X POST \
@@ -98,7 +98,7 @@ curl -X POST \
     "text": "hello from telegram",
     "as": "telegram"
   }' \
-  http://HOST:8080/agents/alice/envelopes
+  http://HOST:8080/agents/backend/envelopes
 ```
 
 **Response (`202 Accepted`):**
@@ -129,10 +129,10 @@ curl -H "Authorization: Bearer $API_TOKEN" \
       "stream_id": "edd534563cdd46209f0f63924c5e0497",
       "correlation_id": "4ba8e30ce8354109901d7b09c3a01bb4",
       "ts": "2026-08-08T23:31:26.623Z",
-      "producer": "alice",
+      "producer": "backend",
       "recipient": "telegram",
       "payload": {
-        "text": "hello from alice"
+        "text": "hello from backend"
       },
       "cursor": "1786231887036-0"
     }
@@ -203,7 +203,7 @@ X-Accel-Buffering: no
 ```text
 id: 1786231898811-0
 event: message
-data: {"v": 1, "kind": "Message", "stream_id": "71d1dec5203c434c91df2af82e693637", "correlation_id": "da93ce7c8ce84ba6a26e9f338a989ee5", "ts": "2026-08-08T23:31:38.290Z", "producer": "bob", "recipient": "telegram", "payload": {"text": "hello from bob"}, "cursor": "1786231898811-0"}
+data: {"v": 1, "kind": "Message", "stream_id": "71d1dec5203c434c91df2af82e693637", "correlation_id": "da93ce7c8ce84ba6a26e9f338a989ee5", "ts": "2026-08-08T23:31:38.290Z", "producer": "frontend", "recipient": "telegram", "payload": {"text": "hello from frontend"}, "cursor": "1786231898811-0"}
 
 ```
 
@@ -234,10 +234,10 @@ Returns the list of all currently enrolled agents in the tenant roster.
 ```json
 {
   "agents": [
-    "alice",
+    "backend",
     "api",
-    "bob",
-    "carol",
+    "frontend",
+    "systems",
     "host",
     "telegram"
   ]
@@ -250,7 +250,7 @@ Returns queue depths for a specific agent's ingress, egress, and dead-letter que
 **Response (`200 OK`):**
 ```json
 {
-  "agent": "alice",
+  "agent": "backend",
   "depths": {
     "ingress": 0,
     "egress": 0,
@@ -282,7 +282,7 @@ Post an envelope to a specific agent, or to `"all"` for broadcast messages.
 **Example Shorthand Message:**
 ```json
 {
-  "text": "hello alice",
+  "text": "hello backend",
   "as": "telegram"
 }
 ```
@@ -292,7 +292,7 @@ Post an envelope to a specific agent, or to `"all"` for broadcast messages.
 {
   "kind": "Message",
   "payload": {
-    "text": "hello alice"
+    "text": "hello backend"
   },
   "as": "telegram"
 }
@@ -341,7 +341,7 @@ Enrols a new terminal agent, creating its workspace window and starting its CLI:
 {
   "kind": "StartAgent",
   "payload": {
-    "agent": "dave",
+    "agent": "networking",
     "cli": "claude",
     "vab": "tmux"
   }
@@ -373,14 +373,14 @@ Returns the task board for a specific agent.
 **Response (`200 OK`):**
 ```json
 {
-  "agent": "alice",
+  "agent": "backend",
   "todo": [
     {
       "v": 1,
       "id": "a1b2c3d4",
       "title": "Review authentication pipeline",
       "description": "Verify Bearer token middleware on all routes",
-      "created_by": "alice",
+      "created_by": "backend",
       "status": "todo",
       "created_ts": "2026-08-08T22:00:00Z",
       "priority": "high"
@@ -400,14 +400,14 @@ Returns task boards for all enrolled agents across the tenant in a single round-
 {
   "agents": [
     {
-      "agent": "alice",
+      "agent": "backend",
       "todo": [],
       "doing": [],
       "hold": [],
       "done": []
     },
     {
-      "agent": "bob",
+      "agent": "frontend",
       "todo": [],
       "doing": [],
       "hold": [],
@@ -512,9 +512,9 @@ status, body = request("POST", "/agents/host/envelopes", {
 })
 print("Enrolled mybot:", status, body)
 
-# 2. Send message to alice as mybot
-status, body = request("POST", "/agents/alice/envelopes", {
-    "text": "Hello Alice, please check the status",
+# 2. Send message to backend as mybot
+status, body = request("POST", "/agents/backend/envelopes", {
+    "text": "Hello Backend, please check the status",
     "as": "mybot"
 })
 print("Sent message:", status, body)

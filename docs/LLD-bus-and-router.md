@@ -114,17 +114,17 @@ payload. That is the whole design.
   │  L3 EDGE                                       L2 ROUTER           │
   │                                                                    │
   │  ┌───────┐  produce  ┌────────────────┐ BLPOP  ┌────────────────┐  │
-  │  │       │──────────►│ …:alice:egress │───────►│                │  │
-  │  │ alice │           └────────────────┘        │     router     │  │
+  │  │       │──────────►│ …:backend:egress │───────►│                │  │
+  │  │ backend │           └────────────────┘        │     router     │  │
   │  │       │  consume  ┌────────────────┐ RPUSH  │                │  │
-  │  │       │◄──────────│ …:alice:ingress│◄───────│  recipient →   │  │
+  │  │       │◄──────────│ …:backend:ingress│◄───────│  recipient →   │  │
   │  └───────┘           └────────────────┘        │     queue      │  │
   │                                                │                │  │
   │  ┌───────┐  produce  ┌────────────────┐ BLPOP  │  from_key →    │  │
-  │  │       │──────────►│ …:bob:egress   │───────►│     sender     │  │
-  │  │  bob  │           └────────────────┘        │                │  │
+  │  │       │──────────►│ …:frontend:egress   │───────►│     sender     │  │
+  │  │  frontend  │           └────────────────┘        │                │  │
   │  │       │  consume  ┌────────────────┐ RPUSH  │                │  │
-  │  │       │◄──────────│ …:bob:ingress  │◄───────│                │  │
+  │  │       │◄──────────│ …:frontend:ingress  │◄───────│                │  │
   │  └───────┘           └────────────────┘        └───────┬────────┘  │
   │                                                        │ won't     │
   │   api and host are participants too —                  ▼ forward   │
@@ -148,7 +148,7 @@ Levels interleave, `tag:value` at each step:
 ```
   pod:<pod>:tenant:<tenant>:agent:<agent>
 
-  e.g. pod:acme:tenant:hq:agent:alice
+  e.g. pod:acme:tenant:hq:agent:backend
 ```
 
 | Level | Holds | Who cares |
@@ -180,7 +180,7 @@ recipient (§4), so an agent by that name would be unaddressable.
 
 Putting the agent in the address rather than in the queue name is what makes
 per-agent isolation structural: a credential can be scoped to
-`~pod:acme:tenant:hq:agent:alice:*` and reach that agent's keys and nothing
+`~pod:acme:tenant:hq:agent:backend:*` and reach that agent's keys and nothing
 else. Scoping at the tenant level could not express that.
 
 **Resources are a dotted suffix, not a level.** A resource is not an address —
@@ -189,9 +189,9 @@ without adding depth:
 
 ```
   pod:acme:tenant:hq                 : roster        a tenant's resource
-  pod:acme:tenant:hq:agent:alice     : egress        an agent's resources
-  pod:acme:tenant:hq:agent:alice     : tasks.todo
-  pod:acme:tenant:hq:agent:alice     : tasks.doing
+  pod:acme:tenant:hq:agent:backend     : egress        an agent's resources
+  pod:acme:tenant:hq:agent:backend     : tasks.todo
+  pod:acme:tenant:hq:agent:backend     : tasks.doing
   pod:acme:tenant:hq:agent:telegram  : inbox         an app client's mailbox
 ```
 
@@ -265,7 +265,7 @@ know. A hash answers both membership questions in a single command, exactly as a
 set did, so nothing is lost by carrying a value alongside.
 
 **Why the VAB is here and not in the address.** Putting it in the key —
-`…:vab:tmux:agent:bob:ingress` — would make the queue self-describing, but
+`…:vab:tmux:agent:frontend:ingress` — would make the queue self-describing, but
 moving an agent between bases would rename its entire keyspace: queues, board,
 dead-letter, everything, with in-flight envelopes stranded in the old queue.
 §3.1 already rejected exactly this trade — a marker segment lengthening every key
@@ -338,8 +338,8 @@ cursors. Delivery appends one field named `envelope`, capped approximately at
 participant.**
 
 ```
-  RPUSH …:agent:bob:ingress
-  kick  flock.adapter bob
+  RPUSH …:agent:frontend:ingress
+  kick  flock.adapter frontend
 ```
 
 **Only egress is watched for envelope delivery, and that asymmetry is the whole
@@ -369,7 +369,7 @@ by name, by type or by capability — it knows one command, and the knowledge of
 what to do lives on the far side of it.
 
 **One delivery per participant at a time.** The number of adapters running for
-bob is the number of kicks fired, so two envelopes landing close together start two of
+frontend is the number of kicks fired, so two envelopes landing close together start two of
 them — and they do not merely reorder, they interleave against one window: two
 pastes, then two `Enter`s, fusing both messages into one input. `send-keys`
 targets a window, not a delivery.
@@ -377,8 +377,8 @@ targets a window, not a delivery.
 A **busy tag** serialises them, written by the adapter and cleared by it:
 
 ```
-  HSET …:tenant:<t>:delivering  bob  <started_at>     on starting a delivery
-  HDEL …:tenant:<t>:delivering  bob                   on finishing it
+  HSET …:tenant:<t>:delivering  frontend  <started_at>     on starting a delivery
+  HDEL …:tenant:<t>:delivering  frontend                   on finishing it
 
   kicked and the tag is set?  wait for it to clear, then deliver your own envelope
 ```
@@ -399,7 +399,7 @@ And it is visible, without anything new being built:
 
 ```
   HGETALL …:delivering            who is mid-delivery, and since when
-  LLEN …:agent:bob:ingress        what has piled up behind it
+  LLEN …:agent:frontend:ingress        what has piled up behind it
 ```
 
 The log says which failure it was. An adapter that died **before** popping leaves
@@ -407,7 +407,7 @@ its envelope in the queue — nothing lost, tag set, depth growing. One that die
 **after** popping leaves a `received` with no `opened` on that `stream_id`, which
 is precisely the signature §4's two-record rule exists to produce. A wedged
 adapter and a dead one look the same from outside, and they do not need telling
-apart: something is wrong with bob, go and look.
+apart: something is wrong with frontend, go and look.
 
 An adapter that diagnoses or repairs its own stuck deliveries is a real thing to
 want, and it is not for a build that does not yet work end to end.
@@ -512,7 +512,7 @@ Unknown top-level fields are ignored, so a newer producer cannot break an older
 router.
 
 `recipient` is a **participant name, not a queue name**. A producer writes
-`"recipient": "bob"`; it never constructs `…:bob:ingress` and never names a
+`"recipient": "frontend"`; it never constructs `…:frontend:ingress` and never names a
 tenant. Resolving the name to a queue is the router's only real decision, and
 keeping it there is what stops topology knowledge spreading into every agent. An
 unresolvable name is a dead-letter, not a crash.
@@ -589,7 +589,7 @@ roster write path, and it is reached over the bus like anything else:
 
 ```
   POST /agents/host/envelopes  {"kind":"StartAgent",
-                                "payload":{"agent":"dave"}}
+                                "payload":{"agent":"networking"}}
         │
         ▼  api egress ──► router ──► …:agent:host:ingress ──kick──► adapter host
                                                                         │

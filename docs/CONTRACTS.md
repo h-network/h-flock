@@ -237,7 +237,7 @@ satisfies the first invariant by violating the second.
 The router's only outbound call. One fixed command, one argument:
 
 ```bash
-flock.adapter <agent>          # e.g.  flock.adapter bob
+flock.adapter <agent>          # e.g.  flock.adapter frontend
 ```
 
 Fire and forget — the router does not wait, does not read a return code, does
@@ -340,10 +340,10 @@ the api validates.
 |---|---|---|---|
 | `Message` | `tmux` | `{"text": "..."}` | pastes `[message from <producer>] <text>` |
 | `Command` | `tmux` | `{"text": "..."}` | pastes `<text>` **bare** — it executes |
-| `StartAgent` | `control` | `{"agent": "dave", "cli": "claude", "vab": "tmux"}` | enrols, creates the window, starts the CLI |
-| `StopAgent` | `control` | `{"agent": "dave"}` | reverses all three |
-| `PauseAgent` | `control` | `{"agent": "dave"}` | stops the CLI, keeps the agent and its queues |
-| `ResumeAgent` | `control` | `{"agent": "dave"}` | starts the CLI again and drains the inbox |
+| `StartAgent` | `control` | `{"agent": "networking", "cli": "claude", "vab": "tmux"}` | enrols, creates the window, starts the CLI |
+| `StopAgent` | `control` | `{"agent": "networking"}` | reverses all three |
+| `PauseAgent` | `control` | `{"agent": "networking"}` | stops the CLI, keeps the agent and its queues |
+| `ResumeAgent` | `control` | `{"agent": "networking"}` | starts the CLI again and drains the inbox |
 | `AddTicket` | `tmux` | `{"title", "description", "priority"}` | writes a ticket to that agent's `tasks.todo` — and **pastes nothing** |
 
 ⚠ `AssignTask` is the old name for `AddTicket`. It is still registered and logs a
@@ -393,8 +393,8 @@ sentence above is false for half the participants.
 
 ```
   StartAgent            StopAgent
-    HSET roster dave tmux    HDEL roster dave
-    SET  …:dave:launch cli   DEL  …:dave:launch
+    HSET roster networking tmux    HDEL roster networking
+    SET  …:networking:launch cli   DEL  …:networking:launch
     create the window        kill the window
 ```
 
@@ -426,8 +426,8 @@ environment, before any module runs. It is a `HASH` of `agent → VAB`
 (`LLD-bus-and-router` §3.2) — the MAC table:
 
 ```bash
-HSET pod:$POD:tenant:$TENANT:roster alice tmux bob tmux carol tmux api api
-# AGENTS=alice:tmux,bob:tmux,carol:tmux  plus the fixed api row
+HSET pod:$POD:tenant:$TENANT:roster backend tmux frontend tmux systems tmux api api
+# AGENTS=backend:tmux,frontend:tmux,systems:tmux  plus the fixed api row
 ```
 
 `HSET` is idempotent, so bringing the container up twice converges
@@ -500,16 +500,16 @@ Response shapes, since every read is a fixed shape and a request can never name
 a key (`LLD-api` §5, §8):
 
 ```json
-GET /agents/alice           { "agent": "alice",
+GET /agents/backend           { "agent": "backend",
                               "depths": { "ingress": 0, "egress": 0, "dead": 0 } }
 
-GET /agents/alice/board     { "agent": "alice",
+GET /agents/backend/board     { "agent": "backend",
                               "todo": [], "doing": [], "hold": [], "done": [] }
 
-GET /board                  { "agents": [ { "agent": "alice", "todo": [], … },
-                                          { "agent": "bob",   … } ] }
+GET /board                  { "agents": [ { "agent": "backend", "todo": [], … },
+                                          { "agent": "frontend",   … } ] }
 
-GET /agents                 { "agents": ["alice", "bob", "carol"] }
+GET /agents                 { "agents": ["backend", "frontend", "systems"] }
 ```
 
 A list rather than a map for `GET /board`, so roster order is expressible and
@@ -534,7 +534,7 @@ LIST would need a hand-rolled sequence counter.
 
 ```json
 GET /agents/telegram/messages   { "agent": "telegram",
-                                  "messages": [ { "cursor": "…-0", "producer": "alice",
+                                  "messages": [ { "cursor": "…-0", "producer": "backend",
                                                   "kind": "Message", "payload": {…} } ],
                                   "next_cursor": "…-0" }
 ```

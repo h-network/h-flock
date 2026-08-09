@@ -66,10 +66,10 @@ Build a `v=1` envelope with the `recipient` from the path, `send` it, return
 **The body carries `kind` and `payload`, and the api validates neither.**
 
 ```json
-POST /agents/host/envelopes    {"kind": "StartAgent", "payload": {"agent": "dave"}}
-POST /agents/bob/envelopes     {"kind": "Message",    "payload": {"text": "hi"}}
-POST /agents/bob/envelopes     {"text": "hi"}          sugar — means kind Message
-POST /agents/bob/envelopes     {"text": "hi", "as": "telegram"}   sending as an enrolled api client
+POST /agents/host/envelopes    {"kind": "StartAgent", "payload": {"agent": "networking"}}
+POST /agents/frontend/envelopes     {"kind": "Message",    "payload": {"text": "hi"}}
+POST /agents/frontend/envelopes     {"text": "hi"}          sugar — means kind Message
+POST /agents/frontend/envelopes     {"text": "hi", "as": "telegram"}   sending as an enrolled api client
 ```
 
 The endpoint is `/envelopes`, not `/messages`, because a message is one kind
