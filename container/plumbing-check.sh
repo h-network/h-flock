@@ -105,7 +105,14 @@ cu -X POST -H 'Content-Type: application/json' -d '{"kind":"StartAgent","payload
 sleep 5
 ck "dave window exists" "$(dx bash -c 'TMUX_TMPDIR=/home/ubuntu/.flock/tmux tmux list-windows -t hq' | grep -c dave)" "1"
 cu -X POST -H 'Content-Type: application/json' -d '{"kind":"StopAgent","payload":{"agent":"dave"}}' $A/agents/host/envelopes >/dev/null
-sleep 4
+# ⚠ Poll, do not sleep a fixed interval. A StopAgent is an envelope: it is
+# routed, kicked, and opened, so the kill lands whenever it lands. A fixed 4s
+# passed for weeks and then failed on a busier tenant — the check was flaky, not
+# the lifecycle.
+for _ in $(seq 1 15); do
+    [ "$(dx bash -c 'TMUX_TMPDIR=/home/ubuntu/.flock/tmux tmux list-windows -t hq' | grep -c dave)" = "0" ] && break
+    sleep 1
+done
 ck "dave window gone"   "$(dx bash -c 'TMUX_TMPDIR=/home/ubuntu/.flock/tmux tmux list-windows -t hq' | grep -c dave)" "0"
 
 echo "== 10. dead-letter =="
