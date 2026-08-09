@@ -6,7 +6,7 @@ Things decided-but-not-done, so they live somewhere other than a chat log.
 
 | | |
 |---|---|
-| ~~**claude's seeded credential goes stale in place**~~ | **SOLVED in Build 32.** Measured findings in `BUILD-32-FINDINGS.md`: Anthropic OAuth rotates refresh tokens on refresh (RTR), so copying `.credentials.json` across multiple profile dirs creates racing single-use refresh tokens that invalidate each other. Resolution: agents on the same account share `CLAUDE_CONFIG_DIR=~/.claude-<profile>`. |
+| **claude's seeded credential goes stale in place** | ⚠ **Not solved — mechanism still unmeasured.** Rotation (RTR) is the leading hypothesis and the timing supports it: the source refreshed at 15:25:48Z and a live agent on a copy died ~15:30. But no before/after token value was recorded and no rejection observed — see [`BUILD-32-ARCHITECT-CHECK`](BUILD-32-ARCHITECT-CHECK.md) §4. The proposed fix (agents on one account share `CLAUDE_CONFIG_DIR`) is **provisional**. ⚠ Also measured: the access token lives **8 hours**, not the 1 hour the findings claim |
 | **a live terminal view** | wanted, and `:8081` already streams it — the client half is missing |
 | **`clients/` needs its own repo** | consumers sitting inside the framework for want of a remote |
 | **profile logins** | one interactive login per account. Not buildable — a person has to do it |
