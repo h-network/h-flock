@@ -99,15 +99,16 @@ class TmuxHost:
         cwd = cwd or f"/workdir/{agent_name}"
         env_args = window_env(agent_name, tenant=self.tenant, cwd=cwd, profile=profile)
 
-        write_agent_guide(cwd, agent_name, self.tenant, lead=lead)
-
+        # ⚠ Not written here — tmux_ops.create_window below writes it for every
+        # caller, and writing it twice is what dropped the lead sentence.
         if cli:
             command = env_args + ["startAgent", cli]
         else:
             command = env_args + ["bash", "-il"]
 
         ret, stdout, stderr = tmux_ops.create_window(
-            self.session_name, agent_name, command=command, cwd=cwd, socket=self.socket
+            self.session_name, agent_name, command=command, cwd=cwd, socket=self.socket,
+            lead=lead
         )
         if ret == 0:
             log_record("tmuxhost", "window_created", recipient=agent_name)

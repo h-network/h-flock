@@ -387,3 +387,23 @@ def test_tmuxhost_reconciles_hyphenated_digit_agent_name(mock_run_tmux):
 
 
 
+
+
+@patch("flock.tmux.ops.run_tmux")
+def test_create_window_does_not_overwrite_the_lead_sentence(mock_run_tmux, tmp_path):
+    """The guide is written once, by the caller that actually makes the window.
+
+    ⚠ Measured on a live tenant: tmuxhost wrote the guide with the lead, then
+    tmux_ops.create_window wrote it again without one. Only the initial window —
+    created by new-session, which does not pass through create_window — kept its
+    lead sentence. Every other agent's guide named nobody.
+    """
+    mock_run_tmux.return_value = (0, "", "")
+    cwd = str(tmp_path / "zeus")
+
+    from flock.tmux import ops as tmux_ops
+
+    tmux_ops.create_window("hq", "zeus", cwd=cwd, lead="zeus")
+
+    guide = (tmp_path / "zeus" / "AGENTS.md").read_text()
+    assert "You are the lead of this office." in guide

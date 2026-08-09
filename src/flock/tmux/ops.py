@@ -231,7 +231,15 @@ def create_window(
     command: list[str] | None = None,
     cwd: str | None = None,
     socket: str | None = None,
+    lead: str | None = None,
 ) -> tuple[int, str, str]:
+    """⚠ This writes the guide for every caller, so it needs the lead.
+
+    Without the parameter it wrote a guide with no lead sentence *over* the one
+    a caller had just written with it. Measured: the initial window (created by
+    new-session, which does not come through here) named the lead; every other
+    agent's guide had been silently overwritten and named nobody.
+    """
     if cwd is None:
         cwd = f"/workdir/{agent_name}"
 
@@ -240,7 +248,7 @@ def create_window(
     except OSError:
         pass
 
-    write_agent_guide(cwd, agent_name)
+    write_agent_guide(cwd, agent_name, lead=lead)
 
     if not command:
         command = window_env(agent_name, cwd=cwd) + ["bash", "-il"]
