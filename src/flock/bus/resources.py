@@ -5,6 +5,7 @@ from .keys import prefix
 
 AGENT_STATE_RESOURCES = frozenset(
     {
+        "blocked",
         "launch",
         "profile",
         "paused",
