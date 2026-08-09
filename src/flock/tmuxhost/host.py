@@ -6,7 +6,7 @@ from typing import Set
 
 from flock.bus import members, log_record, vab, prefix
 import flock.tmux.ops as tmux_ops
-from flock.tmux.ops import generate_agents_md, ensure_claude_project_trusted, write_agent_guide
+from flock.tmux.ops import generate_agents_md, ensure_claude_project_trusted, write_agent_guide, window_env
 
 OFFICE_TOOLS_ENV = "OFFICE_TOOLS=office"
 
@@ -59,21 +59,9 @@ class TmuxHost:
                 cmd.extend(["-c", cwd])
 
             if initial_window != "__init__":
-                guide_path = f"/workdir/{initial_window}/AGENTS.md"
                 write_agent_guide(cwd, initial_window, self.tenant)
                 cmd_args = ["startAgent", cli] if cli else ["bash", "-il"]
-                env_vars = [
-                    "env",
-                    f"AGENT_NAME={initial_window}",
-                    OFFICE_TOOLS_ENV,
-                    f"AGENT_GUIDE={guide_path}",
-                ]
-                if profile:
-                    env_vars.extend([
-                        f"CLAUDE_CONFIG_DIR=/home/ubuntu/.claude-{profile}",
-                        f"CODEX_HOME=/home/ubuntu/.codex-{profile}",
-                    ])
-                cmd.extend(env_vars + cmd_args)
+                cmd.extend(window_env(initial_window, tenant=self.tenant, cwd=cwd, profile=profile) + cmd_args)
 
             code, out, err = tmux_ops.run_tmux(*cmd, socket=self.socket)
             if code != 0:
@@ -93,19 +81,7 @@ class TmuxHost:
         self, agent_name: str, cli: str | None = None, profile: str | None = None, cwd: str | None = None
     ) -> bool:
         cwd = cwd or f"/workdir/{agent_name}"
-        guide_path = f"{cwd}/AGENTS.md"
-
-        env_args = [
-            "env",
-            f"AGENT_NAME={agent_name}",
-            OFFICE_TOOLS_ENV,
-            f"AGENT_GUIDE={guide_path}",
-        ]
-        if profile:
-            env_args.extend([
-                f"CLAUDE_CONFIG_DIR=/home/ubuntu/.claude-{profile}",
-                f"CODEX_HOME=/home/ubuntu/.codex-{profile}",
-            ])
+        env_args = window_env(agent_name, tenant=self.tenant, cwd=cwd, profile=profile)
 
         if cli:
             command = env_args + ["startAgent", cli]

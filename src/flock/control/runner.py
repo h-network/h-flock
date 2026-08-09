@@ -32,13 +32,19 @@ def deliver_one(
     """Pop and open one lifecycle envelope addressed to a control agent."""
     # The tmux lane owns this shared library. Keeping the import here lets the
     # control storage operations remain independently testable on this lane.
-    from flock.tmux import create_window, kill_window, run_tmux
+    from flock.tmux import create_window, kill_window, run_tmux, window_env
+    from flock.bus import prefix
 
     def create(target: str, cli: str) -> None:
+        profile_key = prefix(pod, tenant, agent=target, resource="profile")
+        raw_prof = r.get(profile_key)
+        profile = raw_prof.decode() if isinstance(raw_prof, bytes) else raw_prof if raw_prof else None
+        cwd = f"/workdir/{target}"
+
         result = create_window(
             session_name,
             target,
-            command=["env", f"AGENT_NAME={target}", "startAgent", cli],
+            command=window_env(target, tenant=tenant, cwd=cwd, profile=profile) + ["startAgent", cli],
             socket=socket,
         )
         _ensure_tmux("create-window", result)
