@@ -589,6 +589,25 @@ data: {"v": 1, "ts": "2026-08-09T15:00:00.000Z", "kind": "stalled", "agent": "sm
 
 ---
 
+### Browser clients need a small server of their own
+
+⚠ **A page cannot talk to a tenant directly, for two reasons**, and both bite
+immediately:
+
+1. **No CORS headers.** A browser refuses a cross-origin request to the api, so a
+   page served from anywhere else is blocked before it starts.
+2. **`EventSource` cannot set headers.** The SSE endpoints require
+   `Authorization: Bearer …`, and the browser's SSE client has no way to send
+   one. There is no workaround in the browser.
+
+**So serve your page and proxy the api from the same origin.** A few dozen lines
+is enough — no framework — and it has a second benefit worth having anyway: the
+**token stays server-side** instead of shipping to every browser that loads the
+page.
+
+`clients/web/` in the h-flock repository is a working example of exactly this
+shape, in the standard library.
+
 ## 6. Terminal Session WebSocket Door (`:8081`)
 
 **The two doors split by who consumes them.** The REST API is for your code:
