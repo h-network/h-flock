@@ -402,4 +402,4 @@ documentation audit went looking for exactly this kind of claim.
 | [`LLD-tmux-host.md`](LLD-tmux-host.md) · [`LLD-container.md`](LLD-container.md) | windows, and the tenant |
 | [`LLD-api.md`](LLD-api.md) · [`LLD-session.md`](LLD-session.md) | the two doors |
 | [`PLAN-boards.md`](PLAN-boards.md) | the board, and why it is pulled |
-| [`TODO.md`](TODO.md) · [`SPRINTS-next.md`](SPRINTS-next.md) | what is parked, and why |
+| [`TODO.md`](TODO.md) | what is parked, and why |

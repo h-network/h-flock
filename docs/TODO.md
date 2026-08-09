@@ -207,8 +207,7 @@ call, which `LLD-adapter-tmux` §5 already names.
 **Watchdog — both halves of the signal now exist.** It was blocked on boards, and
 boards shipped in build 11. A ticket in `doing` carries `started_ts`, so "took
 work and has not finished it" is answerable; window silence is the other half and
-stops it crying wolf at an agent that is thinking. Design is
-[`SPRINTS-next.md`](SPRINTS-next.md) §3. Nothing else blocks it.
+stops it crying wolf at an agent that is thinking. Design is Nothing else blocks it.
 
 **~~Boards~~ — SHIPPED in build 11.** → [`PLAN-boards.md`](PLAN-boards.md).
 Tickets, four columns, `office add`/`list`/`take`/`done`/`cancel`/`hold`/`delete`,
