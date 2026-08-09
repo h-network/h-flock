@@ -183,7 +183,7 @@ stops meaning anything.
 
 ## 3. What a log record is
 
-`LLD-bus-and-router` §4 promises two records per component and four across a
+`LLD-bus-and-router` §4 promises two records per component and five across a
 delivered envelope's life, and that a crash shows up as "popped, no outcome".
 That only works if the records join, so the shape is a contract.
 
@@ -362,8 +362,9 @@ pulled, so nothing notifies the agent (`PLAN-boards` §1).
 
 ⚠ **`vab: "api"` enrols a client, and creates no window.** A phone app, a web
 front end and a Telegram wrapper are each a roster row and a mailbox — nothing
-else. `StopAgent` on one removes the row and the mailbox and touches no tmux.
-Build 12; see [`BUILD-12-app-api.md`](BUILD-12-app-api.md).
+else. `StopAgent` on one removes the row and **purges the client's per-agent
+state**, touching no tmux. Build 12; see
+[`BUILD-12-app-api.md`](BUILD-12-app-api.md).
 
 ⚠ **Clients are hidden from an agent's *view*, not from its inbox.** Precisely:
 
@@ -390,8 +391,14 @@ that one difference is the whole security boundary.
 
 ⚠ **For `vab: "api"` there is only the first step.** A client enrolment writes a
 roster row and stops: no launch key, no home, no window, no CLI. `StopAgent`
-removes the row and the client's mailbox, and touches no tmux. Unqualified, the
-sentence above is false for half the participants.
+removes the row and purges the per-agent state, touching no tmux. Unqualified,
+the sentence above is false for half the participants.
+
+⚠ **"the mailbox" was too narrow, and naming keys here would go stale the same
+way.** Build 22 replaced the enumeration with a classified set — `flock.bus`
+holds which resources are per-agent state, `purge_agent` deletes them, and a test
+fails when a new resource is added without being classified. Read the set, do not
+restate it.
 
 ```
   StartAgent            StopAgent
@@ -538,7 +545,8 @@ One per api client, written by `deliver_api` and read by the api. **One field,
 `envelope`, carrying the envelope as JSON**, and the stream entry id is the
 cursor a client resumes from — there is no second sequence number.
 
-⚠ **The only Stream in the system, and the cursor is the reason.** Everything
+⚠ **The first Stream in the system, and the cursor is the reason.** Activity and
+`pending.verify` followed for the same reason; everything
 else is a LIST because a queue is consumed once, by one reader, and then gone. A
 mailbox is not: several clients may read it at their own positions, and a
 disconnected one has to be able to say *I had up to here*. `XRANGE` gives that

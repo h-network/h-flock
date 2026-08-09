@@ -108,8 +108,10 @@ office send -a frontend …        the agent's own command, its only surface
    → opener                 tmux → paste · api → mailbox · control → act
 ```
 
-Four log records mark the path — `popped`, `forwarded`, `received`, `opened` —
-so a lost envelope is locatable rather than merely absent.
+Five log records mark the path — `sent`, `popped`, `forwarded`, `received`,
+`opened` — so a lost envelope is locatable rather than merely absent. `sent` from
+an agent's own command reaches the log via a file the router tails, because
+`office` runs in a window and its stdout is a pane.
 
 ⚠ **Nothing writes another agent's keys.** Not a queue, not a board, not a
 mailbox — it sends an envelope and the far edge writes its own. Build 12

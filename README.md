@@ -264,7 +264,7 @@ Measured, not assumed: 100 envelopes at 10/s with none lost, ordering preserved,
 3 KB messages intact, delivery into a busy window buffered rather than dropped,
 ~500 ms per delivery of which startup is the larger half.
 
-Not built: presence, a stall watchdog, per-client tokens, TLS, CORS. See
+Not built: a stall watchdog, per-client tokens, TLS, CORS. See
 [`docs/TODO.md`](docs/TODO.md), which says why for each.
 
 ⚠ Agents run with `sudo` in the container, deliberately. Nothing inside it is a
