@@ -173,10 +173,29 @@ an app to receive it.
 Separate processes and separate ports, so publishing one is a decision that does
 not drag the other with it.
 
-⚠ **An app must never parse a terminal to obtain an answer.** `:8081` streams a
-TUI for *watching*; it is not a data format. Answers are messages, and they come
-from the mailbox. That line is why an app is a participant rather than a
-spectator, and it is the single most important rule for anyone building a client.
+**The split is by consumer, not by transport:**
+
+| | for | shape |
+|---|---|---|
+| **api** `:8080` | **programs** | deterministic, data-driven — envelopes in, structured messages and state out |
+| **session** `:8081` | **people** | a window onto a terminal, rendered for a human to read and type into |
+
+⚠ **An app must never parse a terminal to obtain an answer.** `:8081` is not a
+data format. Answers are messages and they come from the mailbox. That line is
+why an app is a participant rather than a spectator, and it is the single most
+important rule for anyone building a client.
+
+⚠ **But `:8081` is not off-limits to an app** — it is how an app shows a *person*
+what an agent is doing. Two legitimate uses: watching an agent work, and
+completing an interactive login. Device-code OAuth is exactly terminal bytes in
+both directions, so an agent whose credential has died can be re-authenticated
+from a web or desktop client with no shell on the host at all.
+
+⚠ **This is the clean exception to *nothing reads a terminal to make a
+decision*.** That rule is about **the system** deriving state by parsing a
+screen. A human reading a login prompt and typing a code is the case where
+somebody *should* be looking at the pane. Without saying so, the rule reads as
+"never render the terminal" and rules out the one thing the session door is for.
 
 ⚠ Both doors can execute code in an agent's window — the api through the
 `Command` kind, the session through keystrokes. Neither is the safe one.

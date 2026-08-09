@@ -436,6 +436,21 @@ Adds a ticket to an agent's board without interrupting or notifying the agent:
 
 ## 6. Terminal Session WebSocket Door (`:8081`)
 
+**The two doors split by who consumes them.** The REST API is for your code:
+deterministic, structured, data-driven. The session socket is for the **person
+using your app**: a live terminal to read and type into. Anything your program
+needs to *act on* comes from the REST API; the session socket is what you render
+to a human.
+
+Two things it is genuinely for: showing someone an agent working, and letting
+them complete an interactive login when an agent's credential expires — a
+device-code flow is terminal output one way and keystrokes the other, so it works
+end to end through this socket with no shell access to the host.
+
+⚠ **Never derive data from it.** Do not parse the stream for an agent's answer,
+its status, or whether it finished. Terminal output is a rendering, it changes
+between CLI versions without notice, and there is no contract on its shape.
+
 Port `:8081` provides WebSocket terminal access for rendering live terminal windows in a user interface.
 
 - **URL:** `ws://HOST:8081/session`
