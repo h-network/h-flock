@@ -150,7 +150,7 @@ Before pasting a `Message` or `Command` into a `vab: tmux` window, the adapter r
 - **Skipped for `AddTicket`**: `AddTicket` pastes nothing into the window and is not verified via activity inputs.
 - **Skipped for `agy` and `bash`**: `agy` has no session log file / activity feed and `bash` has no CLI turn records, so markers are skipped to avoid false unverified alerts.
 - **Fail-safe**: Marker creation is wrapped in `try...except` so stream write failures never impact envelope delivery.
-- **`blocked` state**: The router checks these markers on its pass. If a delivery is unverified and no activity has been consumed since, the router writes `<prefix>:agent:<name>:blocked`. ⚠ `blocked` does not mean "stuck" — it means a delivery was judged unverified and nothing has been consumed since. It catches a trust picker or wedged process, but misses a CLI that records input it does not act on (such as a login prompt or modal picker).
+- **`blocked` state**: The router checks these markers on its pass. If an agent has produced prior activity and a delivery is unverified with no activity produced since, the router writes `<prefix>:agent:<name>:blocked`. It catches wedged processes, trust pickers, and unauthenticated login prompts. An agent with no prior activity is `unknown` and its first delivery is `unjudged` rather than `blocked`.
 
 ## 4. Getting text into a window
 
