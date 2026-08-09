@@ -97,6 +97,20 @@ Consequences worth knowing: an office of idle agents costs nothing, because ther
 are no processes between deliveries; and a **busy tag** in Redis serialises
 delivery per agent, since two adapters pasting into one window would interleave.
 
+### 4a. An agent is addressed by window *name*
+
+The name in `recipient` is the tmux window name, which is why two facts that look
+like implementation detail are architectural:
+
+⚠ **Window creation is idempotent by name.** A duplicate name makes the target
+ambiguous, tmux refuses it, and **every delivery to that agent fails** — the
+agent is not slow or blocked, it is unaddressable. The property that matters is
+converging on one window with that name, not creating it only once.
+
+⚠ **All-digit names are rejected.** tmux reads `s:2` as window *index* 2, so an
+agent named `2` addresses whatever window happens to occupy that slot — and
+indices shift as windows are retired.
+
 ## 5. How an envelope travels
 
 ```
@@ -240,6 +254,13 @@ Measured twice, and the only gap a screen read would ever be for.
 pasted marker and was abandoned: a consumed message stays visible in the
 transcript, so it marked *healthy* agents blocked, and telling transcript from
 input box needs the CLI-render knowledge invariant 7 refuses.
+
+⚠ **The marker is written before the paste, and only for CLIs we can tail.**
+Both were bugs. Marking *after* lost a sub-second race — the reply beat the
+marker and healthy deliveries read unverified. And the skip rule was a denylist
+("not agy"), which marked bare shells that could never confirm anything: a CLI
+whose activity cannot be tailed is skipped **by default**, not by having been
+remembered.
 
 ### 8b. The router's maintenance pass
 

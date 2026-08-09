@@ -271,7 +271,13 @@ the whole tenant.
 
 **Measured cost of a delivery: ~500 ms**, split `forwarded` → `received` 274 ms
 (process start, busy tag, `HGET`, `BLPOP`) and `received` → `opened` 226 ms (the
-paste, of which 500 ms is `PASTE_ENTER_DELAY`).
+paste).
+
+⚠ **That measurement predates `PASTE_ENTER_DELAY = 0.5`** (`tmux/ops.py`), which
+adds 500 ms inside the second half — a delivery now costs about a second. The
+delay is not slack for a slow terminal: the paste and the Enter are **two
+writes**, and a CLI arriving at both together takes the text and drops the
+submit. Do not tune it to zero because the machine is fast.
 
 So **process startup is the larger half**, not tmux. `LLD-adapter-tmux` §6
 predicted fork cost would be noise next to paste-and-settle; at these numbers it
@@ -553,7 +559,17 @@ per-agent and are in the classified set the teardown test enforces
 ```
   <prefix>:agent:<name>:pending.verify   STREAM   MAXLEN ~ 100
 
-Written by the adapter after a paste, judged and dropped by the router. Resources
+Written by the adapter **before** the paste, judged and dropped by the router.
+
+⚠ **Before, not after — this was a bug.** Marking afterwards lost a sub-second
+race: six deliveries landed and five read unverified because the agent's reply
+beat the marker. Marking first costs nothing if the paste then fails, because the
+delivery genuinely did not arrive.
+
+⚠ **Only `{claude, codex}` are marked — an allowlist, never a denylist.** The
+rule was once "not agy", which marked plain bash windows that could never
+confirm anything. A CLI whose activity cannot be tailed must be skipped by
+default, not by having been remembered. Resources
 compose with a **dot** — `tasks.todo`, `activity.offset`, `pending.verify` — and
 each part is validated as a segment.
 
