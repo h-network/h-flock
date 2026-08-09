@@ -155,6 +155,13 @@ class TelegramClient:
         return self.request("sendChatAction", {"chat_id": chat_id, "action": action})
 
     def get_updates(self, offset: int | None = None, timeout: int = 20) -> list[dict]:
+        """⚠ getUpdates is per-BOT, not per-chat.
+
+        Two processes polling one token compete for the same queue and each
+        takes roughly half the updates — so running this against a token another
+        bot is already using makes that bot drop messages, silently, for as long
+        as this runs. Keep the window short, or use a token of your own.
+        """
         params = {"timeout": timeout}
         if offset is not None:
             params["offset"] = offset
