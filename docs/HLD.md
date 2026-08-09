@@ -186,11 +186,10 @@ completing an interactive login. Device-code OAuth is exactly terminal bytes in
 both directions, so an agent whose credential has died can be re-authenticated
 from a web or desktop client with no shell on the host at all.
 
-⚠ **This is the clean exception to *nothing reads a terminal to make a
-decision*.** That rule is about **the system** deriving state by parsing a
-screen. A human reading a login prompt and typing a code is the case where
-somebody *should* be looking at the pane. Without saying so, the rule reads as
-"never render the terminal" and rules out the one thing the session door is for.
+⚠ **This sits inside invariant 7, not outside it.** The rule is *nothing in the
+**data path** reads a terminal; observation may look, and may only report* — and
+rendering a terminal for a person is neither. A human reading a login prompt and
+typing a code is the case where somebody *should* be looking at the pane.
 
 ⚠ Both doors can execute code in an agent's window — the api through the
 `Command` kind, the session through keystrokes. Neither is the safe one.
