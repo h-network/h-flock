@@ -113,6 +113,14 @@ def _render_restdoc_html(app: FastAPI) -> str:
             "desc": "Get task board lists (todo, doing, hold, done) for a specific agent.",
             "curl": 'curl -H "Authorization: Bearer $API_TOKEN" http://localhost:8080/agents/sme-2/board',
         },
+        "/alerts": {
+            "desc": "Get stored watchdog alert events across the tenant. Supports cursor catch-up (`?after=<cursor>`) and limit.",
+            "curl": 'curl -H "Authorization: Bearer $API_TOKEN" "http://localhost:8080/alerts?after=1723150000000-0&limit=50"',
+        },
+        "/alerts/stream": {
+            "desc": "Live Server-Sent Events (SSE) stream of watchdog alert events across the tenant. Supports cursor (`?after=<cursor>`).",
+            "curl": 'curl -H "Authorization: Bearer $API_TOKEN" "http://localhost:8080/alerts/stream"',
+        },
         "/board": {
             "desc": "Get task boards for all enrolled agents across the tenant.",
             "curl": 'curl -H "Authorization: Bearer $API_TOKEN" http://localhost:8080/board',
@@ -702,5 +710,26 @@ def create_app(*, settings: Settings | None = None, redis_client: Any = None) ->
                 for index, agent in zip(range(0, len(boards), 4), agents)
             ]
         }
+
+    @app.get("/alerts")
+    def get_alerts(
+        after: str | None = None,
+        limit: int = Query(default=100, ge=1, le=1000),
+    ) -> dict[str, Any]:
+        alerts_key = prefix(settings.pod, settings.tenant, resource="alerts")
+        alerts = _read_stream_entries(client, alerts_key, after=after, limit=limit, preferred_field="event")
+        next_cursor = alerts[-1]["cursor"] if alerts else after
+        return {
+            "alerts": alerts,
+            "next_cursor": next_cursor,
+        }
+
+    @app.get("/alerts/stream", include_in_schema=False)
+    async def stream_alerts(
+        request: Request,
+        after: str | None = None,
+    ) -> StreamingResponse:
+        alerts_key = prefix(settings.pod, settings.tenant, resource="alerts")
+        return _stream_response(request, client, alerts_key, "alert", after, "event")
 
     return app

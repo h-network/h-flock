@@ -542,6 +542,39 @@ def test_post_envelopes_broadcast_all_and_host_work(client):
     assert "stream_id" in body
 
 
+def test_get_alerts_empty(client):
+    app, _ = client
+    status_code, body = request(app, "GET", "/alerts", token="secret")
+    assert status_code == 200
+    assert body == {"alerts": [], "next_cursor": None}
+
+
+def test_get_alerts_with_events_and_cursor(client):
+    app, redis = client
+    alert1 = {"v": 1, "ts": "2026-08-09T15:00:00Z", "kind": "stalled", "agent": "sme-2"}
+    alert2 = {"v": 1, "ts": "2026-08-09T15:01:00Z", "kind": "stalled", "agent": "sme-3"}
+    alerts_key = "pod:test:tenant:office:alerts"
+    redis.streams[alerts_key] = [
+        (b"2000-0", {b"event": json.dumps(alert1).encode()}),
+        (b"2001-0", {b"event": json.dumps(alert2).encode()}),
+    ]
+
+    status_code, body = request(app, "GET", "/alerts", token="secret")
+    assert status_code == 200
+    assert len(body["alerts"]) == 2
+    assert body["alerts"][0]["cursor"] == "2000-0"
+    assert body["alerts"][0]["agent"] == "sme-2"
+    assert body["alerts"][1]["cursor"] == "2001-0"
+    assert body["alerts"][1]["agent"] == "sme-3"
+    assert body["next_cursor"] == "2001-0"
+
+    status_code, body = request(app, "GET", "/alerts?after=2000-0", token="secret")
+    assert status_code == 200
+    assert len(body["alerts"]) == 1
+    assert body["alerts"][0]["cursor"] == "2001-0"
+    assert body["next_cursor"] == "2001-0"
+
+
 
 
 
