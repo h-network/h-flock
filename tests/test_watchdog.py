@@ -250,3 +250,31 @@ def test_disabled_main_exits_without_connecting(monkeypatch):
     monkeypatch.setenv("WATCHDOG_ENABLED", "0")
     monkeypatch.setattr(service.redis.Redis, "from_url", lambda url: (_ for _ in ()).throw(AssertionError))
     service.main()
+
+
+def test_agy_is_unknown_because_its_expiry_is_an_access_token(tmp_path, capsys):
+    """Only claude records a refresh-token expiry.
+
+    ⚠ agy's `token.expiry` tracks its ACCESS token. Measured: the same file read
+    hours apart showed the value moved forward while the login stayed valid — the
+    CLI refreshes it itself. Alerting on it fires constantly and correctly, which
+    is the cry-wolf failure the credential check exists to avoid.
+
+    It produced a real alert on the lab tenant saying "expiring" about a token
+    that had already passed and an account that was working fine.
+    """
+    agy = tmp_path / ".gemini" / "antigravity-cli"
+    agy.mkdir(parents=True)
+    (agy / "antigravity-oauth-token").write_text(
+        json.dumps({"token": {"access_token": "x", "refresh_token": "y",
+                              "expiry": "2020-01-01T00:00:00Z"}})
+    )
+
+    r = WatchRedis()
+    Watchdog(r, pod="acme", tenant="hq", session_name="hq",
+             home_root=tmp_path).check_credentials(now=NOW)
+
+    alerts = [json.loads(f["alert"]) for _, f in r.streams.get(prefix("acme", "hq", resource="alerts"), [])]
+    agy_alerts = [a for a in alerts if a.get("cli") == "agy"]
+    assert agy_alerts, "agy should still be reported"
+    assert agy_alerts[0]["status"] == "unknown", "never 'expiring' from an access token"

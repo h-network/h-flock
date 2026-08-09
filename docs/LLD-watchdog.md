@@ -164,10 +164,20 @@ profile directories under `/home/ubuntu`.
 | CLI | source | interpretation |
 |---|---|---|
 | Claude | `claudeAiOauth.refreshTokenExpiresAt` | alert when within the warning window |
-| agy | `token.expiry` | alert when within the warning window |
+| agy | — | **unknown**: `token.expiry` is the *access* token |
 | Codex | no expiry in its credential file | report `unknown`, never infer `fine` |
 
 The Claude refresh-token expiry is used, not its short-lived access token.
+
+⚠ **Only Claude records a refresh expiry.** agy's `token.expiry` tracks its
+*access* token — measured: the same file read hours apart showed the value moving
+forward while the login stayed valid, because the CLI refreshes it itself. It
+produced a real alert on the lab tenant saying *"expiring"* about a timestamp
+already in the past, for an account that was working. **agy is `unknown`, like
+codex.** Two of three cannot be checked, and saying so is the honest answer.
+
+⚠ **`expired` and `expiring` are different words.** A timestamp already in the
+past is not a warning about the future.
 Missing or malformed Claude and agy credential files produce no expiry claim.
 An expiry beyond the warning window produces no alert.
 

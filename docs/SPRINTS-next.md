@@ -304,7 +304,7 @@ the only alert here that is about the *future* rather than the present.
 | CLI | field | usable |
 |---|---|---|
 | claude | `claudeAiOauth.refreshTokenExpiresAt` | yes |
-| agy | `token.expiry` | yes |
+| agy | — | **no**: `token.expiry` is the *access* token |
 | codex | — only `last_refresh` | **no expiry is recorded at all** |
 
 ⚠ **Alert on the refresh token, never the access token.** claude's access token

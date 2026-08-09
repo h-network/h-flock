@@ -237,14 +237,25 @@ class Watchdog:
                     data = json.loads(path.read_text())
                 except (OSError, json.JSONDecodeError):
                     continue
+                # ⚠ Only claude records a REFRESH token expiry. agy's
+                # `token.expiry` tracks its ACCESS token, which the CLI refreshes
+                # by itself — measured: the same file read hours apart on two
+                # machines showed the value moving forward while the login stayed
+                # valid. Alerting on it fires constantly and correctly, which is
+                # exactly the cry-wolf failure this check exists to avoid.
+                #
+                # So agy joins codex as unknown. Two of three CLIs cannot be
+                # checked, and saying so is the honest answer.
                 raw_expiry = (
                     data.get("claudeAiOauth", {}).get("refreshTokenExpiresAt")
                     if cli == "claude"
-                    else data.get("token", {}).get("expiry")
+                    else None
                 )
                 expiry = _timestamp(raw_expiry)
                 if expiry is None:
                     status = "unknown"
+                elif (expiry - now).total_seconds() <= 0:
+                    status = "expired"
                 elif (expiry - now).total_seconds() <= warn_seconds:
                     status = "expiring"
                 else:

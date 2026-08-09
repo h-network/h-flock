@@ -120,7 +120,7 @@ Once an hour is plenty. Per **account**, not per agent (`seed-home.sh check` now
 does the same walk — reuse the shape).
 
 - claude: `claudeAiOauth.refreshTokenExpiresAt`
-- agy: `token.expiry`
+- agy: **nothing usable** — `token.expiry` is the access token, which refreshes
 - codex: **nothing recorded** — report `unknown`, never `fine`
 
 ⚠ **The refresh token, never the access token.** claude's access token expires
