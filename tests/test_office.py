@@ -195,6 +195,15 @@ def test_take_distinguishes_empty_todo(office_env, capsys):
     assert office_env.lists.get(_task("frontend", "doing"), []) == []
 
 
+def test_board_keys_preserve_hyphenated_agent_name(office_env, monkeypatch, capsys):
+    monkeypatch.setenv("AGENT_NAME", "sme-2")
+    office_env.lists[_task("sme-2", "todo")] = [b'{"id":"hyphen","title":"review names"}']
+    cli.main(["take"])
+    capsys.readouterr()
+    assert office_env.lists[_task("sme-2", "todo")] == []
+    assert json.loads(office_env.lists[_task("sme-2", "doing")][0])["id"] == "hyphen"
+
+
 def test_take_normalizes_old_ticket_prints_and_logs_task_id(office_env, monkeypatch, tmp_path, capsys):
     monkeypatch.setenv("TASK_RECORD", str(tmp_path / "tasks.jsonl"))
     raw = b'{"id":"a1","title":"opaque: --flag"}'
@@ -305,6 +314,16 @@ def test_clone_to_all_subset_accepts_only_tmux_agents(office_env, monkeypatch, t
         cli.main(["cloneToAll", "project.git", "-a", "backend,api"])
     assert exc.value.code == 1
     assert "not a tmux agent: api" in capsys.readouterr().err
+
+
+def test_clone_to_all_preserves_hyphenated_agent_path(office_env, monkeypatch, tmp_path, capsys):
+    office_env.roster["sme-2"] = "tmux"
+    monkeypatch.setattr(cli, "_WORKDIR_ROOT", tmp_path)
+    cli.main(["cloneToAll", "git@example.test:team/project.git", "-a", "sme-2", "--dry-run"])
+    assert capsys.readouterr().out.splitlines() == [
+        "sme-2: would clone",
+        "summary: cloned=0 skipped=0 failed=0",
+    ]
 
 
 def test_clone_to_all_removes_partial_directory_after_failure(office_env, monkeypatch, tmp_path, capsys):

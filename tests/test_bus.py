@@ -61,6 +61,12 @@ class KeysTest(unittest.TestCase):
             "pod:acme:tenant:hq:agent:alice:tasks.todo",
         )
 
+    def test_hyphenated_agent_name_is_preserved_in_key(self):
+        self.assertEqual(
+            prefix("acme", "hq", "sme-2", "tasks.todo"),
+            "pod:acme:tenant:hq:agent:sme-2:tasks.todo",
+        )
+
     def test_rejects_invalid_and_reserved_segments(self):
         for value in ("", "UPPER", "has_underscore", "pod", "a" * 64):
             with self.subTest(value=value), self.assertRaises(KeyError):
@@ -132,6 +138,23 @@ class DoorsAndRouterTest(unittest.TestCase):
             timeout=1,
         )
         self.assertEqual(opened[0]["stream_id"], stream_id)
+
+    def test_hyphenated_agent_routes_without_name_rewriting(self):
+        self.r.hashes[self.roster]["sme-2"] = "tmux"
+        stream_id = send(
+            self.r,
+            pod="acme",
+            tenant="hq",
+            producer="alice",
+            recipient="sme-2",
+            payload={"text": "review"},
+        )
+        self.assertTrue(Router(self.r, pod="acme", tenant="hq").step())
+        self.popen.assert_called_once_with(["flock.adapter", "sme-2"])
+        raw = self.r.lists[prefix("acme", "hq", "sme-2", "ingress")][0]
+        envelope = json.loads(raw)
+        self.assertEqual(envelope["stream_id"], stream_id)
+        self.assertEqual(envelope["recipient"], "sme-2")
 
     def test_unknown_recipient_dead_letters_under_sender(self):
         send(
