@@ -1,9 +1,9 @@
 # Next sprints
 
-> Four topics, decided in outline. ⚠ **Partly built since:** pausing an office
-> shipped in build 08 as `PauseAgent`/`ResumeAgent`, and the broadcast row in §1
-> is `office broadcast`. The lead being positional, role-based names, `cloneToAll`
-> and the watchdog are still outline only.
+> Four topics, decided in outline — **and all four have since shipped**:
+> pausing an office in build 08, `cloneToAll` in 16, the lead in 21, the
+> watchdog in 27 and 28. What is kept here is the reasoning, because it records
+> why each went the way it did — including the turns that were abandoned.
 
 ## 1. Authority, naming, and pausing an office
 
