@@ -151,6 +151,7 @@ Before pasting a `Message` or `Command` into a `vab: tmux` window, the adapter r
 - **Skipped for `agy` and `bash`**: `agy` has no session log file / activity feed and `bash` has no CLI turn records, so markers are skipped to avoid false unverified alerts.
 - **Fail-safe**: Marker creation is wrapped in `try...except` so stream write failures never impact envelope delivery.
 - **`blocked` state**: The router checks these markers on its pass. If an agent has produced prior activity and a delivery is unverified with no activity produced since, the router writes `<prefix>:agent:<name>:blocked`. It catches wedged processes, trust pickers, and unauthenticated login prompts. An agent with no prior activity is `unknown` and its first delivery is `unjudged` rather than `blocked`.
+- **Wedged process simulation**: ⚠ `SIGSTOP` cannot wedge a process running as a tmux pane process — a plain `sleep` started from a shell reaches state `T`, but the same `sleep` started as a tmux pane process never does (it reads back state `S`, and process-group forms fare no better). To simulate an unconsuming wedged window in tests (`container/sim-blocked.sh`), the pane is respawned with a non-consuming process (`respawn-pane -k 'sleep infinity'`) while leaving the agent's launch key as `claude` so the delivery is marked for verification.
 
 ## 4. Getting text into a window
 
