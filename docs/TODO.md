@@ -100,8 +100,7 @@ reads `launch` for the CLI but does not turn `profile` into `CLAUDE_CONFIG_DIR` 
 `CODEX_HOME` in the window environment — so accounts are seeded and selected but
 not used.
 
-→ **[`PLAN-profiles.md`](PLAN-profiles.md)** — the shape, taken from h-office,
-which solved it. The unit is the *account*, not the agent: a config dir is one
+The shape was taken from h-office, which solved it. The unit is the *account*, not the agent: a config dir is one
 interactive login, so several agents share a profile and `default` is free.
 `CLAUDE_CONFIG_DIR` / `CODEX_HOME` in the window env is the whole mechanism.
 
@@ -207,10 +206,9 @@ call, which `LLD-adapter-tmux` §5 already names.
 **Watchdog — both halves of the signal now exist.** It was blocked on boards, and
 boards shipped in build 11. A ticket in `doing` carries `started_ts`, so "took
 work and has not finished it" is answerable; window silence is the other half and
-stops it crying wolf at an agent that is thinking. Design is Nothing else blocks it.
+stops it crying wolf at an agent that is thinking. Nothing else blocks it.
 
-**~~Boards~~ — SHIPPED in build 11.** → [`PLAN-boards.md`](PLAN-boards.md).
-Tickets, four columns, `office add`/`list`/`take`/`done`/`cancel`/`hold`/`delete`,
+**~~Boards~~ — SHIPPED in build 11.** Tickets, four columns, `office add`/`list`/`take`/`done`/`cancel`/`hold`/`delete`,
 and an append-only history in `$TASK_RECORD`. The rule the design turned on held
 all the way through: **the agent moves its own tasks, nothing infers them** — the
 adapter knows an envelope was delivered and cannot know whether the agent read
@@ -320,8 +318,8 @@ Two documented claims are therefore false as written:
   looked right because the missing one was the one nobody could see.
   True for api-sent envelopes; agent-sent ones have three centrally and one in a
   terminal. The crash-detectability argument does not cover the agent's end.
-- `PLAN-boards.md` — *"there is no second place to look"*. Was true and is now
-  fixed: `$TASK_RECORD` is that one place for board events.
+- the board plan claimed *"there is no second place to look"*. Was true and is
+  now fixed: `$TASK_RECORD` is that one place for board events.
 
 The design assumed every emitter is a container process. An agent's tools are
 not, and nothing about `flock.bus.log_record` writing to stdout is wrong — it is
@@ -380,7 +378,7 @@ Two halves, and they only work together:
 
 **Give them clean tools — SHIPPED.** `sendMessage`, `sendBroadcast`, `peers`
 all live, `--help` works with an empty environment, generic `send` gone from
-`PATH`. → **[`PLAN-agent-tools.md`](PLAN-agent-tools.md)**:
+`PATH`. The plan named:
 `sendMessage`, `sendBroadcast`, `peers`, `hire`, `letGo`, discovered via
 `OFFICE_TOOLS`. One general `send --kind … --payload '<json>'` was wrong because
 it makes an agent learn the envelope model to use it at all.

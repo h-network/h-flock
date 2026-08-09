@@ -363,7 +363,8 @@ its date and loses its removal.
 ⚠ **`AddTicket` is opened by `tmux` but touches no window.** It is in this table
 under the VAB that opens it, not the thing it does — a board write is the one
 delivery routine that produces no terminal output, deliberately: the board is
-pulled, so nothing notifies the agent (`PLAN-boards` §1).
+pulled, so nothing notifies the agent. A ticket waits until that agent runs
+`office take`.
 
 `vab` defaults to `tmux` and accepts `tmux` or `api`; `cli` defaults to `claude`.
 
@@ -493,8 +494,26 @@ paragraph used to make.
 clause used to read *"entries are opaque strings and the api does not parse
 them"*, which was right when **nothing wrote boards**: the shape was undefined,
 so returning bytes through was the only honest thing to do. Boards are written
-now, by `office add` and the `AddTicket` opener, and the shape is pinned in
-[`PLAN-boards.md`](PLAN-boards.md) §2.
+now, by `office add` and the `AddTicket` opener, and **the shape is pinned
+here**:
+
+```
+  v           int     schema version, 1
+  id          str     the ticket id
+  title       str     one line
+  description str     "" when absent
+  created_by  str     who raised it
+  status      str     todo | doing | done | hold | cancelled
+  created_ts  str     ISO-8601 UTC
+  started_ts  str?    null until taken
+  done_ts     str?    null until done
+  priority    str?    present only when set
+```
+
+⚠ **`created_by` is whatever the writer supplied** — the envelope's `producer`
+for an `AddTicket`, the caller for `office add`. Nothing resolves or verifies it,
+for the same reason `producer` itself is unverified (`HLD` invariant 2). An
+earlier draft claimed the bus resolved it; it does not.
 
 So the api parses each entry as JSON and returns an object. `status`,
 `started_ts` and `id` are structured fields anything may read.

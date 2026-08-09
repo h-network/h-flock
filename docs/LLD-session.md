@@ -147,7 +147,7 @@ scales to fit.
 ## 8. Not the same thing as the CLI transcripts
 
 Every agent CLI writes its own conversation to disk as JSON — claude, codex and
-agy all do, in three different shapes (`PLAN-profiles.md` §7). Those are a
+agy all do, in three different shapes. Those are a
 **different stream from this one, and neither replaces the other**:
 
 | | `%output`, here | the CLI's transcript |

@@ -306,7 +306,6 @@ went the way it did rather than only what it was.
 | [`LLD-tmux-host.md`](docs/LLD-tmux-host.md) | the server, windows, geometry, reconciliation |
 | [`LLD-api.md`](docs/LLD-api.md) · [`LLD-session.md`](docs/LLD-session.md) | the two doors |
 | [`LLD-container.md`](docs/LLD-container.md) | one container is one tenant |
-| [`PLAN-boards.md`](docs/PLAN-boards.md) | the jira board — tickets, columns, why it is pulled |
 | [`CONTRACTS.md`](docs/CONTRACTS.md) | what more than one module depends on |
 
 ---

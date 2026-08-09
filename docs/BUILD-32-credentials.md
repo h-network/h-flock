@@ -64,7 +64,7 @@ expiry checks for them.
 ## 4. Done when
 
 - §2 answered with recorded observations, in `docs/` as a findings file
-- a decision, with the reasoning, in `LLD-tmux-host` or `PLAN-profiles` — in the
+- a decision, with the reasoning, in `LLD-tmux-host` — in the
   same commit as the change, per [`TODO`](TODO.md)
 - if a fix lands, a way to prove it: force the condition, show the agent survives
 - `TODO`'s credential entry closed or rewritten to match what was learned
