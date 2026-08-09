@@ -252,3 +252,24 @@ class DoorsAndRouterTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+def test_all_digit_agent_names_are_rejected():
+    """tmux resolves `session:2` as window INDEX 2, not the window named "2".
+
+    Measured on tmux 3.5a with windows [1:first, 2:second, 3:"2"]: both `s:2`
+    and the exact-name form `s:=2` resolve to `second`. An agent named "2" would
+    therefore have its messages pasted into whichever agent sits at index 2 —
+    the wrong recipient, with an honest `opened` record and nothing to show for
+    it. Unaddressable, so it is not a valid name.
+    """
+    import pytest
+
+    from flock.bus import prefix
+
+    for name in ("sme-2", "a1", "architect", "x"):
+        assert prefix("acme", "hq", agent=name, resource="ingress").endswith(f"agent:{name}:ingress")
+
+    for name in ("2", "12", "007"):
+        with pytest.raises(KeyError):
+            prefix("acme", "hq", agent=name, resource="ingress")

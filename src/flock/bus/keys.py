@@ -7,12 +7,27 @@ SEGMENT_REGEX = re.compile(r"^[a-z0-9][a-z0-9-]{0,62}$")
 # carry that name — it would be unaddressable.
 RESERVED = {"pod", "tenant", "agent", "all"}
 
+# ⚠ An all-digit name is unaddressable in tmux and is rejected for the same
+# reason "all" is: it cannot be routed unambiguously.
+#
+# tmux resolves `session:2` as window *index* 2, not the window named "2".
+# Measured: with windows [1:first, 2:second, 3:"2"], both `s:2` and the
+# exact-name form `s:=2` resolve to `second`. So a message for an agent named
+# "2" is pasted into whichever agent happens to sit at index 2 — silent
+# delivery to the wrong recipient, with an honest `opened` record.
+#
+# Hyphens and digits are fine; `sme-2` resolves correctly. Only an all-digit
+# name collides.
+ALL_DIGITS = re.compile(r"^[0-9]+$")
+
 _SEGMENT = SEGMENT_REGEX
 _RESERVED = RESERVED
 
 
 def _validate(value: str | None) -> str:
     if not isinstance(value, str) or not _SEGMENT.fullmatch(value) or value in _RESERVED:
+        raise KeyError(value)
+    if ALL_DIGITS.fullmatch(value):
         raise KeyError(value)
     return value
 
