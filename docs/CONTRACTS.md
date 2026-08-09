@@ -201,6 +201,7 @@ writes a log file.
 | `reason` | on a failure | why it dead-lettered |
 | `count` | on a broadcast | how many copies were written |
 | `task_id` | on a board move | the entry's `id` |
+| `bytes` | on window-log truncation | consumed spool bytes removed |
 
 ⚠ `task_id`, not `id` — a bare `id` sits beside `stream_id` and `correlation_id`
 in the same record and reads as a third identity for the same thing.
@@ -572,6 +573,9 @@ Set once by the container, inherited by everything (`LLD-container` §4).
 | `ROSTER_POLL_SECONDS` | default `5`. One value, three readers |
 | `ACTIVITY_POLL_SECONDS` | default `2`. How often the router tails CLI session files for the activity feed |
 | `VERIFY_AFTER_SECONDS` | default `10`. How long a delivery marker waits for a later `input` event before being reported unconfirmed |
+| `BOARD_DONE_MAX` | default `500`. Newest finished tickets retained per agent |
+| `DEAD_MAX` | default `500`. Newest dead-lettered envelopes retained per agent |
+| `WINDOW_LOG_MAX_BYTES` | default `8388608` (8 MB). Consumed window-log spool size before truncation |
 | `REDIS_URL` | `redis://127.0.0.1:6379/0` — loopback, never published |
 | `AGENT_NAME` | in an agent's window only |
 | `API_TOKEN`, `API_BIND` | api only. Non-loopback bind with no token must refuse to start |

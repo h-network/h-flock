@@ -22,6 +22,9 @@ services:
       # because setup.sh always writes a .env that overrides it.
       AGENTS: "${AGENTS:-architect:tmux,sme-2:tmux,sme-3:tmux}"
       ROSTER_POLL_SECONDS: "${ROSTER_POLL_SECONDS:-5}"
+      BOARD_DONE_MAX: "${BOARD_DONE_MAX:-500}"
+      DEAD_MAX: "${DEAD_MAX:-500}"
+      WINDOW_LOG_MAX_BYTES: "${WINDOW_LOG_MAX_BYTES:-8388608}"
       # Exceptions only — "frontend=codex", "backend=work". Blank when uniform.
       # ⚠ container/.env feeds compose's variable substitution; a variable only
       # reaches the container if it is named here as well.

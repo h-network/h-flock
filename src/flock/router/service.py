@@ -10,6 +10,7 @@ import redis
 from flock.bus import EnvelopeError, emit, is_member, members, parse, prefix
 from .activity import ActivityTailer
 from .presence import PresenceSampler
+from .retention import RetentionTrimmer
 from .verification import DeliveryVerifier
 from .windowlog import WindowLogTailer
 
@@ -83,6 +84,7 @@ class Router:
         delivery_verifier: DeliveryVerifier | None = None,
         presence_sampler: PresenceSampler | None = None,
         window_log_tailer: WindowLogTailer | None = None,
+        retention_trimmer: RetentionTrimmer | None = None,
     ) -> None:
         next_activity = 0.0
         while True:
@@ -97,8 +99,10 @@ class Router:
                         delivery_verifier.poll(agents)
                     if window_log_tailer is not None:
                         window_log_tailer.poll()
+                    if retention_trimmer is not None:
+                        retention_trimmer.poll(agents)
                 except Exception as exc:
-                    emit("router", "error", {}, reason=f"activity/verification pass failed: {type(exc).__name__}")
+                    emit("router", "error", {}, reason=f"router maintenance pass failed: {type(exc).__name__}")
                 next_activity = now + activity_poll_seconds
             timeout = self.poll_seconds
             if activity_tailer is not None:
@@ -143,5 +147,17 @@ def main() -> None:
             tenant=router.tenant,
             working_seconds=float(os.environ.get("PRESENCE_WORKING_SECONDS", "30")),
         ),
-        window_log_tailer=WindowLogTailer(r, pod=router.pod, tenant=router.tenant),
+        window_log_tailer=WindowLogTailer(
+            r,
+            pod=router.pod,
+            tenant=router.tenant,
+            max_bytes=int(os.environ.get("WINDOW_LOG_MAX_BYTES", str(8 * 1024 * 1024))),
+        ),
+        retention_trimmer=RetentionTrimmer(
+            r,
+            pod=router.pod,
+            tenant=router.tenant,
+            board_done_max=int(os.environ.get("BOARD_DONE_MAX", "500")),
+            dead_max=int(os.environ.get("DEAD_MAX", "500")),
+        ),
     )
