@@ -179,8 +179,26 @@ It is for the **lead's routing decision**: `office status` reports it, and the
 lead's guide says an agent that is `blocked` will not receive work, so hold it
 and say so rather than trying to fix the agent.
 
-⚠ **Scrape only when there is reason to.** A delivery happened and no `input`
-followed — that is the trigger. Not every pass, and never for a healthy agent.
+### The trigger: every tmux agent, every pass
+
+⚠ **There is no delivery-evidence trigger, and there must not be one.** An earlier
+draft said "a delivery happened and no `input` followed". The only Redis record of
+that is `pending.verify`, which the router judges and deletes after
+`VERIFY_AFTER_SECONDS` (10) while the watchdog wakes every `WATCHDOG_INTERVAL`
+(30) — so the evidence appears and vanishes between passes and would be missed
+almost every time. Do not chase it, and **do not change the router to retain it**.
+
+So: **look at every tmux agent, every pass.** A `capture-pane` is around ten
+milliseconds and an office is a handful of windows; frequency was never the cost.
+
+⚠ **The rule was always about *what* is looked for, not *how often*.** One string
+we wrote ourselves, `[message from `. That is what keeps this from becoming
+per-CLI, and it holds whether it runs once an hour or twice a minute.
+
+⚠ **Scraping only on a stall would miss the case that matters most.** An agent
+blocked with no open ticket produces no stall, so it would read `idle` — and the
+lead, checking status before assigning, would hand work to a window that cannot
+take it. That is precisely the accident `blocked` exists to prevent.
 
 ## 8. Settings
 
