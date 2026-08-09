@@ -62,6 +62,12 @@ case "$MODE" in
             [ -f "$f" ] && chmod 600 "$f"
         done; true' >/dev/null 2>&1
     echo "seed-home: copied $copied item(s) into $CONTAINER"
+    # ⚠ A CLI reads its credentials at startup, so one already running does not
+    # notice these. It keeps sitting at a login prompt with a valid credential
+    # on disk beside it, which reads as broken auth rather than a stale process.
+    echo "seed-home: CLIs already running will not pick these up — restart them:"
+    echo "           office pause <agent> && office resume <agent>   (keeps the agent, its board and its queue)"
+    echo "           or  docker restart $CONTAINER                   (whole tenant)"
     ;;
 
   out)

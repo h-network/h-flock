@@ -139,7 +139,27 @@ for _ in $(seq 1 60); do
 done
 
 # Dotfiles, ssh keys and any saved logins — copied in, never baked into the image.
-[ -d container/home ] && ./container/seed-home.sh in "$CONTAINER"
+if [ -d container/home ]; then
+    ./container/seed-home.sh in "$CONTAINER"
+
+    # ⚠ Restart, or every agent that boots with a CLI is unauthenticated.
+    # The entrypoint creates windows and starts the CLIs as soon as the
+    # container comes up — before this seeding could possibly have happened, so
+    # each CLI read an empty config dir and sat at a login prompt while
+    # credentials existed on disk beside it.
+    #
+    # Measured: sme-2 and sme-3 both showed "Not logged in · Run /login" while
+    # seed-home check reported all three CLIs logged in.
+    #
+    # docker restart keeps the filesystem, so the credentials stay; only the
+    # processes come back, and the entrypoint recreates the windows. Cheap here
+    # because the tenant is seconds old and holds no work yet.
+    docker restart "$CONTAINER" >/dev/null || exit 1
+    for _ in $(seq 1 60); do
+        docker exec "$CONTAINER" redis-cli ping >/dev/null 2>&1 && break
+        sleep 1
+    done
+fi
 
 echo
 echo "Tenant '${TENANT}' up."
