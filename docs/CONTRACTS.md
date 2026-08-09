@@ -322,7 +322,7 @@ Found by running a real agent: told to use `sendMessage`, Claude Code reached fo
 its **own built-in `SendMessage` tool** and reported that no such teammate
 existed — a coherent-sounding failure from entirely the wrong subsystem. A
 lowercase prefixed command cannot be mistaken for a PascalCase tool, which fixes
-the class rather than the one name. See `BUILD-09-office-cli.md` §1.
+the class rather than the one name.
 
 ⚠ Not to be confused with **`flock.bus.send()`** in §2, which is the library
 function that writes an egress. Same word, different layer: the command is what
@@ -370,8 +370,7 @@ pulled, so nothing notifies the agent (`PLAN-boards` §1).
 ⚠ **`vab: "api"` enrols a client, and creates no window.** A phone app, a web
 front end and a Telegram wrapper are each a roster row and a mailbox — nothing
 else. `StopAgent` on one removes the row and **purges the client's per-agent
-state**, touching no tmux. Build 12; see
-[`BUILD-12-app-api.md`](BUILD-12-app-api.md).
+state**, touching no tmux.
 
 ⚠ **Clients are hidden from an agent's *view*, not from its inbox.** Precisely:
 
@@ -555,8 +554,8 @@ verdict — the marker is dropped and logged `delivery_unjudged`. A new agent
 therefore cannot be `blocked` until it has spoken once.
 
 ⚠ **`alerts` is tenant-level**, so `StopAgent` must not purge it. The rest are
-per-agent and are in the classified set the teardown test enforces
-([`BUILD-22`](BUILD-22-state-truth.md)).
+per-agent and are in the classified set the teardown test enforces —
+`AGENT_STATE_RESOURCES` and `AGENT_DATA_RESOURCES` in `bus/resources.py`.
 
 ### The client mailbox — build 12
 

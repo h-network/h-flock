@@ -135,11 +135,13 @@ If the lead is retired or re-ordered, existing agents' guides still name the pre
 
 ## Delivery
 
-**~~The `verify` step~~ — SHIPPED in build 19, and it covers half of this.**
-Measured: 0 false positives over 6 landed deliveries, catches the
-Enter-not-taken case below, **misses a modal swallow** — claude writes an `input`
-record even when a picker eats the message. Details and numbers in
-[`BUILD-19-verify.md`](BUILD-19-verify.md) §6b.
+**~~The `verify` step~~ — SHIPPED in build 19.** Measured: 0 false positives
+over 6 landed deliveries, and it catches the Enter-not-taken case below.
+
+⚠ **The "misses a modal swallow" claim that stood here has been deleted**, along
+with the same claim in `HLD` §8 — it came from a test asserting an absence that
+passed whenever the router had not yet judged. A modal was never separately
+measured, so this file now claims nothing in either direction.
 
 **Retry decision — CLOSED in build 30: surface, do not re-paste.** An unverified
 verdict cannot tell an unsubmitted paste from one queued inside a stopped CLI or

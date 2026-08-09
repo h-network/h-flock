@@ -173,8 +173,7 @@ are a separate question; state is not.
 
 ## 2. ~~`cloneToAll`~~ — SHIPPED in build 16
 
-Wanted. Specified in [`BUILD-16-profiles-and-clone.md`](BUILD-16-profiles-and-clone.md)
-§B — three small changes to h-office's version: roster from `flock.bus.roster` instead of `offices.yaml`, filter to VAB
+Wanted. Three small changes to h-office's version: roster from `flock.bus.roster` instead of `offices.yaml`, filter to VAB
 `tmux`, root at `/workdir/<agent>` instead of `/workspace`.
 
 Keep their fetch-once-then-clone-locally trick verbatim; cloning N times over the
