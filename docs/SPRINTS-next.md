@@ -14,7 +14,7 @@
 Verified with a first agent that does not sort first. The section below is the
 reasoning that got there, including the alphabetical trap it walked into.
 
-### The lead is positional — ⚠ except the roster has no position
+### The lead is positional — ⚠ the trap, and how it was closed
 
 **The first agent is always the architect.** No configuration, no
 `AGENT_LEAD` variable to keep in step — position in the roster *is* the answer.
@@ -140,7 +140,7 @@ many times. The agent gets everything it missed, back to back.
 simpler version of this — it is the wrong behaviour. An agent that was paused for
 an hour should come back to its inbox, not to one message from it.
 
-### `StopAgent` must clear the per-agent state — ⚠ and five keys have accrued since
+### ~~`StopAgent` must clear the per-agent state~~ — SHIPPED in build 22
 
 `paused` is cleared now. **Five newer per-agent keys are not**, every one added
 today:
@@ -183,7 +183,7 @@ network downloads the same objects N times.
 **No longer blocked** — it needs git credentials in the container, which
 `container/seed-home.sh` now delivers.
 
-## 3. The watchdog, and folding `verify` into it
+## 3. ~~The watchdog~~ — SHIPPED in builds 19, 27 and 28
 
 > ⚠ **Unblocked as of build 11**, when boards gave it something to read. There is
 > now a **third** signal too — see *A third signal* below, which is the part that

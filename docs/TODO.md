@@ -148,9 +148,20 @@ sum is misleading.
 nothing (`LLD-api` §2). Changing one without the other trades this inconsistency
 for a worse one. Documented accurately in `API.md` in the meantime.
 
-## Visibility
+## ~~Visibility~~ — SHIPPED in build 20
 
-**Presence.** No busy / idle / wedged / login-expired signal. h-office calls it
+**Presence** is `working` / `idle` / `unknown` on `GET /agents/{agent}` and in
+`office status`, derived from the activity feed. **`blocked`** followed in build
+28, from the router's own delivery verdict. The **watchdog** shipped in build 27
+and alerts a human, never an agent.
+
+⚠ **One class remains open**, and it is the same one twice: *the CLI records
+input it does not act on*. A claude at a login prompt or on a modal picker writes
+an `input` record for text it never processes, so verify passes the delivery and
+`blocked` never fires. Measured twice, independently. Scraping a pane is the only
+route known, and would only ever be for this.
+
+The original entry: **Presence.** No busy / idle / wedged / login-expired signal. h-office calls it
 *"the single most expensive gap in a long session"* — every state looks
 identical from outside. The signal is `window_activity` from one `list-windows`
 call, which `LLD-adapter-tmux` §5 already names.
@@ -242,9 +253,13 @@ leaves one source of truth instead of two that drift.
 `OFFICE_TOOLS` also covers the reader who stops early: `echo $OFFICE_TOOLS` then
 `--help` on each, with no exploring and no source to read.
 
-## Log records from agent tools never reach the log
+## ~~Log records from agent tools never reach the log~~ — SHIPPED in build 20
 
-⚠ **`office` runs in an agent's window, so its log records go to that pane** —
+`office` writes to a file the router tails into stdout, so `sent` reaches the
+log. **A delivered envelope leaves five records, not four.**
+
+The original entry: ⚠ **`office` runs in an agent's window, so its log records go
+to that pane** —
 not to the container's stdout, which is the only thing collected.
 
 Measured: an envelope sent by an agent produces `popped`, `forwarded`,
@@ -361,10 +376,14 @@ first: who you are, who you can talk to, how to send. Anything below the fold is
 effectively absent, so the guide staying *short* is a feature — every paragraph
 added pushes something out of the part that gets read.
 
-## Authority between agents
+## ~~Authority between agents~~ — SHIPPED in build 21
 
-**Agents have no model of who has standing, and correctly refuse to take
-direction.** Observed in the first live discussion run: asked why it had not
+The lead is the first name in `AGENTS`, recorded at boot, named in every agent's
+guide and marked by `office peers`. Build 26 added `office status` and told the
+lead to check it before assigning — and **not** to try to fix an agent.
+
+The original entry: **Agents have no model of who has standing, and correctly
+refuse to take direction.** Observed in the first live discussion run: asked why it had not
 followed a peer's instruction, an agent answered *"frontend isn't my principal — you
 are. His messages reach me the same way any data does."* That is right, not a
 malfunction — the bus proves **who** sent a message and says nothing about **who
