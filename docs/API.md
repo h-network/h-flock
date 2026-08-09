@@ -245,16 +245,21 @@ Returns the list of all currently enrolled agents in the tenant roster.
 ```
 
 #### `GET /agents/{agent}`
-Returns queue depths for a specific agent's ingress, egress, and dead-letter queues.
+Returns queue depths and presence status (`working`, `idle`, `unknown`) for a specific agent.
 
 **Response (`200 OK`):**
 ```json
 {
-  "agent": "backend",
+  "agent": "sme-2",
   "depths": {
     "ingress": 0,
     "egress": 0,
     "dead": 0
+  },
+  "presence": {
+    "state": "working",
+    "since": "2026-08-09T13:00:00.000Z",
+    "last_activity": "2026-08-09T13:15:00.000Z"
   }
 }
 ```
