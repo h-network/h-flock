@@ -446,7 +446,7 @@ def _git_clone(source: str, target: Path, upstream: str) -> tuple[bool, str]:
 def _clone_to_all_command(argv: list[str]) -> None:
     parser = _operation_parser("cloneToAll", "Clone one repository into agent workspaces.")
     parser.add_argument("repo_url", metavar="REPO-URL")
-    parser.add_argument("-a", "--agents", metavar="ALICE,BOB", help="comma-separated tmux agents")
+    parser.add_argument("-a", "--agents", metavar="AGENT,...", help="comma-separated tmux agents")
     parser.add_argument("--dry-run", action="store_true", help="show actions without writing")
     args = parser.parse_args(argv)
 
