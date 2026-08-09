@@ -405,6 +405,27 @@ peer carry authority makes `producer` load-bearing, and `producer` is currently
 forgeable — see next. Ship the standing model on top of an unenforced identity
 and any agent can impersonate the lead and direct the whole office.
 
+## A live terminal view in the web client — wanted, not built
+
+*"Show me what's happening live"* — the raw pane, not the activity feed.
+
+⚠ **The capability already exists**: `flock.session` on `:8081` streams a
+`capture-pane` snapshot then live `%output`, and takes keystrokes back with
+`read-only` enforced server-side. Nothing new is needed in the framework.
+
+What is missing is the client half:
+
+- **the browser, not Telegram.** Terminal bytes are ANSI escapes and redraws;
+  they render with xterm.js and are noise in a chat message
+- **the proxy must bridge a WebSocket too** — the same CORS and
+  `EventSource`-cannot-set-headers problems apply to `:8081`
+- **render it, never parse it.** This is the sanctioned use of that door and the
+  exception invariant 7 names: a person may read a terminal, the system may not
+
+⚠ **Do not let a terminal view become a data source.** The moment a client reads
+an answer off the pane instead of the mailbox, every CLI version bump becomes our
+problem — which is the thing the whole activity/verify design exists to avoid.
+
 ## Security — all parked deliberately
 
 **TLS.** Both doors are plain HTTP on `0.0.0.0`, so the bearer token crosses the
