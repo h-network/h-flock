@@ -17,7 +17,7 @@ analogy is load-bearing rather than decorative:
 | L2 switch | h-flock |
 |---|---|
 | destination MAC | `recipient` — the only thing forwarding depends on |
-| source MAC | `producer` — derived from the queue it was popped from, never from content |
+| source MAC | `producer` — ⚠ **supplied to `send()`**; the router derives its own `sender` from the queue but never rewrites the field |
 | MAC table | the **roster** — `name → VAB` |
 | port config | the **VAB** — a property of the port, not of the frame |
 | ethertype | `kind` — the router ignores it; an opener at the far edge reads it |
@@ -235,9 +235,7 @@ leave the tenant over HTTP; a `Bash` argument is a command line and a `Write`
 argument is file content. There is no field they could occupy.
 
 ⚠ **Verify reports and never retries.** Measured: no false positives across six
-landed deliveries, and it catches a paste whose `Enter` was swallowed. It does
-**not** catch a message eaten by an open modal — the CLI writes an `input` record
-anyway. That hole is known and open.
+landed deliveries, and it catches a paste whose `Enter` was swallowed.
 
 ### 8a. `blocked` — the delivery verdict, kept
 
@@ -311,9 +309,15 @@ to check before assigning and hold work rather than repair.
 ## 9. Two things that are pulled, not pushed
 
 **Boards.** A ticket waits until an agent asks. Nothing notifies, nothing
-pastes — so an agent holds only what it pulled, which is *why* it has at most one
-ticket in `doing` rather than a rule imposed on it. The board carries *what*; a
-message carries *now*.
+pastes — so an agent holds only what it pulled. ⚠ **One ticket in `doing` is
+enforced, not emergent:** the `office take` path refuses when that list is
+non-empty (*"you already have one open task"*), so it is an explicit command
+rule. The board carries *what*; a message carries *now*.
+
+⚠ **And it is not a Redis-level invariant.** The length check and the later push
+are separate commands, so two concurrent `office take` processes could both pass
+it. Nothing in the api, control or ticket delivery provides a second layer —
+they write `tasks.todo` or only read `doing`.
 
 **Mailboxes.** An app reads its own, by cursor. `POST` returns `202`; a reply, if
 one ever comes, arrives later.
@@ -337,7 +341,18 @@ roster has no reason to hunt for one.
 The short list that everything else assumes:
 
 1. **The router forwards on `recipient` alone** — never on content.
-2. **`producer` is derived from the queue**, never taken from the envelope.
+2. **`producer` is supplied to `send()` and is never verified against the queue.**
+   `send()` writes the header and picks the egress queue from the same argument,
+   so they agree by construction; the router derives its own `sender` from the
+   popped key for dead-letter placement and broadcast exclusion, and forwards the
+   envelope unchanged. **Nothing compares the two.**
+
+   ⚠ **A mismatch cannot redirect an envelope, but it can spoof an identity.**
+   The unverified field is what an agent is shown — `[message from {producer}]` —
+   and what is recorded as `created_by` and `actor` in board history, in every log
+   record, and in the envelope an api client reads verbatim. No authentication
+   binds the declaration to a real identity. Control openers do not authorise from
+   it.
 3. **Nothing writes another agent's keys** — it sends an envelope.
 4. **The router reads roster fields, never values.** It cannot know a VAB.
 5. **Adapters do not exist between deliveries.**

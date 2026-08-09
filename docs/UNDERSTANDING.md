@@ -59,12 +59,16 @@ never taken from the envelope. **The code does not do that.**
 | | comes from | used for |
 |---|---|---|
 | router `sender` | the popped key — `sender = source_key.split(":")[-2]` | dead-letter placement, excluding the sender from a broadcast |
-| envelope `producer` | the **caller's argument** to `send()` | what the recipient sees as "who sent this" |
+| envelope `producer` | the argument **supplied to `send()`** | the identity shown to the recipient, and recorded as `created_by` / `actor` in board history and every log record |
 
 So the guarantee is a **convention held by `send()`**, not a structural property:
 one function writes both the header and the queue from the same argument.
 Anything that RPUSHes an egress queue directly can put any `producer` in the
 envelope, and nothing downstream compares the two.
+
+⚠ **A mismatch cannot redirect an envelope — it spoofs an identity.** No
+authentication binds the declaration to a real one. Control openers do not
+authorise from it, so this is attribution, not privilege.
 
 ⚠ **This is the single most valuable thing the review found**, and it is not a
 doc bug — it is an invariant documented as structural that is enforced nowhere.
