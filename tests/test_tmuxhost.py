@@ -348,3 +348,35 @@ def test_tmuxhost_omits_profile_env_vars_when_not_set(mock_run_tmux):
     assert "CODEX_HOME" not in cmd_str
 
 
+@patch("flock.tmux.ops.run_tmux")
+def test_tmuxhost_reconciles_hyphenated_digit_agent_name(mock_run_tmux):
+    mock_run_tmux.side_effect = [
+        (0, "", ""),  # has-session
+        (0, "", ""),  # exit-empty
+        (0, "", ""),  # default-size
+        (0, "", ""),  # history-limit
+        (0, "__init__", ""),  # list-windows 1
+        (0, "", ""),  # new-window sme-2
+        (0, "__init__\nsme-2", ""),  # list-windows 2
+        (0, "", ""),  # kill-window __init__
+    ]
+
+    r = MockRedis(["sme-2"], launch_map={"sme-2": "codex"}, profile_map={"sme-2": "work-2"})
+    host = TmuxHost(pod="acme", tenant="hq", redis_url="redis://127.0.0.1:6379/0", session_name="hq")
+    host.reconcile_once(r)
+
+    calls = [c[0] for c in mock_run_tmux.call_args_list]
+    new_window_calls = [c for c in calls if "new-window" in c]
+    assert len(new_window_calls) == 1
+    cmd_args = new_window_calls[0]
+    assert "-n" in cmd_args and "sme-2" in cmd_args
+    assert "-c" in cmd_args and "/workdir/sme-2" in cmd_args
+    cmd_str = " ".join(cmd_args)
+    assert "AGENT_NAME=sme-2" in cmd_str
+    assert "AGENT_GUIDE=/workdir/sme-2/AGENTS.md" in cmd_str
+    assert "CLAUDE_CONFIG_DIR=/home/ubuntu/.claude-work-2" in cmd_str
+    assert "CODEX_HOME=/home/ubuntu/.codex-work-2" in cmd_str
+    assert "startAgent" in cmd_str and "codex" in cmd_str
+
+
+
