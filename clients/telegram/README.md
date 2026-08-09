@@ -28,14 +28,16 @@ A Telegram bot client that talks to an **h-flock** tenant over HTTP, allowing a 
 | `TELEGRAM_BOT_TOKEN` | *optional* | Telegram Bot API token (from @BotFather) |
 | `CURSOR_FILE` | `cursor.json` | Path to store the persisted cursor |
 
-### Running the Bot
+### Running in Dry-Run Mode (Without Telegram Token)
+
+When `TELEGRAM_BOT_TOKEN` is not supplied (or `--dry-run` is passed), the bot operates in **dry-run mode**, sending real envelopes and state requests to h-flock while printing all formatted Telegram message operations (`sendMessage`, `editMessageText`, `sendChatAction`) directly to stdout:
 
 ```bash
-export FLOCK_API_URL="http://localhost:8080"
-export FLOCK_API_TOKEN="your-api-token"
-export TELEGRAM_BOT_TOKEN="your-telegram-bot-token"
+# Perform status check against real h-flock data
+python3 clients/telegram/bot.py --api-token "$FLOCK_API_TOKEN" --status
 
-python3 clients/telegram/bot.py
+# Send prompt to architect and watch progress edits / reply driven by real h-flock data
+python3 clients/telegram/bot.py --api-token "$FLOCK_API_TOKEN" --prompt "can you check the auth change?"
 ```
 
 ### CLI Command Options
@@ -46,7 +48,9 @@ python3 clients/telegram/bot.py \
   --api-token "$FLOCK_API_TOKEN" \
   --bot-token "$TELEGRAM_BOT_TOKEN" \
   --cursor-file cursor.json \
-  --agent architect
+  --agent architect \
+  --dry-run \
+  --prompt "can you check the auth change?"
 ```
 
 ---

@@ -346,6 +346,33 @@ class TelegramBot:
                 time.sleep(3.0)
 
 
+class DryRunTelegramClient:
+    """Dry-run Telegram client that prints formatted output to stdout.
+    Allows running and reviewing Telegram bot workflows against real h-flock
+    data without requiring a Telegram bot token from BotFather.
+    """
+
+    def __init__(self):
+        self.next_msg_id = 1
+
+    def send_message(self, chat_id: int | str, text: str, reply_to_message_id: int | None = None) -> dict:
+        msg_id = self.next_msg_id
+        self.next_msg_id += 1
+        print(f"[DRY-RUN Telegram] sendMessage (chat={chat_id}, msg_id={msg_id}):\n{text}\n")
+        return {"ok": True, "result": {"message_id": msg_id, "chat": {"id": chat_id}, "text": text}}
+
+    def edit_message_text(self, chat_id: int | str, message_id: int, text: str) -> dict:
+        print(f"[DRY-RUN Telegram] editMessageText (chat={chat_id}, msg_id={message_id}):\n{text}\n")
+        return {"ok": True, "result": {"message_id": message_id, "chat": {"id": chat_id}, "text": text}}
+
+    def send_chat_action(self, chat_id: int | str, action: str = "typing") -> dict:
+        print(f"[DRY-RUN Telegram] sendChatAction (chat={chat_id}, action={action})")
+        return {"ok": True}
+
+    def get_updates(self, offset: int | None = None, timeout: int = 20) -> list[dict]:
+        return []
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="h-flock Telegram bot client")
     parser.add_argument("--api-url", default=os.getenv("FLOCK_API_URL", "http://localhost:8080"), help="h-flock API base URL")
@@ -353,6 +380,9 @@ def main() -> None:
     parser.add_argument("--bot-token", default=os.getenv("TELEGRAM_BOT_TOKEN", ""), help="Telegram Bot API token")
     parser.add_argument("--cursor-file", default=os.getenv("CURSOR_FILE", "cursor.json"), help="File path to store message cursor")
     parser.add_argument("--agent", default="architect", help="Target agent name")
+    parser.add_argument("--dry-run", action="store_true", help="Run in dry-run mode (prints Telegram operations to stdout)")
+    parser.add_argument("--prompt", type=str, default="", help="Prompt text to send in dry-run mode")
+    parser.add_argument("--status", action="store_true", help="Check status in dry-run mode")
 
     args = parser.parse_args()
 
@@ -362,10 +392,27 @@ def main() -> None:
 
     flock = FlockClient(base_url=args.api_url, token=args.api_token, app_name="telegram")
     cursor_store = CursorStore(filepath=args.cursor_file)
-    telegram = TelegramClient(bot_token=args.bot_token) if args.bot_token else None
+
+    is_dry_run = args.dry_run or not bool(args.bot_token)
+    if is_dry_run:
+        logger.info("Running in DRY-RUN mode (printing Telegram operations to stdout)...")
+        telegram = DryRunTelegramClient()
+    else:
+        telegram = TelegramClient(bot_token=args.bot_token)
 
     bot = TelegramBot(flock_client=flock, telegram_client=telegram, cursor_store=cursor_store, target_agent=args.agent)
-    bot.run_polling()
+
+    if is_dry_run:
+        bot.enrol()
+        if args.status:
+            bot.handle_status_command("dry_run_chat")
+        elif args.prompt:
+            bot.handle_user_prompt("dry_run_chat", args.prompt)
+        else:
+            logger.info("Performing dry-run status check...")
+            bot.handle_status_command("dry_run_chat")
+    else:
+        bot.run_polling()
 
 
 if __name__ == "__main__":
