@@ -40,7 +40,7 @@ Everything addressable is a name in the roster. What is *behind* the name is its
 | `control` | the tenant's own lifecycle endpoint (`host`) | acting on it |
 
 ⚠ **The router cannot see this column.** It reads roster *fields*, never values
-(invariant 4 below) — so it forwards to a name and something at the far edge decides
+(the *roster fields, never values* invariant) — so it forwards to a name and something at the far edge decides
 what that means. This is structural rather than a convention: the router has no
 code path that could dispatch on VAB even if someone wanted it to.
 
@@ -112,9 +112,9 @@ Four log records mark the path — `popped`, `forwarded`, `received`, `opened` �
 so a lost envelope is locatable rather than merely absent.
 
 ⚠ **Nothing writes another agent's keys.** Not a queue, not a board, not a
-mailbox. It sends an envelope and the far edge writes its own. That is invariant
-3, generalised in build 12 from queues to every per-agent key, and it is what
-keeps "who did this" answerable.
+mailbox — it sends an envelope and the far edge writes its own. Build 12
+generalised this from queues to every per-agent key, and it is what keeps "who
+did this" answerable.
 
 ## 6. Kinds — the capability list
 
@@ -153,7 +153,7 @@ POST /agents/all/envelopes  {"text":"…"}            # everyone, clients includ
 ```
 
 ⚠ **The router cannot filter a broadcast by VAB and never will.** It fans out
-over roster *fields*, and by invariant 4 it cannot read a value — so `all` means
+over roster *fields*, and by that same invariant it cannot read a value — so `all` means
 all. `office broadcast` selects tmux agents *before* sending, which is why the
 two differ. If you want colleagues, use the command; if you address `all`, expect
 an app to receive it.
@@ -213,14 +213,17 @@ The short list that everything else assumes:
    about adapters, discovered at the far edge.
 7. **Nothing reads a terminal to make a decision.**
 
-⚠ **These numbers are this document's.** `LLD-bus-and-router` keeps its own,
-longer list with its own numbering — the roster-fields rule is its *invariant 8*
-and this document's *4*. Cite the file along with the number.
+⚠ **Cite these by name, never by number.** `LLD-bus-and-router` keeps its own,
+longer list — *roster fields, never values* is its **8** and this document's
+**4**. Two lists with two numberings drift the moment either gains an entry, and
+a stale citation reads as authoritative.
 
-⚠ Breaking any of these is a design change, not a patch. Several started as
-sentences someone thought were obvious and are load-bearing in ways that only
-show up later — `CONTRACTS` §8 promised an atomic `LMOVE` for a year before
-anyone noticed tickets had started being mutated in flight.
+⚠ **Breaking any of these is a design change, not a patch**, and they decay
+quietly rather than loudly. `CONTRACTS` promised board transitions were an atomic
+`LMOVE`; build 11 gave tickets a `status` and a `started_ts`, so the value pushed
+stopped being the value popped and `LMOVE` became impossible. Nothing failed —
+the code was correct, the contract was not — and nobody noticed until a
+documentation audit went looking for exactly this kind of claim.
 
 ## 11. Where to go next
 
