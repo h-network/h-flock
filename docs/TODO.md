@@ -8,7 +8,6 @@ Things decided-but-not-done, so they live somewhere other than a chat log.
 |---|---|
 | **a CLI records input it does not act on** | login prompts and modal pickers. Verify passes them, `blocked` misses them. The only thing a screen scraper would ever be for |
 | **claude's seeded credential goes stale in place** | a copy we hand it does not refresh. Bit us live at 15:30. ⚠ **claude only** — codex and agy run for days on one token, so their `unknown` is the correct terminal state, not a coverage gap |
-| **retry on `delivery_unverified`** | a decision, now with numbers behind it |
 | **a live terminal view** | wanted, and `:8081` already streams it — the client half is missing |
 | **`clients/` needs its own repo** | consumers sitting inside the framework for want of a remote |
 | **profile logins** | one interactive login per account. Not buildable — a person has to do it |
@@ -141,9 +140,15 @@ If the lead is retired or re-ordered, existing agents' guides still name the pre
 Measured: 0 false positives over 6 landed deliveries, catches the
 Enter-not-taken case below, **misses a modal swallow** — claude writes an `input`
 record even when a picker eats the message. Details and numbers in
-[`BUILD-19-verify.md`](BUILD-19-verify.md) §6b. **It reports only; nothing
-retries.** Whether to re-deliver on `delivery_unverified` is still open and now
-has numbers behind it.
+[`BUILD-19-verify.md`](BUILD-19-verify.md) §6b.
+
+**Retry decision — CLOSED in build 30: surface, do not re-paste.** An unverified
+verdict cannot tell an unsubmitted paste from one queued inside a stopped CLI or
+picker. The simulator confirms the first text remains in both detected cases;
+retrying while blocked cannot help, and retrying after a human clears it can
+execute the instruction twice. We chose possible loss over possible duplication:
+retain `blocked`, alert the human, and put the no-retry reason in the structured
+`delivery_unverified` record. A human can resend when duplication is known safe.
 
 The original entry, for the reasoning: `LLD-adapter-tmux` §4 says "verify,
 optionally" and we took the option. h-office enables it by default after *"roughly one delivery in

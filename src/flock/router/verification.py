@@ -96,7 +96,11 @@ class DeliveryVerifier:
                         "delivery_unverified",
                         stream_id=marker.get("stream_id"),
                         recipient=agent,
-                        reason="not confirmed by a later input activity event",
+                        reason=(
+                            "not confirmed by a later input activity event; "
+                            "not retried because verification cannot distinguish "
+                            "loss from a landed paste"
+                        ),
                         waited=waited,
                     )
                 self.r.xdel(pending_key, entry_id)
