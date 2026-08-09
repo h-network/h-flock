@@ -71,7 +71,7 @@ Run any of those with --help. To see who you can talk to:
 
     office peers
 
-A message arrives in your terminal as `[message from alice] …` — reply by name
+A message arrives in your terminal as `[message from <name>] …` — reply by name
 with `office send -a <name> <message>`. This directory is yours; work in it.
 
 You have a task board. Nothing will notify you about it — check it yourself:
