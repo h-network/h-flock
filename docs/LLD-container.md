@@ -15,6 +15,13 @@ This is a deliberate simplification, not a limit discovered later: co-locating
 Redis, the router and the agents means they address each other over loopback,
 nothing needs discovery, and the whole tenant starts and stops as one thing.
 
+⚠ **A rebuild is a new office wearing the same name.** Rebuilding a tenant container
+(`docker compose up --force-recreate`) restarts the office and destroys all runtime
+enrolments (hired agents, external API clients like `telegram` and `web`). Those clients
+keep running against a tenant that no longer knows them, causing them to go silently quiet.
+**Rule:** Do not rebuild a tenant container someone is actively using. Bring up a second
+tenant container instead.
+
 ```
   ┌─────────────── container — tenant hq ──────────────────────┐
   │                                                            │
