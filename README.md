@@ -153,6 +153,7 @@ $AGENT_GUIDE     a short guide, also written to AGENTS.md and CLAUDE.md
 office send -a frontend can you take a look at this?
 office broadcast standup in five
 office peers                       # who you can talk to
+office status                      # who is working, on what, since when
 office hire networking --cli claude      # a new colleague, live, no restart
 office letGo networking
 office pause networking
