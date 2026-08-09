@@ -3,10 +3,12 @@
 import os
 import signal
 import subprocess
+import time
 
 import redis
 
 from flock.bus import EnvelopeError, emit, is_member, members, parse, prefix
+from .activity import ActivityTailer
 
 
 class Router:
@@ -27,7 +29,7 @@ class Router:
         except OSError as exc:
             emit("router", "error", {"recipient": agent}, reason=f"adapter kick failed: {exc}")
 
-    def step(self) -> bool:
+    def step(self, timeout: float | None = None) -> bool:
         agents = sorted(self._agents())
         if not agents:
             return False
@@ -35,7 +37,7 @@ class Router:
         agents = agents[self._offset :] + agents[: self._offset]
         self._offset = (self._offset + 1) % len(agents)
         keys = [prefix(self.pod, self.tenant, agent, "egress") for agent in agents]
-        item = self.r.blpop(keys, timeout=self.poll_seconds)
+        item = self.r.blpop(keys, timeout=self.poll_seconds if timeout is None else timeout)
         if item is None:
             return False
         source_key, raw = item
@@ -71,9 +73,20 @@ class Router:
         self._kick(recipient)
         return True
 
-    def run(self) -> None:
+    def run(self, activity_tailer: ActivityTailer | None = None, activity_poll_seconds: float = 2.0) -> None:
+        next_activity = 0.0
         while True:
-            self.step()
+            now = time.monotonic()
+            if activity_tailer is not None and now >= next_activity:
+                try:
+                    activity_tailer.poll()
+                except Exception as exc:
+                    emit("router", "error", {}, reason=f"activity poll failed: {type(exc).__name__}")
+                next_activity = now + activity_poll_seconds
+            timeout = self.poll_seconds
+            if activity_tailer is not None:
+                timeout = min(timeout, max(0.1, next_activity - time.monotonic()))
+            self.step(timeout=timeout)
 
 
 def main() -> None:
@@ -88,9 +101,11 @@ def main() -> None:
     # them — we do not want a return code.
     signal.signal(signal.SIGCHLD, signal.SIG_IGN)
 
-    Router(
-        redis.Redis.from_url(os.environ["REDIS_URL"]),
+    r = redis.Redis.from_url(os.environ["REDIS_URL"])
+    router = Router(
+        r,
         pod=os.environ["POD"],
         tenant=os.environ["TENANT"],
         poll_seconds=int(os.environ.get("ROSTER_POLL_SECONDS", "5")),
-    ).run()
+    )
+    router.run(ActivityTailer(r, pod=router.pod, tenant=router.tenant))
