@@ -758,6 +758,35 @@ the same ingress and kick, then the API delivery routine appends the envelope to
 of per-agent identity state; queues and board data remain. The switch
 does not change for any of this; it still routes a name without reading its VAB.
 
+**The agent-facing command is a deliberately narrow edge.** `office send` and
+`office broadcast` treat every token after the recipient as literal message
+text, including option-looking tokens such as `-a`; explaining an `office`
+command to another agent must not let the outer parser consume the inner
+command's flags. `office status` is read-only: it combines presence, the single
+open ticket and its age, last activity and any `blocked` verdict, but never
+creates, clears or repairs those signals.
+
+`office cloneToAll` is the filesystem-shaped exception. It selects live `tmux`
+participants, fetches the upstream repository once, clones locally for the
+remaining workspaces, and then points **every** clone's `origin` at the supplied
+upstream rather than at the first local clone. Existing target directories are
+skipped, and `--dry-run` performs no writes.
+
+**The ticket board is pulled at the agent edge.** `AddTicket` is the one bus
+delivery that mutates a board: its opener appends to the recipient's
+`tasks.todo` and pastes nothing. The recipient later moves its own ticket; no
+command directly mutates another participant's board. `office take` refuses
+while `tasks.doing` is non-empty, so the one-open-ticket rule is explicit rather
+than an emergent property of pull delivery. It distinguishes that refusal from
+an empty `tasks.todo`, because callers act differently on those outcomes.
+
+Board mutations are recorded by the component that performs them. Both the
+`AddTicket` opener and local `office` transitions call the shared
+`flock.bus.record_task_event`, which appends one JSONL record to `TASK_RECORD`
+and swallows recording failures so history cannot break the mutation. Listing
+prints ticket IDs and titles, while taking prints the structured ticket; title
+and description remain opaque text.
+
 **Subscribe-set fairness.** `BLPOP` returns from the first non-empty key in
 argument order, so a fixed order can in principle starve later queues. It cannot
 happen here: the router's loop is pop, resolve, push — a few local round trips —
