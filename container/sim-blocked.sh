@@ -1,10 +1,11 @@
 #!/usr/bin/env bash
 # sim-blocked.sh — failure simulator for unverified deliveries and blocked states.
 #
-# Drives three failure cases against a running tenant:
-#   1. wedged_process          (SIGSTOP CLI process -> delivery unverified, blocked set)
+# Drives four failure cases against a running tenant:
+#   1. wedged_process          (SIGSTOP / replaced process -> delivery unverified, blocked set)
 #   2. trust_picker            (unseeded claude trust profile -> delivery unverified, blocked set)
-#   3. login_prompt_known_gap  (unauthenticated CLI profile -> verify passes, blocked key empty [known gap])
+#   3. login_prompt_known_gap  (unauthenticated codex profile -> verify pass/caught check)
+#   4. login_prompt_claude     (unauthenticated claude profile -> verify pass/caught check)
 #
 # Usage:
 #   bash container/sim-blocked.sh
@@ -140,14 +141,14 @@ cleanup() {
         done
     fi
 
-    for agent in sim-wedged sim-trust sim-nologin; do
+    for agent in sim-wedged sim-trust sim-nologin sim-nologin-claude; do
         cu -X POST -H 'Content-Type: application/json' -d "{\"kind\":\"StopAgent\",\"payload\":{\"agent\":\"$agent\"}}" "$A/agents/host/envelopes" >/dev/null 2>&1 || true
         dx redis-cli DEL "pod:$POD:tenant:$TENANT:agent:$agent:profile" >/dev/null 2>&1 || true
         poll_window_gone "$agent" || true
     done
 
     # Clean up isolated per-agent profile directories only (NEVER touch shared ~/.claude.json)
-    dx bash -c "rm -rf /home/ubuntu/.claude-simtrust /home/ubuntu/.codex-simnologin /home/ubuntu/.claude-simnologin" 2>/dev/null || true
+    dx bash -c "rm -rf /home/ubuntu/.claude-simtrust /home/ubuntu/.codex-simnologin /home/ubuntu/.claude-simnologin /home/ubuntu/.claude-simnologinclaude" 2>/dev/null || true
 }
 
 trap cleanup EXIT INT TERM
@@ -249,8 +250,8 @@ poll_window_gone "sim-trust"
 ck "sim-trust window cleaned up" "$?" "0"
 
 
-# ── Case 3: login_prompt_known_gap (unauthenticated CLI profile) ──
-echo "== Case 3: login_prompt_known_gap (unauthenticated CLI profile) =="
+# ── Case 3: login_prompt_known_gap (unauthenticated codex profile) ──
+echo "== Case 3: login_prompt_known_gap (unauthenticated codex profile) =="
 # Isolate profile credential by assigning an isolated unauthenticated profile directory
 dx redis-cli SET "pod:$POD:tenant:$TENANT:agent:sim-nologin:profile" "simnologin" >/dev/null
 dx bash -c "rm -rf /home/ubuntu/.codex-simnologin" 2>/dev/null || true
@@ -275,7 +276,6 @@ if [ "$PROVED_NOLOGIN" -eq 1 ]; then
 
     cu -X POST -H 'Content-Type: application/json' -d '{"text":"hello login prompt","as":"telegram"}' "$A/agents/sim-nologin/envelopes" >/dev/null
 
-    echo "  polling for router verification pass..."
     echo "  waiting for the router to judge the marker..."
     poll_judged "sim-nologin"
     ck "sim-nologin marker judged" "$?" "0"
@@ -296,6 +296,52 @@ cu -X POST -H 'Content-Type: application/json' -d '{"kind":"StopAgent","payload"
 dx redis-cli DEL "pod:$POD:tenant:$TENANT:agent:sim-nologin:profile" >/dev/null
 poll_window_gone "sim-nologin"
 ck "sim-nologin window cleaned up" "$?" "0"
+
+
+# ── Case 4: login_prompt_claude (unauthenticated claude profile) ──
+echo "== Case 4: login_prompt_claude (unauthenticated claude profile) =="
+dx redis-cli SET "pod:$POD:tenant:$TENANT:agent:sim-nologin-claude:profile" "simnologinclaude" >/dev/null
+dx bash -c "rm -rf /home/ubuntu/.claude-simnologinclaude" 2>/dev/null || true
+
+cu -X POST -H 'Content-Type: application/json' -d '{"kind":"StartAgent","payload":{"agent":"sim-nologin-claude","cli":"claude"}}' "$A/agents/host/envelopes" >/dev/null
+poll_window_ready "sim-nologin-claude"
+ck "sim-nologin-claude window created" "$?" "0"
+
+# Prove precondition: poll pane output for login prompt keywords
+PROVED_CLAUDELOGIN=0
+for _ in $(seq 1 20); do
+    PANE_TEXT=$(dx bash -c "TMUX_TMPDIR=/home/ubuntu/.flock/tmux tmux capture-pane -p -t ${TENANT}:sim-nologin-claude 2>/dev/null" || true)
+    if echo "$PANE_TEXT" | grep -iqE "Sign in|Anthropic|API key|login|OAuth|auth|welcome|onboarding"; then
+        PROVED_CLAUDELOGIN=1
+        break
+    fi
+    sleep 0.5
+done
+
+if [ "$PROVED_CLAUDELOGIN" -eq 1 ]; then
+    ck "sim-nologin-claude precondition proved (login prompt shown)" "0" "0"
+
+    cu -X POST -H 'Content-Type: application/json' -d '{"text":"hello claude login prompt","as":"telegram"}' "$A/agents/sim-nologin-claude/envelopes" >/dev/null
+
+    echo "  waiting for the router to judge the marker..."
+    poll_judged "sim-nologin-claude"
+    ck "sim-nologin-claude marker judged" "$?" "0"
+
+    BLOCKED_RAW=$(dx redis-cli HGETALL "pod:$POD:tenant:$TENANT:agent:sim-nologin-claude:blocked" 2>/dev/null || true)
+    if [ -n "$BLOCKED_RAW" ]; then
+        ckc "sim-nologin-claude login prompt is caught (blocked set)" "$BLOCKED_RAW" "since"
+    else
+        ck "sim-nologin-claude login prompt is missed (blocked empty)" "$BLOCKED_RAW" ""
+    fi
+else
+    ck "sim-nologin-claude precondition proved (login prompt shown)" "failed" "0"
+    echo "  ABORT Case 4: login prompt setup failed (prompt not shown in pane)"
+fi
+
+cu -X POST -H 'Content-Type: application/json' -d '{"kind":"StopAgent","payload":{"agent":"sim-nologin-claude"}}' "$A/agents/host/envelopes" >/dev/null
+dx redis-cli DEL "pod:$POD:tenant:$TENANT:agent:sim-nologin-claude:profile" >/dev/null
+poll_window_gone "sim-nologin-claude"
+ck "sim-nologin-claude window cleaned up" "$?" "0"
 
 echo
 echo "sim-blocked: PASS=$pass FAIL=$fail"
