@@ -1,9 +1,9 @@
-# Build 26 — the watchdog
+# Build 27 — the watchdog
 
 > Design is [`SPRINTS-next.md`](SPRINTS-next.md) §3, written before any of its
 > signals existed. They all exist now.
 >
-> **Base on `main`.** Branch `bus/build-26-watchdog`, push to origin.
+> **Base on `main`.** Branch `bus/build-27-watchdog`, push to origin.
 
 ## 1. Its own process
 
