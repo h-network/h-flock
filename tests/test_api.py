@@ -575,6 +575,27 @@ def test_get_alerts_with_events_and_cursor(client):
     assert body["next_cursor"] == "2001-0"
 
 
+def test_get_agent_blocked_presence(client):
+    app, redis = client
+    presence_key = "pod:test:tenant:office:agent:sme-2:presence"
+    blocked_key = "pod:test:tenant:office:agent:sme-2:blocked"
+    redis.hashes[presence_key] = {
+        b"state": b"idle",
+        b"since": b"2026-08-09T15:00:00Z",
+        b"last_activity": b"2026-08-09T15:01:00Z",
+    }
+    redis.hashes[blocked_key] = {
+        b"since": b"2026-08-09T15:02:00Z",
+        b"stream_id": b"1000-0",
+    }
+
+    status, body = request(app, "GET", "/agents/sme-2", token="secret")
+    assert status == 200
+    assert body["presence"]["state"] == "blocked"
+    assert body["presence"]["since"] == "2026-08-09T15:00:00Z"
+
+
+
 
 
 
