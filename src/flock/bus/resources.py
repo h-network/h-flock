@@ -31,7 +31,9 @@ AGENT_DATA_RESOURCES = frozenset(
 )
 
 PER_AGENT_RESOURCES = AGENT_STATE_RESOURCES | AGENT_DATA_RESOURCES
-TENANT_RESOURCES = frozenset({"roster", "lead", "window.log.offset", "delivering", "alerts"})
+TENANT_RESOURCES = frozenset(
+    {"roster", "lead", "window.log.offset", "delivering", "alerts", "credential.alerted"}
+)
 DYNAMIC_RESOURCE_PATTERNS = frozenset({"tasks.*"})
 
 

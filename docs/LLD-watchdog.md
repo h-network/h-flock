@@ -156,8 +156,10 @@ Alert records are facts, not diagnoses. Their common fields are `v`, `ts` and
 
 ## 5. Credential warnings
 
-Once an hour, the watchdog walks the default CLI accounts and discovered
-profile directories under `/home/ubuntu`.
+Once an hour, the watchdog walks the `tmux` roster and reads each enrolled
+agent's `launch` and `profile` keys. It checks each distinct CLI account in use
+once; an unused profile directory is not evidence of a running account and is
+ignored.
 
 | CLI | source | interpretation |
 |---|---|---|
@@ -175,9 +177,17 @@ already in the past, for an account that was working. **agy is `unknown`, like
 codex.** Two of three cannot be checked, and saying so is the honest answer.
 
 ⚠ **`expired` and `expiring` are different words.** A timestamp already in the
-past is not a warning about the future.
-Missing or malformed Claude and agy credential files produce no expiry claim.
-An expiry beyond the warning window produces no alert.
+past is not a warning about the future. A missing, unreadable or malformed
+credential file for any CLI is `absent`: regardless of expiry support, that
+account cannot work without a human login. An expiry beyond the warning window
+produces no alert.
+
+The tenant `credential.alerted` hash stores the last reported status under an
+`<account>:<cli>` field. A status is emitted once when it changes; a healthy
+Claude account or an account no longer in use clears its field. The existing
+per-agent `alerted` key cannot hold this state: it contains a ticket ID, expires
+with the stall cooldown, and one credential account may be shared by several
+agents.
 
 ```json
 {"v":1,"ts":"…","kind":"credential","account":"work",

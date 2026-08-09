@@ -19,17 +19,31 @@ class WatchRedis:
         self.writes = []
 
     def hkeys(self, key):
+        if key in self.hashes:
+            return list(self.hashes[key])
         return list(self.roster)
 
     def hget(self, key, field):
+        if key in self.hashes:
+            return self.hashes[key].get(field)
         return self.roster.get(field)
 
     def hgetall(self, key):
         return self.hashes.get(key, {})
 
-    def hset(self, key, mapping):
-        self.hashes[key] = dict(mapping)
-        self.writes.append(("hset", key, mapping))
+    def hset(self, key, field=None, value=None, mapping=None):
+        if mapping is not None:
+            self.hashes.setdefault(key, {}).update(mapping)
+            written = mapping
+        else:
+            self.hashes.setdefault(key, {})[field] = value
+            written = {field: value}
+        self.writes.append(("hset", key, written))
+
+    def hdel(self, key, *fields):
+        for field in fields:
+            self.hashes.get(key, {}).pop(field, None)
+        self.writes.append(("hdel", key, fields))
 
     def get(self, key):
         return self.values.get(key)
@@ -213,6 +227,8 @@ def test_stall_alert_includes_blocked_verdict(monkeypatch):
 
 def test_credentials_warn_on_claude_refresh_expiry_and_codex_is_unknown(tmp_path, capsys):
     r = WatchRedis()
+    r.values[_key("architect", "launch")] = "claude"
+    r.values[_key("sme-2", "launch")] = "codex"
     claude = tmp_path / ".claude"
     claude.mkdir()
     (claude / ".credentials.json").write_text(
@@ -236,11 +252,13 @@ def test_credentials_warn_on_claude_refresh_expiry_and_codex_is_unknown(tmp_path
 
 def test_profile_codex_is_unknown_even_without_an_auth_file(tmp_path, capsys):
     r = WatchRedis()
+    r.values[_key("sme-2", "launch")] = "codex"
+    r.values[_key("sme-2", "profile")] = "work"
     (tmp_path / ".codex-work").mkdir()
     Watchdog(r, pod="acme", tenant="hq", session_name="hq", home_root=tmp_path).check_credentials(now=NOW)
     alerts = [json.loads(fields["alert"]) for _, fields in r.streams[prefix("acme", "hq", resource="alerts")]]
     assert any(
-        alert["account"] == "work" and alert["cli"] == "codex" and alert["status"] == "unknown"
+        alert["account"] == "work" and alert["cli"] == "codex" and alert["status"] == "absent"
         for alert in alerts
     )
     capsys.readouterr()
@@ -271,6 +289,7 @@ def test_agy_is_unknown_because_its_expiry_is_an_access_token(tmp_path, capsys):
     )
 
     r = WatchRedis()
+    r.values[_key("architect", "launch")] = "agy"
     Watchdog(r, pod="acme", tenant="hq", session_name="hq",
              home_root=tmp_path).check_credentials(now=NOW)
 
@@ -278,3 +297,65 @@ def test_agy_is_unknown_because_its_expiry_is_an_access_token(tmp_path, capsys):
     agy_alerts = [a for a in alerts if a.get("cli") == "agy"]
     assert agy_alerts, "agy should still be reported"
     assert agy_alerts[0]["status"] == "unknown", "never 'expiring' from an access token"
+
+
+def test_missing_credentials_alert_once_per_account_in_use_and_clear_on_reseed(tmp_path):
+    r = WatchRedis()
+    r.values[_key("architect", "launch")] = "claude"
+    r.values[_key("architect", "profile")] = "work"
+    r.values[_key("sme-2", "launch")] = "claude"
+    r.values[_key("sme-2", "profile")] = "work"
+    watchdog = Watchdog(r, pod="acme", tenant="hq", session_name="hq", home_root=tmp_path)
+
+    watchdog.check_credentials(now=NOW)
+    watchdog.check_credentials(now=NOW)
+    alerts_key = prefix("acme", "hq", resource="alerts")
+    alerts = [json.loads(fields["alert"]) for _, fields in r.streams[alerts_key]]
+    assert [(alert["account"], alert["cli"], alert["status"]) for alert in alerts] == [
+        ("work", "claude", "absent")
+    ]
+
+    credentials = tmp_path / ".claude-work" / ".credentials.json"
+    credentials.parent.mkdir()
+    credentials.write_text(
+        json.dumps({"claudeAiOauth": {"refreshTokenExpiresAt": "2026-09-12T14:00:00Z"}})
+    )
+    watchdog.check_credentials(now=NOW)
+    watchdog.check_credentials(now=NOW)
+    assert len(r.streams[alerts_key]) == 1
+    assert r.hashes[prefix("acme", "hq", resource="credential.alerted")] == {}
+
+
+def test_missing_credentials_alert_for_each_cli_account_in_use(tmp_path):
+    r = WatchRedis()
+    r.roster["sme-3"] = "tmux"
+    r.values[_key("architect", "launch")] = "claude"
+    r.values[_key("sme-2", "launch")] = "codex"
+    r.values[_key("sme-3", "launch")] = "agy"
+
+    Watchdog(r, pod="acme", tenant="hq", session_name="hq", home_root=tmp_path).check_credentials(now=NOW)
+
+    alerts = [
+        json.loads(fields["alert"])
+        for _, fields in r.streams[prefix("acme", "hq", resource="alerts")]
+    ]
+    assert {(alert["cli"], alert["status"]) for alert in alerts} == {
+        ("agy", "absent"),
+        ("claude", "absent"),
+        ("codex", "absent"),
+    }
+
+
+def test_unused_profile_directory_does_not_alert(tmp_path):
+    r = WatchRedis()
+    r.values[_key("architect", "launch")] = "claude"
+    default = tmp_path / ".claude"
+    default.mkdir()
+    (default / ".credentials.json").write_text(
+        json.dumps({"claudeAiOauth": {"refreshTokenExpiresAt": "2026-09-12T14:00:00Z"}})
+    )
+    (tmp_path / ".claude-unused").mkdir()
+
+    Watchdog(r, pod="acme", tenant="hq", session_name="hq", home_root=tmp_path).check_credentials(now=NOW)
+
+    assert prefix("acme", "hq", resource="alerts") not in r.streams

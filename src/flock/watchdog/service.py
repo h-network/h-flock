@@ -206,37 +206,44 @@ class Watchdog:
         self._check_blocked(agents, now)
 
     def _credential_accounts(self) -> list[tuple[str, str, Path]]:
-        result = [
-            ("default", "claude", self.home_root / ".claude" / ".credentials.json"),
-            ("default", "agy", self.home_root / ".gemini/antigravity-cli/antigravity-oauth-token"),
-            ("default", "codex", self.home_root / ".codex" / "auth.json"),
-        ]
-        profiles = {
-            path.name.removeprefix(".claude-")
-            for path in self.home_root.glob(".claude-*")
-            if path.is_dir()
-        }
-        profiles.update(
-            path.name.removeprefix(".codex-")
-            for path in self.home_root.glob(".codex-*")
-            if path.is_dir()
-        )
-        for profile in sorted(profiles):
-            result.append((profile, "claude", self.home_root / f".claude-{profile}" / ".credentials.json"))
-            result.append((profile, "codex", self.home_root / f".codex-{profile}" / "auth.json"))
-        return result
+        """Return each CLI account used by an enrolled terminal agent once."""
+        result = set()
+        for agent in self._agents():
+            cli = _text(self.r.get(prefix(self.pod, self.tenant, agent, "launch")))
+            if cli not in {"agy", "claude", "codex"}:
+                continue
+            profile = _text(self.r.get(prefix(self.pod, self.tenant, agent, "profile")))
+            account = profile or "default"
+            if cli == "claude":
+                directory = ".claude" if account == "default" else f".claude-{account}"
+                path = self.home_root / directory / ".credentials.json"
+            elif cli == "codex":
+                directory = ".codex" if account == "default" else f".codex-{account}"
+                path = self.home_root / directory / "auth.json"
+            else:
+                # agy has one non-relocatable account, regardless of profile.
+                account = "default"
+                path = self.home_root / ".gemini/antigravity-cli/antigravity-oauth-token"
+            result.add((account, cli, path))
+        return sorted(result, key=lambda item: (item[0], item[1]))
 
     def check_credentials(self, *, now: datetime | None = None) -> None:
         now = (now or datetime.now(timezone.utc)).astimezone(timezone.utc)
         warn_seconds = self.credential_warn_days * 86400
+        alerted_key = prefix(self.pod, self.tenant, resource="credential.alerted")
+        current_fields = set()
         for account, cli, path in self._credential_accounts():
-            if cli == "codex":
-                status, expiry = "unknown", None
+            field = f"{account}:{cli}"
+            current_fields.add(field)
+            try:
+                data = json.loads(path.read_text())
+            except (OSError, json.JSONDecodeError):
+                status, expiry = "absent", None
             else:
-                try:
-                    data = json.loads(path.read_text())
-                except (OSError, json.JSONDecodeError):
-                    continue
+                if not isinstance(data, dict):
+                    status, expiry = "absent", None
+                elif cli != "claude":
+                    status, expiry = "unknown", None
                 # ⚠ Only claude records a REFRESH token expiry. agy's
                 # `token.expiry` tracks its ACCESS token, which the CLI refreshes
                 # by itself — measured: the same file read hours apart on two
@@ -246,20 +253,20 @@ class Watchdog:
                 #
                 # So agy joins codex as unknown. Two of three CLIs cannot be
                 # checked, and saying so is the honest answer.
-                raw_expiry = (
-                    data.get("claudeAiOauth", {}).get("refreshTokenExpiresAt")
-                    if cli == "claude"
-                    else None
-                )
-                expiry = _timestamp(raw_expiry)
-                if expiry is None:
-                    status = "unknown"
-                elif (expiry - now).total_seconds() <= 0:
-                    status = "expired"
-                elif (expiry - now).total_seconds() <= warn_seconds:
-                    status = "expiring"
-                else:
-                    continue
+                elif cli == "claude":
+                    raw_expiry = data.get("claudeAiOauth", {}).get("refreshTokenExpiresAt")
+                    expiry = _timestamp(raw_expiry)
+                    if expiry is None:
+                        status = "unknown"
+                    elif (expiry - now).total_seconds() <= 0:
+                        status = "expired"
+                    elif (expiry - now).total_seconds() <= warn_seconds:
+                        status = "expiring"
+                    else:
+                        self.r.hdel(alerted_key, field)
+                        continue
+            if _text(self.r.hget(alerted_key, field)) == status:
+                continue
             record = {
                 "v": 1,
                 "ts": _iso(now),
@@ -270,6 +277,13 @@ class Watchdog:
                 "expires_ts": _iso(expiry) if expiry else None,
             }
             self._alert(record)
+            self.r.hset(alerted_key, field, status)
+
+        stale_fields = {
+            _text(field) for field in self.r.hkeys(alerted_key)
+        } - current_fields
+        if stale_fields:
+            self.r.hdel(alerted_key, *stale_fields)
 
 
 def main() -> None:
