@@ -11,6 +11,7 @@ _ENVELOPE_EVENTS = {
     "dead_lettered",
     "received",
     "opened",
+    "delivery_unjudged",
     "delivery_unverified",
 }
 

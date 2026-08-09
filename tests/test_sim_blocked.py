@@ -19,6 +19,7 @@ class MockSimRedis:
     def __init__(self):
         self.streams = {}
         self.hashes = {}
+        self.values = {}
         self.deleted = []
 
     def xrange(self, key, min="-", max="+"):
@@ -37,6 +38,12 @@ class MockSimRedis:
 
     def delete(self, key):
         self.hashes.pop(key, None)
+
+    def exists(self, key):
+        return int(key in self.values or key in self.streams or key in self.hashes)
+
+    def xlen(self, key):
+        return len(self.streams.get(key, []))
 
 
 def _agent_key(agent, resource):
@@ -69,6 +76,7 @@ def test_wedged_process_unverified_blocked(capsys):
 
     # Marker written at 12:00:00Z, current time is 12:00:30Z (>10s threshold)
     r.streams[m_key] = [_marker("stream-wedged-1", "2026-08-09T12:00:00Z")]
+    r.values[_agent_key(agent, "activity.offset")] = "observed"
     # No activity input events after marker
     r.streams[a_key] = []
 

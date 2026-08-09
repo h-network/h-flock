@@ -13,6 +13,7 @@ class VerifyRedis:
         self.streams = {}
         self.deleted = []
         self.hashes = {}
+        self.values = {}
 
     def xrange(self, key, min="-", max="+"):
         return list(self.streams.get(key, []))
@@ -30,6 +31,12 @@ class VerifyRedis:
 
     def delete(self, key):
         self.hashes.pop(key, None)
+
+    def exists(self, key):
+        return int(key in self.values or key in self.streams or key in self.hashes)
+
+    def xlen(self, key):
+        return len(self.streams.get(key, []))
 
 
 def _key(resource):
@@ -91,6 +98,7 @@ def test_missing_later_input_is_surfaced_and_not_retried(capsys):
 
 def test_first_unverified_delivery_preserves_blocked_since_and_stream_id(capsys):
     r = VerifyRedis()
+    r.values[_key("activity.offset")] = "observed"
     r.hashes[_key("blocked")] = {"since": "2026-08-09T11:00:00Z", "stream_id": "first"}
     r.streams[_key("pending.verify")] = [_marker("second", "2026-08-09T12:00:00Z")]
 
@@ -98,6 +106,28 @@ def test_first_unverified_delivery_preserves_blocked_since_and_stream_id(capsys)
 
     assert r.hashes[_key("blocked")] == {"since": "2026-08-09T11:00:00Z", "stream_id": "first"}
     capsys.readouterr()
+
+
+def test_first_delivery_without_activity_history_is_dropped_unjudged(capsys):
+    r = VerifyRedis()
+    r.streams[_key("pending.verify")] = [_marker("first", "2026-08-09T12:00:00Z")]
+
+    DeliveryVerifier(r, pod="acme", tenant="hq", verify_after_seconds=10).poll(
+        {"sme-2"}, now=NOW
+    )
+
+    record = json.loads(capsys.readouterr().out)
+    assert record == {
+        "ts": record["ts"],
+        "module": "router",
+        "event": "delivery_unjudged",
+        "stream_id": "first",
+        "recipient": "sme-2",
+        "reason": "agent has no activity history; first delivery is not judged",
+        "waited": 10,
+    }
+    assert r.streams[_key("pending.verify")] == []
+    assert _key("blocked") not in r.hashes
 
 
 def test_marker_younger_than_threshold_remains_pending(capsys):

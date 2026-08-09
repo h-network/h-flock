@@ -385,12 +385,25 @@ second daemon and none of these jobs sits in an envelope's data path. Every
    never be confirmed. An unknown future CLI must therefore remain unmarked
    until its activity feed is supported.
 
-   Once a marker is at least `VERIFY_AFTER_SECONDS` old (default 10), a later
-   `input` activity event confirms it. Otherwise the router logs
-   `delivery_unverified` and retains that first verdict in `<prefix>:blocked` as
-   `{since, stream_id}`. A later verified delivery deletes the hash; another
-   unverified delivery does not reset `since`. Either way the pending marker is
-   deleted after judgment.
+   Once a marker is at least `VERIFY_AFTER_SECONDS` old (default 10), the router
+   first asks whether the agent has ever produced observable activity: either
+   `activity.offset` or the activity Stream exists. Without that history the
+   agent is `unknown`, not blocked. The marker is deleted and a
+   `delivery_unjudged` record states why; waiting longer would preserve the same
+   category error with a larger constant.
+
+   ⚠ **The first delivery to a new agent is never judged.** A new Claude session
+   can create no session file, activity event or offset for longer than the
+   verification window even though it is healthy. Skipping that delivery avoids
+   a false `blocked` state that clients act on, at the deliberate cost of not
+   detecting a genuinely lost first paste. No terminal is read to make the
+   distinction.
+
+   For an agent with activity history, a later `input` event confirms the
+   marker. Otherwise the router logs `delivery_unverified` and retains that
+   first verdict in `<prefix>:blocked` as `{since, stream_id}`. A later verified
+   delivery deletes the hash; another unverified delivery does not reset
+   `since`. Either way the pending marker is deleted after judgment.
 
    ⚠ **`blocked` means an unverified delivery and no verified delivery since.**
    It does not mean the CLI is stuck. It catches a trust picker or stopped

@@ -54,6 +54,11 @@ class DeliveryVerifier:
                 result.append(timestamp)
         return result
 
+    def _has_activity_history(self, agent: str) -> bool:
+        offset_key = prefix(self.pod, self.tenant, agent, "activity.offset")
+        activity_key = prefix(self.pod, self.tenant, agent, "activity")
+        return bool(self.r.exists(offset_key) or self.r.xlen(activity_key))
+
     def poll(self, agents, *, now: datetime | None = None) -> None:
         now = now or datetime.now(timezone.utc)
         if now.tzinfo is None:
@@ -72,6 +77,22 @@ class DeliveryVerifier:
                     continue
                 eligible.append((entry_id, marker, marker_time))
             if not eligible:
+                continue
+
+            if not self._has_activity_history(agent):
+                waited = self.verify_after_seconds
+                if float(waited).is_integer():
+                    waited = int(waited)
+                for entry_id, marker, _ in eligible:
+                    log_record(
+                        "router",
+                        "delivery_unjudged",
+                        stream_id=marker.get("stream_id"),
+                        recipient=agent,
+                        reason="agent has no activity history; first delivery is not judged",
+                        waited=waited,
+                    )
+                    self.r.xdel(pending_key, entry_id)
                 continue
 
             input_times = self._input_times(agent)
