@@ -68,7 +68,7 @@ code path that could dispatch on VAB even if someone wanted it to.
 |---|---|---|
 | `flock.bus` | library — keys, envelopes, `send`/`receive`, roster reads | shared |
 | `flock.tmux` | library — windows, and the paste sequence | shared |
-| `flock.router` | **the one daemon** | blocks on every egress |
+| `flock.router` | **the one daemon** | blocks on every egress; also runs the maintenance pass (§8b) |
 | `flock.adapter` | invoked per delivery, dispatches on VAB, exits | not a daemon |
 | `flock.control` | `StartAgent` / `StopAgent` / pause / resume openers | reached only via the bus |
 | `flock.tmuxhost` | the tmux server, session, windows | |
@@ -196,7 +196,46 @@ typing a code is the case where somebody *should* be looking at the pane.
 ⚠ Both doors can execute code in an agent's window — the api through the
 `Command` kind, the session through keystrokes. Neither is the safe one.
 
-## 8. Two things that are pulled, not pushed
+## 8. Observation — what the system knows about itself
+
+Delivery is one half. The other is **being able to say what happened**, and it is
+built from files the CLIs write themselves rather than from anything rendered.
+
+| | source | answers |
+|---|---|---|
+| **activity** | the CLI's own session JSONL, tailed | what is this agent doing — `input`, `output`, `tool` |
+| **presence** | recency of activity | `working` / `idle` / `unknown` |
+| **verify** | a delivery marker vs a later `input` | did that message land |
+| **the window log** | a file `office` writes, tailed | `sent`, which otherwise dies in a pane |
+
+⚠ **All four read files, never screens.** A session JSONL is the CLI's own data
+format and survives its releases; a rendered pane does not. That is invariant 7
+and it is why this exists at all.
+
+⚠ **`unknown` is not `idle`.** An agy agent and a bare shell write no session
+file, so nothing can be said about them — and saying `idle` would be a lie a
+client renders as "ready".
+
+⚠ **Activity carries tool *names*, never arguments.** The feed is designed to
+leave the tenant over HTTP; a `Bash` argument is a command line and a `Write`
+argument is file content. There is no field they could occupy.
+
+⚠ **Verify reports and never retries.** Measured: no false positives across six
+landed deliveries, and it catches a paste whose `Enter` was swallowed. It does
+**not** catch a message eaten by an open modal — the CLI writes an `input` record
+anyway. That hole is known and open.
+
+### 8b. The router's maintenance pass
+
+The one daemon does more than forward. On a timer, for the whole tenant in one
+pass: tail session files into activity, sample presence, judge verify markers,
+tail the window log to stdout, and trim what would otherwise grow.
+
+⚠ **Cheap bounded reads only.** Anything that needs to *look* at a terminal is
+observation and belongs beside the system, not in it — the router is the data
+path, and a `capture-pane` that hangs would stall forwarding for everyone.
+
+## 9. Two things that are pulled, not pushed
 
 **Boards.** A ticket waits until an agent asks. Nothing notifies, nothing
 pastes — so an agent holds only what it pulled, which is *why* it has at most one
@@ -210,7 +249,7 @@ one ever comes, arrives later.
 answer. Every client must be built for silence, and nothing in the system
 promises otherwise.
 
-## 9. One container is one tenant
+## 10. One container is one tenant
 
 Redis, the router, the tmux server, both doors, and one window per agent — in one
 image that converges when brought up twice. Redis is internal and unpublished.
@@ -220,7 +259,7 @@ image that converges when brought up twice. Redis is internal and unpublished.
 looking, not the ability — an agent that never encounters a queue, a token or a
 roster has no reason to hunt for one.
 
-## 10. The invariants
+## 11. The invariants
 
 The short list that everything else assumes:
 
@@ -258,7 +297,7 @@ stopped being the value popped and `LMOVE` became impossible. Nothing failed —
 the code was correct, the contract was not — and nobody noticed until a
 documentation audit went looking for exactly this kind of claim.
 
-## 11. Where to go next
+## 12. Where to go next
 
 | | |
 |---|---|

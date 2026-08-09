@@ -51,6 +51,11 @@ payload.
 - **👻 Adapters are not daemons.** The router writes an ingress and kicks a
   short-lived adapter that delivers one envelope and exits. An office of idle
   agents costs nothing — there are no processes between deliveries.
+- **📡 It says what it is doing.** Every agent has an **activity feed** — `input`,
+  `output`, `tool: Bash` — read from the CLI's own session file, never from the
+  screen. **Presence** on top of it: `working`, `idle`, or `unknown` when an
+  agent's CLI writes nothing we can read. An app renders that as a typing
+  indicator; nothing has to parse a terminal to get it.
 - **🖥️ Live terminals over WebSocket.** Stream any agent's pane and send
   keystrokes back, `read-only` enforced server-side. For *watching*; answers come
   as messages.
@@ -183,6 +188,8 @@ POST /agents/host/envelopes  {"kind":"StartAgent","payload":{"agent":"telegram",
 POST /agents/backend/envelopes {"text":"morning","as":"telegram"}
 GET  /agents/telegram/messages?after=<cursor>     # catch-up, resumable
 GET  /agents/telegram/messages/stream             # live, SSE
+GET  /agents/alice/activity/stream                # what alice is doing, live
+GET  /agents/alice                                # presence: working | idle | unknown
 ```
 
 Backend sees `[message from telegram]` and replies with `office send -a telegram`
