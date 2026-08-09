@@ -31,6 +31,8 @@ Their post-login approval gates are already covered: `startAgent` passes
 So all three need only **credentials**, which
 [`container/seed-home.sh`](../container/seed-home.sh) now handles.
 
+**agy paste hazard — known limitation.** agy's first-run approval dialogs and pickers consume pasted text as input. Because `flock.adapter` pastes as soon as the busy tag clears, an incoming message intended for an agent while a picker is up would be read as a menu selection. This can cause silent wrong actions on the agent's behalf (worse than a dropped message). Safe orchestration of agy requires screen/dialog detection before pasting.
+
 **Credentials and profiles — mechanism SHIPPED, logins outstanding.**
 `container/seed-home.sh in|out|check` copies keys and credentials into a running
 tenant and saves logins back out, and `setup.sh` asks for accounts and seeds each

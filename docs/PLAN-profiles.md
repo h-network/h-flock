@@ -165,3 +165,16 @@ in their environment (Build 08/Plan agent tools).
 profile still costs one interactive login, done once and then persisted — which
 means the profile dirs have to survive a container rebuild, i.e. a volume. That
 is the piece h-office gets for free by being long-lived, and we do not.
+
+## 9. First-run gates and symptoms (`codex` and `agy`)
+
+Both `codex` and `agy` present first-run interactive gates upon launch in a new directory or environment that are not bypassed by `--dangerously-skip-permissions` or `--dangerously-bypass-approvals-and-sandbox`:
+
+| CLI | Gate | Clearing action |
+|---|---|---|
+| `codex` | Workspace trust prompt: *"allow Codex to work in this folder"* / *"Do you trust the contents of this directory?"* | Enter |
+| `agy` | Workspace trust prompt: *"Yes, I trust this folder"* picker (Yes pre-selected) | Enter |
+| `agy` | User experience survey prompt: *"How's the CLI experience so far?"* | `0` then Enter |
+| `codex` | First-run authentication menu: *"Sign in with ChatGPT"* | Interactive human login |
+
+⚠ **Symptom:** The window is alive, the process is running, and the output renders correctly, but the agent never responds to any messages. It looks identical to a hung bus or stuck router, but is actually an interactive TUI prompt waiting for keystrokes.
