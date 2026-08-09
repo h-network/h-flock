@@ -78,8 +78,10 @@ duplication is to live with.
 
 ## Not done
 
-- **No Telegram bot token**, so the bot has never spoken to Telegram. Everything
-  h-flock-side is exercised; the Telegram half is printed rather than sent.
+- ~~**No Telegram bot token**, so the bot has never spoken to Telegram.~~
+  **Superseded.** The bot was later run against a real token and drove a live
+  three-CLI office end to end. This line stood unchanged through two doc audits
+  and was still being cited as current.
 - **The web page has been proven through its proxy, not through a browser.** Every
   call it makes returns correctly; nobody has looked at it rendered.
 - Both are in `clients/` because there is no shared remote for them yet. They are

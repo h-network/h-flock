@@ -10,8 +10,13 @@
 h-flock keeps **AI agents alive in tmux windows** and lets anything address them
 **by name**. An agent is a seat someone occupies, not a task you invoke: it
 persists, keeps its own context in its own CLI session, and can be messaged
-repeatedly. Everything moves as **envelopes** on Redis. One tenant is one
-container.
+repeatedly. **Addressed communication** moves as **envelopes** on Redis. One
+tenant is one container.
+
+⚠ **Not everything moves as an envelope.** An agent mutates its *own* board
+directly — `raw = r.lpop(keys["todo"])`, `r.rpush(keys["doing"], …)` in
+`office/cli.py`. Envelopes are how you reach *someone else*; local state is
+written by its owner.
 
 ⚠ **The distinguishing feature is persistence.** Every hard problem in this
 repo — did a message land, is anyone home, is this agent wedged — exists only
@@ -49,8 +54,17 @@ never taken from the envelope. **The code does not do that.**
 - `router/service.py:64, 75` — forwarding pushes `raw` **unchanged**. The
   recipient reads `envelope["producer"]`, which the router never checked
 
-So the guarantee is a **convention held by `send()`**, not a structural property.
-Anything that RPUSHes an egress queue directly can claim any `producer` it likes.
+**There are two different values, and only one comes from a queue:**
+
+| | comes from | used for |
+|---|---|---|
+| router `sender` | the popped key — `sender = source_key.split(":")[-2]` | dead-letter placement, excluding the sender from a broadcast |
+| envelope `producer` | the **caller's argument** to `send()` | what the recipient sees as "who sent this" |
+
+So the guarantee is a **convention held by `send()`**, not a structural property:
+one function writes both the header and the queue from the same argument.
+Anything that RPUSHes an egress queue directly can put any `producer` in the
+envelope, and nothing downstream compares the two.
 
 ⚠ **This is the single most valuable thing the review found**, and it is not a
 doc bug — it is an invariant documented as structural that is enforced nowhere.
@@ -183,11 +197,15 @@ Measured live, each precondition proved on screen (`sim-blocked.sh`, 19/0):
 a test asserting an absence that passed whenever the router had not yet judged.
 It was the only thing that ever argued for a screen scraper.
 
-⚠ **A delivery is judged only for an agent that has produced activity before.**
-No history → **unjudgeable** → `delivery_unjudged`, never `blocked`. ⚠ **Not
+⚠ **Only `Message` and `Command` are ever judged.** Both call
+`mark_delivery_pending(...)`; `AddTicket` does not, so it is never verified and
+can never produce `blocked`.
+
+⚠ **And only for an agent that has produced activity before** —
+`return bool(self.r.exists(offset_key) or self.r.xlen(activity_key))`. No
+history → **unjudgeable** → `delivery_unjudged`, never `blocked`. ⚠ **Not
 presence `unknown`** — such an agent usually reads `idle`. **Cost: the first
-delivery to a new agent is never judged.** Verification applies to marked
-`Message` deliveries, not to every kind.
+delivery to a new agent is never judged.**
 
 ⚠ **No retry, ever.** Verification cannot tell an unsubmitted paste from text
 sitting in a wedged CLI, so a retry either cannot help or duplicates. Chosen:
@@ -208,12 +226,16 @@ falling out of pull semantics, and `HLD` §9 still says so. Both are wrong.
 
 1. the router forwards on `recipient` alone
 2. `producer` is derived from the queue
-3. nothing writes another agent's keys — it sends an envelope
+3. nothing writes another agent's keys — ⚠ **scoped to agents using the
+   supported doors.** The router legitimately writes a recipient's ingress, and
+   openers write the far edge's keys; that is the mechanism, not a violation
 4. **roster fields, never values** — the router cannot know a VAB
 5. adapters do not exist between deliveries
 6. the api does not validate `kind`
 7. **nothing in the data path reads a terminal**; observation may look, and may
-   only report
+   only report — ⚠ **"only report" describes terminal observation, not the whole
+   maintenance pass.** Retention mutates: `pipe.ltrim(prefix(…, "tasks.done"),
+   -self.board_done_max, -1)`
 
 ⚠ **7 is a statement about position, not technique.** A scraper is acceptable in
 a watchdog and unacceptable in an adapter. ⚠ **And nothing scrapes** — a scraping
@@ -237,11 +259,12 @@ transcript, so it marked healthy agents blocked.
 
 ## 13. Where it stands
 
-455 commits, 209 tests + 5 subtests green, 4505 LOC, 58 docs. Live gates: `plumbing-check.sh`
+209 tests + 5 subtests green. ⚠ **Commit, LOC and doc counts are deliberately
+omitted** — they are stale the moment they are written, and `bus` correctly
+refused to endorse them under a quote-the-source protocol. Live gates: `plumbing-check.sh`
 (12 sections, 33 assertions) and `sim-blocked.sh` (4 cases, 19 assertions).
 Proven end to end with three CLIs driven from Telegram against a real bot, plus a
-web client. ⚠ **`clients/REVIEW.md:81` still says the bot has never spoken to
-Telegram** — written before the live run and never updated.
+web client.
 
 **Open:** claude credential staleness (in flight), the live terminal view client
 half, `clients/` needing its own repo, profile logins (needs a person), and
