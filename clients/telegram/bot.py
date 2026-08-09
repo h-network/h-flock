@@ -203,10 +203,35 @@ class TelegramBot:
         code, body = self.flock.enrol()
         logger.info(f"Enrolled application '{self.flock.app_name}': status={code}, body={body}")
 
-    def render_progress_message(self, tools_list: list[str], status: str = "working") -> str:
-        lines = [f"⏳ {self.target_agent} is {status}"]
-        for idx, tool in enumerate(tools_list, 1):
-            lines.append(f"   {idx}. ⚙ {tool}")
+    def render_progress_message(self, tools_list: list[str], status: str = "working",
+                                started: float | None = None) -> str:
+        """Collapse consecutive repeats and count them.
+
+        ⚠ The activity feed carries tool NAMES only — never arguments, paths or
+        commands — so ten shell calls are ten identical events. Listing them
+        numbered produced "1. Bash 2. Bash … 10. Bash", which tells a reader
+        nothing except that something is happening.
+
+        Collapsing runs keeps the one fact the feed actually has (which tools,
+        how many, in what order) and drops the noise.
+        """
+        elapsed = ""
+        if started is not None:
+            secs = int(time.time() - started)
+            elapsed = f" · {secs}s" if secs < 60 else f" · {secs // 60}m{secs % 60:02d}s"
+        lines = [f"⏳ {self.target_agent} is {status}{elapsed}"]
+
+        runs: list[list] = []
+        for tool in tools_list:
+            if runs and runs[-1][0] == tool:
+                runs[-1][1] += 1
+            else:
+                runs.append([tool, 1])
+
+        for tool, n in runs[-8:]:
+            lines.append(f"   ⚙ {tool}" + (f" ×{n}" if n > 1 else ""))
+        if len(runs) > 8:
+            lines.insert(1, f"   … {len(tools_list) - sum(n for _, n in runs[-8:])} earlier calls")
         return "\n".join(lines)
 
     def handle_status_command(self, chat_id: int | str) -> str:
@@ -267,6 +292,7 @@ class TelegramBot:
         tools_used: list[str] = []
         last_activity_cursor = None
         last_typing_time = 0.0
+        started_at = time.time()
 
         completed = False
         reply_message_text = None
@@ -292,7 +318,7 @@ class TelegramBot:
 
                 # Coalesce Telegram edits (at most once per ~1.5s)
                 if new_tools and self.telegram and msg_id and (now - self.last_edit_time >= self.min_edit_interval):
-                    updated_text = self.render_progress_message(tools_used)
+                    updated_text = self.render_progress_message(tools_used, started=started_at)
                     self.telegram.edit_message_text(chat_id, msg_id, updated_text)
                     self.last_edit_time = now
 
