@@ -346,10 +346,11 @@ the api validates.
 | `ResumeAgent` | `control` | `{"agent": "networking"}` | starts the CLI again and drains the inbox |
 | `AddTicket` | `tmux` | `{"title", "description", "priority"}` | writes a ticket to that agent's `tasks.todo` — and **pastes nothing** |
 
-⚠ `AssignTask` is the old name for `AddTicket`. It is still registered and logs a
-`deprecated_kind` record when used. It was meant to go one build later and has
-not — it survives, which is the ordinary fate of a compatibility alias with a
-date on it rather than an owner.
+⚠ **`AssignTask` is gone.** It was the old name for `AddTicket`, kept as an alias
+"for one build" in build 11 and removed in build 23 — four builds later. Sending
+it now dead-letters with a reason, which is the right answer and a visible one.
+The lesson is in the delay: a compatibility shim with a date but no owner keeps
+its date and loses its removal.
 
 ⚠ **`AddTicket` is opened by `tmux` but touches no window.** It is in this table
 under the VAB that opens it, not the thing it does — a board write is the one

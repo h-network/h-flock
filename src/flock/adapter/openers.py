@@ -149,18 +149,6 @@ def add_ticket_opener(
     corr_id = envelope.get("correlation_id")
     producer = envelope.get("producer", "unknown")
     payload = envelope.get("payload", {})
-    kind = envelope.get("kind", "AddTicket")
-
-    if kind == "AssignTask":
-        log_record(
-            module="adapter",
-            event="deprecated_kind",
-            stream_id=stream_id,
-            correlation_id=corr_id,
-            producer=producer,
-            recipient=agent,
-            reason="AssignTask is deprecated, use AddTicket",
-        )
 
     windows = list_windows(session_name, socket=socket)
     if agent not in windows:
@@ -223,6 +211,3 @@ def add_ticket_opener(
         timestamp=ticket_obj.get("created_ts"),
     )
 
-
-# Alias for backward compatibility
-assign_task_opener = add_ticket_opener
