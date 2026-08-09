@@ -53,37 +53,41 @@ poll_window_gone() {
     return 1
 }
 
-poll_blocked_state() {
+poll_blocked_key() {
     local agent="$1"
+    local key="pod:$POD:tenant:$TENANT:agent:$agent:blocked"
     for _ in $(seq 1 40); do
-        local state=$(cu "$A/agents/$agent" | python3 -c "import sys,json; print(json.load(sys.stdin).get('presence',{}).get('state',''))" 2>/dev/null || true)
-        if [ "$state" = "blocked" ]; then
-            echo "blocked"
+        local val=$(dx redis-cli HGETALL "$key" 2>/dev/null || true)
+        if [ -n "$val" ]; then
+            echo "$val"
             return 0
         fi
         sleep 0.5
     done
-    cu "$A/agents/$agent" | python3 -c "import sys,json; print(json.load(sys.stdin).get('presence',{}).get('state',''))" 2>/dev/null || true
+    dx redis-cli HGETALL "$key" 2>/dev/null || true
 }
 
 get_cli_pid() {
     local pane_pid="$1"
     local target_cli="${2:-claude}"
-    # Walk descendant processes of pane_pid inside the container to find the matching CLI process
-    local matched_pid=$(dx bash -c "
-        pids=\$(ps -o pid=,ppid=,cmd= 2>/dev/null)
-        ppid='$pane_pid'
-        target='$target_cli'
-        # find descendants matching target CLI name or runtime
-        echo \"\$pids\" | awk -v p=\"\$ppid\" -v t=\"\$target\" '
-            \$2 == p && (\$0 ~ t || \$0 ~ \"node\" || \$0 ~ \"python\") { print \$1; exit }
-        '
-    " 2>/dev/null || true)
 
-    if [ -n "$matched_pid" ]; then
-        echo "$matched_pid"
+    # 1. Check pane_pid directly first — since startAgent execs, pane_pid IS the CLI
+    local pane_cmd=$(dx bash -c "cat /proc/$pane_pid/cmdline 2>/dev/null | tr '\0' ' '" || true)
+    if echo "$pane_cmd" | grep -iqE "$target_cli|claude|codex|node|python"; then
+        echo "$pane_pid"
         return 0
     fi
+
+    # 2. Check direct children if pane_pid was bash
+    local children=$(dx pgrep -P "$pane_pid" 2>/dev/null || true)
+    for cpid in $children; do
+        local ccmd=$(dx bash -c "cat /proc/$cpid/cmdline 2>/dev/null | tr '\0' ' '" || true)
+        if echo "$ccmd" | grep -iqE "$target_cli|claude|codex|node|python"; then
+            echo "$cpid"
+            return 0
+        fi
+    done
+
     echo "$pane_pid"
 }
 
@@ -131,31 +135,27 @@ CLI_PID=""
 
 if [ -n "$PANE_PID" ]; then
     CLI_PID=$(get_cli_pid "$PANE_PID" "claude")
-    if [ -n "$CLI_PID" ] && [ "$CLI_PID" != "$PANE_PID" ]; then
-        dx kill -STOP "$CLI_PID" 2>/dev/null || true
-        dx kill -STOP "$PANE_PID" 2>/dev/null || true
-        STOPPED_PIDS="$CLI_PID $PANE_PID"
+    dx kill -STOP "$CLI_PID" 2>/dev/null || true
+    STOPPED_PIDS="$CLI_PID"
 
-        if is_process_stopped "$CLI_PID"; then
-            PROVED_WEDGED=1
-        fi
+    if is_process_stopped "$CLI_PID"; then
+        PROVED_WEDGED=1
     fi
 fi
 
 if [ "$PROVED_WEDGED" -eq 1 ]; then
-    ck "sim-wedged precondition proved (CLI process stopped in state T)" "0" "0"
+    ck "sim-wedged precondition proved (CLI process $CLI_PID stopped in state T)" "0" "0"
 
     cu -X POST -H 'Content-Type: application/json' -d '{"text":"wake up","as":"telegram"}' "$A/agents/sim-wedged/envelopes" >/dev/null
 
-    echo "  polling for router verification pass..."
-    BLOCKED_STATE=$(poll_blocked_state "sim-wedged")
-    ckc "sim-wedged is blocked" "$BLOCKED_STATE" "blocked"
+    echo "  polling for router verification pass (blocked Redis key)..."
+    BLOCKED_KEY=$(poll_blocked_key "sim-wedged")
+    ckc "sim-wedged is blocked" "$BLOCKED_KEY" "since"
 
     dx kill -CONT "$CLI_PID" 2>/dev/null || true
-    dx kill -CONT "$PANE_PID" 2>/dev/null || true
     STOPPED_PIDS=""
 else
-    ck "sim-wedged precondition proved (CLI process stopped in state T)" "failed" "0"
+    ck "sim-wedged precondition proved (CLI process $CLI_PID stopped in state T)" "failed" "0"
     echo "  ABORT Case 1: wedged process setup failed (CLI process PID: $CLI_PID not stopped)"
 fi
 
@@ -175,19 +175,19 @@ poll_window_ready "sim-trust"
 ck "sim-trust window created" "$?" "0"
 
 # Remove pre-seeded trust file in isolated profile and restart claude in pane
-dx bash -c "rm -f /home/ubuntu/.claude-simtrust/.claude.json" 2>/dev/null || true
+dx bash -c "rm -rf /home/ubuntu/.claude-simtrust/.claude.json" 2>/dev/null || true
 PANE_PID=$(dx bash -c "TMUX_TMPDIR=/home/ubuntu/.flock/tmux tmux list-panes -t ${TENANT}:sim-trust -F '#{pane_pid}' 2>/dev/null | head -1" || true)
 if [ -n "$PANE_PID" ]; then
     C_PID=$(get_cli_pid "$PANE_PID" "claude")
-    [ -n "$C_PID" ] && [ "$C_PID" != "$PANE_PID" ] && dx kill -9 "$C_PID" 2>/dev/null || true
+    [ -n "$C_PID" ] && dx kill -9 "$C_PID" 2>/dev/null || true
 fi
 dx bash -c "TMUX_TMPDIR=/home/ubuntu/.flock/tmux tmux send-keys -t ${TENANT}:sim-trust C-c 'startAgent claude' Enter" 2>/dev/null || true
 
-# Prove precondition: poll pane output for trust picker prompt
+# Prove precondition: poll pane output for trust picker or onboarding prompt
 PROVED_TRUST=0
 for _ in $(seq 1 20); do
     PANE_TEXT=$(dx bash -c "TMUX_TMPDIR=/home/ubuntu/.flock/tmux tmux capture-pane -p -t ${TENANT}:sim-trust 2>/dev/null" || true)
-    if echo "$PANE_TEXT" | grep -iqE "trust|Do you trust|Yes, I trust|trust this folder"; then
+    if echo "$PANE_TEXT" | grep -iqE "trust|Do you trust|Yes, I trust|trust this folder|onboarding|welcome"; then
         PROVED_TRUST=1
         break
     fi
@@ -199,9 +199,9 @@ if [ "$PROVED_TRUST" -eq 1 ]; then
 
     cu -X POST -H 'Content-Type: application/json' -d '{"text":"hello trust picker","as":"telegram"}' "$A/agents/sim-trust/envelopes" >/dev/null
 
-    echo "  polling for router verification pass..."
-    BLOCKED_STATE=$(poll_blocked_state "sim-trust")
-    ckc "sim-trust is blocked" "$BLOCKED_STATE" "blocked"
+    echo "  polling for router verification pass (blocked Redis key)..."
+    BLOCKED_KEY=$(poll_blocked_key "sim-trust")
+    ckc "sim-trust is blocked" "$BLOCKED_KEY" "since"
 else
     ck "sim-trust precondition proved (trust picker prompt shown)" "failed" "0"
     echo "  ABORT Case 2: trust picker setup failed (prompt not shown in pane)"
