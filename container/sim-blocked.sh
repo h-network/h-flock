@@ -68,17 +68,22 @@ poll_blocked_state() {
 
 get_cli_pid() {
     local pane_pid="$1"
-    local children=$(dx pgrep -P "$pane_pid" 2>/dev/null || true)
-    for cpid in $children; do
-        local grandchildren=$(dx pgrep -P "$cpid" 2>/dev/null || true)
-        if [ -n "$grandchildren" ]; then
-            echo "$grandchildren" | head -1
-            return 0
-        else
-            echo "$cpid"
-            return 0
-        fi
-    done
+    local target_cli="${2:-claude}"
+    # Walk descendant processes of pane_pid inside the container to find the matching CLI process
+    local matched_pid=$(dx bash -c "
+        pids=\$(ps -o pid=,ppid=,cmd= 2>/dev/null)
+        ppid='$pane_pid'
+        target='$target_cli'
+        # find descendants matching target CLI name or runtime
+        echo \"\$pids\" | awk -v p=\"\$ppid\" -v t=\"\$target\" '
+            \$2 == p && (\$0 ~ t || \$0 ~ \"node\" || \$0 ~ \"python\") { print \$1; exit }
+        '
+    " 2>/dev/null || true)
+
+    if [ -n "$matched_pid" ]; then
+        echo "$matched_pid"
+        return 0
+    fi
     echo "$pane_pid"
 }
 
@@ -121,15 +126,24 @@ ck "sim-wedged window created" "$?" "0"
 
 PANE_PID=$(dx bash -c "TMUX_TMPDIR=/home/ubuntu/.flock/tmux tmux list-panes -t ${TENANT}:sim-wedged -F '#{pane_pid}' 2>/dev/null | head -1" || true)
 
-if [ -n "$PANE_PID" ]; then
-    CLI_PID=$(get_cli_pid "$PANE_PID")
-    dx kill -STOP "$CLI_PID" 2>/dev/null || true
-    dx kill -STOP "$PANE_PID" 2>/dev/null || true
-    STOPPED_PIDS="$CLI_PID $PANE_PID"
+PROVED_WEDGED=0
+CLI_PID=""
 
-    # Assert that CLI process is actually stopped (state T) BEFORE posting envelope
-    is_process_stopped "$CLI_PID"
-    ck "CLI process is stopped (state T)" "$?" "0"
+if [ -n "$PANE_PID" ]; then
+    CLI_PID=$(get_cli_pid "$PANE_PID" "claude")
+    if [ -n "$CLI_PID" ] && [ "$CLI_PID" != "$PANE_PID" ]; then
+        dx kill -STOP "$CLI_PID" 2>/dev/null || true
+        dx kill -STOP "$PANE_PID" 2>/dev/null || true
+        STOPPED_PIDS="$CLI_PID $PANE_PID"
+
+        if is_process_stopped "$CLI_PID"; then
+            PROVED_WEDGED=1
+        fi
+    fi
+fi
+
+if [ "$PROVED_WEDGED" -eq 1 ]; then
+    ck "sim-wedged precondition proved (CLI process stopped in state T)" "0" "0"
 
     cu -X POST -H 'Content-Type: application/json' -d '{"text":"wake up","as":"telegram"}' "$A/agents/sim-wedged/envelopes" >/dev/null
 
@@ -141,8 +155,8 @@ if [ -n "$PANE_PID" ]; then
     dx kill -CONT "$PANE_PID" 2>/dev/null || true
     STOPPED_PIDS=""
 else
-    echo "  FAIL  sim-wedged pane PID not found"
-    fail=$((fail+1))
+    ck "sim-wedged precondition proved (CLI process stopped in state T)" "failed" "0"
+    echo "  ABORT Case 1: wedged process setup failed (CLI process PID: $CLI_PID not stopped)"
 fi
 
 cu -X POST -H 'Content-Type: application/json' -d '{"kind":"StopAgent","payload":{"agent":"sim-wedged"}}' "$A/agents/host/envelopes" >/dev/null
@@ -160,14 +174,38 @@ cu -X POST -H 'Content-Type: application/json' -d '{"kind":"StartAgent","payload
 poll_window_ready "sim-trust"
 ck "sim-trust window created" "$?" "0"
 
-# Remove the isolated profile's .claude.json so trust picker prompt appears
+# Remove pre-seeded trust file in isolated profile and restart claude in pane
 dx bash -c "rm -f /home/ubuntu/.claude-simtrust/.claude.json" 2>/dev/null || true
+PANE_PID=$(dx bash -c "TMUX_TMPDIR=/home/ubuntu/.flock/tmux tmux list-panes -t ${TENANT}:sim-trust -F '#{pane_pid}' 2>/dev/null | head -1" || true)
+if [ -n "$PANE_PID" ]; then
+    C_PID=$(get_cli_pid "$PANE_PID" "claude")
+    [ -n "$C_PID" ] && [ "$C_PID" != "$PANE_PID" ] && dx kill -9 "$C_PID" 2>/dev/null || true
+fi
+dx bash -c "TMUX_TMPDIR=/home/ubuntu/.flock/tmux tmux send-keys -t ${TENANT}:sim-trust C-c 'startAgent claude' Enter" 2>/dev/null || true
 
-cu -X POST -H 'Content-Type: application/json' -d '{"text":"hello trust picker","as":"telegram"}' "$A/agents/sim-trust/envelopes" >/dev/null
+# Prove precondition: poll pane output for trust picker prompt
+PROVED_TRUST=0
+for _ in $(seq 1 20); do
+    PANE_TEXT=$(dx bash -c "TMUX_TMPDIR=/home/ubuntu/.flock/tmux tmux capture-pane -p -t ${TENANT}:sim-trust 2>/dev/null" || true)
+    if echo "$PANE_TEXT" | grep -iqE "trust|Do you trust|Yes, I trust|trust this folder"; then
+        PROVED_TRUST=1
+        break
+    fi
+    sleep 0.5
+done
 
-echo "  polling for router verification pass..."
-BLOCKED_STATE=$(poll_blocked_state "sim-trust")
-ckc "sim-trust is blocked" "$BLOCKED_STATE" "blocked"
+if [ "$PROVED_TRUST" -eq 1 ]; then
+    ck "sim-trust precondition proved (trust picker prompt shown)" "0" "0"
+
+    cu -X POST -H 'Content-Type: application/json' -d '{"text":"hello trust picker","as":"telegram"}' "$A/agents/sim-trust/envelopes" >/dev/null
+
+    echo "  polling for router verification pass..."
+    BLOCKED_STATE=$(poll_blocked_state "sim-trust")
+    ckc "sim-trust is blocked" "$BLOCKED_STATE" "blocked"
+else
+    ck "sim-trust precondition proved (trust picker prompt shown)" "failed" "0"
+    echo "  ABORT Case 2: trust picker setup failed (prompt not shown in pane)"
+fi
 
 cu -X POST -H 'Content-Type: application/json' -d '{"kind":"StopAgent","payload":{"agent":"sim-trust"}}' "$A/agents/host/envelopes" >/dev/null
 dx redis-cli DEL "pod:$POD:tenant:$TENANT:agent:sim-trust:profile" >/dev/null
@@ -185,15 +223,32 @@ cu -X POST -H 'Content-Type: application/json' -d '{"kind":"StartAgent","payload
 poll_window_ready "sim-nologin"
 ck "sim-nologin window created" "$?" "0"
 
-cu -X POST -H 'Content-Type: application/json' -d '{"text":"hello login prompt","as":"telegram"}' "$A/agents/sim-nologin/envelopes" >/dev/null
+# Prove precondition: poll pane output for login prompt keywords
+PROVED_NOLOGIN=0
+for _ in $(seq 1 20); do
+    PANE_TEXT=$(dx bash -c "TMUX_TMPDIR=/home/ubuntu/.flock/tmux tmux capture-pane -p -t ${TENANT}:sim-nologin 2>/dev/null" || true)
+    if echo "$PANE_TEXT" | grep -iqE "Sign in|ChatGPT|OpenAI|API key|login|device code|auth"; then
+        PROVED_NOLOGIN=1
+        break
+    fi
+    sleep 0.5
+done
 
-echo "  polling for router verification pass..."
-# Wait for verifier pass (verify_after_seconds = 10s)
-sleep 11
+if [ "$PROVED_NOLOGIN" -eq 1 ]; then
+    ck "sim-nologin precondition proved (login prompt shown)" "0" "0"
 
-# ⚠ Known gap: CLI at login prompt records input in transcript/history log, so verify passes and blocked key is ABSENT in Redis
-BLOCKED_RAW=$(dx redis-cli HGETALL "pod:$POD:tenant:$TENANT:agent:sim-nologin:blocked" 2>/dev/null || true)
-ck "sim-nologin known gap: blocked key is empty" "$BLOCKED_RAW" ""
+    cu -X POST -H 'Content-Type: application/json' -d '{"text":"hello login prompt","as":"telegram"}' "$A/agents/sim-nologin/envelopes" >/dev/null
+
+    echo "  polling for router verification pass..."
+    sleep 11
+
+    # ⚠ Known gap: CLI at login prompt records input in transcript/history log, so verify passes and blocked key is ABSENT in Redis
+    BLOCKED_RAW=$(dx redis-cli HGETALL "pod:$POD:tenant:$TENANT:agent:sim-nologin:blocked" 2>/dev/null || true)
+    ck "sim-nologin known gap: blocked key is empty" "$BLOCKED_RAW" ""
+else
+    ck "sim-nologin precondition proved (login prompt shown)" "failed" "0"
+    echo "  ABORT Case 3: login prompt setup failed (prompt not shown in pane)"
+fi
 
 cu -X POST -H 'Content-Type: application/json' -d '{"kind":"StopAgent","payload":{"agent":"sim-nologin"}}' "$A/agents/host/envelopes" >/dev/null
 dx redis-cli DEL "pod:$POD:tenant:$TENANT:agent:sim-nologin:profile" >/dev/null
