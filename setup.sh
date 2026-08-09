@@ -19,8 +19,12 @@ read -rp "How many agents? [3]: " N; N="${N:-3}"
 # configuration. Everything after it defaults to sme-N, a subject matter expert
 # you are meant to rename.
 #
-# N is the window number, not a count from one: window 2 is `sme-2`. Same shape
-# as h-office's `agent-$i`, and it means a name tells you where its window is.
+# N follows the position you enter them in, so a fresh office reads
+# architect, sme-2, sme-3 top to bottom. Same shape as h-office's `agent-$i`.
+#
+# ⚠ It is a naming convention, not a window index. tmux renumbers when a window
+# is killed — measured: after `letGo sme-2`, sme-3 moved from index 3 to index 2.
+# Never infer a window position from a name.
 #
 # Rename them. Agents are named for what they are responsible for, not for
 # people: an agent told "you are backend, your peers are frontend and redis"

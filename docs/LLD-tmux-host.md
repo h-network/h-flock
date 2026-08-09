@@ -104,6 +104,16 @@ pane, which is arbitrary code execution as that user. There is no authentication
 and no per-window scoping. The directory permissions are the boundary — keep it
 owner-only, and treat handing out the socket as handing out the machine.
 
+⚠ **A window index is not stable — tmux renumbers on kill.** Measured: with
+windows `[1:architect, 2:sme-2, 3:sme-3]`, retiring `sme-2` left
+`[1:architect, 2:sme-3]` — the survivor moved. Address a window by **name**,
+never by index, and never infer a position from a name that happens to end in a
+digit.
+
+This is the deeper reason an all-digit agent name is rejected
+(`LLD-bus-and-router` §3.1): such a name resolves as an index, and the index it
+resolves to moves.
+
 ## 5. Windows
 
 One window per agent, **named after the agent**, so a window is addressable by
