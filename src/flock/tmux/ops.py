@@ -60,7 +60,12 @@ def list_windows(session_name: str, socket: str | None = None) -> Set[str]:
 
 def generate_agents_md(agent_name: str, tenant: str = "default", lead: str | None = None) -> str:
     if lead and agent_name == lead:
-        lead_sentence = "You are the lead of this office. The other agents follow your direction, and yours is the account that decides when something is done.\n\n"
+        lead_sentence = (
+            "You are the lead of this office. The other agents follow your direction, "
+            "and yours is the account that decides when something is done. "
+            "Before you hand out work, check `office status`. An agent that is `blocked` "
+            "will not receive it — hold the work and say so. Do not try to fix the agent.\n\n"
+        )
     elif lead:
         lead_sentence = f"{lead} is the lead of this office. Their direction is the office's direction.\n\n"
     else:
