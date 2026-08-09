@@ -2,7 +2,7 @@
 
 from collections.abc import Callable
 
-from flock.bus import prefix, vab
+from flock.bus import prefix, purge_agent, vab
 
 _STARTABLE_VABS = {"tmux", "api"}
 
@@ -58,17 +58,10 @@ def stop_agent(
     agent, _ = _target(envelope)
     roster_key = prefix(pod, tenant, resource="roster")
     agent_vab = vab(r, pod=pod, tenant=tenant, agent=agent)
-    if agent_vab == "api":
-        r.hdel(roster_key, agent)
-        r.delete(prefix(pod, tenant, agent=agent, resource="inbox"))
-        return
-
-    launch_key = prefix(pod, tenant, agent=agent, resource="launch")
-    profile_key = prefix(pod, tenant, agent=agent, resource="profile")
-    paused_key = prefix(pod, tenant, agent=agent, resource="paused")
     r.hdel(roster_key, agent)
-    r.delete(launch_key, profile_key, paused_key)
-    kill_window(agent)
+    purge_agent(r, pod=pod, tenant=tenant, agent=agent)
+    if agent_vab != "api":
+        kill_window(agent)
 
 
 def pause_agent(
