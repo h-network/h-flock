@@ -49,6 +49,14 @@ RUN mkdir -p /home/ubuntu/.claude \
  && python3 -c "import json, os; p='/home/ubuntu/.claude/settings.json'; d=json.load(open(p)) if os.path.exists(p) else {}; d['skipDangerousModePermissionPrompt']=True; json.dump(d, open(p,'w'), indent=2)" \
  && chown -R ubuntu:ubuntu /home/ubuntu/.claude
 
+# Seed codex config.toml with check_for_update_on_startup = false.
+# Suppresses the "Update available!" startup dialog whose default option runs
+# `npm install -g @openai/codex` globally inside the container.
+# Merged rather than overwritten so any existing config.toml keys survive.
+RUN mkdir -p /home/ubuntu/.codex \
+ && python3 -c "import os; p='/home/ubuntu/.codex/config.toml'; content=open(p).read() if os.path.exists(p) else ''; lines=[l for l in content.splitlines() if not l.strip().startswith('check_for_update_on_startup')]; lines.append('check_for_update_on_startup = false'); open(p, 'w').write('\n'.join(lines) + '\n')" \
+ && chown -R ubuntu:ubuntu /home/ubuntu/.codex
+
 # The base runs as ubuntu (uid 1000), and the agent CLIs expect that home. The
 # tmux socket therefore lives somewhere that user owns — /run is root's.
 # /workdir is where each agent gets its own home (LLD-tmux-host §5). The host

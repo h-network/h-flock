@@ -8,9 +8,9 @@ from typing import Set
 # Seconds between the paste and the Enter. `paste-buffer -p` only emits the
 # bracket markers when the application has asked for bracketed paste mode; a
 # CLI that never does gets the old behaviour, and this delay is what that case
-# still relies on. 0.15 is the value h-office arrived at in the field after
-# roughly one delivery in ten was left sitting in an input box.
-ENTER_DELAY = float(os.environ.get("PASTE_ENTER_DELAY", "0.15"))
+# still relies on. 0.5 is the margin decision across CLIs (Claude Code Ink,
+# codex, agy) to ensure Enter keystrokes are never swallowed into input boxes.
+ENTER_DELAY = float(os.environ.get("PASTE_ENTER_DELAY", "0.5"))
 
 
 class AmbientTmuxError(RuntimeError):
