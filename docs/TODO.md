@@ -106,6 +106,9 @@ takes a command and `StartAgent` already passes one, so this is a default, not
 work. Held deliberately until the two items above are solved — flipping first
 just means every window stops on a prompt.
 
+**Agent guide naming the lead is written once at window creation.**
+If the lead is retired or re-ordered, existing agents' guides still name the previous lead until their windows are recreated. This is accepted because lead changes are rare, re-writing every guide on every roster change introduces unnecessary moving parts, and `office peers` reads the `<prefix>:lead` key live.
+
 ## Delivery
 
 **~~The `verify` step~~ — SHIPPED in build 19, and it covers half of this.**

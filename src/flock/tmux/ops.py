@@ -58,10 +58,17 @@ def list_windows(session_name: str, socket: str | None = None) -> Set[str]:
     return {w for w in stdout.splitlines() if w}
 
 
-def generate_agents_md(agent_name: str, tenant: str = "default") -> str:
+def generate_agents_md(agent_name: str, tenant: str = "default", lead: str | None = None) -> str:
+    if lead and agent_name == lead:
+        lead_sentence = "You are the lead of this office. The other agents follow your direction, and yours is the account that decides when something is done.\n\n"
+    elif lead:
+        lead_sentence = f"{lead} is the lead of this office. Their direction is the office's direction.\n\n"
+    else:
+        lead_sentence = ""
+
     return f"""You are **{agent_name}**, an agent in this office.
 
-Everything about your situation is in your environment:
+{lead_sentence}Everything about your situation is in your environment:
 
     $AGENT_NAME      who you are
     $TENANT          the office you are in
@@ -70,8 +77,6 @@ Everything about your situation is in your environment:
 Run any of those with --help. To see who you can talk to:
 
     office peers
-
-This office has a lead — `office peers` shows who, and their direction is the office's direction.
 
 A message arrives in your terminal as `[message from <name>] …` — reply by name
 with `office send -a <name> <message>`. This directory is yours; work in it.
@@ -201,10 +206,12 @@ def window_env(
     return env_vars
 
 
-def write_agent_guide(cwd: str, agent_name: str, tenant: str = "default") -> None:
+def write_agent_guide(
+    cwd: str, agent_name: str, tenant: str = "default", lead: str | None = None
+) -> None:
     try:
         os.makedirs(cwd, exist_ok=True)
-        content = generate_agents_md(agent_name, tenant)
+        content = generate_agents_md(agent_name, tenant, lead=lead)
 
         for filename in ("AGENTS.md", "CLAUDE.md"):
             file_path = os.path.join(cwd, filename)
