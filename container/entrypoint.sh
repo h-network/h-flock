@@ -87,6 +87,9 @@ fields+=("api" "api")
 fields+=("host" "control")
 
 redis-cli -h 127.0.0.1 HSET "$roster_key" "${fields[@]}" >/dev/null
+# The HASH loses AGENTS ordering. Preserve authority while the ordered source is
+# still in hand; no later command or override writes this derived value.
+redis-cli -h 127.0.0.1 SET "pod:${POD}:tenant:${TENANT}:lead" "${agents[0]}" >/dev/null
 echo "{\"module\":\"container\",\"event\":\"roster_seeded\",\"count\":$(( ${#fields[@]} / 2 ))}"
 
 # Per-agent CLI and account, as exceptions only — "backend=codex", "frontend=work".

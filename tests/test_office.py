@@ -14,6 +14,7 @@ class MockRedis:
         self.roster = {"frontend": "tmux", "backend": "tmux", "api": "api", "host": "control"}
         self.lists = {}
         self.moves = []
+        self.values = {}
 
     def hkeys(self, key):
         return {name.encode() for name in self.roster}
@@ -24,6 +25,9 @@ class MockRedis:
 
     def hexists(self, key, field):
         return field in self.roster
+
+    def get(self, key):
+        return self.values.get(key)
 
     def lrange(self, key, start, end):
         return self.lists.get(key, [])
@@ -152,8 +156,16 @@ def test_peers_prints_only_other_tmux_agents(office_env, capsys):
 
 def test_peers_marks_lead_agent(office_env, capsys):
     office_env.roster = {"architect": "tmux", "backend": "tmux", "frontend": "tmux"}
+    office_env.values["pod:acme:tenant:hq:lead"] = b"architect"
     cli.main(["peers"])
     assert capsys.readouterr().out.strip() == "architect (lead), backend"
+
+
+def test_peers_reads_configured_first_agent_instead_of_sorting(office_env, capsys):
+    office_env.roster = {"zeus": "tmux", "alpha": "tmux", "frontend": "tmux"}
+    office_env.values["pod:acme:tenant:hq:lead"] = b"zeus"
+    cli.main(["peers"])
+    assert capsys.readouterr().out.strip() == "alpha, zeus (lead)"
 
 
 @pytest.mark.parametrize(

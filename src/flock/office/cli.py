@@ -138,7 +138,7 @@ def _peers_command(argv: list[str]) -> None:
     parser.parse_args(argv)
     r, pod, tenant, producer = _context()
     all_agents = sorted(members(r, pod=pod, tenant=tenant))
-    lead = all_agents[0] if all_agents else None
+    lead = _text(r.get(prefix(pod, tenant, resource="lead")))
     peer_names = [
         agent
         for agent in all_agents
