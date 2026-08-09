@@ -132,5 +132,8 @@ sleep 6
 ck "hired env == booted env" "$(penv envprobe)" "$(penv $AG1)"
 cu -X POST -H 'Content-Type: application/json' -d '{"kind":"StopAgent","payload":{"agent":"envprobe"}}' $A/agents/host/envelopes >/dev/null
 
+echo "== 12. failure simulator =="
+bash "$_here/sim-blocked.sh"
+
 echo
 echo "PASS=$pass FAIL=$fail"
