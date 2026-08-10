@@ -952,11 +952,18 @@ class OfficeHandler(SimpleHTTPRequestHandler):
     def _demo_websocket(self) -> None:
         self.close_connection = True
         client_sock = self.request
+        ws_key = self.headers.get("Sec-WebSocket-Key", "")
+        if ws_key:
+            accept_src = ws_key.encode("utf-8") + b"258EAFA5-E914-47DA-95CA-C5AB0DC85B11"
+            accept_key = base64.b64encode(hashlib.sha1(accept_src).digest()).decode("utf-8")
+        else:
+            accept_key = "demo-accept"
+
         resp = (
             "HTTP/1.1 101 Switching Protocols\r\n"
             "Upgrade: websocket\r\n"
             "Connection: Upgrade\r\n"
-            "Sec-WebSocket-Accept: demo-accept\r\n\r\n"
+            f"Sec-WebSocket-Accept: {accept_key}\r\n\r\n"
         )
         try:
             client_sock.sendall(resp.encode())
