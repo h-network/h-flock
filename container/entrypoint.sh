@@ -118,6 +118,7 @@ done
 
 map_each "${AGENT_CLIS:-}"     launch
 map_each "${AGENT_PROFILES:-}" profile
+map_each "${AGENT_ENDPOINTS:-}" endpoint
 
 # An account is a config dir, and a fresh one is not an empty one — unseeded, an
 # agent loses every default the image carries. Copy what the stock profile has
@@ -143,7 +144,7 @@ done
 
 # Held out of the environment for the same reason as AGENTS: the tmux server
 # inherits it and every window inherits that.
-unset AGENT_CLIS AGENT_PROFILES
+unset AGENT_CLIS AGENT_PROFILES AGENT_ENDPOINTS
 
 # Seeding is the only use of AGENTS. Hold it out of the environment from here:
 # the tmux server is started below and every agent window inherits its

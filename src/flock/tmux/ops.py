@@ -205,6 +205,7 @@ def window_env(
     tenant: str = "default",
     cwd: str | None = None,
     profile: str | None = None,
+    endpoint: dict | None = None,
 ) -> list[str]:
     """Single place where a window environment is constructed for all execution paths."""
     cwd = cwd or f"/workdir/{agent_name}"
@@ -220,6 +221,23 @@ def window_env(
             f"CLAUDE_CONFIG_DIR=/home/ubuntu/.claude-{profile}",
             f"CODEX_HOME=/home/ubuntu/.codex-{profile}",
         ])
+    # A local model instead of the vendor's. claude reads these itself; nothing
+    # in h-flock talks to the model, so an agent on a local endpoint is an agent
+    # like any other — same window, same paste, same activity file.
+    #
+    # ⚠ It uses NO account credential. The watchdog's credential check does not
+    # apply to it, and a missing login is not a fault for this agent
+    # (LLD-watchdog). Do not seed it a profile expecting one.
+    if endpoint:
+        if endpoint.get("url"):
+            env_vars.append(f"ANTHROPIC_BASE_URL={endpoint['url']}")
+        # A local server usually ignores the token, but claude refuses to start
+        # without one — send a placeholder rather than nothing.
+        env_vars.append(f"ANTHROPIC_AUTH_TOKEN={endpoint.get('token') or 'local'}")
+        if endpoint.get("model"):
+            env_vars.append(f"ANTHROPIC_MODEL={endpoint['model']}")
+        if endpoint.get("small_model"):
+            env_vars.append(f"ANTHROPIC_SMALL_FAST_MODEL={endpoint['small_model']}")
     return env_vars
 
 

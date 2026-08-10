@@ -8,6 +8,7 @@ AGENT_STATE_RESOURCES = frozenset(
         "blocked",
         "launch",
         "profile",
+        "endpoint",
         "paused",
         "inbox",
         "activity",

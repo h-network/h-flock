@@ -51,6 +51,16 @@ def start_agent(
     elif profile not in (None, ""):
         raise ValueError("StartAgent payload.profile must be a segment string")
 
+    endpoint = payload.get("endpoint")
+    if endpoint:
+        # Same ordering rule as profile: published before roster visibility, or
+        # tmuxhost builds the window against the vendor's endpoint instead.
+        endpoint_key = prefix(pod, tenant, agent=agent, resource="endpoint")
+        prefix("check", "check", agent=endpoint, resource="endpoint")
+        r.set(endpoint_key, endpoint)
+    elif endpoint not in (None, ""):
+        raise ValueError("StartAgent payload.endpoint must be a segment string")
+
     launch_key = prefix(pod, tenant, agent=agent, resource="launch")
     # Publish all launch state before roster membership: tmuxhost reconciles on
     # that row and an early window cannot be corrected by name-idempotent create.
