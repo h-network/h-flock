@@ -803,11 +803,9 @@ def test_demo_websocket_handshake(tmp_path):
         web_server.server_close()
 
 
-def test_get_conversation_2way_thread_endpoint(tmp_path):
-    audit_file = tmp_path / "audit.jsonl"
+def test_demo_messages_and_activity_history_endpoints(tmp_path):
     web_server = ThreadingHTTPServer(("127.0.0.1", 0), OfficeHandler)
     web_server.api_base = "http://127.0.0.1:8080"
-    web_server.audit_log = str(audit_file)
     web_server.demo_mode = True
     web_server.sessions_lock = threading.Lock()
     web_port = web_server.server_address[1]
@@ -816,30 +814,87 @@ def test_get_conversation_2way_thread_endpoint(tmp_path):
     web_thread.start()
 
     try:
-        # Send an operator prompt via POST /api/agents/architect/envelopes
-        req = urllib.request.Request(
-            f"http://127.0.0.1:{web_port}/api/agents/architect/envelopes",
-            data=json.dumps({"text": "Please run unit tests for architect."}).encode(),
-            headers={"Content-Type": "application/json"},
-            method="POST",
-        )
-        with urllib.request.urlopen(req) as resp:
-            assert resp.status == 202
+        # GET /api/agents/architect/messages
+        with urllib.request.urlopen(f"http://127.0.0.1:{web_port}/api/agents/architect/messages") as resp:
+            assert resp.status == 200
+            data = json.loads(resp.read().decode())
+            assert "messages" in data
+            assert len(data["messages"]) >= 2
+            assert data["messages"][0]["cursor"] == "msg-0"
 
-        # GET /api/agents/architect/conversation
+        # GET /api/agents/architect/messages?after=msg-0
+        with urllib.request.urlopen(f"http://127.0.0.1:{web_port}/api/agents/architect/messages?after=msg-0") as resp:
+            assert resp.status == 200
+            data = json.loads(resp.read().decode())
+            assert "messages" in data
+
+        # GET /api/agents/architect/activity
+        with urllib.request.urlopen(f"http://127.0.0.1:{web_port}/api/agents/architect/activity") as resp:
+            assert resp.status == 200
+            data = json.loads(resp.read().decode())
+            assert "activity" in data
+            assert len(data["activity"]) >= 2
+    finally:
+        web_server.shutdown()
+        web_server.server_close()
+
+
+def test_conversation_mailbox_routing_prompt_in_agent_mailbox_vs_reply_in_client_mailbox(tmp_path):
+    class UpstreamApiHandler(BaseHTTPRequestHandler):
+        def do_GET(self):
+            if self.path.startswith("/agents/architect/messages"):
+                body = json.dumps({"messages": [{"ts": "2026-08-10T10:00:00Z", "producer": "operator", "payload": {"text": "Operator prompt to architect"}}]}).encode()
+                self.send_response(200)
+                self.send_header("Content-Type", "application/json")
+                self.send_header("Content-Length", str(len(body)))
+                self.end_headers()
+                self.wfile.write(body)
+            elif self.path.startswith("/agents/web/messages"):
+                body = json.dumps({"messages": [{"ts": "2026-08-10T10:01:00Z", "producer": "architect", "recipient": "web", "payload": {"text": "Agent reply to web"}}]}).encode()
+                self.send_response(200)
+                self.send_header("Content-Type", "application/json")
+                self.send_header("Content-Length", str(len(body)))
+                self.end_headers()
+                self.wfile.write(body)
+            else:
+                self.send_error(404)
+
+        def log_message(self, format, *args):
+            pass
+
+    upstream_server = ThreadingHTTPServer(("127.0.0.1", 0), UpstreamApiHandler)
+    upstream_port = upstream_server.server_address[1]
+    upstream_thread = threading.Thread(target=upstream_server.serve_forever, daemon=True)
+    upstream_thread.start()
+
+    web_server = ThreadingHTTPServer(("127.0.0.1", 0), OfficeHandler)
+    web_server.api_base = f"http://127.0.0.1:{upstream_port}"
+    web_server.client_name = "web"
+    web_server.demo_mode = False
+    web_server.sessions_lock = threading.Lock()
+    web_port = web_server.server_address[1]
+
+    web_thread = threading.Thread(target=web_server.serve_forever, daemon=True)
+    web_thread.start()
+
+    try:
         with urllib.request.urlopen(f"http://127.0.0.1:{web_port}/api/agents/architect/conversation") as resp:
             assert resp.status == 200
             data = json.loads(resp.read().decode())
             assert data["agent"] == "architect"
             messages = data["messages"]
-            assert len(messages) >= 2
+            assert len(messages) == 2
 
-            directions = [m.get("direction") for m in messages]
-            assert "outbound" in directions
-            assert "inbound" in directions
+            # Outbound prompt from agent's mailbox
+            assert messages[0]["direction"] == "outbound"
+            assert messages[0]["payload"]["text"] == "Operator prompt to architect"
 
-            cursors = [m.get("cursor") for m in messages]
-            assert "conv-0" in cursors
+            # Inbound reply from web client's mailbox
+            assert messages[1]["direction"] == "inbound"
+            assert messages[1]["producer"] == "architect"
+            assert messages[1]["payload"]["text"] == "Agent reply to web"
     finally:
         web_server.shutdown()
         web_server.server_close()
+        upstream_server.shutdown()
+        upstream_server.server_close()
