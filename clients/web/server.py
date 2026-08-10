@@ -24,7 +24,9 @@ class OfficeHandler(SimpleHTTPRequestHandler):
         super().__init__(*args, directory=str(HERE), **kwargs)
 
     def do_GET(self) -> None:
-        if self.path == "/client-config":
+        if self.headers.get("Upgrade", "").lower() == "websocket" or self.path.startswith("/session"):
+            self._proxy_websocket()
+        elif self.path == "/client-config":
             self._json(200, {"client": self.server.client_name})
         elif self.path == "/" or self.path.startswith("/?"):
             self.path = "/index.html"
@@ -39,6 +41,52 @@ class OfficeHandler(SimpleHTTPRequestHandler):
             self._proxy()
         else:
             self.send_error(404)
+
+    def _proxy_websocket(self) -> None:
+        import select
+        import socket
+
+        parsed_api = urlsplit(self.server.api_base)
+        backend_host = parsed_api.hostname or "127.0.0.1"
+        backend_port = 8081
+
+        try:
+            backend = socket.create_connection((backend_host, backend_port), timeout=5)
+        except Exception as error:
+            self.send_error(502, f"session door unavailable: {error}")
+            return
+
+        target_path = self.path
+        if target_path.startswith("/api"):
+            target_path = target_path.removeprefix("/api")
+
+        req_lines = [f"{self.command} {target_path} HTTP/1.1"]
+        for header, value in self.headers.items():
+            if header.lower() in ("host", "authorization"):
+                continue
+            req_lines.append(f"{header}: {value}")
+        req_lines.append(f"Host: {backend_host}:{backend_port}")
+        req_lines.append(f"Authorization: Bearer {self.server.api_token}")
+        req_lines.append("\r\n")
+
+        backend.sendall("\r\n".join(req_lines).encode("latin1"))
+
+        sockets = [self.connection, backend]
+        try:
+            while True:
+                r, _, _ = select.select(sockets, [], [], 30)
+                if not r:
+                    continue
+                for s in r:
+                    other = backend if s is self.connection else self.connection
+                    data = s.recv(16384)
+                    if not data:
+                        return
+                    other.sendall(data)
+        except Exception:
+            pass
+        finally:
+            backend.close()
 
     def _proxy(self) -> None:
         target = self.server.api_base + self.path.removeprefix("/api")
