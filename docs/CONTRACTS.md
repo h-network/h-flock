@@ -602,6 +602,13 @@ it as a general health signal.
 verdict — the marker is dropped and logged `delivery_unjudged`. A new agent
 therefore cannot be `blocked` until it has spoken once.
 
+⚠ **`office` never prints a lifecycle record to stdout.** It runs in an agent's
+pane, so its stdout is the agent's screen. It sets `FLOCK_LOG_QUIET=1` for the
+duration of its own command; the record still reaches the window log the router
+tails. Daemons do not set it and keep logging to the container's stdout. An agent
+read one of those records off its own screen and reasoned its way to Redis
+(`HLD` §10a).
+
 ⚠ **`alerts` and `credential.alerted` are tenant-level**, so `StopAgent` must not
 purge them. `credential.alerted` is a HASH keyed `<account>:<cli>` holding the
 last status alerted — `absent` / `unknown` / `expiring` / `expired` — so an alert

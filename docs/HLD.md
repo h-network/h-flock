@@ -336,6 +336,34 @@ image that converges when brought up twice. Redis is internal and unpublished.
 looking, not the ability — an agent that never encounters a queue, a token or a
 roster has no reason to hunt for one.
 
+### 10a. An agent audited us, and the reason was still there
+
+A claude agent was asked who had sent it a message, found no answer at the CLI
+layer, and went looking. Its trail, in its own order:
+
+1. **`office send` printed a bus record into its pane** —
+   `{"module":"adapter","event":"sent","stream_id":…,"correlation_id":…}`. Its
+   reasoning: envelope ids and a named delivery module are not what a CLI that
+   appends to a file emits; they imply a broker with persistent streams
+2. its environment named the log — `FLOCK_LOG_FILE`, `POD`, `TENANT`,
+   `VIRTUAL_ENV=/opt/flock`
+3. `/opt/flock/bin/office` is a four-line console script, so the tool is an
+   importable package whose source is on the box
+4. it searched for the one internal word we had handed it — `adapter`
+5. `adapter/runner.py`: `import redis`, and the url
+6. `ps` confirmed `redis-server` independently
+
+⚠ **Step 1 was a reason, and it was ours.** Fixed: `office` sets
+`FLOCK_LOG_QUIET` for its own run, so the record reaches the window log the
+router tails (§5) and not the agent's screen. It was redundant output as well as
+a signpost.
+
+⚠ **Steps 2 to 6 are the ability, and they are accepted.** An agent in this
+container can read `POD`, `TENANT`, `FLOCK_LOG_FILE`, `VIRTUAL_ENV`, the
+world-readable framework source, and the process table. We do not hide these and
+should not pretend otherwise. The claim in this section is about *reasons*, and
+it is only true while nothing hands an agent a thread to pull.
+
 ## 11. The invariants
 
 The short list that everything else assumes:
