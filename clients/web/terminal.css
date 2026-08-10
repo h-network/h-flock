@@ -199,9 +199,11 @@
 
 .terminal-multi-grid {
   display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 12px;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 8px;
   margin-top: 8px;
+  max-height: 520px;
+  overflow-y: auto;
 }
 
 .term-grid-cell {
@@ -209,6 +211,9 @@
   border-radius: 6px;
   background: #000000;
   padding: 4px;
+  display: flex;
+  flex-direction: column;
+  box-sizing: border-box;
 }
 
 .cell-bar {
@@ -222,7 +227,11 @@
 }
 
 .cell-container {
-  min-height: 240px !important;
+  min-height: 200px !important;
+  max-height: 240px !important;
+  flex: 1;
+  overflow-x: auto;
+  overflow-y: hidden;
 }
 
 .paste-preview-box {

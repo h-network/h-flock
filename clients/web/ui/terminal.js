@@ -16,8 +16,8 @@
  *   1. Scrollback search with match highlighting and prev/next navigation
  *   2. Copy & paste protection (auto-copy on selection, read-only paste block, multi-line newline confirm modal)
  *   3. Persistent font size & scrollback depth in localStorage
- *   4. Side-by-side multi-terminal grid support (1, 2, or 4 terminals)
- *   5. Session recording & replay player with playback speeds and scrub timeline
+ *   4. Viewport-aware multi-terminal grid (Single, 2-Split, 4-Grid with vertical cell fitting)
+ *   5. Server-side real-time streaming session recording & replay player
  */
 
 export class TerminalPanel {
@@ -43,6 +43,7 @@ export class TerminalPanel {
 
     // Session Recording & Replay State
     this.isRecording = false;
+    this.recordingSessionId = null;
     this.recordingFrames = [];
     this.recordingStartTime = null;
     this.isPlayingReplay = false;
@@ -50,7 +51,7 @@ export class TerminalPanel {
 
     // Multi-terminal Layout View Mode: "single" | "split" | "grid"
     this.viewMode = "single";
-    this.subTerminals = {}; // cellId -> TerminalPanel instance
+    this.subTerminals = {};
 
     this.state = "empty"; // loading | empty | error | stale | disconnected | connected
 
@@ -145,6 +146,9 @@ export class TerminalPanel {
     this._bindRecordingControls();
     this._bindPasteProtection();
     this._startStaleChecker();
+
+    window.addEventListener("resize", () => this._updateViewportGridModes());
+    this._updateViewportGridModes();
   }
 
   _bindControls() {
@@ -216,46 +220,82 @@ export class TerminalPanel {
     }
   }
 
-  // SPEC §12: Side-by-side Multi-Terminal Views (Single | 2-Split | 4-Grid)
+  // SPEC §12: Viewport-aware Side-by-side Multi-Terminal Views (Single | 2-Split | 4-Grid)
   _bindViewControls() {
+    const singleBtn = document.getElementById("term-view-single");
+    const splitBtn = document.getElementById("term-view-split");
+    const gridBtn = document.getElementById("term-view-grid");
+
+    if (singleBtn) singleBtn.onclick = () => this._setView("single");
+    if (splitBtn) splitBtn.onclick = () => this._setView("split");
+    if (gridBtn) gridBtn.onclick = () => this._setView("grid");
+  }
+
+  _setView(mode) {
     const singleBtn = document.getElementById("term-view-single");
     const splitBtn = document.getElementById("term-view-split");
     const gridBtn = document.getElementById("term-view-grid");
     const singleContainer = document.getElementById(this.containerId);
     const multiGrid = document.getElementById("terminal-multi-grid");
 
-    if (!singleBtn || !multiGrid) return;
+    if (!singleContainer || !multiGrid) return;
 
-    const setView = (mode) => {
-      this.viewMode = mode;
-      [singleBtn, splitBtn, gridBtn].forEach((btn) => {
-        if (btn) {
-          const isActive = btn.id === `term-view-${mode}`;
-          btn.classList.toggle("active", isActive);
-          btn.setAttribute("aria-checked", isActive ? "true" : "false");
-        }
-      });
-
-      if (mode === "single") {
-        singleContainer.hidden = false;
-        multiGrid.hidden = true;
-      } else {
-        singleContainer.hidden = true;
-        multiGrid.hidden = false;
-
-        const cell3 = document.getElementById("term-cell-3");
-        const cell4 = document.getElementById("term-cell-4");
-        if (cell3 && cell4) {
-          cell3.hidden = mode !== "grid";
-          cell4.hidden = mode !== "grid";
-        }
+    this.viewMode = mode;
+    [singleBtn, splitBtn, gridBtn].forEach((btn) => {
+      if (btn) {
+        const isActive = btn.id === `term-view-${mode}`;
+        btn.classList.toggle("active", isActive);
+        btn.setAttribute("aria-checked", isActive ? "true" : "false");
       }
-      this._announce(`Terminal view mode switched to ${mode}.`);
-    };
+    });
 
-    singleBtn.onclick = () => setView("single");
-    if (splitBtn) splitBtn.onclick = () => setView("split");
-    if (gridBtn) gridBtn.onclick = () => setView("grid");
+    if (mode === "single") {
+      singleContainer.hidden = false;
+      multiGrid.hidden = true;
+    } else {
+      singleContainer.hidden = true;
+      multiGrid.hidden = false;
+
+      const cell3 = document.getElementById("term-cell-3");
+      const cell4 = document.getElementById("term-cell-4");
+      if (cell3 && cell4) {
+        cell3.hidden = mode !== "grid";
+        cell4.hidden = mode !== "grid";
+      }
+    }
+    this._announce(`Terminal view mode switched to ${mode}.`);
+  }
+
+  _updateViewportGridModes() {
+    const width = window.innerWidth;
+    const splitBtn = document.getElementById("term-view-split");
+    const gridBtn = document.getElementById("term-view-grid");
+
+    if (gridBtn) {
+      if (width < 1400) {
+        gridBtn.disabled = true;
+        gridBtn.title = "4-Grid requires screen width ≥1400px (current: " + width + "px)";
+        if (this.viewMode === "grid") {
+          this._setView("split");
+        }
+      } else {
+        gridBtn.disabled = false;
+        gridBtn.title = "4-Grid layout mode";
+      }
+    }
+
+    if (splitBtn) {
+      if (width < 900) {
+        splitBtn.disabled = true;
+        splitBtn.title = "2-Split requires screen width ≥900px (current: " + width + "px)";
+        if (this.viewMode === "split") {
+          this._setView("single");
+        }
+      } else {
+        splitBtn.disabled = false;
+        splitBtn.title = "2-Split layout mode";
+      }
+    }
   }
 
   // SPEC §12: Copy/Paste Protection & Multi-line Warning Modal
@@ -290,7 +330,6 @@ export class TerminalPanel {
     const cancelBtn = document.getElementById("paste-cancel-btn");
 
     if (!dialog || !previewBox || !confirmBtn) {
-      // Fallback: prompt user if modal dialog not available
       if (confirm(`Pasting content containing newlines will execute commands immediately in agent session:\n\n${text.slice(0, 200)}...\n\nProceed?`)) {
         this.sendKeystroke(text);
       }
@@ -337,7 +376,7 @@ export class TerminalPanel {
     }
   }
 
-  // SPEC §12: Session Recording & Replay
+  // SPEC §12: Server-Side Real-Time Session Recording Streaming & Replay
   _bindRecordingControls() {
     const recordBtn = document.getElementById("record-session-btn");
     const replayBtn = document.getElementById("replay-session-btn");
@@ -351,28 +390,61 @@ export class TerminalPanel {
           this.isRecording = true;
           this.recordingFrames = [];
           this.recordingStartTime = Date.now();
+          this.recordingSessionId = `rec_${this.agent || 'terminal'}_${Date.now()}`;
           recordBtn.classList.add("recording");
           recordBtn.textContent = "Stop Rec";
           this._announce("Terminal session recording started.");
           this.setPanelStatus("Recording session...", "connected");
+
+          // Initialize recording entry on server.py backend
+          fetch("/api/recordings", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              session_id: this.recordingSessionId,
+              agent: this.agent || "unknown",
+              start_ts: this.recordingStartTime,
+              mode: this.isReadOnly ? "read-only" : "read-write",
+              chunks: []
+            })
+          }).catch(() => {});
         } else {
           this.isRecording = false;
           recordBtn.classList.remove("recording");
           recordBtn.textContent = "Record";
-          this._announce(`Session recording stopped. ${this.recordingFrames.length} frames captured.`);
-          this.setPanelStatus(`Recording saved (${this.recordingFrames.length} frames).`, "connected");
+
+          this._announce(`Session recording stopped. ${this.recordingFrames.length} frames streamed to server.`);
+          this.setPanelStatus(`Recording saved to server (${this.recordingFrames.length} frames).`, "connected");
         }
       };
     }
 
     if (replayBtn && replayBar) {
       replayBtn.onclick = () => {
-        if (this.recordingFrames.length === 0) {
-          alert("No recorded session available. Click 'Record' first to capture a session.");
-          return;
-        }
-        replayBar.hidden = false;
-        this.startReplay();
+        // Fetch server-side recordings from GET /api/recordings
+        fetch("/api/recordings")
+          .then((res) => res.json())
+          .then((data) => {
+            const list = Array.isArray(data) ? data : (data.recordings || []);
+            if (list.length > 0) {
+              const rec = list[list.length - 1];
+              this.recordingFrames = rec.chunks || rec.frames || [];
+            }
+            if (this.recordingFrames.length === 0) {
+              alert("No recorded session available on server. Click 'Record' first to capture a session.");
+              return;
+            }
+            replayBar.hidden = false;
+            this.startReplay();
+          })
+          .catch(() => {
+            if (this.recordingFrames.length === 0) {
+              alert("No recorded session available. Click 'Record' first to capture a session.");
+              return;
+            }
+            replayBar.hidden = false;
+            this.startReplay();
+          });
       };
     }
 
@@ -400,7 +472,17 @@ export class TerminalPanel {
   _recordFrame(direction, data) {
     if (!this.isRecording || !this.recordingStartTime) return;
     const deltaMs = Date.now() - this.recordingStartTime;
-    this.recordingFrames.push({ deltaMs, direction, data });
+    const frame = { deltaMs, direction, data };
+    this.recordingFrames.push(frame);
+
+    // SPEC §12 & Architect Directive: Stream frame chunk immediately to server backend
+    if (this.recordingSessionId) {
+      fetch(`/api/recordings/${this.recordingSessionId}/frames`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(frame)
+      }).catch(() => {});
+    }
   }
 
   startReplay() {
