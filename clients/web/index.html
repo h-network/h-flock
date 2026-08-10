@@ -11,9 +11,19 @@
 <body>
   <a class="skip-link" href="#detail">Skip to detail</a>
   <header class="topbar">
-    <div><h1>office console</h1><p id="office-summary">Loading tenant</p></div>
-    <div><span id="global-connection" class="badge state-loading" role="status">connecting</span></div>
+    <div class="brand"><span class="brand-mark" aria-hidden="true">HF</span><div><h1>h-flock Console</h1><p id="office-summary">Loading tenant</p></div></div>
+    <div class="topbar-actions">
+      <button id="open-command" type="button" class="quiet-button"><span>Commands</span><kbd>⌘K</kbd></button>
+      <button id="notification-control" type="button" class="quiet-button" aria-pressed="false">Enable alerts</button>
+      <button id="open-preferences" type="button" class="icon-button" aria-label="Open display preferences">⚙</button>
+      <button id="open-shortcuts" type="button" class="icon-button" aria-label="Open keyboard shortcuts">?</button>
+      <span id="global-connection" class="badge state-loading" role="status">connecting</span>
+    </div>
   </header>
+  <section class="workbench-bar" aria-label="Global console tools">
+    <label class="global-search"><span aria-hidden="true">⌕</span><span class="sr-only">Search agents, alerts and board tickets</span><input id="global-search" type="search" placeholder="Search the office…" autocomplete="off"><kbd>/</kbd></label>
+    <div id="search-results-summary" class="search-results-summary" role="status" aria-live="polite">All office data</div>
+  </section>
   <div id="demo-controls" class="demo-controls" hidden aria-label="Demo panel states">
     <strong>Demo state</strong>
     <button type="button" data-demo-state="loading">loading</button>
@@ -53,6 +63,11 @@
         <button id="messages-tab" type="button" role="tab" aria-controls="messages-view" aria-selected="false" tabindex="-1">Messages</button>
       </nav>
       <section id="activity-view" class="tab-view" role="tabpanel" aria-labelledby="activity-tab">
+        <div id="detail-overview" class="detail-overview">
+          <div><p class="eyebrow">Office overview</p><h2>Choose where attention goes next</h2><p>The detail workspace follows your selection. Start with a blocked agent, search the whole office, or open the command palette.</p></div>
+          <dl class="overview-metrics"><div><dt>Working</dt><dd id="overview-working">—</dd></div><div><dt>Blocked</dt><dd id="overview-blocked">—</dd></div><div><dt>Alerts</dt><dd id="overview-alerts">—</dd></div></dl>
+          <div class="overview-actions"><button id="overview-blocked-action" type="button">Review blocked</button><button id="overview-command-action" type="button">Open commands <kbd>⌘K</kbd></button></div>
+        </div>
         <div id="activity-status" role="status"></div>
         <ol id="activity" class="event-list" aria-live="polite"></ol>
       </section>
@@ -135,8 +150,8 @@
         <ol id="messages" class="message-list" aria-live="polite"></ol>
         <form id="composer">
           <label class="sr-only" for="message">Message selected agent</label>
-          <textarea id="message" rows="2" placeholder="Message selected agent…" disabled></textarea>
-          <button id="send" type="submit" disabled>Send</button>
+          <div class="composer-field"><textarea id="message" rows="3" placeholder="Message selected agent…" disabled></textarea><p>Ctrl/⌘-Enter sends · ↑ recalls sent messages · a reply may never come</p></div>
+          <button id="send" type="submit" disabled>Send message</button>
         </form>
       </section>
     </section>
@@ -168,6 +183,39 @@
       <label>Type <strong id="retire-confirm-label"></strong> to confirm <input id="retire-confirm" required autocomplete="off"></label>
       <p id="retire-error" class="form-error" role="alert"></p>
       <footer><button type="button" data-close-dialog="retire-dialog">Cancel</button><button id="retire-confirm-button" type="submit" class="danger-button" disabled>Retire agent</button></footer>
+    </form>
+  </dialog>
+  <dialog id="command-dialog" class="command-dialog" aria-labelledby="command-title">
+    <div class="dialog-shell">
+      <header><div><p class="eyebrow">Command palette</p><h2 id="command-title">Go anywhere. Act quickly.</h2></div><kbd>Esc</kbd></header>
+      <label class="command-input"><span aria-hidden="true">⌕</span><span class="sr-only">Search commands</span><input id="command-input" type="search" placeholder="Search agents, actions and panels…" autocomplete="off"></label>
+      <ol id="command-results" class="command-results"></ol>
+      <p id="command-empty" class="filtered-empty" hidden>No matching commands</p>
+      <footer><span>↑↓ navigate</span><span>Enter run</span><span>Esc close</span></footer>
+    </div>
+  </dialog>
+  <dialog id="shortcuts-dialog" aria-labelledby="shortcuts-title">
+    <div class="dialog-shell shortcuts-sheet">
+      <header><div><p class="eyebrow">Keyboard reference</p><h2 id="shortcuts-title">Shortcuts</h2></div><button type="button" data-close-dialog="shortcuts-dialog" aria-label="Close shortcuts">Close</button></header>
+      <dl>
+        <div><dt><kbd>Ctrl/⌘ K</kbd></dt><dd>Open command palette</dd></div>
+        <div><dt><kbd>/</kbd></dt><dd>Focus global search</dd></div>
+        <div><dt><kbd>?</kbd></dt><dd>Open this shortcut reference</dd></div>
+        <div><dt><kbd>↑ ↓ Home End</kbd></dt><dd>Navigate agents and command results</dd></div>
+        <div><dt><kbd>← → Home End</kbd></dt><dd>Switch detail tabs</dd></div>
+        <div><dt><kbd>Ctrl/⌘ Enter</kbd></dt><dd>Send a composed message</dd></div>
+        <div><dt><kbd>↑</kbd></dt><dd>Recall sent messages at the start of the composer</dd></div>
+        <div><dt><kbd>Esc</kbd></dt><dd>Close an overlay or return to Activity</dd></div>
+      </dl>
+    </div>
+  </dialog>
+  <dialog id="preferences-dialog" aria-labelledby="preferences-title">
+    <form id="preferences-form" class="dialog-shell">
+      <header><div><p class="eyebrow">Personal workspace</p><h2 id="preferences-title">Display preferences</h2></div></header>
+      <label>Density<select id="preference-density"><option value="comfortable">Comfortable</option><option value="compact">Compact</option></select></label>
+      <label>Theme<select id="preference-theme"><option value="system">Follow system</option><option value="light">Light</option><option value="dark">Dark</option></select></label>
+      <label>Office column width<input id="preference-panel-size" type="range" min="32" max="60" step="1"><span class="field-help">Balance roster and detail space. Stored only in this browser.</span></label>
+      <footer><span>Preferences never contain credentials or tokens.</span><button id="close-preferences" type="button">Done</button></footer>
     </form>
   </dialog>
   <dialog id="paste-confirm-dialog" aria-labelledby="paste-confirm-title">

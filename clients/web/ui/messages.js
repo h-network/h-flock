@@ -7,9 +7,12 @@ export class MessagesPanel {
     this.client = client;
     this.history = new Map();
     this.selected = "";
+    this.sentHistory = [];
+    this.historyIndex = 0;
     this.status = new PanelStatus("messages-status", () => this.restart());
     this.status.loading("Loading mailbox…");
     document.getElementById("composer").onsubmit = (event) => this.send(event);
+    document.getElementById("message").onkeydown = (event) => this.keydown(event);
   }
 
   async start() {
@@ -50,6 +53,9 @@ export class MessagesPanel {
     const input = document.getElementById("message");
     const text = input.value;
     if (!this.selected || !text.trim()) return;
+    this.sentHistory.push(text);
+    this.sentHistory = this.sentHistory.slice(-50);
+    this.historyIndex = this.sentHistory.length;
     input.value = "";
     try {
       await api(`/agents/${encodeURIComponent(this.selected)}/envelopes`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ text, as: this.client }) });
@@ -57,6 +63,26 @@ export class MessagesPanel {
     } catch (error) {
       input.value = text;
       this.status.error(error);
+    }
+  }
+
+  keydown(event) {
+    const input = event.currentTarget;
+    if (event.key === "Enter" && (event.ctrlKey || event.metaKey)) {
+      event.preventDefault();
+      document.getElementById("composer").requestSubmit();
+      return;
+    }
+    if (event.key === "ArrowUp" && input.selectionStart === 0 && input.selectionEnd === 0 && this.sentHistory.length) {
+      event.preventDefault();
+      this.historyIndex = Math.max(0, this.historyIndex - 1);
+      input.value = this.sentHistory[this.historyIndex];
+      input.setSelectionRange(input.value.length, input.value.length);
+    } else if (event.key === "ArrowDown" && this.historyIndex < this.sentHistory.length) {
+      event.preventDefault();
+      this.historyIndex += 1;
+      input.value = this.sentHistory[this.historyIndex] || "";
+      input.setSelectionRange(input.value.length, input.value.length);
     }
   }
 

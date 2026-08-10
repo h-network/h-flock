@@ -5,9 +5,11 @@ import { absoluteTime, api, classifyFailure, escapeHtml, forceDemoState, PanelSt
 const presenceOrder = ["blocked", "unknown", "pending", "working", "idle"];
 
 export class AgentsPanel {
-  constructor({ onSelect, onRoster }) {
+  constructor({ onSelect, onRoster, onResults = () => {} }) {
     this.onSelect = onSelect;
     this.onRoster = onRoster;
+    this.onResults = onResults;
+    this.filter = "";
     this.details = new Map();
     this.boards = new Map();
     this.pending = new Set();
@@ -23,6 +25,8 @@ export class AgentsPanel {
 
   setBoards(boards) { this.boards = boards; this.render(); }
   detail(agent) { return this.details.get(agent); }
+  names() { return Array.from(this.details.keys()); }
+  setFilter(value) { this.filter = value.trim().toLowerCase(); this.render(); }
 
   async refresh() {
     try {
@@ -68,9 +72,21 @@ export class AgentsPanel {
       if (!grouped.has(presence)) grouped.set(presence, []);
       grouped.get(presence).push([agent, detail]);
     }
+    const matches = ([agent, detail]) => {
+      if (!this.filter) return true;
+      const doing = this.boards.get(agent)?.doing || [];
+      return [agent, detail.vab, detail.presence?.state, ...doing.map((value) => typeof value === "string" ? value : `${value?.id || ""} ${value?.title || ""}`)]
+        .some((value) => String(value || "").toLowerCase().includes(this.filter));
+    };
+    for (const [presence, values] of grouped) grouped.set(presence, values.filter(matches));
     const entries = presenceOrder.flatMap((presence) => (grouped.get(presence) || []).sort(([left], [right]) => left.localeCompare(right)));
+    this.onResults(entries.length);
+    if (!entries.length) {
+      root.innerHTML = `<p class="filtered-empty">No agents match “${escapeHtml(this.filter)}”</p>`;
+      return;
+    }
     const buttons = new Map(entries.map(([agent, detail], index) => [agent, this.agentButton(root, agent, detail, index === 0)]));
-    root.replaceChildren(...presenceOrder.filter((presence) => grouped.has(presence)).map((presence) => {
+    root.replaceChildren(...presenceOrder.filter((presence) => grouped.get(presence)?.length).map((presence) => {
       const group = document.createElement("section");
       const heading = document.createElement("h3");
       heading.id = `agents-${presence}`;

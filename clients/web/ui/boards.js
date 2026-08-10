@@ -6,11 +6,15 @@ const columns = ["todo", "doing", "hold", "done"];
 const ticket = (value) => typeof value === "string" ? { title: value } : (value || { title: "ticket" });
 
 export class BoardsPanel {
-  constructor({ onBoards }) {
+  constructor({ onBoards, onResults = () => {} }) {
     this.onBoards = onBoards;
+    this.onResults = onResults;
+    this.filter = "";
     this.boards = new Map();
     this.status = new PanelStatus("boards-status", () => this.refresh());
   }
+
+  setFilter(value) { this.filter = value.trim().toLowerCase(); this.render(); }
 
   async start() {
     this.status.loading("Loading boards…");
@@ -32,14 +36,25 @@ export class BoardsPanel {
 
   render() {
     const root = document.getElementById("boards");
-    root.replaceChildren(...Array.from(this.boards, ([agent, board]) => {
+    let resultCount = 0;
+    const rendered = Array.from(this.boards, ([agent, board]) => {
+      const filtered = Object.fromEntries(columns.map((column) => [column, (board[column] || []).filter((value) => {
+        const item = ticket(value);
+        return !this.filter || `${agent} ${column} ${item.id || ""} ${item.title || ""} ${item.description || ""}`.toLowerCase().includes(this.filter);
+      })]));
+      const matching = columns.reduce((sum, column) => sum + filtered[column].length, 0);
+      if (this.filter && !matching && !agent.toLowerCase().includes(this.filter)) return null;
+      resultCount += matching;
       const details = document.createElement("details");
       details.className = "agent-board";
-      details.open = Boolean((board.doing || []).length);
-      const total = columns.reduce((sum, column) => sum + (board[column] || []).length, 0);
-      details.innerHTML = `<summary><strong>${escapeHtml(agent)}</strong><span>${total} tickets</span>${columns.map((column) => `<span>${column} ${(board[column] || []).length}</span>`).join("")}</summary><div class="board-columns">${columns.map((column) => `<section><h3>${column} <span>${(board[column] || []).length}</span></h3><ol>${(board[column] || []).map(ticket).map((item) => `<li title="${escapeHtml(item.description || item.title || "")}"><span>${escapeHtml(item.title || item.id || "ticket")}</span>${item.priority ? `<small>${escapeHtml(item.priority)}</small>` : ""}</li>`).join("")}</ol></section>`).join("")}</div>`;
+      details.open = Boolean(filtered.doing.length || this.filter);
+      const total = columns.reduce((sum, column) => sum + filtered[column].length, 0);
+      details.innerHTML = `<summary><strong>${escapeHtml(agent)}</strong><span>${total} tickets</span>${columns.map((column) => `<span>${column} ${filtered[column].length}</span>`).join("")}</summary><div class="board-columns">${columns.map((column) => `<section><h3>${column} <span>${filtered[column].length}</span></h3><ol>${filtered[column].map(ticket).map((item) => `<li title="${escapeHtml(item.description || item.title || "")}"><span>${escapeHtml(item.title || item.id || "ticket")}</span>${item.priority ? `<small>${escapeHtml(item.priority)}</small>` : ""}</li>`).join("")}</ol></section>`).join("")}</div>`;
       return details;
-    }));
+    }).filter(Boolean);
+    this.onResults(resultCount);
+    if (!rendered.length && this.filter) root.innerHTML = `<p class="filtered-empty">No board tickets match “${escapeHtml(this.filter)}”</p>`;
+    else root.replaceChildren(...rendered);
   }
 
   demoState(value) { forceDemoState(this.status, value); }
