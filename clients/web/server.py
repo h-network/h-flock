@@ -924,10 +924,52 @@ class OfficeHandler(SimpleHTTPRequestHandler):
             self._demo_sse([
                 ("act-1", "activity", {"cursor": "act-1", "ts": "2026-08-10T02:30:00Z", "kind": "tool", "tool": "pytest", "agent": "architect"}),
             ])
+        elif clean_subpath.endswith("/activity"):
+            agent_name = clean_subpath.split("/")[2] if len(clean_subpath.split("/")) > 2 else "architect"
+            self._json(200, {
+                "activity": [
+                    {
+                        "cursor": "act-0",
+                        "ts": "2026-08-10T02:32:00Z",
+                        "kind": "tool",
+                        "tool": "pytest",
+                        "agent": agent_name,
+                    },
+                    {
+                        "cursor": "act-1",
+                        "ts": "2026-08-10T02:34:00Z",
+                        "kind": "tool",
+                        "tool": "git",
+                        "agent": agent_name,
+                    }
+                ]
+            })
         elif clean_subpath.endswith("/messages/stream"):
             self._demo_sse([
                 ("msg-1", "message", {"cursor": "msg-1", "ts": "2026-08-10T02:35:00Z", "kind": "Message", "producer": "architect", "recipient": "web", "payload": {"text": "Please review Build 33 console UI."}}),
             ])
+        elif clean_subpath.endswith("/messages"):
+            agent_name = clean_subpath.split("/")[2] if len(clean_subpath.split("/")) > 2 else "architect"
+            self._json(200, {
+                "messages": [
+                    {
+                        "cursor": "msg-0",
+                        "ts": "2026-08-10T02:30:00Z",
+                        "kind": "Message",
+                        "producer": "operator",
+                        "recipient": agent_name,
+                        "payload": {"text": f"Can you check the latest build changes for {agent_name}?"}
+                    },
+                    {
+                        "cursor": "msg-1",
+                        "ts": "2026-08-10T02:35:00Z",
+                        "kind": "Message",
+                        "producer": agent_name,
+                        "recipient": "operator",
+                        "payload": {"text": f"Review complete. All 260 unit tests pass and presence is verified."}
+                    }
+                ]
+            })
         elif clean_subpath.endswith("/envelopes") and self.command == "POST":
             self._json(202, {"stream_id": "demo-stream-1", "correlation_id": "demo-corr-1"})
         else:
