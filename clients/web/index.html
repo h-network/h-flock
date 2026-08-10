@@ -72,23 +72,21 @@
 
     <section id="detail" class="panel app-section detail-panel" data-section="agent" aria-labelledby="detail-title" hidden>
       <header class="panel-header">
-        <div><h2 id="detail-title" tabindex="-1">Select an agent</h2><p id="detail-subtitle">Activity, terminal and messages</p></div>
-        <div class="panel-actions lifecycle-actions">
-          <a href="#/agents" class="quiet-button">Back to agents</a>
-        </div>
+        <div><p class="eyebrow">Conversation</p><h2 id="detail-title" tabindex="-1">Select an agent</h2><p id="detail-subtitle">Messages are the answer; the terminal is only a watch surface.</p></div>
+        <div class="panel-actions conversation-actions"><button id="watch-agent" type="button" class="quiet-button" aria-expanded="false">Watch</button><button id="show-agent-board" type="button" class="quiet-button" aria-expanded="false">Board</button><button id="show-agent-lifecycle" type="button" class="quiet-button" aria-expanded="false">Lifecycle</button><a href="#/agents" class="quiet-button">All agents</a></div>
       </header>
-      <nav class="tabs" role="tablist" aria-label="Agent detail">
-        <button id="activity-tab" type="button" role="tab" aria-controls="activity-view" aria-selected="true" tabindex="0">Activity</button>
-        <button id="terminal-tab" type="button" role="tab" aria-controls="terminal-panel" aria-selected="false" tabindex="-1">Terminal</button>
-        <button id="messages-tab" type="button" role="tab" aria-controls="messages-view" aria-selected="false" tabindex="-1">Messages</button>
-        <button id="board-tab" type="button" role="tab" aria-controls="agent-board-view" aria-selected="false" tabindex="-1">Board</button>
-        <button id="lifecycle-tab" type="button" role="tab" aria-controls="lifecycle-view" aria-selected="false" tabindex="-1">Lifecycle</button>
-      </nav>
-      <section id="activity-view" class="tab-view" role="tabpanel" aria-labelledby="activity-tab">
-        <div id="activity-status" role="status"></div>
-        <ol id="activity" class="event-list" aria-live="polite"></ol>
+      <section id="messages-view" class="conversation-view" aria-label="Conversation">
+        <div class="conversation-meta"><div id="messages-status" role="status"></div><div id="activity-status" role="status"></div></div>
+        <div id="conversation-presence" class="conversation-presence state-unknown" role="status">Select an agent to begin.</div>
+        <ol id="messages" class="conversation-list" aria-live="polite" aria-relevant="additions"></ol>
+        <ol id="activity" class="sr-only" aria-hidden="true"></ol>
+        <form id="composer" class="conversation-composer">
+          <label class="sr-only" for="message">Message selected agent</label>
+          <div class="composer-field"><textarea id="message" rows="3" placeholder="Message selected agent…" disabled></textarea><p id="composer-help">Ctrl/⌘-Enter sends · a reply may never come</p></div>
+          <button id="send" type="submit" disabled>Send</button>
+        </form>
       </section>
-      <section id="terminal-panel" class="terminal-panel tab-view" role="tabpanel" aria-labelledby="terminal-tab" hidden>
+      <section id="terminal-panel" class="terminal-panel secondary-view" aria-label="Watch agent terminal" hidden>
         <div class="terminal-bar">
           <div class="terminal-info">
             <span class="terminal-label">Terminal Window (120x32)</span>
@@ -166,17 +164,8 @@
           </div>
         </div>
       </section>
-      <section id="messages-view" class="tab-view messages-view" role="tabpanel" aria-labelledby="messages-tab" hidden>
-        <div id="messages-status" role="status"></div>
-        <ol id="messages" class="message-list" aria-live="polite"></ol>
-        <form id="composer">
-          <label class="sr-only" for="message">Message selected agent</label>
-          <div class="composer-field"><textarea id="message" rows="3" placeholder="Message selected agent…" disabled></textarea><p>Ctrl/⌘-Enter sends · ↑ recalls sent messages · a reply may never come</p></div>
-          <button id="send" type="submit" disabled>Send message</button>
-        </form>
-      </section>
-      <section id="agent-board-view" class="tab-view agent-board-view" role="tabpanel" aria-labelledby="board-tab" hidden><div id="agent-board"></div></section>
-      <section id="lifecycle-view" class="tab-view lifecycle-view" role="tabpanel" aria-labelledby="lifecycle-tab" hidden>
+      <section id="agent-board-view" class="secondary-view agent-board-view" aria-label="Agent board" hidden><div id="agent-board"></div></section>
+      <section id="lifecycle-view" class="secondary-view lifecycle-view" aria-label="Agent lifecycle" hidden>
         <div class="lifecycle-card"><div><p class="eyebrow">Agent lifecycle</p><h2>Pause, resume or retire this agent</h2><p>Pause keeps identity, queues, boards and window. Retire purges identity state but preserves queues and boards.</p></div><div id="lifecycle-status" role="status"></div><div class="lifecycle-actions"><button id="pause-agent" type="button" class="quiet-button" disabled>Pause agent</button><button id="resume-agent" type="button" class="quiet-button" disabled>Resume agent</button><button id="retire-agent" type="button" class="quiet-button danger-button" disabled>Retire agent</button></div></div>
       </section>
     </section>

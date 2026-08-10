@@ -16,7 +16,7 @@ import { renderAuditSection } from "./ui/audit.js";
 import { PanelStatus } from "./ui/shared.js";
 
 const $ = (id) => document.getElementById(id);
-const state = { selected: "", tab: "activity", demo: false, roster: null, alertCount: null, results: { agents: 0, alerts: 0, boards: 0 } };
+const state = { selected: "", secondary: "", demo: false, roster: null, alertCount: null, results: { agents: 0, alerts: 0, boards: 0 } };
 const preferences = new Preferences();
 const notifications = new AlertNotifications();
 const updateResult = (panel) => (count) => { state.results[panel] = count; renderSearchSummary(); };
@@ -30,10 +30,11 @@ const agents = new AgentsPanel({
     $("sidebar-agent-count").textContent = String(summary.total);
     updateOfficeSummary();
     populateTerminalAgents();
+    if (state.selected) messages?.setPresence(agents.detail(state.selected));
   },
 });
-const activity = new ActivityPanel();
 let messages;
+const activity = new ActivityPanel({ onEvent: (event) => messages?.addActivity(event) });
 let lifecycle;
 const alerts = new AlertsPanel({
   onCount: (count) => { state.alertCount = count; $("sidebar-alert-count").textContent = String(count); updateOfficeSummary(); },
@@ -75,13 +76,9 @@ function populateTerminalAgents() {
 }
 
 function connectAgentTerminal(agent) {
-  const session = globalTerminalWorkspace.getOrCreateSession(agent);
   if (!globalTerminalWorkspace.openTabs.includes(agent)) globalTerminalWorkspace.openTabs.push(agent);
   globalTerminalWorkspace.activeAgent = agent;
-  const container = document.getElementById(session.containerId);
-  const mount = $("terminal-container");
-  if (container && container.parentElement !== mount) mount.replaceChildren(container);
-  if (!session.panel.socket || session.panel.agent !== agent) session.panel.connect(agent);
+  globalTerminalWorkspace.attachWatchPanel(agent, $("terminal-container"));
 }
 
 function updateOfficeSummary() {
@@ -95,18 +92,18 @@ function updateOfficeSummary() {
   $("overview-blocked-action").classList.toggle("summary-attention", blocked > 0);
 }
 
-function activateTab(name) {
-  state.tab = name;
-  for (const tab of ["activity", "terminal", "messages", "board", "lifecycle"]) {
-    const selected = tab === name;
-    const button = $(`${tab}-tab`);
-    button.setAttribute("aria-selected", String(selected));
-    button.tabIndex = selected ? 0 : -1;
-    const view = tab === "terminal" ? $("terminal-panel") : $(`${tab === "board" ? "agent-board" : tab}-view`);
-    view.hidden = !selected;
+function showSecondary(name = "") {
+  state.secondary = state.secondary === name ? "" : name;
+  const views = { watch: "terminal-panel", board: "agent-board-view", lifecycle: "lifecycle-view" };
+  const buttons = { watch: "watch-agent", board: "show-agent-board", lifecycle: "show-agent-lifecycle" };
+  for (const [key, id] of Object.entries(views)) {
+    const selected = state.secondary === key;
+    $(id).hidden = !selected;
+    $(buttons[key]).setAttribute("aria-expanded", String(selected));
   }
-  if (name === "terminal" && state.selected) connectAgentTerminal(state.selected);
-  if (name === "board" && state.selected) boards.renderAgent(state.selected);
+  $("detail").classList.toggle("with-secondary", Boolean(state.secondary));
+  if (state.secondary === "watch" && state.selected) connectAgentTerminal(state.selected);
+  if (state.secondary === "board" && state.selected) boards.renderAgent(state.selected);
 }
 
 async function selectAgent(agent) {
@@ -116,14 +113,13 @@ async function selectAgent(agent) {
   $("detail-title").textContent = agent;
   $("detail-subtitle").textContent = `${detail?.vab || "unknown VAB"} · ${detail?.presence?.state || "unknown"}`;
   $("detail-title").focus();
-  $("message").disabled = false;
-  $("send").disabled = false;
   agents.render();
   lifecycle.select(agent);
+  messages.setPresence(detail);
+  await messages.render(agent);
   await activity.select(agent);
-  messages.render(agent);
   boards.renderAgent(agent);
-  if (state.tab === "terminal") connectAgentTerminal(agent);
+  if (state.secondary === "watch") connectAgentTerminal(agent);
 }
 
 function commandList() {
@@ -154,25 +150,12 @@ function commandList() {
   return commands;
 }
 
-function bindTabs() {
-  const names = ["activity", "terminal", "messages", "board", "lifecycle"];
-  for (const name of names) {
-    const button = $(`${name}-tab`);
-    button.onclick = () => activateTab(name);
-    button.onkeydown = (event) => {
-      let index = names.indexOf(name);
-      if (event.key === "ArrowRight") index = (index + 1) % names.length;
-      else if (event.key === "ArrowLeft") index = (index + names.length - 1) % names.length;
-      else if (event.key === "Home") index = 0;
-      else if (event.key === "End") index = names.length - 1;
-      else return;
-      event.preventDefault();
-      activateTab(names[index]);
-      $(`${names[index]}-tab`).focus();
-    };
-  }
+function bindAgentControls() {
+  $("watch-agent").onclick = () => showSecondary("watch");
+  $("show-agent-board").onclick = () => showSecondary("board");
+  $("show-agent-lifecycle").onclick = () => showSecondary("lifecycle");
   document.addEventListener("keydown", (event) => {
-    if (event.key === "Escape" && state.tab !== "activity") activateTab("activity");
+    if (event.key === "Escape" && state.secondary) showSecondary(state.secondary);
   });
 }
 
@@ -242,11 +225,11 @@ async function handleRoute(route) {
 async function start() {
   const config = await fetch("/client-config").then((response) => response.json());
   state.demo = Boolean(config.demo);
-  messages = new MessagesPanel({ client: config.client });
+  messages = new MessagesPanel({ client: config.client, isAgent: (producer) => agents.detail(producer)?.vab === "tmux" });
   lifecycle = new LifecyclePanel({ agents });
   router = new HashRouter({ onRoute: handleRoute });
   $("empty-office-hire").onclick = () => $("hire-dialog").showModal();
-  bindTabs();
+  bindAgentControls();
   bindDemoControls();
   bindGlobalControls();
   $("settings-notification-control").onclick = () => $("notification-control").click();

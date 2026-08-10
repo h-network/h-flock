@@ -3,10 +3,11 @@
 import { absoluteTime, catchUp, escapeHtml, forceDemoState, PanelStatus, relativeTime, ResumableFeed } from "./shared.js";
 
 export class ActivityPanel {
-  constructor() {
+  constructor({ onEvent = () => {} } = {}) {
     this.agent = "";
     this.count = 0;
     this.status = new PanelStatus("activity-status", () => this.select(this.agent));
+    this.onEvent = onEvent;
     this.status.empty("Select an agent to inspect activity");
   }
 
@@ -27,6 +28,7 @@ export class ActivityPanel {
   add(event) {
     if (event.agent && event.agent !== this.agent) return;
     this.count += 1;
+    this.onEvent(event);
     const item = document.createElement("li");
     item.className = `activity-${event.kind || "unknown"}`;
     item.innerHTML = `<time datetime="${escapeHtml(event.ts || "")}" title="${escapeHtml(absoluteTime(event.ts))}">${escapeHtml(relativeTime(event.ts))}</time><span class="activity-kind">${escapeHtml(event.kind || "activity")}</span><strong>${escapeHtml(event.kind === "tool" ? event.tool || "tool" : "")}</strong>`;

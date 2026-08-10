@@ -92,6 +92,23 @@ def test_composer_shortcuts_and_history_are_explicit():
     assert "a reply may never come" in html
 
 
+def test_agent_page_is_a_two_sided_conversation_with_inline_safe_activity():
+    messages = (WEB_DIR / "ui" / "messages.js").read_text(encoding="utf-8")
+    activity = (WEB_DIR / "ui" / "activity.js").read_text(encoding="utf-8")
+    html = (WEB_DIR / "index.html").read_text(encoding="utf-8")
+    assert 'api(`/agents/${encodeURIComponent(agent)}/conversation`)' in messages
+    assert 'envelope.direction === "outbound"' in messages
+    assert 'producer === this.client' in messages
+    assert "unverified producer" in messages
+    assert "unverified client identity" in messages
+    assert 'event.kind !== "tool"' in messages
+    assert "event.tool" in messages
+    assert "event.payload" not in messages
+    assert "this.onEvent(event)" in activity
+    assert "not accepting messages" in messages
+    assert 'id="messages-view" class="conversation-view"' in html
+
+
 def test_notification_delivery_waits_for_resolvable_alert_lifecycle():
     notifications = (WEB_DIR / "ui" / "notifications.js").read_text(encoding="utf-8")
     assert "Notification.requestPermission()" in notifications
@@ -104,12 +121,11 @@ def test_keyboard_focus_and_relative_timestamp_contracts():
     app = (WEB_DIR / "app.js").read_text(encoding="utf-8")
     agents = (WEB_DIR / "ui" / "agents.js").read_text(encoding="utf-8")
     html = (WEB_DIR / "index.html").read_text(encoding="utf-8")
-    for key in ("ArrowRight", "ArrowLeft", "Home", "End"):
-        assert key in app
     for key in ("ArrowDown", "ArrowUp", "Home", "End"):
         assert key in agents
     assert '$("detail-title").focus()' in app
-    assert 'role="tablist"' in html
+    assert 'class="conversation-view"' in html
+    assert 'id="watch-agent"' in html
     assert 'className = "roster-table"' in agents
     assert 'scope="col"' in agents
     assert 'data-sort=' in agents
