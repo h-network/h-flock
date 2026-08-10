@@ -4,6 +4,13 @@
 # plain shell, and what is under test is h-flock rather than an agent's judgement.
 #
 #   AGENT_CLIS= docker compose -p h-flock-hq up -d --force-recreate
+#
+# ⚠ AGENT_CLIS= no longer gives plain shells on its own — the entrypoint defaults
+# every tmux agent to claude, so that a plain install is not three bash prompts.
+# For a CLI-less tenant, clear the launch keys and let the windows be rebuilt:
+#
+#   docker exec <c> redis-cli --scan --pattern '*:launch' | xargs -r docker exec -i <c> redis-cli DEL
+#   docker exec <c> bash -lc 'TMUX_TMPDIR=… tmux kill-window -t <tenant>:<agent>'
 #   bash container/plumbing-check.sh
 #
 # ⚠ Give the tenant a few seconds to settle first. The first run straight after
@@ -18,9 +25,13 @@
 # compose project "h-flock-<tenant>", so the container is "<project>-tenant-1".
 # Override either by exporting POD/TENANT, or by passing the container name.
 _here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# ⚠ Hold anything already exported. Sourcing .env would otherwise overwrite it,
+# so the documented `POD=… TENANT=… bash plumbing-check.sh` override silently
+# checked the wrong tenant — measured while checking a disposable one.
+_pod="${POD:-}"; _tenant="${TENANT:-}"
 [ -f "$_here/.env" ] && . "$_here/.env"
-POD="${POD:-acme}"
-TENANT="${TENANT:-hq}"
+POD="${_pod:-${POD:-acme}}"
+TENANT="${_tenant:-${TENANT:-hq}}"
 C="${CONTAINER:-h-flock-${TENANT}-tenant-1}"
 ROSTER="pod:$POD:tenant:$TENANT:roster"
 T=$(docker exec $C printenv API_TOKEN)
@@ -47,7 +58,7 @@ ck  "no token 401"  "$(dx curl -s -o /dev/null -w '%{http_code}' $A/agents)" "40
 echo "== 2. agent -> agent message =="
 dx bash -lc "cd /workdir/$AG1 && AGENT_NAME=$AG1 office send -a $AG2 plumbing-check-42" >/dev/null 2>&1
 sleep 3
-ckc "pasted into $AG2" "$(dx bash -c "TMUX_TMPDIR=/home/ubuntu/.flock/tmux tmux capture-pane -p -t hq:$AG2 2>/dev/null")" "plumbing-check-42"
+ckc "pasted into $AG2" "$(dx bash -c "TMUX_TMPDIR=/home/ubuntu/.flock/tmux tmux capture-pane -p -t $TENANT:$AG2 2>/dev/null")" "plumbing-check-42"
 
 echo "== 3. board =="
 dx bash -lc "cd /workdir/$AG1 && AGENT_NAME=$AG1 office add -a $AG2 -t plumb-ticket -d 'the brief'" >/dev/null 2>&1
@@ -72,7 +83,7 @@ ck  "peers really hides" "$(dx bash -lc "cd /workdir/$AG1 && AGENT_NAME=$AG1 off
 echo "== 5. app -> agent, as itself =="
 cu -X POST -H 'Content-Type: application/json' -d '{"text":"hello from the app","as":"telegram"}' $A/agents/$AG1/envelopes >/dev/null
 sleep 3
-ckc "$AG1 sees client name" "$(dx bash -c "TMUX_TMPDIR=/home/ubuntu/.flock/tmux tmux capture-pane -p -t hq:$AG1")" "message from telegram"
+ckc "$AG1 sees client name" "$(dx bash -c "TMUX_TMPDIR=/home/ubuntu/.flock/tmux tmux capture-pane -p -t $TENANT:$AG1")" "message from telegram"
 
 echo "== 6. agent -> app, the return path =="
 dx bash -lc "cd /workdir/$AG1 && AGENT_NAME=$AG1 office send -a telegram reply-from-$AG1-99" >/dev/null 2>&1
@@ -148,7 +159,7 @@ echo "== 11. booted and hired agents get the same environment =="
 # a window environment, each was individually correct, each passed its own unit
 # tests — only their EQUALITY was wrong, and nothing compared them. Comparing the
 # two at the level where they actually differ is the whole point.
-penv() { dx bash -c "tr '\0' '\n' < /proc/\$(TMUX_TMPDIR=/home/ubuntu/.flock/tmux tmux list-panes -t hq:$1 -F '#{pane_pid}' | head -1)/environ" \
+penv() { dx bash -c "tr '\0' '\n' < /proc/\$(TMUX_TMPDIR=/home/ubuntu/.flock/tmux tmux list-panes -t $TENANT:$1 -F '#{pane_pid}' | head -1)/environ" \
          | grep -E '^(OFFICE_TOOLS|AGENT_GUIDE|CLAUDE_CONFIG_DIR|CODEX_HOME)=' | sed "s|/$1|/<agent>|g" | sort; }
 cu -X POST -H 'Content-Type: application/json' -d '{"kind":"StartAgent","payload":{"agent":"envprobe"}}' $A/agents/host/envelopes >/dev/null
 sleep 6
