@@ -142,5 +142,12 @@ def test_terminal_part_iii_workspace_features():
     assert "preserveSessions" in js
 
 
+def test_terminal_part_v_demoted_watch_panel():
+    """SPEC Part V §26 verification: Terminal demoted to 'watch' panel beside conversation."""
+    js = (WEB_DIR / "ui" / "terminal.js").read_text(encoding="utf-8")
+    assert "attachWatchPanel" in js
+
+
+
 
 
