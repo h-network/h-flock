@@ -34,7 +34,7 @@ VIEWPORTS = [("1600x900", 1600, 900), ("1280x720", 1280, 720), ("1024x768", 1024
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--url", default="http://127.0.0.1:8085")
-    ap.add_argument("--out", default="shots")
+    ap.add_argument("--out", default="shots")  # gitignored; screenshots are evidence, not source
     ap.add_argument("--settle", type=int, default=2500, help="ms to wait after networkidle")
     args = ap.parse_args()
 

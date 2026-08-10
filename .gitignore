@@ -12,3 +12,4 @@ container/.env
 # Credentials arrive here by docker cp and must never be committed.
 container/home/*
 !container/home/README.md
+shots/
