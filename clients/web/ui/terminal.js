@@ -481,7 +481,28 @@ export class TerminalPanel {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(frame)
+      }).then((res) => {
+        if (res.status === 413) {
+          this._handleRecordingCapReached();
+        }
       }).catch(() => {});
+    }
+  }
+
+  _handleRecordingCapReached() {
+    if (!this.isRecording) return;
+    this.isRecording = false;
+    const recordBtn = document.getElementById("record-session-btn");
+    if (recordBtn) {
+      recordBtn.classList.remove("recording");
+      recordBtn.classList.add("recording-full");
+      recordBtn.textContent = "Rec Full (Capped)";
+      recordBtn.setAttribute("aria-label", "Recording stopped: Server storage limit reached (5MB / 5000 frames limit)");
+    }
+    this.setPanelStatus("Recording stopped: Server retention cap reached (5MB / 5000 frames limit).", "error");
+    this._announce("ALERT: Terminal session recording automatically stopped. Server storage retention limit reached.");
+    if (this.term) {
+      this.term.writeln("\r\n\x1b[33;1m--- RECORDING CAPPED: Server retention limit reached (5MB / 5000 frames cap) ---\x1b[0m");
     }
   }
 

@@ -167,6 +167,12 @@
   animation: pulse-rec 1.5s infinite;
 }
 
+.btn-record.recording-full {
+  background: #b62324;
+  color: #ffffff;
+  border-color: #f85149;
+}
+
 @keyframes pulse-rec {
   0% { opacity: 1; }
   50% { opacity: 0.6; }

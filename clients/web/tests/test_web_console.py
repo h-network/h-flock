@@ -120,5 +120,9 @@ def test_terminal_part_ii_overengineering_features():
     assert "session-replay-bar" in html
     assert "recordingFrames" in js
     assert "startReplay" in js
+    assert "_handleRecordingCapReached" in js
+    assert "res.status === 413" in js
+    assert "recording-full" in js
+
 
 
