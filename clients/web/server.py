@@ -275,14 +275,7 @@ class OfficeHandler(SimpleHTTPRequestHandler):
             ])
         elif subpath.endswith("/messages/stream"):
             self._demo_sse([
-                ("msg-1", "message", {
-                    "cursor": "msg-1",
-                    "ts": "2026-08-10T02:35:00Z",
-                    "kind": "Message",
-                    "producer": "architect",
-                    "recipient": "sme-2",
-                    "payload": {"text": "Please review Build 33 console UI."},
-                }),
+                ("msg-1", "message", {"cursor": "msg-1", "ts": "2026-08-10T02:35:00Z", "kind": "Message", "producer": "architect", "recipient": "web", "payload": {"text": "Please review Build 33 console UI."}}),
             ])
         elif subpath.endswith("/envelopes") and self.command == "POST":
             self._json(202, {"stream_id": "demo-stream-1", "correlation_id": "demo-corr-1"})
