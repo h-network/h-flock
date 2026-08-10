@@ -448,3 +448,112 @@ def test_auth_session_ttl_expiry():
         web_server.shutdown()
         web_server.server_close()
 
+
+def test_healthz_and_readyz_endpoints():
+    web_server = ThreadingHTTPServer(("127.0.0.1", 0), OfficeHandler)
+    web_server.api_base = "http://127.0.0.1:8080"
+    web_server.session_host = "127.0.0.1"
+    web_server.session_port = 8081
+    web_server.api_token = "test-secret-token"
+    web_server.client_name = "web"
+    web_server.demo_mode = True
+    web_port = web_server.server_address[1]
+
+    web_thread = threading.Thread(target=web_server.serve_forever, daemon=True)
+    web_thread.start()
+
+    try:
+        # GET /healthz
+        with urllib.request.urlopen(f"http://127.0.0.1:{web_port}/healthz") as resp:
+            assert resp.status == 200
+            data = json.loads(resp.read().decode())
+            assert data["status"] == "ok"
+
+        # GET /readyz
+        with urllib.request.urlopen(f"http://127.0.0.1:{web_port}/readyz") as resp:
+            assert resp.status == 200
+            data = json.loads(resp.read().decode())
+            assert data["status"] == "ready"
+    finally:
+        web_server.shutdown()
+        web_server.server_close()
+
+
+def test_audit_log_records_operator_actions(tmp_path):
+    audit_file = tmp_path / "audit.jsonl"
+    web_server = ThreadingHTTPServer(("127.0.0.1", 0), OfficeHandler)
+    web_server.api_base = "http://127.0.0.1:8080"
+    web_server.session_host = "127.0.0.1"
+    web_server.session_port = 8081
+    web_server.api_token = "test-secret-token"
+    web_server.client_name = "web"
+    web_server.demo_mode = True
+    web_server.secret = "topsecret123"
+    web_server.audit_log = str(audit_file)
+    web_server.valid_sessions = {}
+    web_server.login_attempts = {}
+    web_server.sessions_lock = threading.Lock()
+    web_port = web_server.server_address[1]
+
+    web_thread = threading.Thread(target=web_server.serve_forever, daemon=True)
+    web_thread.start()
+
+    try:
+        # Login to generate audit entry
+        req_login = urllib.request.Request(
+            f"http://127.0.0.1:{web_port}/login",
+            data=json.dumps({"secret": "topsecret123"}).encode(),
+            headers={"Content-Type": "application/json"},
+            method="POST",
+        )
+        with urllib.request.urlopen(req_login) as resp:
+            assert resp.status == 200
+            session_cookie = resp.headers.get("Set-Cookie").split(";")[0]
+
+        # Post an operator lifecycle action envelope
+        req_hire = urllib.request.Request(
+            f"http://127.0.0.1:{web_port}/api/agents/host/envelopes",
+            data=json.dumps({"kind": "StartAgent", "payload": {"agent": "worker-1"}}).encode(),
+            headers={"Content-Type": "application/json", "Cookie": session_cookie},
+            method="POST",
+        )
+        with urllib.request.urlopen(req_hire) as resp:
+            assert resp.status == 202
+
+        # Logout
+        req_logout = urllib.request.Request(
+            f"http://127.0.0.1:{web_port}/logout",
+            headers={"Cookie": session_cookie},
+            method="POST",
+        )
+        with urllib.request.urlopen(req_logout) as resp:
+            assert resp.status == 200
+
+        # Verify audit log content
+        lines = audit_file.read_text(encoding="utf-8").strip().splitlines()
+        records = [json.loads(line) for line in lines]
+        events = [r["event"] for r in records]
+        assert "login_success" in events
+        assert "operator_action" in events
+        assert "logout" in events
+    finally:
+        web_server.shutdown()
+        web_server.server_close()
+
+
+def test_config_file_loading_and_overrides(tmp_path, monkeypatch):
+    from clients.web.server import _load_config_file
+    cfg_file = tmp_path / "console.json"
+    cfg_file.write_text(json.dumps({
+        "listen": "127.0.0.1",
+        "port": 9090,
+        "secret": "myconfigsecret",
+        "demo": True,
+    }))
+
+    loaded = _load_config_file(str(cfg_file))
+    assert loaded["listen"] == "127.0.0.1"
+    assert loaded["port"] == 9090
+    assert loaded["secret"] == "myconfigsecret"
+    assert loaded["demo"] is True
+
