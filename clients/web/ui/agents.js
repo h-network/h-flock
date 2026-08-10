@@ -37,7 +37,8 @@ export class AgentsPanel {
       this.details = new Map(details);
       for (const agent of names) this.pending.delete(agent);
       for (const agent of this.pending) this.details.set(agent, { vab: "tmux", presence: { state: "pending" } });
-      if (this.details.size) this.status.ready(`${this.details.size} participants`);
+      const staff = Array.from(this.details.values()).filter((d) => (d?.vab || "tmux") === "tmux").length;
+      if (staff) this.status.ready(`${staff} agent${staff === 1 ? "" : "s"}`);
       else this.status.empty("No enrolled participants");
       this.publishRoster();
       this.render();
@@ -84,7 +85,12 @@ export class AgentsPanel {
       return detail.presence?.last_activity || "";
     };
     const multiplier = this.sort.direction === "asc" ? 1 : -1;
-    const entries = Array.from(this.details).filter(matches).sort((left, right) => {
+    // ⚠ Staff only. api, host and any enrolled client are roster rows too, but
+    // they are plumbing: no window, no CLI, no activity feed — so they render as
+    // `unknown` and read as three broken agents on a healthy office. An operator
+    // opening this list wants the people they can talk to and watch.
+    const isStaff = ([, detail]) => (detail?.vab || "tmux") === "tmux";
+    const entries = Array.from(this.details).filter(isStaff).filter(matches).sort((left, right) => {
       const a = valueFor(left, this.sort.key);
       const b = valueFor(right, this.sort.key);
       const compared = typeof a === "number" ? a - b : String(a).localeCompare(String(b));
