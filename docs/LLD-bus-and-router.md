@@ -498,16 +498,20 @@ targets a window, not a delivery.
 A **busy tag** serialises them, written by the adapter and cleared by it:
 
 ```
-  HSET …:tenant:<t>:delivering  frontend  <started_at>     on starting a delivery
-  HDEL …:tenant:<t>:delivering  frontend                   on finishing it
+  HSETNX …:tenant:<t>:delivering  frontend  <started_at>  1 = acquired; deliver
+                                                          0 = wait and retry
+  HDEL   …:tenant:<t>:delivering  frontend                on finishing it
 
-  kicked and the tag is set?  wait for it to clear, then deliver your own envelope
+  kicked while another adapter holds the tag?  retry HSETNX until this one acquires it
 ```
 
-The waiter loops rather than exiting, which is what keeps this to one rule: each
-kick delivers the envelope it was fired for, so nothing has to drain a backlog on
-another kick's behalf and there is no seam where an envelope lands just after a
-drain finished.
+`HSETNX` is the right primitive because testing absence and claiming the field
+must be one atomic operation. `HEXISTS` followed by `HSET` has a race: two
+adapters can both observe no tag and then both claim it, recreating the
+concurrent delivery this guard exists to prevent. A waiter loops on `HSETNX`
+rather than exiting, so each kick delivers the envelope it was fired for;
+nothing has to drain a backlog on another kick's behalf and there is no seam
+where an envelope lands just after a drain finished.
 
 ⚠ **A crashed adapter leaves the tag set, and that is deliberate.** Nothing
 expires it, nothing checks whether the holder is alive, and nothing takes over.
