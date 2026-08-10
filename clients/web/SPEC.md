@@ -128,6 +128,36 @@ guide and CLI follow within the reconcile interval. Show the agent as pending
 until it appears in `/agents`, and do not present a spinner that implies failure
 if it takes a few seconds.
 
+## 6b. The console has no access control, and that is the biggest hole
+
+⚠ **Anyone who can reach the port has full control of the office.** No login, no
+session, nothing. Through this page a stranger can read every message, hire and
+retire agents, and **type into a terminal that executes**. The api token being
+server-side protects the token, not the office.
+
+It is survivable today only because `--listen` defaults to `127.0.0.1`. That is
+one flag away from being wrong, and "we bound it to localhost" is not an answer
+anyone buying this will accept.
+
+**What it needs, in order:**
+
+1. **Refuse to serve on a non-loopback interface without authentication.** If
+   `--listen` is anything but localhost and no auth is configured, exit with an
+   explanation. Do not warn and continue — a warning in a log is how this ships
+   by accident
+2. **A single shared secret is enough to start.** Not user accounts, not roles —
+   one operator credential, checked before anything is served, and a session
+   cookie afterwards. `Secure`, `HttpOnly`, `SameSite=Strict`
+3. **Constant-time comparison**, and no credential in a query string, ever — it
+   lands in logs and history
+4. **The terminal socket must be authenticated too.** It is the one that types.
+   A cookie is sent on a WebSocket upgrade; use it
+
+⚠ **Say plainly in the README what this is not:** no user identity, no audit of
+who did what, no roles. An operator credential answers "may this person in", not
+"which person was this". Selling it as more than that would be a lie, and the
+gap is worth stating rather than hiding.
+
 ## 7. Quality bar
 
 - **keyboard operable** — every action reachable, focus visible, escape closes
