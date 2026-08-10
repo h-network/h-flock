@@ -1,104 +1,102 @@
-/* Terminal Panel Styles (Build 33 - tmux lane) */
+/* Terminal Panel & Workspace Styles (Build 33 Part IV - tmux lane) */
 :root {
-  --term-bg: #0b0e14;
-  --term-bar-bg: #161b22;
-  --term-border: #30363d;
-  --term-label-color: #8b949e;
-  --term-btn-bg: #21262d;
-  --term-btn-hover: #30363d;
-  --term-btn-text: #c9d1d9;
-  --term-readonly-bg: #1f3750;
-  --term-readonly-fg: #58a6ff;
-  --term-readonly-border: #388bfd;
-  --term-interactive-bg: #4d2d00;
-  --term-interactive-fg: #ffa657;
-  --term-interactive-border: #d29922;
-}
-
-@media (prefers-color-scheme: light) {
-  :root {
-    --term-bg: #f6f8fa;
-    --term-bar-bg: #ffffff;
-    --term-border: #d0d7de;
-    --term-label-color: #57606a;
-    --term-btn-bg: #f3f4f6;
-    --term-btn-hover: #e5e7eb;
-    --term-btn-text: #1f2328;
-    --term-readonly-bg: #ddf4ff;
-    --term-readonly-fg: #0969da;
-    --term-readonly-border: #54aeff;
-    --term-interactive-bg: #fff8c5;
-    --term-interactive-fg: #9a6700;
-    --term-interactive-border: #d4a72c;
-  }
+  --term-canvas-bg: var(--surface-sunken, #080d15);
+  --term-bar-bg: var(--surface-raised, #182235);
+  --term-border: var(--border-subtle, #29364a);
+  --term-border-strong: var(--border-strong, #44536a);
+  --term-label-color: var(--text-secondary, #aab7c8);
+  --term-btn-bg: var(--surface-raised, #182235);
+  --term-btn-hover: var(--accent-soft, #142d50);
+  --term-btn-text: var(--text-primary, #eef4fb);
 }
 
 .terminal-panel {
   min-height: 520px;
-  background: var(--term-bg);
-  border-bottom: 1px solid var(--term-border);
-  padding: 10px 16px;
+  background: var(--term-canvas-bg);
+  border-bottom: var(--panel-border);
+  padding: var(--space-3) var(--space-4);
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: var(--space-2);
   height: 100%;
 }
 
-/* Terminals Workspace (SPEC §15 #/terminals) */
+/* Terminals Workspace (SPEC §15 & §16 #/terminals) */
 .terminals-workspace {
   display: flex;
   flex-direction: column;
-  gap: 12px;
-  padding: 16px;
-  height: calc(100vh - 120px);
+  gap: var(--space-3);
+  padding: var(--space-4);
+  height: calc(100vh - 5rem);
   box-sizing: border-box;
-  background: var(--term-bg);
+  background: var(--surface-canvas);
 }
 
 .term-tab-bar {
   display: flex;
   align-items: center;
-  gap: 6px;
-  background: var(--term-bar-bg);
-  padding: 6px 12px;
-  border-radius: 8px;
-  border: 1px solid var(--term-border);
+  gap: var(--space-2);
+  background: var(--surface-panel);
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-md);
+  border: var(--panel-border);
   overflow-x: auto;
+  box-shadow: var(--shadow-sm);
+}
+=======
+  gap: var(--space-2);
+  background: var(--surface-panel);
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-md);
+  border: var(--panel-border);
+  overflow-x: auto;
+  box-shadow: var(--shadow-sm);
 }
 
 .term-tab {
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 6px 14px;
-  background: var(--term-btn-bg);
-  border: 1px solid var(--term-border);
-  border-radius: 6px;
-  color: var(--term-btn-text);
-  font-size: 0.85rem;
+  gap: var(--space-2);
+  padding: var(--space-1) var(--space-3);
+  min-height: var(--control-height);
+  background: var(--surface-raised);
+  border: var(--panel-border);
+  border-radius: var(--radius-md);
+  color: var(--text-primary);
+  font-size: var(--text-sm);
   font-weight: 600;
   cursor: pointer;
-  transition: all 0.15s ease;
+  transition: all 0.15s ease-out;
 }
 
 .term-tab:hover {
-  background: var(--term-btn-hover);
+  background: var(--accent-soft);
+  border-color: var(--accent);
 }
 
 .term-tab.active {
-  background: var(--color-accent-blue, #1f6feb);
-  color: #ffffff;
-  border-color: #58a6ff;
+  background: var(--accent);
+  color: var(--text-inverse);
+  border-color: var(--accent);
+  box-shadow: var(--shadow-sm);
+}
 }
 
 .term-tab-close {
   background: transparent;
   border: none;
   color: inherit;
+<<<<<<< HEAD
   font-size: 0.8rem;
   padding: 2px 4px;
   cursor: pointer;
   border-radius: 50%;
+=======
+  font-size: var(--text-xs);
+  padding: var(--space-1);
+  cursor: pointer;
+  border-radius: var(--radius-pill);
+>>>>>>> 51d32b6 (Build 33 Part IV: apply design tokens, tabular numerals, and semantic color scale to terminal workspace)
   opacity: 0.7;
 }
 
@@ -111,14 +109,22 @@
   margin-left: auto;
   display: flex;
   align-items: center;
+<<<<<<< HEAD
   gap: 6px;
 }
 
 /* Prominent Typing Control Banner (SPEC §16 Rule 3) */
+=======
+  gap: var(--space-2);
+}
+
+/* Prominent Typing Control Banner (SPEC §16 Rule 3 & §19 Semantic Colors) */
+>>>>>>> 51d32b6 (Build 33 Part IV: apply design tokens, tabular numerals, and semantic color scale to terminal workspace)
 .typing-banner {
   display: flex;
   align-items: center;
   justify-content: space-between;
+<<<<<<< HEAD
   padding: 8px 16px;
   border-radius: 6px;
   font-size: 0.85rem;
@@ -152,17 +158,55 @@
 
 .typing-toggle-btn:hover {
   background: rgba(255, 255, 255, 0.25);
+=======
+  padding: var(--space-2) var(--space-4);
+  border-radius: var(--radius-md);
+  font-size: var(--text-sm);
+  font-weight: 600;
+  transition: all 0.15s ease-out;
+  box-shadow: var(--shadow-sm);
+}
+
+.typing-banner.readonly {
+  background: var(--info-soft, #133149);
+  border: 1px solid var(--info, #72b7eb);
+  color: var(--info, #72b7eb);
+}
+
+.typing-banner.interactive {
+  background: var(--warning-soft, #392b0e);
+  border: 1px solid var(--warning, #f4bd57);
+  color: var(--warning, #f4bd57);
+}
+
+.typing-toggle-btn {
+  font-size: var(--text-sm);
+  font-weight: 700;
+  padding: var(--space-1) var(--space-3);
+  min-height: var(--control-height);
+  border-radius: var(--radius-md);
+  cursor: pointer;
+  border: 1px solid currentColor;
+  background: rgba(255, 255, 255, 0.08);
+  color: inherit;
+  transition: background 0.15s ease-out;
+}
+
+.typing-toggle-btn:hover {
+  background: rgba(255, 255, 255, 0.2);
+>>>>>>> 51d32b6 (Build 33 Part IV: apply design tokens, tabular numerals, and semantic color scale to terminal workspace)
 }
 
 .terminal-bar {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 12px;
-  background: var(--term-bar-bg);
-  padding: 6px 12px;
-  border-radius: 6px;
-  border: 1px solid var(--term-border);
+  gap: var(--space-3);
+  background: var(--surface-panel);
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-md);
+  border: var(--panel-border);
+  box-shadow: var(--shadow-sm);
 }
 
 .terminal-info {
@@ -225,9 +269,22 @@
 }
 
 .terminal-search-box .search-count {
-  font-size: 0.75rem;
-  margin-left: 4px;
+  font-size: var(--text-xs);
+  font-variant-numeric: tabular-nums;
+  margin-left: var(--space-1);
   white-space: nowrap;
+  color: var(--text-secondary);
+}
+
+.terminal-status {
+  font-variant-numeric: tabular-nums;
+  font-size: var(--text-xs);
+}
+
+.replay-time {
+  font-variant-numeric: tabular-nums;
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
 }
 
 .terminal-view-mode, .terminal-settings-box {
