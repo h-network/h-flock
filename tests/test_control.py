@@ -321,10 +321,14 @@ def test_tmux_failure_raises_after_desired_state_is_written(monkeypatch):
             agent="host",
             session_name="hq",
         )
+    # ⚠ The create path resolves everything tmuxhost resolves — profile AND
+    # endpoint — because create_window is idempotent by name, so whatever this
+    # builds is what the agent keeps. A later reconcile will not correct it.
     assert events == [
         ("set", prefix("acme", "hq", "dave", "launch"), "claude"),
         ("hset", prefix("acme", "hq", resource="roster"), "dave", "tmux"),
         ("get", prefix("acme", "hq", "dave", "profile")),
+        ("get", prefix("acme", "hq", "dave", "endpoint")),
     ]
 
 
