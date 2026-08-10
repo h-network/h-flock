@@ -61,9 +61,11 @@ export class AlertsPanel {
 
   renderAll() {
     const matches = this.items.filter((alert) => this.matches(alert));
-    this.onResults(matches.length);
     const root = document.getElementById("alerts");
-    if (!matches.length && this.filter) root.innerHTML = `<li class="filtered-empty">No alerts match “${escapeHtml(this.filter)}”</li>`;
+    if (!matches.length && this.filter) {
+      this.onResults({ groups: 0, alerts: 0 });
+      root.innerHTML = `<li class="filtered-empty">No alerts match “${escapeHtml(this.filter)}”</li>`;
+    }
     else {
       const groups = new Map();
       for (const alert of matches) {
@@ -71,6 +73,7 @@ export class AlertsPanel {
         if (!groups.has(key)) groups.set(key, { alert, repeats: 0 });
         groups.get(key).repeats += 1;
       }
+      this.onResults({ groups: groups.size, alerts: matches.length });
       root.replaceChildren(...Array.from(groups.values(), ({ alert, repeats }) => this.element(alert, repeats)));
     }
   }
