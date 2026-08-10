@@ -373,6 +373,7 @@ class OfficeHandler(SimpleHTTPRequestHandler):
     def _handle_get_conversation(self) -> None:
         parts = self.path.split("?")[0].strip("/").split("/")
         agent_name = parts[2] if len(parts) >= 4 else "architect"
+        client_name = getattr(self.server, "client_name", "web")
 
         outbound = []
         audit_file = getattr(self.server, "audit_log", None)
@@ -404,41 +405,65 @@ class OfficeHandler(SimpleHTTPRequestHandler):
         if getattr(self.server, "demo_mode", False):
             inbound = [
                 {
-                    "ts": "2026-08-10T02:30:00Z",
-                    "kind": "Message",
-                    "producer": "operator",
-                    "recipient": agent_name,
-                    "direction": "outbound",
-                    "payload": {"text": f"Can you check the build status for {agent_name}?"},
-                },
-                {
                     "ts": "2026-08-10T02:35:00Z",
                     "kind": "Message",
                     "producer": agent_name,
-                    "recipient": "operator",
+                    "recipient": client_name,
                     "direction": "inbound",
                     "payload": {"text": f"Build complete and verified for {agent_name}."},
                 },
             ]
+            outbound.append({
+                "ts": "2026-08-10T02:30:00Z",
+                "kind": "Message",
+                "producer": "operator",
+                "recipient": agent_name,
+                "direction": "outbound",
+                "payload": {"text": f"Can you check the build status for {agent_name}?"},
+            })
         else:
+            token = getattr(self.server, "api_token", "")
+            headers = {"Authorization": f"Bearer {token}"} if token else {}
+            # 1. Prompts sent to agent's mailbox (/agents/{agent_name}/messages)
             try:
                 req = urllib.request.Request(
                     f"{self.server.api_base}/agents/{agent_name}/messages",
-                    headers={"Authorization": f"Bearer {self.server.api_token}"},
+                    headers=headers,
                 )
                 with urllib.request.urlopen(req, timeout=5) as resp:
                     if resp.status == 200:
                         data = json.loads(resp.read().decode())
                         for msg in data.get("messages", []):
-                            msg["direction"] = "inbound" if msg.get("producer") != "operator" else "outbound"
-                            inbound.append(msg)
+                            msg["direction"] = "outbound"
+                            if not msg.get("producer") or msg.get("producer") == agent_name:
+                                msg["producer"] = "operator"
+                            msg["recipient"] = agent_name
+                            outbound.append(msg)
+            except Exception:
+                pass
+
+            # 2. Replies delivered to client's mailbox (/agents/{client_name}/messages)
+            try:
+                req = urllib.request.Request(
+                    f"{self.server.api_base}/agents/{client_name}/messages",
+                    headers=headers,
+                )
+                with urllib.request.urlopen(req, timeout=5) as resp:
+                    if resp.status == 200:
+                        data = json.loads(resp.read().decode())
+                        for msg in data.get("messages", []):
+                            if msg.get("producer") == agent_name:
+                                msg["direction"] = "inbound"
+                                msg["recipient"] = client_name
+                                inbound.append(msg)
             except Exception:
                 pass
 
         combined = []
         seen = set()
-        for msg in (inbound + outbound):
-            key = f"{msg.get('ts')}:{msg.get('producer')}:{json.dumps(msg.get('payload'))}"
+        for msg in (outbound + inbound):
+            text = msg.get("payload", {}).get("text") if isinstance(msg.get("payload"), dict) else str(msg.get("payload"))
+            key = f"{msg.get('ts')}:{msg.get('producer')}:{text}"
             if key not in seen:
                 seen.add(key)
                 combined.append(msg)
