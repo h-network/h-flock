@@ -42,11 +42,14 @@ read -r AG1 AG2 <<<"$(docker exec $C redis-cli --no-raw HGETALL $ROSTER \
   | paste - - | grep '"tmux"' | awk -F'"' '{print $2}' | sort | head -2 | tr '\n' ' ')"
 [ -n "${AG1:-}" ] && [ -n "${AG2:-}" ] || { echo "plumbing-check: need two tmux agents in the roster" >&2; exit 2; }
 echo "using agents: $AG1 (sender) and $AG2 (recipient)"
-# The door speaks TLS when certs are configured, so the scheme is not a constant.
-if [ -n "$(dx printenv API_TLS_CERT 2>/dev/null)" ]; then A="https://127.0.0.1:8080"; else A="http://127.0.0.1:8080"; fi
 H="Authorization: Bearer $T"
 dx() { docker exec "$C" "$@"; }
 cu() { dx curl -sk -H "$H" "$@"; }
+# ⚠ The door speaks TLS when certs are configured, so the scheme is not a
+# constant — and this must come AFTER dx() exists. Placed above it, the probe
+# silently found nothing, every call went to http against an HTTPS listener, and
+# fourteen checks failed with empty output that looked like a broken door.
+if [ -n "$(dx printenv API_TLS_CERT 2>/dev/null)" ]; then A="https://127.0.0.1:8080"; else A="http://127.0.0.1:8080"; fi
 pass=0; fail=0
 ck() { if [ "$2" = "$3" ]; then echo "  ok    $1"; pass=$((pass+1)); else echo "  FAIL  $1 : expected [$3] got [$2]"; fail=$((fail+1)); fi; }
 ckc() { if echo "$2" | grep -q "$3"; then echo "  ok    $1"; pass=$((pass+1)); else echo "  FAIL  $1 : [$2] lacks [$3]"; fail=$((fail+1)); fi; }
