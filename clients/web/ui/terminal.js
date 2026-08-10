@@ -1,13 +1,16 @@
 "use strict";
 
 /**
- * Terminal UI Panel (Build 33 / SPEC.md §4, §6 - tmux lane)
+ * Terminal UI Panel (Build 33 / SPEC.md §4, §6, §7 - tmux lane)
  *
  * Implements xterm.js against proxied session socket (/session?agent=...)
  * Features required by SPEC.md:
  * - Read-only by default (deliberate toggle for typing)
  * - Exact 120x32 geometry matching LLD-session
  * - 5 Required Panel States: loading, empty, error (with retry), stale (update age), disconnected (reconnect backoff & attempt count)
+ * - ARIA accessibility & live screen reader announcements for safety mode switches
+ * - Keyboard navigation & Escape key handling (prevents xterm focus traps)
+ * - Light and Dark theme support following prefers-color-scheme
  * - Safety rule (Invariant 7): Terminal is rendering/input only; NEVER scrape bytes for data!
  */
 
@@ -26,10 +29,26 @@ export class TerminalPanel {
     this.staleCheckInterval = null;
 
     this.state = "empty"; // loading | empty | error | stale | disconnected | connected
+
+    this.darkTheme = {
+      background: "#0a0c10",
+      foreground: "#d0d7de",
+      cursor: "#58a6ff",
+      selectionBackground: "#264f78"
+    };
+
+    this.lightTheme = {
+      background: "#ffffff",
+      foreground: "#1f2328",
+      cursor: "#0969da",
+      selectionBackground: "#b4d5fe"
+    };
   }
 
   init() {
     if (this.term || typeof window.Terminal === "undefined") return;
+
+    const isLight = window.matchMedia && window.matchMedia("(prefers-color-scheme: light)").matches;
 
     // Exact 120x32 geometry per LLD-session & SPEC.md §6
     this.term = new window.Terminal({
@@ -37,17 +56,34 @@ export class TerminalPanel {
       rows: 32,
       convertEol: true,
       cursorBlink: true,
-      theme: {
-        background: "#0a0c10",
-        foreground: "#d0d7de",
-        cursor: "#58a6ff",
-        selectionBackground: "#264f78"
-      }
+      theme: isLight ? this.lightTheme : this.darkTheme
     });
 
     const container = document.getElementById(this.containerId);
     if (container) {
       this.term.open(container);
+    }
+
+    // Keyboard Accessibility & Focus Trap Prevention (SPEC.md §7):
+    // xterm captures keys aggressively; handling Escape allows users to leave terminal focus cleanly.
+    this.term.attachCustomKeyEventHandler((event) => {
+      if (event.type === "keydown" && (event.key === "Escape" || event.code === "Escape")) {
+        this.term.blur();
+        const toggleBtn = document.getElementById("toggle-input-mode");
+        if (toggleBtn) toggleBtn.focus();
+        this._announce("Focus returned from terminal. Keyboard focus un-trapped.");
+        return false; // Prevent xterm from swallowing Escape
+      }
+      return true;
+    });
+
+    // Listen for OS light/dark color scheme preference changes (SPEC.md §7)
+    if (window.matchMedia) {
+      window.matchMedia("(prefers-color-scheme: light)").addEventListener("change", (e) => {
+        if (this.term) {
+          this.term.options.theme = e.matches ? this.lightTheme : this.darkTheme;
+        }
+      });
     }
 
     // Safety Rule (Invariant 7 & SPEC.md §5): Terminal bytes are rendering and user input ONLY.
@@ -75,6 +111,13 @@ export class TerminalPanel {
     }
   }
 
+  _announce(message) {
+    const announcer = document.getElementById("terminal-live-announcer");
+    if (announcer) {
+      announcer.textContent = message;
+    }
+  }
+
   toggleInputMode() {
     this.isReadOnly = !this.isReadOnly;
     this.updateModeUI();
@@ -89,10 +132,14 @@ export class TerminalPanel {
       badge.textContent = "READ-ONLY";
       badge.className = "badge mode-readonly";
       btn.textContent = "Enable Typing";
+      btn.setAttribute("aria-label", "Enable typing in terminal window");
+      this._announce("Terminal mode changed to READ-ONLY. Typing is disabled.");
     } else {
       badge.textContent = "INTERACTIVE (TYPING)";
       badge.className = "badge mode-interactive";
       btn.textContent = "Disable Typing";
+      btn.setAttribute("aria-label", "Disable typing in terminal window");
+      this._announce("Terminal mode changed to INTERACTIVE (TYPING). Keystrokes will be sent to agent session.");
     }
   }
 
@@ -141,6 +188,7 @@ export class TerminalPanel {
     this.agent = agentName;
     this.state = "loading";
     this.setPanelStatus(`Connecting to ${agentName}...`, "loading");
+    this._announce(`Connecting terminal to agent ${agentName}`);
     this.term.reset();
     this.term.writeln(`\x1b[36m--- Terminal Window for ${agentName} (120x32) ---\x1b[0m`);
     this.term.writeln(`\x1b[90mConnecting to /session?agent=${encodeURIComponent(agentName)}...\x1b[0m\r\n`);
@@ -157,6 +205,7 @@ export class TerminalPanel {
         this.reconnectAttempts = 0;
         this.lastOutputTime = Date.now();
         this.setPanelStatus("Live", "connected");
+        this._announce(`Terminal connected to ${agentName} session.`);
         this.term.writeln(`\x1b[32m--- Connected [120x32, ${this.isReadOnly ? "read-only" : "interactive"}] ---\x1b[0m\r\n`);
       };
 
@@ -180,6 +229,7 @@ export class TerminalPanel {
           this.state = "disconnected";
           const delaySec = Math.min(2 * Math.pow(1.5, this.reconnectAttempts), 15);
           this.setPanelStatus(`Disconnected. Reconnecting in ${Math.round(delaySec)}s (attempt ${this.reconnectAttempts}/${this.maxReconnectAttempts})...`, "disconnected");
+          this._announce(`Terminal disconnected. Reconnecting in ${Math.round(delaySec)} seconds.`);
           this.term.writeln(`\r\n\x1b[33m--- Disconnected. Reconnecting in ${Math.round(delaySec)}s (attempt ${this.reconnectAttempts}/${this.maxReconnectAttempts})... ---\x1b[0m`);
 
           this.reconnectTimer = setTimeout(() => {
@@ -188,6 +238,7 @@ export class TerminalPanel {
         } else {
           this.state = "error";
           this.setPanelStatus("Connection failed (max retries reached). Click Reconnect.", "error");
+          this._announce("Terminal connection failed after maximum attempts. Click Reconnect to retry.");
           this.term.writeln(`\r\n\x1b[31m--- Connection failed after ${this.maxReconnectAttempts} attempts. Click Reconnect to retry. ---\x1b[0m`);
         }
       };
@@ -200,6 +251,7 @@ export class TerminalPanel {
     } catch (err) {
       this.state = "error";
       this.setPanelStatus(`Error: ${err.message}`, "error");
+      this._announce(`Terminal error: ${err.message}`);
       this.term.writeln(`\r\n\x1b[31mFailed to create WebSocket: ${err.message}\x1b[0m`);
     }
   }

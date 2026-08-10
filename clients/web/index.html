@@ -27,16 +27,17 @@
         </div>
       </header>
       <section id="board" hidden></section>
-      <section id="terminal-panel" class="terminal-panel" hidden>
+      <section id="terminal-panel" class="terminal-panel" role="tabpanel" aria-labelledby="terminal-tab" hidden>
         <div class="terminal-bar">
           <div class="terminal-info">
             <span class="terminal-label">Terminal Window (120x32)</span>
-            <span id="terminal-mode-badge" class="badge mode-readonly">READ-ONLY</span>
+            <span id="terminal-mode-badge" class="badge mode-readonly" role="status">READ-ONLY</span>
             <span id="terminal-status-text" class="terminal-status muted">Empty</span>
+            <span id="terminal-live-announcer" class="sr-only" aria-live="polite" aria-atomic="true"></span>
           </div>
           <div class="terminal-controls">
-            <button id="toggle-input-mode" type="button" class="btn-mode">Enable Typing</button>
-            <button id="reconnect-terminal" type="button" class="btn-mode">Reconnect</button>
+            <button id="toggle-input-mode" type="button" class="btn-mode" aria-label="Enable typing in terminal window">Enable Typing</button>
+            <button id="reconnect-terminal" type="button" class="btn-mode" aria-label="Reconnect terminal session">Reconnect</button>
           </div>
         </div>
         <div id="terminal-container" class="terminal-container"></div>

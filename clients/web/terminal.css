@@ -1,7 +1,41 @@
 /* Terminal Panel Styles (Build 33 - tmux lane) */
+:root {
+  --term-bg: #0b0e14;
+  --term-bar-bg: #161b22;
+  --term-border: #30363d;
+  --term-label-color: #8b949e;
+  --term-btn-bg: #21262d;
+  --term-btn-hover: #30363d;
+  --term-btn-text: #c9d1d9;
+  --term-readonly-bg: #1f3750;
+  --term-readonly-fg: #58a6ff;
+  --term-readonly-border: #388bfd;
+  --term-interactive-bg: #4d2d00;
+  --term-interactive-fg: #ffa657;
+  --term-interactive-border: #d29922;
+}
+
+@media (prefers-color-scheme: light) {
+  :root {
+    --term-bg: #f6f8fa;
+    --term-bar-bg: #ffffff;
+    --term-border: #d0d7de;
+    --term-label-color: #57606a;
+    --term-btn-bg: #f3f4f6;
+    --term-btn-hover: #e5e7eb;
+    --term-btn-text: #1f2328;
+    --term-readonly-bg: #ddf4ff;
+    --term-readonly-fg: #0969da;
+    --term-readonly-border: #54aeff;
+    --term-interactive-bg: #fff8c5;
+    --term-interactive-fg: #9a6700;
+    --term-interactive-border: #d4a72c;
+  }
+}
+
 .terminal-panel {
-  background: #0b0e14;
-  border-bottom: 1px solid #303945;
+  background: var(--term-bg);
+  border-bottom: 1px solid var(--term-border);
   padding: 10px 16px;
   display: flex;
   flex-direction: column;
@@ -13,10 +47,10 @@
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-  background: #161b22;
+  background: var(--term-bar-bg);
   padding: 6px 12px;
   border-radius: 6px;
-  border: 1px solid #30363d;
+  border: 1px solid var(--term-border);
 }
 
 .terminal-info {
@@ -28,7 +62,7 @@
 
 .terminal-label {
   font-weight: 600;
-  color: #8b949e;
+  color: var(--term-label-color);
 }
 
 .badge {
@@ -41,15 +75,15 @@
 }
 
 .badge.mode-readonly {
-  background: #1f3750;
-  color: #58a6ff;
-  border: 1px solid #388bfd;
+  background: var(--term-readonly-bg);
+  color: var(--term-readonly-fg);
+  border: 1px solid var(--term-readonly-border);
 }
 
 .badge.mode-interactive {
-  background: #4d2d00;
-  color: #ffa657;
-  border: 1px solid #d29922;
+  background: var(--term-interactive-bg);
+  color: var(--term-interactive-fg);
+  border: 1px solid var(--term-interactive-border);
 }
 
 .terminal-controls {
@@ -60,15 +94,21 @@
 .btn-mode {
   font-size: 0.8rem;
   padding: 4px 10px;
-  background: #21262d;
-  border: 1px solid #30363d;
+  background: var(--term-btn-bg);
+  border: 1px solid var(--term-border);
   border-radius: 4px;
-  color: inherit;
+  color: var(--term-btn-text);
   cursor: pointer;
+  transition: background 0.15s ease, outline 0.15s ease;
 }
 
 .btn-mode:hover {
-  background: #30363d;
+  background: var(--term-btn-hover);
+}
+
+.btn-mode:focus-visible {
+  outline: 2px solid #58a6ff;
+  outline-offset: 2px;
 }
 
 .terminal-container {
@@ -77,9 +117,27 @@
   background: #000000;
   padding: 6px;
   border-radius: 6px;
-  border: 1px solid #30363d;
+  border: 1px solid var(--term-border);
+}
+
+.terminal-container:focus-within {
+  border-color: #58a6ff;
+  box-shadow: 0 0 0 2px rgba(88, 166, 255, 0.3);
 }
 
 .terminal-container .xterm {
   padding: 4px;
+}
+
+/* Screen reader only utility class for live announcements */
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
 }
