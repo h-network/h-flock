@@ -38,8 +38,9 @@ def test_index_html_terminal_panel_elements_and_aria():
     """Verify index.html contains terminal panel markup, ARIA roles, and screen reader live region."""
     html = (WEB_DIR / "index.html").read_text(encoding="utf-8")
     assert 'id="terminal-panel"' in html
-    assert 'role="tabpanel"' in html
-    assert 'aria-labelledby="terminal-tab"' in html
+    assert 'aria-label="Watch agent terminal"' in html
+    assert 'id="watch-agent"' in html
+    assert 'aria-expanded="false"' in html
     assert 'id="terminal-container"' in html
     assert 'id="terminal-mode-badge"' in html
     assert 'id="terminal-live-announcer"' in html
@@ -146,8 +147,6 @@ def test_terminal_part_v_demoted_watch_panel():
     """SPEC Part V §26 verification: Terminal demoted to 'watch' panel beside conversation."""
     js = (WEB_DIR / "ui" / "terminal.js").read_text(encoding="utf-8")
     assert "attachWatchPanel" in js
-
-
 
 
 

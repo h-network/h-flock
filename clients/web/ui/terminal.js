@@ -966,12 +966,12 @@ export class TerminalWorkspace {
   // SPEC §26: Demote terminal to 'watch' panel beside the conversation on agent page
   attachWatchPanel(agentName, mountContainer) {
     if (!agentName || !mountContainer) return;
-    const session = this.getOrCreateSession(agentName, "terminal-container");
-    const container = document.getElementById("terminal-container");
+    const session = this.getOrCreateSession(agentName);
+    const container = document.getElementById(session.containerId);
     if (container && container.parentElement !== mountContainer) {
-      mountContainer.appendChild(container);
+      mountContainer.replaceChildren(container);
     }
-    if (session && session.panel) {
+    if (session?.panel && (!session.panel.socket || session.panel.agent !== agentName)) {
       session.panel.connect(agentName);
     }
     return session;

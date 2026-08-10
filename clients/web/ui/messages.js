@@ -1,10 +1,11 @@
 "use strict";
 
-import { absoluteTime, api, catchUp, escapeHtml, forceDemoState, PanelStatus, relativeTime, ResumableFeed } from "./shared.js";
+import { absoluteTime, api, escapeHtml, forceDemoState, PanelStatus, relativeTime, ResumableFeed } from "./shared.js";
 
 export class MessagesPanel {
-  constructor({ client }) {
+  constructor({ client, isAgent = () => false }) {
     this.client = client;
+    this.isAgent = isAgent;
     this.history = new Map();
     this.selected = "";
     this.sentHistory = [];
@@ -17,24 +18,33 @@ export class MessagesPanel {
 
   async start() {
     try {
-      await catchUp({ path: `/agents/${encodeURIComponent(this.client)}/messages`, collection: "messages", feed: "messages", client: this.client, onEvent: (message) => this.add(message) });
-      if (![...this.history.values()].some((items) => items.length)) this.status.empty("No replies yet · none is promised");
+      // The live feed is the client's inbox. Retained two-sided history is loaded
+      // per selected agent by render(), so refresh never opens an empty thread.
       this.feed = new ResumableFeed({ path: `/agents/${encodeURIComponent(this.client)}/messages/stream`, eventName: "message", feed: "messages", client: this.client, status: this.status, onEvent: (message) => this.add(message) }).start();
     } catch (error) { this.status.error(error); }
   }
 
   restart() { this.feed?.close(); this.start(); }
 
-  render(agent) {
+  async render(agent) {
     this.selected = agent;
     const root = document.getElementById("messages");
     root.replaceChildren();
-    for (const message of this.history.get(agent) || []) root.append(this.element(message));
+    this.status.loading(`Loading conversation with ${agent}…`);
+    try {
+      const value = await api(`/agents/${encodeURIComponent(agent)}/conversation`);
+      const items = (value.messages || []).filter((message) => message.kind === "Message" && typeof message.payload?.text === "string");
+      this.history.set(agent, items.slice(-100));
+      for (const message of this.history.get(agent)) root.append(this.element(message));
+      if (items.length) this.status.ready(`${items.length} messages · live`);
+      else this.status.empty("No messages yet · start the conversation below");
+    } catch (error) { this.status.error(error); }
   }
 
   add(envelope) {
     if (envelope.kind !== "Message" || typeof envelope.payload?.text !== "string") return;
     const agent = envelope.producer || "unknown";
+    envelope.direction ||= "inbound";
     if (!this.history.has(agent)) this.history.set(agent, []);
     this.history.get(agent).push(envelope);
     if (this.history.get(agent).length > 100) this.history.get(agent).shift();
@@ -43,9 +53,63 @@ export class MessagesPanel {
 
   element(envelope) {
     const item = document.createElement("li");
-    item.className = "reply";
-    item.innerHTML = `<strong>${escapeHtml(envelope.producer || "agent")}</strong><span>${escapeHtml(envelope.payload.text)}</span><time datetime="${escapeHtml(envelope.ts || "")}" title="${escapeHtml(absoluteTime(envelope.ts))}">${escapeHtml(relativeTime(envelope.ts))}</time>`;
+    const outbound = envelope.direction === "outbound";
+    const producer = envelope.producer || "unknown";
+    const operator = outbound && (producer === "operator" || producer === this.client);
+    const enrolledAgent = !outbound && this.isAgent(producer);
+    item.className = `conversation-message ${operator ? "message-operator" : enrolledAgent ? "message-agent" : "message-client"}`;
+    const speaker = operator ? "You" : enrolledAgent ? producer : `Claimed by ${producer}`;
+    const trust = operator ? "recorded by this console" : enrolledAgent ? "unverified producer · enrolled agent address" : "unverified client identity";
+    item.innerHTML = `<header><strong>${escapeHtml(speaker)}</strong><span>${escapeHtml(trust)}</span><time datetime="${escapeHtml(envelope.ts || "")}" title="${escapeHtml(absoluteTime(envelope.ts))}">${escapeHtml(relativeTime(envelope.ts))}</time></header><p>${escapeHtml(envelope.payload.text)}</p>`;
     return item;
+  }
+
+  addActivity(event) {
+    if (event.agent && event.agent !== this.selected) return;
+    const root = document.getElementById("messages");
+    if (event.kind !== "tool") return;
+    const tool = String(event.tool || "tool");
+    let run = root.lastElementChild?.classList.contains("conversation-activity") ? root.lastElementChild : null;
+    if (!run) {
+      run = document.createElement("li");
+      run.className = "conversation-activity";
+      run.innerHTML = `<header><strong>${escapeHtml(this.selected)}</strong><span>observable work · tool names only</span></header><ol></ol>`;
+      root.append(run);
+    }
+    const list = run.querySelector("ol");
+    const last = list.lastElementChild;
+    if (last?.dataset.tool === tool) {
+      const count = Number(last.dataset.count || "1") + 1;
+      last.dataset.count = String(count);
+      last.querySelector("span").textContent = `×${count}`;
+    } else {
+      const row = document.createElement("li");
+      row.dataset.tool = tool;
+      row.dataset.count = "1";
+      row.innerHTML = `<span aria-hidden="true">⚙</span><strong>${escapeHtml(tool)}</strong><span></span>`;
+      list.append(row);
+    }
+    root.scrollTop = root.scrollHeight;
+  }
+
+  setPresence(detail = {}) {
+    const presence = detail.presence?.state || "unknown";
+    const banner = document.getElementById("conversation-presence");
+    const input = document.getElementById("message");
+    const send = document.getElementById("send");
+    const messages = {
+      blocked: "Blocked · not accepting messages. Resolve the blocked condition or use Watch to complete an interactive prompt.",
+      unknown: "Presence unknown · you may send, but a reply may never come.",
+      working: "Working · messages are accepted and queued; no reply is promised.",
+      idle: "Available · messages are accepted; no reply is promised.",
+      pending: "Starting · wait for the agent window before sending.",
+    };
+    banner.className = `conversation-presence state-${presence}`;
+    banner.textContent = messages[presence] || messages.unknown;
+    const disabled = presence === "blocked" || presence === "pending";
+    input.disabled = disabled;
+    send.disabled = disabled;
+    input.placeholder = disabled ? `${this.selected} is not accepting messages` : `Message ${this.selected}…`;
   }
 
   async send(event) {
@@ -59,6 +123,10 @@ export class MessagesPanel {
     input.value = "";
     try {
       await api(`/agents/${encodeURIComponent(this.selected)}/envelopes`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ text, as: this.client }) });
+      const outgoing = { ts: new Date().toISOString(), kind: "Message", producer: "operator", recipient: this.selected, direction: "outbound", payload: { text } };
+      if (!this.history.has(this.selected)) this.history.set(this.selected, []);
+      this.history.get(this.selected).push(outgoing);
+      document.getElementById("messages").append(this.element(outgoing));
       this.status.ready("Message accepted · no reply is promised");
     } catch (error) {
       input.value = text;
