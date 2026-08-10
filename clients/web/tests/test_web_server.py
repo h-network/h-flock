@@ -794,9 +794,22 @@ def test_demo_websocket_handshake(tmp_path):
             "Sec-WebSocket-Version: 13\r\n\r\n"
         )
         sock.sendall(req.encode())
-        resp_data = sock.recv(4096).decode()
-        assert "HTTP/1.1 101 Switching Protocols" in resp_data
-        assert "Sec-WebSocket-Accept: s3pPLMBiTxaQ9kYGzzhZRbK+xOo=" in resp_data
+        raw_resp = sock.recv(4096)
+        header_end = raw_resp.find(b"\r\n\r\n")
+        assert header_end != -1
+        http_headers = raw_resp[:header_end].decode("utf-8")
+        assert "HTTP/1.1 101 Switching Protocols" in http_headers
+        assert "Sec-WebSocket-Accept: s3pPLMBiTxaQ9kYGzzhZRbK+xOo=" in http_headers
+
+        # Receive welcome frame and verify RFC 6455 MASK=0 for server-to-client frames
+        frame_data = raw_resp[header_end + 4:]
+        if not frame_data:
+            frame_data = sock.recv(4096)
+        assert len(frame_data) >= 2
+        mask_bit = (frame_data[1] & 0x80)
+        assert mask_bit == 0
+        assert b"demo terminal connected" in frame_data
+
         sock.close()
     finally:
         web_server.shutdown()

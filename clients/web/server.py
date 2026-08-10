@@ -1113,11 +1113,69 @@ class OfficeHandler(SimpleHTTPRequestHandler):
         )
         try:
             client_sock.sendall(resp.encode())
+
+            def encode_unmasked_frame(opcode: int, payload: bytes) -> bytes:
+                b1 = 0x80 | (opcode & 0x0F)
+                length = len(payload)
+                if length < 126:
+                    header = bytes([b1, length])
+                elif length <= 65535:
+                    header = bytes([b1, 126]) + length.to_bytes(2, "big")
+                else:
+                    header = bytes([b1, 127]) + length.to_bytes(8, "big")
+                return header + payload
+
+            welcome_msg = b"\x1b[32m[demo terminal connected]\x1b[0m\r\n$ "
+            client_sock.sendall(encode_unmasked_frame(0x1, welcome_msg))
+
+            buffer = bytearray()
             while True:
-                data = client_sock.recv(8192)
+                data = client_sock.recv(4096)
                 if not data:
                     break
-                client_sock.sendall(data)
+                buffer.extend(data)
+                while len(buffer) >= 2:
+                    fin_opcode = buffer[0]
+                    opcode = fin_opcode & 0x0F
+                    has_mask = bool(buffer[1] & 0x80)
+                    length = buffer[1] & 0x7F
+                    idx = 2
+                    if length == 126:
+                        if len(buffer) < 4:
+                            break
+                        length = int.from_bytes(buffer[2:4], "big")
+                        idx = 4
+                    elif length == 127:
+                        if len(buffer) < 10:
+                            break
+                        length = int.from_bytes(buffer[2:10], "big")
+                        idx = 10
+
+                    mask_key = b""
+                    if has_mask:
+                        if len(buffer) < idx + 4:
+                            break
+                        mask_key = buffer[idx : idx + 4]
+                        idx += 4
+
+                    if len(buffer) < idx + length:
+                        break
+
+                    raw_payload = buffer[idx : idx + length]
+                    buffer = buffer[idx + length :]
+
+                    if has_mask:
+                        unmasked_payload = bytes(b ^ mask_key[i % 4] for i, b in enumerate(raw_payload))
+                    else:
+                        unmasked_payload = bytes(raw_payload)
+
+                    if opcode == 0x8:  # Close frame
+                        client_sock.sendall(encode_unmasked_frame(0x8, b""))
+                        return
+                    elif opcode == 0x9:  # Ping frame
+                        client_sock.sendall(encode_unmasked_frame(0xA, unmasked_payload))
+                    elif opcode in (0x1, 0x2):  # Text or Binary frame
+                        client_sock.sendall(encode_unmasked_frame(opcode, unmasked_payload))
         except Exception:
             pass
 
