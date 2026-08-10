@@ -648,3 +648,62 @@ def test_terminal_recordings_endpoints(tmp_path):
         web_server.shutdown()
         web_server.server_close()
 
+
+def test_terminal_recordings_retention_and_limits(tmp_path):
+    rec_dir = tmp_path / "recordings"
+    web_server = ThreadingHTTPServer(("127.0.0.1", 0), OfficeHandler)
+    web_server.api_base = "http://127.0.0.1:8080"
+    web_server.recordings_dir = str(rec_dir)
+    web_server.recording_max_frames = 2
+    web_server.recording_max_bytes = 1024
+    web_server.sessions_lock = threading.Lock()
+    web_port = web_server.server_address[1]
+
+    web_thread = threading.Thread(target=web_server.serve_forever, daemon=True)
+    web_thread.start()
+
+    try:
+        # Create recording
+        req_create = urllib.request.Request(
+            f"http://127.0.0.1:{web_port}/api/recordings",
+            data=json.dumps({"agent": "architect"}).encode(),
+            headers={"Content-Type": "application/json"},
+            method="POST",
+        )
+        with urllib.request.urlopen(req_create) as resp:
+            rec_id = json.loads(resp.read().decode())["id"]
+
+        # Post frame 1
+        req_f1 = urllib.request.Request(
+            f"http://127.0.0.1:{web_port}/api/recordings/{rec_id}/frames",
+            data=json.dumps({"data": "frame1"}).encode(),
+            headers={"Content-Type": "application/json"},
+            method="POST",
+        )
+        with urllib.request.urlopen(req_f1) as resp:
+            assert resp.status == 200
+
+        # Post frame 2
+        req_f2 = urllib.request.Request(
+            f"http://127.0.0.1:{web_port}/api/recordings/{rec_id}/frames",
+            data=json.dumps({"data": "frame2"}).encode(),
+            headers={"Content-Type": "application/json"},
+            method="POST",
+        )
+        with urllib.request.urlopen(req_f2) as resp:
+            assert resp.status == 200
+
+        # Frame 3 exceeds max_recording_frames (2) and returns HTTP 413
+        req_f3 = urllib.request.Request(
+            f"http://127.0.0.1:{web_port}/api/recordings/{rec_id}/frames",
+            data=json.dumps({"data": "frame3"}).encode(),
+            headers={"Content-Type": "application/json"},
+            method="POST",
+        )
+        with pytest.raises(urllib.error.HTTPError) as exc_info:
+            urllib.request.urlopen(req_f3)
+        assert exc_info.value.code == 413
+    finally:
+        web_server.shutdown()
+        web_server.server_close()
+

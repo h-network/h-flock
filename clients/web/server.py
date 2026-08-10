@@ -58,6 +58,33 @@ def _load_config_file(config_path: str) -> dict[str, str | int | bool]:
     return res
 
 
+def _enforce_recordings_retention(rec_dir: Path, max_age_s: int = 7 * 86400, total_max_bytes: int = 100 * 1024 * 1024) -> None:
+    if not rec_dir.exists():
+        return
+    now = time.time()
+    files = []
+    total_size = 0
+    for p in rec_dir.glob("*.json"):
+        try:
+            stat = p.stat()
+            mtime = stat.st_mtime
+            if now - mtime > max_age_s:
+                p.unlink(missing_ok=True)
+            else:
+                files.append((mtime, stat.st_size, p))
+                total_size += stat.st_size
+        except Exception:
+            pass
+    files.sort(key=lambda x: x[0])  # oldest first
+    while total_size > total_max_bytes and files:
+        mtime, size, p = files.pop(0)
+        try:
+            p.unlink(missing_ok=True)
+            total_size -= size
+        except Exception:
+            pass
+
+
 def _is_loopback(address: str) -> bool:
     addr = address.strip().lower()
     if addr in {"127.0.0.1", "localhost", "::1", "localhost.localdomain"}:
@@ -227,6 +254,13 @@ class OfficeHandler(SimpleHTTPRequestHandler):
         rec_dir = Path(getattr(self.server, "recordings_dir", HERE / "recordings"))
         rec_dir.mkdir(parents=True, exist_ok=True)
 
+        max_recording_frames = getattr(self.server, "recording_max_frames", 5000)
+        max_recording_bytes = getattr(self.server, "recording_max_bytes", 5 * 1024 * 1024)
+        total_max_bytes = getattr(self.server, "recording_total_max_bytes", 100 * 1024 * 1024)
+        max_age_s = getattr(self.server, "recording_max_age_s", 7 * 86400)
+
+        _enforce_recordings_retention(rec_dir, max_age_s=max_age_s, total_max_bytes=total_max_bytes)
+
         if self.path.endswith("/frames"):
             # POST /api/recordings/<id>/frames
             parts = self.path.strip("/").split("/")
@@ -240,11 +274,19 @@ class OfficeHandler(SimpleHTTPRequestHandler):
             if not rec_file.exists():
                 self._json(404, {"detail": f"recording '{safe_id}' not found"})
                 return
+
+            if rec_file.stat().st_size >= max_recording_bytes:
+                self._json(413, {"detail": "recording file size limit reached (5MB max)"})
+                return
+
             try:
                 rec_obj = json.loads(rec_file.read_text(encoding="utf-8"))
             except Exception:
                 rec_obj = {"id": safe_id, "agent": "unknown", "frames": []}
             frames = rec_obj.get("frames", rec_obj.get("chunks", []))
+            if len(frames) >= max_recording_frames:
+                self._json(413, {"detail": f"recording frame count limit reached ({max_recording_frames} max)"})
+                return
             frames.append(data)
             rec_obj["frames"] = frames
             rec_file.write_text(json.dumps(rec_obj, indent=2), encoding="utf-8")
