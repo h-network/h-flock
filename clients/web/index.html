@@ -9,30 +9,47 @@
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
-  <main class="office">
-    <aside>
-      <header><h1>office</h1><span id="connection" class="muted">connecting</span></header>
-      <nav id="agents" aria-label="Agents"></nav>
-      <section class="alerts">
-        <h2>alerts</h2>
-        <ol id="alerts"></ol>
-      </section>
-    </aside>
-    <section class="conversation">
-      <header>
-        <div><h2 id="agent-title">Select an agent</h2><span id="agent-state" class="muted"></span></div>
-        <div class="header-actions">
-          <button id="terminal-toggle" type="button" class="btn-secondary">terminal</button>
-          <button id="boards-toggle" type="button">boards</button>
-        </div>
+  <a class="skip-link" href="#detail">Skip to detail</a>
+  <header class="topbar">
+    <div><h1>office console</h1><p id="office-summary">Loading tenant</p></div>
+    <div><span id="global-connection" class="badge state-loading" role="status">connecting</span></div>
+  </header>
+  <div id="demo-controls" class="demo-controls" hidden aria-label="Demo panel states">
+    <strong>Demo state</strong>
+    <button type="button" data-demo-state="loading">loading</button>
+    <button type="button" data-demo-state="empty">empty</button>
+    <button type="button" data-demo-state="error">error</button>
+    <button type="button" data-demo-state="stale">stale</button>
+    <button type="button" data-demo-state="disconnected">disconnected</button>
+    <button type="button" data-demo-state="ready">live data</button>
+  </div>
+  <main class="console-grid">
+    <section id="agents-panel" class="panel agents-panel" aria-labelledby="agents-title">
+      <header class="panel-header"><div><h2 id="agents-title">Agents</h2><p>Presence, work and last activity</p></div><div id="agents-status"></div></header>
+      <div id="agents" class="agent-list" aria-live="polite"></div>
+    </section>
+
+    <section id="detail" class="panel detail-panel" aria-labelledby="detail-title">
+      <header class="panel-header">
+        <div><h2 id="detail-title">Select an agent</h2><p id="detail-subtitle">Activity, terminal and messages</p></div>
+        <div id="detail-status"></div>
       </header>
-      <section id="board" hidden></section>
-      <section id="terminal-panel" class="terminal-panel" hidden>
+      <nav class="tabs" aria-label="Agent detail">
+        <button id="activity-tab" type="button" role="tab" aria-controls="activity-view" aria-selected="true">Activity</button>
+        <button id="terminal-tab" type="button" role="tab" aria-controls="terminal-panel" aria-selected="false">Terminal</button>
+        <button id="messages-tab" type="button" role="tab" aria-controls="messages-view" aria-selected="false">Messages</button>
+      </nav>
+      <section id="activity-view" class="tab-view" role="tabpanel" aria-labelledby="activity-tab">
+        <div id="activity-status"></div>
+        <ol id="activity" class="event-list" aria-live="polite"></ol>
+      </section>
+      <section id="terminal-panel" class="terminal-panel tab-view" role="tabpanel" aria-labelledby="terminal-tab" hidden>
         <div class="terminal-bar">
           <div class="terminal-info">
             <span class="terminal-label">Terminal Window (120x32)</span>
-            <span id="terminal-mode-badge" class="badge mode-readonly">READ-ONLY</span>
-            <span id="terminal-status-text" class="terminal-status muted">Empty</span>
+            <span id="terminal-mode-badge" class="badge mode-readonly" role="status">READ-ONLY</span>
+            <span id="terminal-status-text" class="terminal-status muted">No agent selected</span>
+            <span id="terminal-live-announcer" class="sr-only" aria-live="polite" aria-atomic="true"></span>
           </div>
           <div class="terminal-controls">
             <button id="toggle-input-mode" type="button" class="btn-mode">Enable Typing</button>
@@ -41,11 +58,25 @@
         </div>
         <div id="terminal-container" class="terminal-container"></div>
       </section>
-      <ol id="chat" aria-live="polite"></ol>
-      <form id="composer">
-        <textarea id="message" rows="2" placeholder="type here…" disabled></textarea>
-        <button id="send" type="submit" disabled>send</button>
-      </form>
+      <section id="messages-view" class="tab-view messages-view" role="tabpanel" aria-labelledby="messages-tab" hidden>
+        <div id="messages-status"></div>
+        <ol id="messages" class="message-list" aria-live="polite"></ol>
+        <form id="composer">
+          <label class="sr-only" for="message">Message selected agent</label>
+          <textarea id="message" rows="2" placeholder="Message selected agent…" disabled></textarea>
+          <button id="send" type="submit" disabled>Send</button>
+        </form>
+      </section>
+    </section>
+
+    <section id="alerts-panel" class="panel alerts-panel" aria-labelledby="alerts-title">
+      <header class="panel-header"><div><h2 id="alerts-title">Alerts</h2><p>Facts requiring human attention</p></div><div id="alerts-status"></div></header>
+      <ol id="alerts" class="alert-list" aria-live="assertive"></ol>
+    </section>
+
+    <section id="boards-panel" class="panel boards-panel" aria-labelledby="boards-title">
+      <header class="panel-header"><div><h2 id="boards-title">Board</h2><p>Every agent, four columns</p></div><div id="boards-status"></div></header>
+      <div id="boards" aria-live="polite"></div>
     </section>
   </main>
   <script src="vendor/xterm.js"></script>
