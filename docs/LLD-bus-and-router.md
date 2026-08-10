@@ -320,16 +320,20 @@ what is started in its window, its credentials, its configuration — belongs to
 whichever module starts it, not to membership.
 
 Lifecycle branches on VAB. For `tmux`, desired state comes before actual state
-in both directions: `StartAgent` writes the roster row and launch key before
-creating the window; `StopAgent` reads the VAB, removes the roster row, purges
-all classified identity state, and only then kills the window. Queues and board
-columns are retained data, so re-hiring the same name gets a clean identity and
-its old work. That ordering makes a crash recoverable through tmux-host
-reconciliation. There remains a narrow start interval in which delivery can
-reach the roster row before its window exists and dead-letter; reversing the
-order would instead make a crash lose the desired state entirely. For `api`,
-enrolment writes only the roster row — no launch key, home, window or CLI — and
-stopping performs the same identity purge without touching tmux.
+in both directions: `StartAgent` writes the optional profile and the launch key
+**before the roster row becomes visible**, then creates the window. The roster
+row is tmux-host's reconciliation trigger; publishing it first races the host
+into creating a window with the wrong CLI or account, and the name-idempotent
+create cannot correct that window. `StopAgent` reads the VAB, removes the roster
+row, purges all classified identity state, and only then kills the window.
+Queues and board columns are retained data, so re-hiring the same name gets a
+clean identity and its old work. That ordering makes a crash recoverable through
+tmux-host reconciliation. There remains a narrow start interval in which
+delivery can reach the roster row before its window exists and dead-letter;
+reversing the desired-state-before-roster order would instead allow a window to
+be built from incomplete state. For `api`, enrolment writes only the roster row
+— no launch key, home, window or CLI — and stopping performs the same identity
+purge without touching tmux.
 
 ### 3.3 Queues
 
@@ -433,6 +437,14 @@ second daemon and none of these jobs sits in an envelope's data path. Every
    exceeds `WINDOW_LOG_MAX_BYTES` (default 8 MiB), it is truncated only after
    the offset has reached the current end. A partial tail is left intact, so a
    record cannot be dropped between passes.
+
+   `office` runs inside the agent's pane, so it sets `FLOCK_LOG_QUIET=1` only
+   for the duration of its command. `log_record` still appends the record to the
+   window file, but does not also print bus telemetry onto that pane. The router
+   subsequently tails the file and emits the record centrally, so observability
+   is preserved without exposing module names, stream IDs or correlation IDs on
+   the agent's own screen. Daemons do not set the quiet flag and continue to log
+   to their stdout.
 5. **Apply retention.** One pipeline trims each agent's `tasks.done` and `dead`
    LISTs to the newest `BOARD_DONE_MAX` and `DEAD_MAX` entries (both default
    500). Centralising the caps here covers every writer.
