@@ -14,6 +14,7 @@ export class AgentsPanel {
     this.boards = new Map();
     this.pending = new Set();
     this.selected = "";
+    this.sort = { key: "presence", direction: "asc" };
     this.status = new PanelStatus("agents-status", () => this.refresh());
   }
 
@@ -66,65 +67,67 @@ export class AgentsPanel {
   render() {
     const root = document.getElementById("agents");
     if (!this.details.size) { root.replaceChildren(); return; }
-    const grouped = new Map();
-    for (const [agent, detail] of this.details) {
-      const presence = presenceOrder.includes(detail.presence?.state) ? detail.presence.state : "unknown";
-      if (!grouped.has(presence)) grouped.set(presence, []);
-      grouped.get(presence).push([agent, detail]);
-    }
     const matches = ([agent, detail]) => {
       if (!this.filter) return true;
       const doing = this.boards.get(agent)?.doing || [];
       return [agent, detail.vab, detail.presence?.state, ...doing.map((value) => typeof value === "string" ? value : `${value?.id || ""} ${value?.title || ""}`)]
         .some((value) => String(value || "").toLowerCase().includes(this.filter));
     };
-    for (const [presence, values] of grouped) grouped.set(presence, values.filter(matches));
-    const entries = presenceOrder.flatMap((presence) => (grouped.get(presence) || []).sort(([left], [right]) => left.localeCompare(right)));
+    const valueFor = ([agent, detail], key) => {
+      const doing = this.boards.get(agent)?.doing || [];
+      const task = typeof doing[0] === "string" ? { title: doing[0] } : doing[0];
+      if (key === "agent") return agent;
+      if (key === "presence") return presenceOrder.indexOf(detail.presence?.state || "unknown");
+      if (key === "vab") return detail.vab || "";
+      if (key === "task") return task?.title || task?.id || "";
+      if (key === "started") return task?.started_ts || "";
+      return detail.presence?.last_activity || "";
+    };
+    const multiplier = this.sort.direction === "asc" ? 1 : -1;
+    const entries = Array.from(this.details).filter(matches).sort((left, right) => {
+      const a = valueFor(left, this.sort.key);
+      const b = valueFor(right, this.sort.key);
+      const compared = typeof a === "number" ? a - b : String(a).localeCompare(String(b));
+      return (compared || left[0].localeCompare(right[0])) * multiplier;
+    });
     this.onResults(entries.length);
     if (!entries.length) {
       root.innerHTML = `<p class="filtered-empty">No agents match “${escapeHtml(this.filter)}”</p>`;
       return;
     }
-    const buttons = new Map(entries.map(([agent, detail], index) => [agent, this.agentButton(root, agent, detail, index === 0)]));
-    root.replaceChildren(...presenceOrder.filter((presence) => grouped.get(presence)?.length).map((presence) => {
-      const group = document.createElement("section");
-      const heading = document.createElement("h3");
-      heading.id = `agents-${presence}`;
-      heading.className = `agent-group-heading state-${presence}`;
-      heading.textContent = `${presence}${presence === "blocked" ? " · action required" : ""} · ${grouped.get(presence).length}`;
-      group.className = `agent-group agent-group-${presence}`;
-      group.setAttribute("role", "group");
-      group.setAttribute("aria-labelledby", heading.id);
-      group.append(heading, ...grouped.get(presence).sort(([left], [right]) => left.localeCompare(right)).map(([agent]) => buttons.get(agent)));
-      return group;
-    }));
+    const columns = [["agent", "Agent"], ["presence", "Presence"], ["vab", "Host"], ["task", "Open task"], ["started", "Started"], ["activity", "Last activity"]];
+    const table = document.createElement("table");
+    table.className = "roster-table";
+    table.innerHTML = `<thead><tr>${columns.map(([key, label]) => `<th scope="col"><button type="button" data-sort="${key}" aria-sort="${this.sort.key === key ? (this.sort.direction === "asc" ? "ascending" : "descending") : "none"}">${label}<span aria-hidden="true">${this.sort.key === key ? (this.sort.direction === "asc" ? "↑" : "↓") : "↕"}</span></button></th>`).join("")}</tr></thead><tbody>${entries.map(([agent, detail]) => this.agentRow(agent, detail)).join("")}</tbody>`;
+    root.replaceChildren(table);
+    for (const button of table.querySelectorAll("[data-sort]")) button.onclick = () => {
+      const key = button.dataset.sort;
+      this.sort = { key, direction: this.sort.key === key && this.sort.direction === "asc" ? "desc" : "asc" };
+      this.render();
+    };
+    const agentButtons = Array.from(table.querySelectorAll("[data-agent]"));
+    for (const button of agentButtons) {
+      button.onclick = () => { this.selected = button.dataset.agent; this.onSelect(this.selected); };
+      button.onkeydown = (event) => {
+        if (!["ArrowDown", "ArrowUp", "Home", "End"].includes(event.key)) return;
+        let index = agentButtons.indexOf(button);
+        if (event.key === "ArrowDown") index = (index + 1) % agentButtons.length;
+        else if (event.key === "ArrowUp") index = (index + agentButtons.length - 1) % agentButtons.length;
+        else if (event.key === "Home") index = 0;
+        else index = agentButtons.length - 1;
+        event.preventDefault();
+        agentButtons[index].focus();
+      };
+    }
   }
 
-  agentButton(root, agent, detail, first) {
+  agentRow(agent, detail) {
     const presence = detail.presence?.state || "unknown";
     const doing = this.boards.get(agent)?.doing || [];
     const ticket = typeof doing[0] === "string" ? { title: doing[0] } : doing[0];
-    const button = document.createElement("button");
-    button.type = "button";
-    button.setAttribute("role", "option");
-    button.setAttribute("aria-selected", String(agent === this.selected));
-    button.className = `agent-row state-${presence}${agent === this.selected ? " selected" : ""}`;
-    button.setAttribute("aria-label", `${agent}, ${presence}${presence === "blocked" ? ", action required" : ""}`);
-    button.tabIndex = agent === this.selected || (!this.selected && first) ? 0 : -1;
-    button.innerHTML = `<span class="state-icon" aria-hidden="true">${{ working: "●", idle: "○", blocked: "⊘", unknown: "?", pending: "…" }[presence] || "?"}</span><strong>${escapeHtml(agent)}</strong><span class="presence-label"${presence === "blocked" ? ' title="Action required"' : ""}>${escapeHtml(presence)}</span><span class="vab">${escapeHtml(detail.vab || "unknown VAB")}</span><span class="ticket">${presence === "pending" ? "Roster and window are converging" : ticket ? escapeHtml(ticket.title || ticket.id || "open ticket") : "No open ticket"}</span><span class="age">${ticket?.started_ts ? escapeHtml(relativeTime(ticket.started_ts)) : ""}</span><time title="${escapeHtml(detail.presence?.last_activity ? absoluteTime(detail.presence.last_activity) : "No activity recorded")}">${detail.presence?.last_activity ? escapeHtml(relativeTime(detail.presence.last_activity)) : "activity unknown"}</time>`;
-    button.onclick = () => { this.selected = agent; this.onSelect(agent); };
-    button.onkeydown = (event) => {
-      if (!["ArrowDown", "ArrowUp", "Home", "End"].includes(event.key)) return;
-      const rows = Array.from(root.querySelectorAll(".agent-row"));
-      let index = rows.indexOf(button);
-      if (event.key === "ArrowDown") index = (index + 1) % rows.length;
-      else if (event.key === "ArrowUp") index = (index + rows.length - 1) % rows.length;
-      else if (event.key === "Home") index = 0;
-      else index = rows.length - 1;
-      event.preventDefault();
-      rows[index].focus();
-    };
-    return button;
+    const stateLabel = `${presence}${presence === "blocked" ? " · action required" : ""}`;
+    const lastActivity = detail.presence?.last_activity;
+    return `<tr class="agent-row state-${presence}${agent === this.selected ? " selected" : ""}"><th scope="row"><button type="button" class="agent-link" data-agent="${escapeHtml(agent)}"><span class="state-icon" aria-hidden="true">${{ working: "●", idle: "○", blocked: "⊘", unknown: "?", pending: "…" }[presence] || "?"}</span><span>${escapeHtml(agent)}</span></button></th><td><span class="presence-label"${presence === "blocked" ? ' title="Action required"' : ""}>${escapeHtml(stateLabel)}</span></td><td class="vab">${escapeHtml(detail.vab || "unknown")}</td><td class="ticket">${presence === "pending" ? "Roster and window are converging" : ticket ? escapeHtml(ticket.title || ticket.id || "open ticket") : "No open ticket"}</td><td class="age">${ticket?.started_ts ? `<time datetime="${escapeHtml(ticket.started_ts)}" title="${escapeHtml(absoluteTime(ticket.started_ts))}">${escapeHtml(relativeTime(ticket.started_ts))}</time>` : "—"}</td><td><time datetime="${escapeHtml(lastActivity || "")}" title="${escapeHtml(lastActivity ? absoluteTime(lastActivity) : "No activity recorded")}">${lastActivity ? escapeHtml(relativeTime(lastActivity)) : "Unknown"}</time></td></tr>`;
   }
 
   demoState(value) { forceDemoState(this.status, value); }

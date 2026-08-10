@@ -879,7 +879,34 @@ export class TerminalWorkspace {
 
     if (this.activeAgent) {
       const session = this.getOrCreateSession(this.activeAgent);
-      if (session && session.panel) {
+      let modeBar = workspaceEl.querySelector(".workspace-typing-banner");
+      if (!modeBar) {
+        modeBar = document.createElement("div");
+        modeBar.className = "workspace-typing-banner typing-banner readonly";
+        modeBar.innerHTML = `<strong></strong><button type="button" class="typing-toggle-btn"></button>`;
+        workspaceEl.insertBefore(modeBar, workspaceEl.querySelector(".term-session-area"));
+      }
+      const renderMode = () => {
+        const readOnly = session.panel.isReadOnly;
+        modeBar.className = `workspace-typing-banner typing-banner ${readOnly ? "readonly" : "interactive"}`;
+        modeBar.querySelector("strong").textContent = `${readOnly ? "🔒 READ-ONLY" : "⚠ INTERACTIVE"} · ${this.activeAgent}`;
+        modeBar.querySelector("button").textContent = readOnly ? "Enable typing" : "Lock read-only";
+      };
+      modeBar.querySelector("button").onclick = () => { session.panel.toggleInputMode(); renderMode(); };
+      renderMode();
+      let sessionArea = workspaceEl.querySelector(".term-session-area");
+      if (!sessionArea) {
+        sessionArea = document.createElement("div");
+        sessionArea.className = "term-session-area";
+        workspaceEl.appendChild(sessionArea);
+      }
+      for (const agent of this.openTabs) {
+        const item = this.getOrCreateSession(agent);
+        const container = document.getElementById(item.containerId);
+        if (container && container.parentElement !== sessionArea) sessionArea.appendChild(container);
+        if (container) container.hidden = agent !== this.activeAgent;
+      }
+      if (session && session.panel && (!session.panel.socket || session.panel.agent !== this.activeAgent)) {
         session.panel.connect(this.activeAgent);
       }
     }

@@ -27,7 +27,7 @@
   </aside>
   <div class="app-workspace">
   <header class="topbar">
-    <div class="brand"><span class="brand-mark" aria-hidden="true">HF</span><div><h1>h-flock Console</h1><p id="office-summary">Loading tenant</p></div></div>
+    <div class="section-context"><p class="eyebrow">Office</p><h1 id="office-summary">Overview</h1></div>
     <div class="topbar-actions">
       <button id="open-command" type="button" class="quiet-button"><span>Commands</span><kbd>⌘K</kbd></button>
       <button id="notification-control" type="button" class="quiet-button" aria-pressed="false">Enable notices</button>
@@ -67,7 +67,7 @@
 
     <section id="agents-panel" class="panel app-section agents-panel" data-section="agents" aria-labelledby="agents-title" hidden>
       <header class="panel-header"><div><h2 id="agents-title">Agents</h2><p>Presence, work and last activity</p></div><div class="panel-actions"><div id="agents-status" role="status"></div><button id="hire-agent" type="button">Hire agent</button></div></header>
-      <div id="agents" class="agent-list" role="listbox" aria-label="Office participants" aria-live="polite"></div>
+      <div id="agents" class="agent-list" aria-label="Office participants" aria-live="polite"></div>
     </section>
 
     <section id="detail" class="panel app-section detail-panel" data-section="agent" aria-labelledby="detail-title" hidden>

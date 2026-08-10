@@ -6,7 +6,7 @@ import { BoardsPanel } from "./ui/boards.js";
 import { ActivityPanel } from "./ui/activity.js";
 import { MessagesPanel } from "./ui/messages.js";
 import { LifecyclePanel } from "./ui/lifecycle.js";
-import { TerminalPanel } from "./ui/terminal.js";
+import { globalTerminalWorkspace } from "./ui/terminal.js";
 import { Preferences } from "./ui/preferences.js";
 import { CommandPalette } from "./ui/palette.js";
 import { AlertNotifications } from "./ui/notifications.js";
@@ -17,7 +17,6 @@ import { PanelStatus } from "./ui/shared.js";
 
 const $ = (id) => document.getElementById(id);
 const state = { selected: "", tab: "activity", demo: false, roster: null, alertCount: null, results: { agents: 0, alerts: 0, boards: 0 } };
-const terminal = new TerminalPanel();
 const preferences = new Preferences();
 const notifications = new AlertNotifications();
 const updateResult = (panel) => (count) => { state.results[panel] = count; renderSearchSummary(); };
@@ -72,6 +71,17 @@ function populateTerminalAgents() {
     select.replaceChildren(new Option("Select Agent", ""), ...names.map((name) => new Option(name, name)));
     if (names.includes(current)) select.value = current;
   }
+  if (router?.current().section === "terminals") globalTerminalWorkspace.renderWorkspace($("terminals-workspace-mount"), names);
+}
+
+function connectAgentTerminal(agent) {
+  const session = globalTerminalWorkspace.getOrCreateSession(agent);
+  if (!globalTerminalWorkspace.openTabs.includes(agent)) globalTerminalWorkspace.openTabs.push(agent);
+  globalTerminalWorkspace.activeAgent = agent;
+  const container = document.getElementById(session.containerId);
+  const mount = $("terminal-container");
+  if (container && container.parentElement !== mount) mount.replaceChildren(container);
+  if (!session.panel.socket || session.panel.agent !== agent) session.panel.connect(agent);
 }
 
 function updateOfficeSummary() {
@@ -95,7 +105,7 @@ function activateTab(name) {
     const view = tab === "terminal" ? $("terminal-panel") : $(`${tab === "board" ? "agent-board" : tab}-view`);
     view.hidden = !selected;
   }
-  if (name === "terminal" && state.selected) terminal.connect(state.selected);
+  if (name === "terminal" && state.selected) connectAgentTerminal(state.selected);
   if (name === "board" && state.selected) boards.renderAgent(state.selected);
 }
 
@@ -113,7 +123,7 @@ async function selectAgent(agent) {
   await activity.select(agent);
   messages.render(agent);
   boards.renderAgent(agent);
-  if (state.tab === "terminal") terminal.connect(agent);
+  if (state.tab === "terminal") connectAgentTerminal(agent);
 }
 
 function commandList() {
@@ -212,6 +222,10 @@ async function handleRoute(route) {
       $("detail-title").textContent = route.agent;
       $("detail-subtitle").textContent = "Loading agent…";
     }
+  }
+  if (route.section === "terminals") {
+    const names = agents.names().filter((name) => agents.detail(name)?.vab === "tmux");
+    globalTerminalWorkspace.renderWorkspace($("terminals-workspace-mount"), names);
   }
   if (route.section === "recordings" && !loadedSections.has("recordings")) {
     loadedSections.add("recordings");

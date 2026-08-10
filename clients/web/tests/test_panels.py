@@ -110,7 +110,9 @@ def test_keyboard_focus_and_relative_timestamp_contracts():
         assert key in agents
     assert '$("detail-title").focus()' in app
     assert 'role="tablist"' in html
-    assert 'role="listbox"' in html
+    assert 'className = "roster-table"' in agents
+    assert 'scope="col"' in agents
+    assert 'data-sort=' in agents
     for module in ("activity.js", "messages.js", "alerts.js"):
         content = (WEB_DIR / "ui" / module).read_text(encoding="utf-8")
         assert "relativeTime(" in content
