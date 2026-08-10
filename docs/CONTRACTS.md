@@ -293,8 +293,13 @@ Redis. If it ever matters, the lever is the adapter's import graph.
 The adapter is invoked, delivers, and **exits**. It is not a service and holds
 nothing between deliveries. On start it:
 
-1. waits until `HEXISTS …:tenant:<t>:delivering <agent>` is false, then
-   `HSET`s its own entry — the busy tag (`LLD-bus-and-router` §3.3)
+1. acquires the busy tag with a single `HSETNX …:tenant:<t>:delivering <agent>`,
+   retrying every 50 ms until it succeeds (`LLD-bus-and-router` §3.3)
+
+   ⚠ **One command, not two.** An earlier draft of this contract described
+   `HEXISTS` then `HSET`, which is racy: two adapters can both see the field
+   absent and both write. `HSETNX` decides it atomically. Do not "simplify" it
+   back into a check followed by a write.
 2. `HGET`s the roster for this agent's VAB, and dispatches to that base's
    delivery routine
 3. delivers **the one envelope it was kicked for**
@@ -364,11 +369,18 @@ it now dead-letters with a reason, which is the right answer and a visible one.
 The lesson is in the delay: a compatibility shim with a date but no owner keeps
 its date and loses its removal.
 
-⚠ **`AddTicket` is opened by `tmux` but touches no window.** It is in this table
+⚠ **`AddTicket` is opened by `tmux` and writes only a board — but it does check the
+window exists.** It is in this table
 under the VAB that opens it, not the thing it does — a board write is the one
 delivery routine that produces no terminal output, deliberately: the board is
 pulled, so nothing notifies the agent. A ticket waits until that agent runs
 `office take`.
+
+⚠ **It still requires the window to exist.** `add_ticket_opener` checks
+`list_windows` and raises `DeadLetter("window_missing")` if the agent has none,
+even though the ticket itself is only a Redis write. Whether that is right is
+open — the board being pulled means a ticket could simply wait for the agent to
+come back — but it is what happens today.
 
 `vab` defaults to `tmux` and accepts `tmux` or `api`; `cli` defaults to `claude`.
 
