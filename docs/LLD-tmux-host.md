@@ -159,6 +159,10 @@ When a CLI is configured, window creation routes through `startAgent <cli>` so p
 ⚠ **OAuth Refresh Token Rotation (RTR) & Profile Credential Sharing (Build 32):**
 Anthropic OAuth enforces Refresh Token Rotation (RTR): every token refresh yields a new access token and a new single-use refresh token, while invalidating the old refresh token (`BUILD-32-FINDINGS.md`). Duplicating `.credentials.json` into multiple per-agent config directories is structurally broken, as the first agent to refresh invalidates all other copies within 1 hour. Therefore, agents assigned to the same account profile share the single profile config directory (`CLAUDE_CONFIG_DIR=~/.claude-<profile>`). Distinct profiles maintain separate directories with their own independent OAuth logins.
 
+⚠ **Launch and Profile State Ordering:** `start_agent` (`flock.control.openers`) writes the `launch` (`pod:<pod>:tenant:<tenant>:agent:<name>:launch`) and `profile` keys to Redis *before* writing roster membership (`r.hset(roster_key, agent, agent_vab)`). `tmuxhost` reconciles windows as soon as the agent row appears in the roster; writing launch or profile after roster membership created a race condition where `tmuxhost` built a window with the default CLI or wrong account before the launch/profile keys were set.
+
+⚠ **Quiet Terminal Telemetry:** `office` runs inside an agent's window, where `stdout` is the agent's screen. Printing bus telemetry log records (`{"module":"adapter", ...}`) to `stdout` hands the agent internal module names, stream IDs, and correlation IDs, leading agents to inspect local processes and discover Redis. `office` sets `FLOCK_LOG_QUIET=1` to suppress envelope logging to `stdout`, while log records are still written to the window log file (`FLOCK_LOG_FILE`) for router tailing.
+
 ## 6. Lifecycle
 
 tmux restarts nothing. A window whose process exits stays dead; a server that

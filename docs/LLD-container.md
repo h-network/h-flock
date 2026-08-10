@@ -150,6 +150,11 @@ instead of rebuilding it.
 
 Enrolling an external application client (`StartAgent` with `vab: "api"`) adds a roster row only, creating no window or CLI process.
 
+### Entrypoint CLI Defaulting & Credential Verification
+
+- **Default CLI initialization:** `setup.sh` writes `AGENT_CLIS` only for agents that differ from the default CLI (`claude`). Therefore, a single-account default install passes no `AGENT_CLIS` environment variable. `container/entrypoint.sh` explicitly defaults every tmux agent's `launch` key in Redis (`pod:<pod>:tenant:<tenant>:agent:<name>:launch`) to `claude` before exception maps (`AGENT_CLIS`, `AGENT_PROFILES`) are applied. Without this explicit default, a default install writes no `launch` keys, `tmuxhost` builds every window as a bare shell, and the office comes up as bash prompts with presence `unknown`.
+- **`seed-home.sh check` credential verification:** `seed-home.sh check` inspects profile credentials. It checks actual token expiration timestamps (`refreshTokenExpiresAt` or `expiresAt`) rather than just non-empty file existence. Previously, a 281-byte credential file with an expiry of zero reported `"logged in"` while every agent sat at `"Not logged in · Run /login"`. `seed-home.sh check` now parses the credential JSON and reports `"logged in"`, `"EXPIRED"`, `"UNREADABLE"`, or `"NEEDS LOGIN"`.
+
 ## 6. When something dies
 
 A real init runs as PID 1 so orphaned processes — the children agent CLIs spawn
