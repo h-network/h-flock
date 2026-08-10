@@ -154,8 +154,24 @@ class ControlModeClient:
 
         for agent in sorted(added):
             pane = self.agent_to_pane[agent]
-            snapshot = await self.command("capture-pane", "-p", "-e", "-t", pane, "-S", "-")
-            subscriber.queue.put_nowait({"agent": agent, "data": "\n".join(snapshot)})
+            # ⚠ The VISIBLE screen, not the scrollback. `-S -` dumps the whole
+            # history, so a client wrote thousands of lines and then received
+            # live updates that position the cursor absolutely within a 32-row
+            # screen — the two disagreed, and an operator saw the prompt near the
+            # top while their own keystrokes echoed far below it.
+            snapshot = await self.command("capture-pane", "-p", "-e", "-t", pane)
+            # Clear and home first so row 1 of the client is row 1 of the pane,
+            # then put the cursor where tmux actually has it. Without this the
+            # client's idea of the screen is offset from the pty's for good.
+            cursor = await self.command(
+                "display-message", "-p", "-t", pane, "#{cursor_y} #{cursor_x}"
+            )
+            try:
+                row, col = (int(v) + 1 for v in cursor[0].split())
+            except (IndexError, ValueError):
+                row, col = 1, 1
+            payload = "\x1b[2J\x1b[H" + "\n".join(snapshot) + f"\x1b[{row};{col}H"
+            subscriber.queue.put_nowait({"agent": agent, "data": payload})
             for data in subscriber.buffering.pop(agent, []):
                 subscriber.queue.put_nowait({"agent": agent, "data": data})
         return []

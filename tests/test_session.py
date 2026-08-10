@@ -54,7 +54,11 @@ def test_snapshot_precedes_output_arriving_during_capture():
         controller.agent_to_pane = {"alice": "%1"}
 
         async def command(*args):
-            assert args[0] == "capture-pane"
+            # The snapshot is capture-pane plus a cursor query; live output that
+            # arrives mid-capture must still land after it.
+            assert args[0] in ("capture-pane", "display-message")
+            if args[0] == "display-message":
+                return ["0 0"]
             controller._publish("%1", b"live")
             return ["snapshot"]
 
@@ -63,8 +67,13 @@ def test_snapshot_precedes_output_arriving_during_capture():
         assert await controller.update_subscription(subscriber, {"alice"}) == []
         return [subscriber.queue.get_nowait(), subscriber.queue.get_nowait()]
 
+    # ⚠ The snapshot now clears and homes first, then restores the cursor, so the
+    # client's row 1 is the pane's row 1. Without that the client rendered the
+    # whole scrollback and then received absolutely-positioned updates for a
+    # 32-row screen, which is why an operator saw keystrokes echo far below the
+    # prompt.
     assert asyncio.run(scenario()) == [
-        {"agent": "alice", "data": "snapshot"},
+        {"agent": "alice", "data": "\x1b[2J\x1b[Hsnapshot\x1b[1;1H"},
         {"agent": "alice", "data": "live"},
     ]
 
