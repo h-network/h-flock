@@ -100,6 +100,34 @@ Telegram's own indicator expiring is why.
   can type it in the terminal, where they can see what they are doing
 - one origin for page, api and socket
 
+## 6a. Lifecycle — hiring and retiring, from the UI
+
+An operator should be able to staff an office without a shell.
+
+| action | envelope to `POST /agents/host/envelopes` |
+|---|---|
+| **hire** | `{"kind":"StartAgent","payload":{"agent":"<name>","vab":"tmux","cli":"claude","profile":"<optional>"}}` |
+| **retire** | `{"kind":"StopAgent","payload":{"agent":"<name>"}}` |
+| **pause / resume** | `PauseAgent` / `ResumeAgent`, same shape |
+
+⚠ **Retiring is destructive and must be confirmed** — type the agent's name to
+confirm, the way a repository deletion works. `StopAgent` removes the roster row
+and purges identity state. It keeps queues and boards, and the UI should say so
+in the confirmation, because "will I lose their tickets?" is the first question
+anyone asks.
+
+⚠ **Pause is not retire.** Offer both, and make the difference legible: pause
+stops the CLI and keeps everything, envelopes queue up and are drained on resume.
+
+⚠ **Validate the name before sending** — lowercase, digits and hyphens, and **not
+all digits** (tmux reads `s:2` as window index 2). The api will reject a bad name
+but the user deserves to know before the round trip.
+
+⚠ **Hiring is not instant.** The roster row appears immediately; the window,
+guide and CLI follow within the reconcile interval. Show the agent as pending
+until it appears in `/agents`, and do not present a spinner that implies failure
+if it takes a few seconds.
+
 ## 7. Quality bar
 
 - **keyboard operable** — every action reachable, focus visible, escape closes
