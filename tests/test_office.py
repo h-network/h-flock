@@ -310,15 +310,18 @@ def test_board_keys_preserve_hyphenated_agent_name(office_env, monkeypatch, caps
 
 def test_take_normalizes_old_ticket_prints_and_logs_task_id(office_env, monkeypatch, tmp_path, capsys):
     monkeypatch.setenv("TASK_RECORD", str(tmp_path / "tasks.jsonl"))
+    # ⚠ Telemetry goes to the window log, not the agent's screen.
+    window_log = tmp_path / "window.jsonl"
+    monkeypatch.setenv("FLOCK_LOG_FILE", str(window_log))
     raw = b'{"id":"a1","title":"opaque: --flag"}'
     office_env.lists[_task("frontend", "todo")] = [raw]
     cli.main(["take"])
     lines = capsys.readouterr().out.splitlines()
-    record = json.loads(lines[0])
+    record = json.loads(window_log.read_text().splitlines()[0])
     assert record["module"] == "office"
     assert record["event"] == "task_taken"
     assert record["task_id"] == "a1"
-    ticket = json.loads(lines[1])
+    ticket = json.loads(lines[0])
     assert ticket["status"] == "doing"
     assert ticket["created_by"] == "unknown"
     event = json.loads((tmp_path / "tasks.jsonl").read_text())
@@ -327,14 +330,18 @@ def test_take_normalizes_old_ticket_prints_and_logs_task_id(office_env, monkeypa
 
 def test_done_moves_open_task_and_logs_task_id(office_env, monkeypatch, tmp_path, capsys):
     monkeypatch.setenv("TASK_RECORD", str(tmp_path / "tasks.jsonl"))
+    # ⚠ `office` no longer prints bus telemetry to stdout — its stdout is an
+    # agent's pane. The record goes to the window log the router tails.
+    window_log = tmp_path / "window.jsonl"
+    monkeypatch.setenv("FLOCK_LOG_FILE", str(window_log))
     raw = b'{"id":"b2","title":"finish"}'
     office_env.lists[_task("frontend", "doing")] = [raw]
     cli.main(["done"])
     lines = capsys.readouterr().out.splitlines()
-    record = json.loads(lines[0])
+    assert json.loads(lines[0])["status"] == "done"
+    record = json.loads(window_log.read_text().splitlines()[0])
     assert record["event"] == "task_done"
     assert record["task_id"] == "b2"
-    assert json.loads(lines[1])["status"] == "done"
     assert json.loads((tmp_path / "tasks.jsonl").read_text())["event"] == "done"
 
 

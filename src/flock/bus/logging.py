@@ -56,9 +56,25 @@ def log_record(
         if value is not None:
             record[field] = value
     line = json.dumps(record, separators=(",", ":"))
-    print(line, flush=True)
+    # ⚠ Not to stdout when we are inside an agent's window. `office` runs in a
+    # pane, so its stdout IS the agent's screen, and printing an envelope record
+    # there hands the agent module names, stream ids and correlation ids it has
+    # no use for. Measured: an agent read `{"module":"adapter",...}` out of its
+    # own terminal, reasoned that envelope ids imply a broker, went looking, and
+    # found Redis. HLD §5 already says these records reach the log through the
+    # window file the router tails — the print was redundant as well as a
+    # signpost. A daemon has no FLOCK_LOG_FILE and still prints to its stdout.
+    # ⚠ `office` sets FLOCK_LOG_QUIET because it runs in an agent's PANE: its
+    # stdout is the agent's screen. Printing an envelope record there hands the
+    # agent module names, stream ids and correlation ids it has no use for.
+    # Measured: an agent read {"module":"adapter",...} out of its own terminal,
+    # reasoned that envelope ids imply a broker, went looking and found Redis.
+    # The record still reaches the log through the window file the router tails
+    # (HLD §5), so nothing is lost. Daemons do not set this and keep printing.
+    path = os.environ.get("FLOCK_LOG_FILE")
+    if os.environ.get("FLOCK_LOG_QUIET") != "1":
+        print(line, flush=True)
     try:
-        path = os.environ.get("FLOCK_LOG_FILE")
         agent_only = os.environ.get("FLOCK_LOG_FILE_AGENT_ONLY")
         if path and (not agent_only or os.environ.get("AGENT_NAME")):
             with open(path, "a", encoding="utf-8") as handle:

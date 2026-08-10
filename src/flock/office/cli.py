@@ -577,7 +577,23 @@ def _clone_to_all_command(argv: list[str]) -> None:
 
 
 def main(argv: Sequence[str] | None = None) -> None:
-    args = list(sys.argv[1:] if argv is None else argv)
+    # ⚠ Scoped, not global. This command runs inside an agent's window, so its
+    # stdout is a pane and bus telemetry printed there is a signpost the agent
+    # does not need. Restore the previous value afterwards: main() is called
+    # in-process by the tests, and leaking the flag silences unrelated
+    # components' logging for the rest of the run.
+    previous_quiet = os.environ.get("FLOCK_LOG_QUIET")
+    os.environ["FLOCK_LOG_QUIET"] = "1"
+    try:
+        _run(list(sys.argv[1:] if argv is None else argv))
+    finally:
+        if previous_quiet is None:
+            os.environ.pop("FLOCK_LOG_QUIET", None)
+        else:
+            os.environ["FLOCK_LOG_QUIET"] = previous_quiet
+
+
+def _run(args: list[str]) -> None:
     parser = _root_parser()
     if not args:
         parser.print_help()
