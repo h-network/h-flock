@@ -3,26 +3,34 @@
 import os
 from pathlib import Path
 
-WEB_DIR = Path(__file__).resolve().parent.parent / "clients" / "web"
+WEB_DIR = Path(__file__).resolve().parent.parent
 
 
 def test_token_not_in_browser_assets():
-    """Security check (BUILD-33 §7 & §6): API token MUST NOT be in browser JS/HTML/CSS."""
-    for filename in ("index.html", "app.js", "terminal.js", "style.css", "terminal.css", "xterm.js", "xterm.css"):
-        file_path = WEB_DIR / filename
-        assert file_path.exists(), f"Missing web asset: {filename}"
+    """Security check (SPEC.md §6 & §8): API token MUST NOT be in browser JS/HTML/CSS."""
+    for relative_path in (
+        "index.html",
+        "app.js",
+        "ui/terminal.js",
+        "style.css",
+        "terminal.css",
+        "vendor/xterm.js",
+        "vendor/xterm.css",
+    ):
+        file_path = WEB_DIR / relative_path
+        assert file_path.exists(), f"Missing web asset: {relative_path}"
         content = file_path.read_text(encoding="utf-8")
-        assert "API_TOKEN" not in content, f"API_TOKEN reference found in browser asset {filename}"
-        assert "Authorization" not in content, f"Authorization header reference found in browser asset {filename}"
+        assert "API_TOKEN" not in content, f"API_TOKEN reference found in browser asset {relative_path}"
+        assert "Authorization" not in content, f"Authorization header reference found in browser asset {relative_path}"
 
 
 def test_xterm_and_terminal_js_vendored():
     """Verify xterm.js, terminal.js and stylesheets are present in clients/web/."""
-    assert (WEB_DIR / "xterm.js").exists()
-    assert (WEB_DIR / "xterm.css").exists()
-    assert (WEB_DIR / "terminal.js").exists()
+    assert (WEB_DIR / "vendor" / "xterm.js").exists()
+    assert (WEB_DIR / "vendor" / "xterm.css").exists()
+    assert (WEB_DIR / "ui" / "terminal.js").exists()
     assert (WEB_DIR / "terminal.css").exists()
-    js_content = (WEB_DIR / "xterm.js").read_text(encoding="utf-8")
+    js_content = (WEB_DIR / "vendor" / "xterm.js").read_text(encoding="utf-8")
     assert "Terminal" in js_content, "xterm.js does not export Terminal"
 
 
@@ -33,17 +41,23 @@ def test_index_html_terminal_panel_elements():
     assert 'id="terminal-container"' in html
     assert 'id="terminal-mode-badge"' in html
     assert 'id="toggle-input-mode"' in html
-    assert 'href="xterm.css"' in html
+    assert 'href="vendor/xterm.css"' in html
     assert 'href="terminal.css"' in html
-    assert 'src="xterm.js"' in html
-    assert 'src="terminal.js"' in html
+    assert 'src="vendor/xterm.js"' in html
+    assert 'src="app.js"' in html
 
 
-def test_terminal_js_safety_rules():
-    """Verify terminal.js implements 120x32 geometry and default read-only safety rule."""
-    js = (WEB_DIR / "terminal.js").read_text(encoding="utf-8")
+def test_terminal_js_safety_rules_and_states():
+    """Verify ui/terminal.js implements 120x32 geometry, 5 panel states, and read-only safety rule."""
+    js = (WEB_DIR / "ui" / "terminal.js").read_text(encoding="utf-8")
     assert "cols: 120" in js
     assert "rows: 32" in js
-    assert "isReadOnly: true" in js
+    assert "this.isReadOnly = true" in js
     assert "READ-ONLY" in js
     assert "INTERACTIVE (TYPING)" in js
+    # Verify 5 required panel states handling:
+    assert "loading" in js
+    assert "empty" in js
+    assert "error" in js
+    assert "stale" in js
+    assert "disconnected" in js
