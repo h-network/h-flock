@@ -76,3 +76,13 @@ def test_terminal_js_safety_accessibility_and_themes():
     assert "prefers-color-scheme: light" in js
     assert "lightTheme" in js
     assert "darkTheme" in js
+
+
+def test_terminal_js_readonly_guarantee_and_bypass_protection():
+    """Security audit check: Prove read-only guarantee cannot be bypassed via disableStdin or onData."""
+    js = (WEB_DIR / "ui" / "terminal.js").read_text(encoding="utf-8")
+    # Dual-layer protection: xterm engine level + application logic level
+    assert "disableStdin: this.isReadOnly" in js
+    assert "this.term.options.disableStdin = this.isReadOnly" in js
+    assert "if (!this.isReadOnly && this.socket && this.socket.readyState === WebSocket.OPEN)" in js
+

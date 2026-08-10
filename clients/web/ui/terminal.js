@@ -51,11 +51,13 @@ export class TerminalPanel {
     const isLight = window.matchMedia && window.matchMedia("(prefers-color-scheme: light)").matches;
 
     // Exact 120x32 geometry per LLD-session & SPEC.md §6
+    // Read-only by default: disableStdin provides engine-level input blocking (SPEC.md §6)
     this.term = new window.Terminal({
       cols: 120,
       rows: 32,
       convertEol: true,
       cursorBlink: true,
+      disableStdin: this.isReadOnly,
       theme: isLight ? this.lightTheme : this.darkTheme
     });
 
@@ -126,6 +128,9 @@ export class TerminalPanel {
   updateModeUI() {
     const badge = document.getElementById("terminal-mode-badge");
     const btn = document.getElementById("toggle-input-mode");
+    if (this.term) {
+      this.term.options.disableStdin = this.isReadOnly;
+    }
     if (!badge || !btn) return;
 
     if (this.isReadOnly) {
