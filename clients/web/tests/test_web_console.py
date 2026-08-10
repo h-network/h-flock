@@ -84,5 +84,6 @@ def test_terminal_js_readonly_guarantee_and_bypass_protection():
     # Dual-layer protection: xterm engine level + application logic level
     assert "disableStdin: this.isReadOnly" in js
     assert "this.term.options.disableStdin = this.isReadOnly" in js
-    assert "if (!this.isReadOnly && this.socket && this.socket.readyState === WebSocket.OPEN)" in js
+    assert "if (!this.isReadOnly && this.socket && this.socket.readyState === WebSocket.OPEN && this.agent)" in js
+    assert 'mode: initialMode' in js or 'mode: mode' in js
 
