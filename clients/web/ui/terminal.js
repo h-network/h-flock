@@ -743,7 +743,16 @@ export class TerminalPanel {
             }
             if (typeof parsed.data === "string") {
               this._recordFrame("out", parsed.data);
-              this.term.write(parsed.data);
+              // ⚠ The door is byte-transparent: it decodes latin-1 so every byte
+              // survives as one code point. Writing that string as TEXT makes
+              // xterm read 0xE2 as 'â' instead of the first byte of a UTF-8
+              // sequence — box-drawing and anything non-ASCII turns to mojibake.
+              // Convert back to the bytes and let xterm do the UTF-8 decoding.
+              const bytes = new Uint8Array(parsed.data.length);
+              for (let i = 0; i < parsed.data.length; i += 1) {
+                bytes[i] = parsed.data.charCodeAt(i) & 0xff;
+              }
+              this.term.write(bytes);
               return;
             }
             // A JSON object with neither error nor data is protocol chatter —
