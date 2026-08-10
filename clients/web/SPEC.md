@@ -193,3 +193,99 @@ gap is worth stating rather than hiding.
     README.md        how to run it, and the decisions behind it
     SPEC.md          this
 ```
+
+
+---
+
+# Part II — the round that makes it a product
+
+> The first build made it correct and safe. `style.css` is 57 lines and the
+> panels are 46–115 each: that is a competent console, not something anyone would
+> call polished. This part is explicitly **over-engineering, and it is wanted.**
+
+⚠ **Zero build step still holds.** Everything below is reachable with modules,
+custom properties and vendored files. If you think something needs a bundler, say
+so and I will decide — do not add one.
+
+⚠ **Nobody can see this.** There is no browser on any host we have. Everything
+visual must therefore be *reasoned* and *described*, and anything you cannot
+verify must be reported as unverified. Do not claim it looks good.
+
+## 10. `bus` — the surface
+
+**A design system, not ad-hoc CSS.** Custom properties for a spacing scale, a
+type scale, elevation, radius and a full semantic colour set for both schemes.
+Every panel consumes tokens; no literal colours outside the token block.
+
+**A command palette.** `Ctrl/Cmd-K`: jump to an agent, run a lifecycle action,
+open a board, filter alerts. This is how operators actually drive tools they use
+daily, and it makes every feature reachable without hunting.
+
+**Global search and filter.** One field that filters agents, alerts and board
+tickets at once, with the result counts per panel. At 40 agents and 300 alerts
+this is the difference between a tool and a wall.
+
+**Keyboard shortcuts, with a `?` overlay** listing them. No hidden keystrokes:
+if it is not in the overlay it does not exist.
+
+**Density modes** — comfortable and compact, remembered. An operator on a laptop
+and one on a wall display want different things.
+
+**Preferences that persist** in `localStorage`: density, theme override, last
+selected agent, panel sizes. ⚠ Never the secret, never a token.
+
+**Desktop notifications** for new alerts, opt-in, with a mute control. ⚠ An alert
+that clears itself must clear its notification — do not notify about something
+already resolved.
+
+**A better composer**: multi-line, send on `Ctrl-Enter`, history with up-arrow,
+and a clear indication that a reply may never come.
+
+## 11. `api` — the operational surface
+
+**TLS.** `--tls-cert` / `--tls-key`. ⚠ Without it, the operator secret crosses
+the network in clear text the moment anyone binds beyond loopback, which §6b
+otherwise allows.
+
+**An audit trail.** The README currently admits there is none. Every operator
+action — login, logout, hire, retire, pause, resume, message sent, terminal
+switched to read-write — appended as structured JSON with timestamp, session id
+and source address. ⚠ It answers *what was done from this session*, still not
+*which human*; keep saying so.
+
+**`/healthz` and `/readyz`**, unauthenticated and cheap. Ready means the api
+behind it answered.
+
+**Structured request logging** as JSON lines, one per request, with a
+`--log-format text|json`. The current output is `SimpleHTTPRequestHandler`
+noise.
+
+**Graceful shutdown** on `SIGTERM`: stop accepting, drain in-flight terminal
+sockets with a close frame, exit within a bounded time.
+
+**A config file** — `--config console.toml` — so nobody ships a systemd unit with
+a secret in the command line, visible in `ps`.
+
+## 12. `tmux` — the terminal, properly
+
+**Scrollback search** with match highlighting and next/previous.
+
+**Copy and paste** that behaves: selection copies, paste is blocked in read-only
+mode and confirmed for multi-line in read-write, because a pasted newline is an
+executed command.
+
+**Font size and scrollback depth**, persisted.
+
+**Multiple terminals at once** — two or four agents side by side. Watching a team
+work is the thing a person actually wants from this panel.
+
+**Session recording.** Capture the byte stream with timings and replay it. ⚠ This
+is the audit feature that matters for a terminal that can execute, and it is the
+one thing here that a customer will ask for by name. Store recordings on the
+server, never in the browser.
+
+## 13. What still cannot be claimed
+
+⚠ No one has rendered this. Say "unverified — no browser available" for anything
+visual, every time. A build that lies about what it has seen is worth less than
+one that admits the gap.
