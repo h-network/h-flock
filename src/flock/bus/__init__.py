@@ -1,6 +1,6 @@
 """The stable bus library surface."""
 
-from .doors import receive, send
+from .doors import DeadLetter, receive, send
 from .envelope import EnvelopeError, build, parse
 from .keys import RESERVED, SEGMENT_REGEX, prefix
 from .logging import emit, log_record, record_task_event
@@ -16,6 +16,7 @@ from .resources import (
 
 __all__ = [
     "EnvelopeError",
+    "DeadLetter",
     "RESERVED",
     "SEGMENT_REGEX",
     "build",

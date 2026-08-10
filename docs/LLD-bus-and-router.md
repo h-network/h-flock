@@ -547,6 +547,22 @@ it on**, which differs by where it died:
   this end. Parking it under the sender's prefix would put an adapter outside
   its own agent's keys, which §6.3 forbids.
 
+The opener contract has exactly two declared terminal outcomes: return normally
+only after opening the envelope, or raise `flock.bus.DeadLetter(reason)` to
+reject it. `receive()` catches that signal, parks the raw envelope under the
+receiving agent and emits
+`dead_lettered`; only a normal return emits `opened`. Openers must not write the
+dead list or emit their own terminal record. Keeping custody and the terminal
+record in the door prevents one stream from being logged as both dead-lettered
+and opened, and applies the rule to every registered kind rather than to a list
+of remembered opener implementations.
+
+The sentinel uses an exception for an expected outcome, which is less ordinary
+than a return value. That cost is deliberate: wrapper openers naturally
+propagate it, while a return sentinel can be discarded by a wrapper and turn
+the rejection back into `opened`. Other opener exceptions remain failures;
+`receive()` parks and logs those as `opener failed` without stopping the adapter.
+
 ## 4. Semantics
 
 **Fire-and-forget, like UDP.** The producer gets no acknowledgement, there is no

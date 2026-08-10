@@ -8,6 +8,10 @@ from .keys import prefix
 from .logging import emit
 
 
+class DeadLetter(Exception):
+    """Signal that an opener rejected an envelope after receive took custody."""
+
+
 def send(
     r,
     *,
@@ -54,6 +58,10 @@ def receive(
         return
     try:
         opener(envelope)
+    except DeadLetter as exc:
+        r.rpush(prefix(pod, tenant, agent, "dead"), raw)
+        emit(module, "dead_lettered", envelope, str(exc))
+        return
     except Exception as exc:
         r.rpush(prefix(pod, tenant, agent, "dead"), raw)
         emit(module, "dead_lettered", envelope, f"opener failed: {exc}")

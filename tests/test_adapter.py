@@ -7,7 +7,7 @@ from unittest.mock import patch, MagicMock
 from flock.adapter.openers import add_ticket_opener, message_opener, command_opener, get_tmux_windows
 from flock.adapter.cli import main as cli_main
 from flock.adapter.runner import run_adapter
-from flock.bus import build as build_envelope
+from flock.bus import DeadLetter, build as build_envelope
 
 
 class MockRedis:
@@ -97,11 +97,10 @@ def test_message_opener_window_missing(mock_list_windows):
     r = MockRedis()
     env = build_envelope(kind="Message", producer="alice", recipient="bob", payload={"text": "hello"})
 
-    message_opener(r, pod="acme", tenant="hq", agent="bob", envelope=env, session_name="hq")
+    with pytest.raises(DeadLetter, match="window_missing"):
+        message_opener(r, pod="acme", tenant="hq", agent="bob", envelope=env, session_name="hq")
 
-    dead_key = "pod:acme:tenant:hq:agent:bob:dead"
-    assert dead_key in r.lists
-    assert len(r.lists[dead_key]) == 1
+    assert "pod:acme:tenant:hq:agent:bob:dead" not in r.lists
 
 
 @patch("flock.adapter.openers.list_windows")

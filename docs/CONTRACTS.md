@@ -75,6 +75,7 @@ def parse(raw: str) -> dict          # raises EnvelopeError on malformed input
 def send(r, *, pod, tenant, producer, recipient, payload,
          kind="Message", correlation_id=None) -> str
     # builds, writes the producer's OWN egress, logs. Returns stream_id.
+class DeadLetter(Exception)             # opener rejection; reason is str(exc)
 def receive(r, *, pod, tenant, agent, openers: dict[str, callable],
             timeout: int) -> None
     # BLPOP this agent's ingress, validate, dispatch on kind, log.
@@ -94,8 +95,11 @@ is what would tell it how an agent is hosted, which invariant 8 forbids. That is
 the whole of the split: the router reads the table's fields, an adapter reads its
 values.
 
-An opener is `callable(envelope: dict) -> None`. Registering one is how a kind
-becomes deliverable; `LLD-adapter-tmux` §3 is the tmux implementation of one.
+An opener is `callable(envelope: dict) -> None`. A normal return means opened;
+raising `DeadLetter(reason)` asks `receive` to park and log it instead. The
+opener never writes the dead list or emits a terminal record itself. Registering
+one is how a kind becomes deliverable; `LLD-adapter-tmux` §3 is the tmux
+implementation of one.
 
 ### `flock.tmux` — the shared window surface
 

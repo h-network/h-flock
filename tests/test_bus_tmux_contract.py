@@ -5,6 +5,7 @@ from flock.bus import (
     build as build_envelope,
     parse as parse_envelope,
     EnvelopeError,
+    DeadLetter,
     send,
     receive,
     members,
@@ -120,6 +121,23 @@ def test_send_and_receive(capsys):
     receive(r, pod="acme", tenant="hq", agent="bob", openers={"Message": mock_opener}, timeout=1)
     assert len(opened) == 1
     assert opened[0]["producer"] == "alice"
+
+
+def test_opener_dead_letter_is_terminal_and_never_opened(capsys):
+    r = MockRedis()
+    envelope = build_envelope(kind="Message", producer="alice", recipient="bob", payload={"text": "hi"})
+    ingress_key = prefix("acme", "hq", agent="bob", resource="ingress")
+    r.rpush(ingress_key, json.dumps(envelope))
+
+    def reject(_envelope):
+        raise DeadLetter("window_missing")
+
+    receive(r, pod="acme", tenant="hq", agent="bob", openers={"Message": reject}, timeout=1)
+
+    events = [json.loads(line)["event"] for line in capsys.readouterr().out.splitlines()]
+    assert events == ["received", "dead_lettered"]
+    dead_key = prefix("acme", "hq", agent="bob", resource="dead")
+    assert len(r.lists[dead_key]) == 1
 
 
 def test_roster():
