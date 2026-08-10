@@ -34,9 +34,17 @@ def _read_socket_line(sock: socket.socket) -> str:
 
 class OfficeHandler(SimpleHTTPRequestHandler):
     server_version = "h-flock-web/1"
+    MAX_BODY_SIZE = 2 * 1024 * 1024  # 2MB cap to reject oversized POST payloads
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, directory=str(HERE), **kwargs)
+
+    def setup(self) -> None:
+        super().setup()
+        try:
+            self.request.settimeout(30.0)  # 30s timeout protects against slow-loris attacks
+        except Exception:
+            pass
 
     def do_GET(self) -> None:
         if self.path == "/client-config":
@@ -67,6 +75,9 @@ class OfficeHandler(SimpleHTTPRequestHandler):
     def _proxy(self) -> None:
         target = self.server.api_base + self.path.removeprefix("/api")
         length = int(self.headers.get("Content-Length", "0"))
+        if length > self.MAX_BODY_SIZE:
+            self._json(413, {"detail": "request body too large (max 2MB)"})
+            return
         body = self.rfile.read(length) if length else None
         headers = {"Authorization": f"Bearer {self.server.api_token}"}
         if body is not None:
@@ -100,6 +111,25 @@ class OfficeHandler(SimpleHTTPRequestHandler):
 
     def _proxy_websocket(self) -> None:
         self.close_connection = True
+        lock = getattr(self.server, "sessions_lock", None)
+        max_sessions = getattr(self.server, "max_sessions", 16)
+
+        if lock is not None:
+            with lock:
+                active = getattr(self.server, "active_sessions", 0)
+                if active >= max_sessions:
+                    self._json(503, {"detail": f"maximum active terminal sessions ({max_sessions}) reached"})
+                    return
+                self.server.active_sessions = active + 1
+
+        try:
+            self._do_proxy_websocket()
+        finally:
+            if lock is not None:
+                with lock:
+                    self.server.active_sessions = max(0, getattr(self.server, "active_sessions", 1) - 1)
+
+    def _do_proxy_websocket(self) -> None:
         session_host = self.server.session_host
         session_port = self.server.session_port
 
@@ -391,6 +421,9 @@ def main() -> None:
     server.api_token = token
     server.client_name = args.client
     server.demo_mode = demo_mode
+    server.max_sessions = int(os.environ.get("HFLOCK_MAX_SESSIONS", "16"))
+    server.active_sessions = 0
+    server.sessions_lock = threading.Lock()
     mode_str = " (DEMO MODE)" if demo_mode else ""
     print(f"office UI: http://{args.listen}:{args.port} (client {args.client}){mode_str}")
     try:

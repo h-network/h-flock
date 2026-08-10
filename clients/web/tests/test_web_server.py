@@ -192,3 +192,69 @@ def test_proxy_websocket_session_down_returns_502():
         web_server.shutdown()
         web_server.server_close()
 
+
+def test_proxy_oversized_post_body_returns_413():
+    web_server = ThreadingHTTPServer(("127.0.0.1", 0), OfficeHandler)
+    web_server.api_base = "http://127.0.0.1:8080"
+    web_server.session_host = "127.0.0.1"
+    web_server.session_port = 8081
+    web_server.api_token = "test-secret-token"
+    web_server.client_name = "web"
+    web_server.demo_mode = False
+    web_port = web_server.server_address[1]
+
+    web_thread = threading.Thread(target=web_server.serve_forever, daemon=True)
+    web_thread.start()
+
+    try:
+        sock = socket.create_connection(("127.0.0.1", web_port), timeout=5)
+        # Send POST headers with oversized Content-Length (10MB)
+        request_raw = (
+            "POST /api/agents/sme-2/envelopes HTTP/1.1\r\n"
+            "Host: 127.0.0.1\r\n"
+            "Content-Type: application/json\r\n"
+            "Content-Length: 10485760\r\n\r\n"
+        )
+        sock.sendall(request_raw.encode())
+        resp_file = sock.makefile("rb", buffering=0)
+        status_line = resp_file.readline().decode()
+        assert "413" in status_line
+        sock.close()
+    finally:
+        web_server.shutdown()
+        web_server.server_close()
+
+
+def test_proxy_websocket_max_sessions_limit_returns_503():
+    web_server = ThreadingHTTPServer(("127.0.0.1", 0), OfficeHandler)
+    web_server.api_base = "http://127.0.0.1:8080"
+    web_server.session_host = "127.0.0.1"
+    web_server.session_port = 8081
+    web_server.api_token = "test-secret-token"
+    web_server.client_name = "web"
+    web_server.demo_mode = False
+    web_server.max_sessions = 1
+    web_server.active_sessions = 1
+    web_server.sessions_lock = threading.Lock()
+    web_port = web_server.server_address[1]
+
+    web_thread = threading.Thread(target=web_server.serve_forever, daemon=True)
+    web_thread.start()
+
+    try:
+        sock = socket.create_connection(("127.0.0.1", web_port), timeout=5)
+        request_raw = (
+            "GET /session HTTP/1.1\r\n"
+            "Host: 127.0.0.1\r\n"
+            "Upgrade: websocket\r\n"
+            "Connection: Upgrade\r\n\r\n"
+        )
+        sock.sendall(request_raw.encode())
+        resp_file = sock.makefile("rb", buffering=0)
+        status_line = resp_file.readline().decode()
+        assert "503" in status_line
+        sock.close()
+    finally:
+        web_server.shutdown()
+        web_server.server_close()
+
