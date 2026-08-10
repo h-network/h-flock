@@ -50,6 +50,24 @@ poll because they have no stream. Alerts, activity and messages catch up from a
 persisted cursor and then use SSE with capped exponential reconnect backoff.
 One failed panel keeps its last honest data and cannot take down another.
 
+A successfully loaded roster with no tmux staff adds one page-level onboarding
+callout with the existing Hire flow as its primary action. This deliberately
+ignores infrastructure/API participants—the console enrols one itself, so a
+literal empty roster is not a state the running product can rely on. The
+individual alerts and board panels still say that they are calmly empty; the
+callout supplies the missing meaning that the office is ready and waiting to be
+staffed. It disappears as soon as a hire is pending rather than waiting for
+tmux reconciliation.
+
+The roster is grouped in action order: blocked, unknown, pending, working, then
+idle. Each group is alphabetic and has a sticky count heading. This keeps every
+agent discoverable while ensuring a blocked agent cannot sit below thirty
+healthy rows. The page header independently combines working and blocked roster
+counts with the retained alert count, so the operator can see whether attention
+is needed before reading a panel. Alerts are called retained, not
+unacknowledged: the API has no acknowledgement operation or field, and a
+browser-local fiction would disagree between operators.
+
 The alert DOM is capped at the newest 300 entries. Catch-up additions are
 batched into one animation frame, off-screen rows use browser content
 visibility, and fixed scroll regions reserve their scrollbar gutter. This

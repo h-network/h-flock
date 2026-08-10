@@ -81,3 +81,27 @@ def test_http_500_degrades_panels_without_claiming_network_failure():
     assert "else status.error(error)" in shared
     assert "An HTTP 500 is not treated as a network drop" in readme
     assert "EventSource does not expose an SSE response status" in readme
+
+
+def test_empty_office_and_scaled_roster_are_deliberate_states():
+    app = (WEB_DIR / "app.js").read_text(encoding="utf-8")
+    agents = (WEB_DIR / "ui" / "agents.js").read_text(encoding="utf-8")
+    html = (WEB_DIR / "index.html").read_text(encoding="utf-8")
+    styles = (WEB_DIR / "style.css").read_text(encoding="utf-8")
+    assert 'id="empty-office"' in html
+    assert 'id="empty-office-hire"' in html
+    assert '$("empty-office").hidden = summary.staffed !== 0' in app
+    assert '$("empty-office-hire").onclick' in app
+    assert 'detail.vab === "tmux"' in agents
+    assert '["blocked", "unknown", "pending", "working", "idle"]' in agents
+    assert 'presence === "blocked" ? " · action required"' in agents
+    assert "position: sticky" in styles
+
+
+def test_office_summary_combines_roster_health_and_alert_count():
+    app = (WEB_DIR / "app.js").read_text(encoding="utf-8")
+    alerts = (WEB_DIR / "ui" / "alerts.js").read_text(encoding="utf-8")
+    assert "const { working, blocked } = state.roster" in app
+    assert "state.alertCount" in app
+    assert "this.onCount(this.items.length)" in alerts
+    assert "summary-attention" in app
