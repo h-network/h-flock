@@ -82,8 +82,19 @@ if [ -n "$redis_password" ]; then
   fi
 fi
 
+# ⚠ redis-cli prints "NOAUTH Authentication required." and STILL EXITS 0, so a
+# readiness probe passes while every command after it silently fails — a tenant
+# that starts with an empty roster and no error. Every call goes through this.
+rcli() {
+  if [ -n "$redis_password" ]; then
+    redis-cli -h 127.0.0.1 -a "$redis_password" --no-auth-warning "$@"
+  else
+    redis-cli -h 127.0.0.1 "$@"
+  fi
+}
+
 start redis "${redis_cmd[@]}"
-until redis-cli -h 127.0.0.1 ping >/dev/null 2>&1; do sleep 0.2; done
+until [ "$(rcli ping 2>/dev/null)" = "PONG" ]; do sleep 0.2; done
 
 # ── seed the roster ───────────────────────────────────────────────────────────
 # Boot configuration, not the write path LLD-bus-and-router §7 defers. The roster
@@ -113,10 +124,10 @@ done
 fields+=("api" "api")
 fields+=("host" "control")
 
-redis-cli -h 127.0.0.1 HSET "$roster_key" "${fields[@]}" >/dev/null
+rcli HSET "$roster_key" "${fields[@]}" >/dev/null
 # The HASH loses AGENTS ordering. Preserve authority while the ordered source is
 # still in hand; no later command or override writes this derived value.
-redis-cli -h 127.0.0.1 SET "pod:${POD}:tenant:${TENANT}:lead" "${agents[0]}" >/dev/null
+rcli SET "pod:${POD}:tenant:${TENANT}:lead" "${agents[0]}" >/dev/null
 echo "{\"module\":\"container\",\"event\":\"roster_seeded\",\"count\":$(( ${#fields[@]} / 2 ))}"
 
 # Per-agent CLI and account, as exceptions only — "backend=codex", "frontend=work".
@@ -129,7 +140,7 @@ map_each() {   # $1=map  $2=resource ; SETs pod:…:agent:<name>:<resource>
     [ -n "$pair" ] || continue
     name="${pair%%=*}"; value="${pair#*=}"
     [ -n "$name" ] && [ -n "$value" ] && [ "$name" != "$pair" ] || continue
-    redis-cli -h 127.0.0.1 SET "pod:${POD}:tenant:${TENANT}:agent:${name}:$2" "$value" >/dev/null
+    rcli SET "pod:${POD}:tenant:${TENANT}:agent:${name}:$2" "$value" >/dev/null
   done
 }
 # ⚠ Default every tmux agent to claude BEFORE the exception maps are applied.
@@ -140,7 +151,7 @@ map_each() {   # $1=map  $2=resource ; SETs pod:…:agent:<name>:<resource>
 # on a from-scratch install taking every default.
 for _i in "${!agents[@]}"; do
   [ "${fields[$(( _i * 2 + 1 ))]}" = "tmux" ] || continue
-  redis-cli -h 127.0.0.1 SET "pod:${POD}:tenant:${TENANT}:agent:${agents[$_i]}:launch" claude >/dev/null
+  rcli SET "pod:${POD}:tenant:${TENANT}:agent:${agents[$_i]}:launch" claude >/dev/null
 done
 
 map_each "${AGENT_CLIS:-}"     launch

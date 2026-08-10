@@ -14,7 +14,9 @@ import redis
 
 from flock.bus import is_member, log_record, members, prefix, record_task_event, send, vab
 
-_REDIS_URL = "redis://127.0.0.1:6379/0"
+# ⚠ A tenant with a Redis password exports REDIS_URL carrying it. Without one
+# this is unchanged, and an agent window still has no REDIS_URL to find.
+_REDIS_URL = os.environ.get("REDIS_URL", "redis://127.0.0.1:6379/0")
 _WORKDIR_ROOT = Path("/workdir")
 _COMMANDS = (
     "send",
