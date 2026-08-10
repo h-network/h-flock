@@ -770,3 +770,34 @@ def test_audit_read_endpoint_filtering_and_pagination(tmp_path):
     finally:
         web_server.shutdown()
         web_server.server_close()
+
+
+def test_demo_websocket_handshake(tmp_path):
+    web_server = ThreadingHTTPServer(("127.0.0.1", 0), OfficeHandler)
+    web_server.api_base = "http://127.0.0.1:8080"
+    web_server.demo_mode = True
+    web_server.sessions_lock = threading.Lock()
+    web_port = web_server.server_address[1]
+
+    web_thread = threading.Thread(target=web_server.serve_forever, daemon=True)
+    web_thread.start()
+
+    try:
+        sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        sock.connect(("127.0.0.1", web_port))
+        req = (
+            "GET /session?agent=architect HTTP/1.1\r\n"
+            f"Host: 127.0.0.1:{web_port}\r\n"
+            "Upgrade: websocket\r\n"
+            "Connection: Upgrade\r\n"
+            "Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\n"
+            "Sec-WebSocket-Version: 13\r\n\r\n"
+        )
+        sock.sendall(req.encode())
+        resp_data = sock.recv(4096).decode()
+        assert "HTTP/1.1 101 Switching Protocols" in resp_data
+        assert "Sec-WebSocket-Accept: s3pPLMBiTxaQ9kYGzzhZRbK+xOo=" in resp_data
+        sock.close()
+    finally:
+        web_server.shutdown()
+        web_server.server_close()
