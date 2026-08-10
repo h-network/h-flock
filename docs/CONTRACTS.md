@@ -160,9 +160,10 @@ def ensure_agy_project_trusted(cwd: str) -> None
     # appends cwd to trustedWorkspaces AND sets enableTelemetry = False
     # in ~/.gemini/antigravity-cli/settings.json — global, not per-profile
 
-⚠ **Every routine in this group swallows its own errors** — `write_agent_guide`
-and all three `ensure_*_project_trusted` wrap their work in a bare
-`except Exception: pass`. A caller cannot tell success from silent failure, and
+⚠ **Every routine in this group absorbs its own errors, and now records them.**
+`write_agent_guide` and all three `ensure_*_project_trusted` still never raise —
+a trust failure must not break a delivery — but each emits a `tmux` `error`
+record naming the directory that failed. They used to end in `except: pass`, and
 that is exactly how the profile-blind trust bug hid: seeding failed quietly and
 every profiled agent sat at a picker, unreachable, reading as `idle`.
 
@@ -607,6 +608,17 @@ duration of its own command; the record still reaches the window log the router
 tails. Daemons do not set it and keep logging to the container's stdout. An agent
 read one of those records off its own screen and reasoned its way to Redis
 (`HLD` §10a).
+
+⚠ **An agent may run against a model endpoint of its own.** `<prefix>:agent:<n>:endpoint`
+holds a **name**; the address lives in the tenant environment as
+`ENDPOINT_<NAME>_URL` / `_MODEL` / `_TOKEN` / `_SMALL_MODEL` / `_KIND`. A url in a
+Redis value would be an endpoint an agent could read and change, and the roster
+holds membership and VAB, nothing else. Written before roster visibility, like
+`launch` and `profile`, or the window is built against the wrong model.
+
+⚠ **Such an agent uses no account credential** — the CLI talks to the server
+directly. The watchdog's credential check does not apply to it and a missing
+login is not a fault for it.
 
 ⚠ **`alerts` and `credential.alerted` are tenant-level**, so `StopAgent` must not
 purge them. `credential.alerted` is a HASH keyed `<account>:<cli>` holding the

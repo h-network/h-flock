@@ -199,3 +199,39 @@ alive is someone else's job.
 
 Not a terminal multiplexer for humans. Attaching is supported because tmux
 supports it, not because anything here is designed around a viewer.
+
+## Windows, models and failures — added after a night of live running
+
+⚠ **A window may point at a model endpoint.** `window_env` adds
+`ANTHROPIC_BASE_URL`, `ANTHROPIC_AUTH_TOKEN` and **all three tier variables**
+(`ANTHROPIC_DEFAULT_OPUS_MODEL`, `_SONNET_MODEL`, `_HAIKU_MODEL`) when the agent
+has an `endpoint`. The tiers matter: claude picks one internally, so setting a
+single model variable leaves the others falling back to vendor names the server
+does not serve — and the failure reads as *"issue with the selected model"*,
+which sends you chasing a model problem that is really configuration.
+
+⚠ **No `/v1` on the base url.** claude appends `/v1/messages` itself; a base
+carrying `/v1` produces `/v1/v1/messages`. `window_env` strips a trailing `/v1`
+for exactly this reason. codex wants the opposite, which is how it gets copied
+in wrong.
+
+⚠ **Inherited `ANTHROPIC_*` are unset first.** A previous subscription's
+variables win over what we set, which is the quietest way for a local endpoint to
+look broken.
+
+⚠ **Both creation paths must resolve the endpoint.** `tmuxhost` reconciliation
+and `StartAgent` each build windows, and `create_window` is idempotent by name —
+so whatever builds the window first is what the agent keeps, and a later
+reconcile will **not** correct it. Measured: an agent hired onto a local endpoint
+came up on the vendor's because only `tmuxhost` knew about endpoints.
+
+⚠ **A retired agent's window is never the one holding the session open.** tmux
+exits when a session has no windows, so reconciliation keeps at least one — but
+the guard could not tell *hold the session open* from *keep this dead agent*, and
+a retired agent's window survived forever when it was the last. It now raises the
+`__init__` placeholder the empty-roster path already uses, then retires the agent
+properly.
+
+⚠ **Trust and guide failures are recorded, not swallowed.** They still never
+raise into a delivery path, but each emits a `tmux` `error` naming the directory.
+Silence here is how the profile-blind trust bug hid.
