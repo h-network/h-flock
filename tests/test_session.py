@@ -232,4 +232,40 @@ def test_refresh_panes_handles_hyphenated_names_with_digits():
     assert pane_to_agent == {"%0": "architect", "%1": "sme-2", "%2": "sme-3"}
 
 
+def test_session_non_loopback_bind_requires_tls():
+    import pytest
+    settings = SessionSettings(
+        tenant="office",
+        api_token="secret",
+        session_name="office",
+        session_bind="0.0.0.0",
+    )
+    with pytest.raises(RuntimeError, match="SESSION_TLS_CERT and SESSION_TLS_KEY are required"):
+        settings.validate()
+
+
+def test_session_partial_tls_configuration_raises_error():
+    import pytest
+    settings = SessionSettings(
+        tenant="office",
+        api_token="secret",
+        session_name="office",
+        session_tls_cert="/cert.pem",
+    )
+    with pytest.raises(RuntimeError, match="Both SESSION_TLS_CERT and SESSION_TLS_KEY must be provided"):
+        settings.validate()
+
+
+def test_session_non_loopback_bind_with_tls_succeeds():
+    settings = SessionSettings(
+        tenant="office",
+        api_token="secret",
+        session_name="office",
+        session_bind="0.0.0.0",
+        session_tls_cert="/cert.pem",
+        session_tls_key="/key.pem",
+    )
+    settings.validate()
+
+
 

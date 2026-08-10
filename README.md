@@ -317,10 +317,11 @@ alone: a **Telegram bot** and a **browser console** with live presence, boards,
 alerts, terminals into any agent, session recording and an operator login. They
 are examples, not products — the framework is the product.
 
-Not built: per-client tokens, TLS on the tenant doors, CORS. And `producer` is
-**supplied by the sender and never verified** — it cannot redirect an envelope,
-but it is the identity an agent sees. See [`docs/TODO.md`](docs/TODO.md), which
-says why for each.
+Both doors support TLS via `API_TLS_CERT`/`API_TLS_KEY` and `SESSION_TLS_CERT`/`SESSION_TLS_KEY`. A non-loopback bind (`API_BIND` / `SESSION_BIND`) without TLS refuses to serve.
+
+⚠ **Self-signed TLS certificates:** A browser will refuse the session WebSocket connection until the certificate is explicitly trusted by the browser, which manifests as a disconnected terminal view rather than a clear certificate prompt. Operators using self-signed certificates must open the HTTPS API door (`https://<host>:8080/restdoc`) in the browser and accept the certificate before opening the session WebSocket.
+
+Not built: per-client tokens, CORS. See [`docs/TODO.md`](docs/TODO.md), which says why for each.
 
 ⚠ Agents run with `sudo` in the container, deliberately. Nothing inside it is a
 boundary — the container is. Tools and a clean environment remove the *reason* to

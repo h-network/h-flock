@@ -115,6 +115,8 @@ This module logs **one record per connection**, not per keystroke: who connected
 which agents, read-only or not, and when it closed. Enough to answer "who was
 typing in frontend's window", without a log line per character.
 
+⚠ **TLS Enforcement on non-loopback bind**: Configured via `SESSION_TLS_CERT` and `SESSION_TLS_KEY` (falling back to `API_TLS_CERT` / `API_TLS_KEY`). Passed as `ssl_certfile` and `ssl_keyfile` to `uvicorn.run`. A non-loopback `SESSION_BIND` without TLS configured refuses to serve and raises a `RuntimeError` on startup.
+
 ## 6. Lifecycle
 
 The control-mode client dies when the tmux server does, which under
@@ -128,7 +130,7 @@ screen snapshot.
 
 ## 7. Deferred
 
-**TLS.** Same answer as `LLD-api` §7 — terminate it outside this process.
+**TLS — resolved in Build 36.** Supported via `SESSION_TLS_CERT` and `SESSION_TLS_KEY` (or `API_TLS_CERT` / `API_TLS_KEY`). A non-loopback `SESSION_BIND` without TLS configured refuses to serve.
 
 **Per-client identity.** One shared token, as with the api. Which means the
 per-connection log record identifies a connection, not a person.
