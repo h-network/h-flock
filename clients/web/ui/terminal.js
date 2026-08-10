@@ -665,12 +665,19 @@ export class TerminalPanel {
     // browser: the operator's first keystroke was delivered, then the frame log
     // showed nothing but repeated subscribe frames — every character after the
     // first was eaten by the reconnect churn. "typing works but half" was this.
+    // ⚠ ...but a MODE change must still reconnect. The door refuses to change
+    // mode on a live socket ("mode cannot change"), so read-only to read-write
+    // is a new subscription. Skipping it here left the socket read-only while
+    // the button said INTERACTIVE, and every keystroke was rejected silently.
+    const wantedMode = this.isReadOnly ? "read-only" : "read-write";
     if (!isManualRetry
         && this.socket
         && this.agent === agentName
+        && this.subscribedMode === wantedMode
         && (this.socket.readyState === WebSocket.OPEN || this.socket.readyState === WebSocket.CONNECTING)) {
       return;
     }
+    this.subscribedMode = wantedMode;
 
     if (isManualRetry) {
       this.reconnectAttempts = 0;
