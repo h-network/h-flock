@@ -38,71 +38,30 @@ class OfficeHandler(SimpleHTTPRequestHandler):
         super().__init__(*args, directory=str(HERE), **kwargs)
 
     def do_GET(self) -> None:
-        if self.headers.get("Upgrade", "").lower() == "websocket" or self.path.startswith("/session"):
-            self._proxy_websocket()
-        elif self.path == "/client-config":
-            self._json(200, {"client": self.server.client_name})
+        if self.path == "/client-config":
+            self._json(200, {"client": self.server.client_name, "demo": self.server.demo_mode})
         elif self.path == "/" or self.path.startswith("/?"):
             self.path = "/index.html"
             super().do_GET()
+        elif self.server.demo_mode and self.path.startswith("/api/"):
+            self._demo_api()
         elif self.path.startswith("/api/"):
             self._proxy()
         elif self.path.startswith("/session") or self.headers.get("Upgrade", "").lower() == "websocket":
-            self._proxy_websocket()
+            if self.server.demo_mode:
+                self._demo_websocket()
+            else:
+                self._proxy_websocket()
         else:
             super().do_GET()
 
     def do_POST(self) -> None:
-        if self.path.startswith("/api/"):
+        if self.server.demo_mode and self.path.startswith("/api/"):
+            self._demo_api()
+        elif self.path.startswith("/api/"):
             self._proxy()
         else:
             self.send_error(404)
-
-    def _proxy_websocket(self) -> None:
-        import select
-        import socket
-
-        parsed_api = urlsplit(self.server.api_base)
-        backend_host = parsed_api.hostname or "127.0.0.1"
-        backend_port = 8081
-
-        try:
-            backend = socket.create_connection((backend_host, backend_port), timeout=5)
-        except Exception as error:
-            self.send_error(502, f"session door unavailable: {error}")
-            return
-
-        target_path = self.path
-        if target_path.startswith("/api"):
-            target_path = target_path.removeprefix("/api")
-
-        req_lines = [f"{self.command} {target_path} HTTP/1.1"]
-        for header, value in self.headers.items():
-            if header.lower() in ("host", "authorization"):
-                continue
-            req_lines.append(f"{header}: {value}")
-        req_lines.append(f"Host: {backend_host}:{backend_port}")
-        req_lines.append(f"Authorization: Bearer {self.server.api_token}")
-        req_lines.append("\r\n")
-
-        backend.sendall("\r\n".join(req_lines).encode("latin1"))
-
-        sockets = [self.connection, backend]
-        try:
-            while True:
-                r, _, _ = select.select(sockets, [], [], 30)
-                if not r:
-                    continue
-                for s in r:
-                    other = backend if s is self.connection else self.connection
-                    data = s.recv(16384)
-                    if not data:
-                        return
-                    other.sendall(data)
-        except Exception:
-            pass
-        finally:
-            backend.close()
 
     def _proxy(self) -> None:
         target = self.server.api_base + self.path.removeprefix("/api")
@@ -221,6 +180,99 @@ class OfficeHandler(SimpleHTTPRequestHandler):
         t1.join()
         t2.join()
 
+    def _demo_api(self) -> None:
+        subpath = self.path.removeprefix("/api")
+        if subpath == "/agents":
+            self._json(200, {"agents": ["architect", "sme-2", "sme-3", "lab"]})
+        elif subpath == "/agents/architect":
+            self._json(200, {
+                "agent": "architect", "vab": "tmux",
+                "depths": {"ingress": 0, "egress": 0, "dead": 0},
+                "presence": {"state": "working", "since": "2026-08-10T02:00:00Z", "last_activity": "2026-08-10T02:45:00Z"},
+            })
+        elif subpath == "/agents/sme-2":
+            self._json(200, {
+                "agent": "sme-2", "vab": "tmux",
+                "depths": {"ingress": 1, "egress": 0, "dead": 0},
+                "presence": {"state": "idle", "since": "2026-08-10T02:10:00Z", "last_activity": "2026-08-10T02:30:00Z"},
+            })
+        elif subpath == "/agents/sme-3":
+            self._json(200, {
+                "agent": "sme-3", "vab": "tmux",
+                "depths": {"ingress": 2, "egress": 0, "dead": 0},
+                "presence": {"state": "blocked", "since": "2026-08-10T02:15:00Z", "last_activity": "2026-08-10T02:20:00Z"},
+            })
+        elif subpath == "/agents/lab":
+            self._json(200, {
+                "agent": "lab", "vab": "tmux",
+                "depths": {"ingress": 0, "egress": 0, "dead": 0},
+                "presence": {"state": "unknown", "since": "", "last_activity": ""},
+            })
+        elif subpath == "/board":
+            self._json(200, {
+                "agents": [
+                    {
+                        "agent": "architect",
+                        "todo": [{"id": "t-1", "title": "Build 33 UI console review"}],
+                        "doing": [{"id": "t-2", "title": "Integrate same-origin WebSocket proxy"}],
+                        "hold": [],
+                        "done": [{"id": "t-0", "title": "Setup repository structure"}],
+                    },
+                    {
+                        "agent": "sme-2",
+                        "todo": [{"id": "t-3", "title": "Audit documentation mentions"}],
+                        "doing": [],
+                        "hold": [],
+                        "done": [],
+                    },
+                    {
+                        "agent": "sme-3",
+                        "todo": [],
+                        "doing": [{"id": "t-4", "title": "Investigate wedged CLI"}],
+                        "hold": [],
+                        "done": [],
+                    },
+                    {
+                        "agent": "lab",
+                        "todo": [],
+                        "doing": [],
+                        "hold": [],
+                        "done": [],
+                    },
+                ]
+            })
+        elif subpath == "/alerts":
+            self._json(200, {
+                "alerts": [
+                    {"cursor": "100-0", "ts": "2026-08-10T02:20:00Z", "kind": "stalled", "agent": "sme-3", "doing_age_s": 900},
+                    {"cursor": "101-0", "ts": "2026-08-10T02:25:00Z", "kind": "credential", "account": "claude", "detail": "expired"},
+                ],
+                "next_cursor": "101-0",
+            })
+        elif subpath.endswith("/envelopes") and self.command == "POST":
+            self._json(202, {"stream_id": "demo-stream-1", "correlation_id": "demo-corr-1"})
+        else:
+            self._json(200, {"status": "ok"})
+
+    def _demo_websocket(self) -> None:
+        self.close_connection = True
+        client_sock = self.request
+        resp = (
+            "HTTP/1.1 101 Switching Protocols\r\n"
+            "Upgrade: websocket\r\n"
+            "Connection: Upgrade\r\n"
+            "Sec-WebSocket-Accept: demo-accept\r\n\r\n"
+        )
+        try:
+            client_sock.sendall(resp.encode())
+            while True:
+                data = client_sock.recv(8192)
+                if not data:
+                    break
+                client_sock.sendall(data)
+        except Exception:
+            pass
+
     def _json(self, status: int, value: object) -> None:
         body = json.dumps(value).encode()
         self.send_response(status)
@@ -257,33 +309,44 @@ def main() -> None:
     parser.add_argument("--session", default=os.environ.get("HFLOCK_SESSION", "http://127.0.0.1:8081"))
     parser.add_argument("--token", default=os.environ.get("API_TOKEN"))
     parser.add_argument("--client", default=os.environ.get("HFLOCK_CLIENT", "web"))
+    parser.add_argument("--demo", action="store_true", default=bool(os.environ.get("HFLOCK_DEMO")))
     args = parser.parse_args()
-    if not args.token:
+
+    demo_mode = args.demo
+    token = args.token or ("demo-secret" if demo_mode else None)
+    if not token and not demo_mode:
         parser.error("provide --token or API_TOKEN")
-    parsed = urlsplit(args.api)
-    if parsed.scheme not in {"http", "https"} or not parsed.netloc:
-        parser.error("--api must be an absolute http(s) URL")
+
     api_base = args.api.rstrip("/")
+    session_host = "127.0.0.1"
+    session_port = 8081
 
-    parsed_session = urlsplit(args.session)
-    if parsed_session.scheme not in {"http", "https", "ws", "wss"} or not parsed_session.netloc:
-        parser.error("--session must be an absolute http(s) or ws(s) URL")
-    session_host = parsed_session.hostname or "127.0.0.1"
-    session_port = parsed_session.port or 8081
+    if not demo_mode:
+        parsed = urlsplit(args.api)
+        if parsed.scheme not in {"http", "https"} or not parsed.netloc:
+            parser.error("--api must be an absolute http(s) URL")
 
-    try:
-        enrol(api_base, args.token, args.client)
-    except (urllib.error.URLError, RuntimeError) as error:
-        print(f"could not enrol {args.client}: {error}", file=sys.stderr)
-        raise SystemExit(1) from error
+        parsed_session = urlsplit(args.session)
+        if parsed_session.scheme not in {"http", "https", "ws", "wss"} or not parsed_session.netloc:
+            parser.error("--session must be an absolute http(s) or ws(s) URL")
+        session_host = parsed_session.hostname or "127.0.0.1"
+        session_port = parsed_session.port or 8081
+
+        try:
+            enrol(api_base, token, args.client)
+        except (urllib.error.URLError, RuntimeError) as error:
+            print(f"could not enrol {args.client}: {error}", file=sys.stderr)
+            raise SystemExit(1) from error
 
     server = ThreadingHTTPServer((args.listen, args.port), OfficeHandler)
     server.api_base = api_base
     server.session_host = session_host
     server.session_port = session_port
-    server.api_token = args.token
+    server.api_token = token
     server.client_name = args.client
-    print(f"office UI: http://{args.listen}:{args.port} (client {args.client})")
+    server.demo_mode = demo_mode
+    mode_str = " (DEMO MODE)" if demo_mode else ""
+    print(f"office UI: http://{args.listen}:{args.port} (client {args.client}){mode_str}")
     try:
         server.serve_forever()
     except KeyboardInterrupt:
@@ -294,4 +357,3 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-
