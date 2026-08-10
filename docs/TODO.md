@@ -6,18 +6,21 @@ Things decided-but-not-done, so they live somewhere other than a chat log.
 
 | | |
 |---|---|
-| ~~**claude's seeded credential goes stale in place**~~ | **Closed — not a fix, a decision.** A login is one interactive act per profile and there is no way around it: agy and codex never refresh, and claude's refresh cannot be shared across copies. We do not attempt to keep copies alive. What we do instead is **alert** — see the row below |
-| ~~**alert before claude expires, and when a login is missing**~~ | **SHIPPED and verified live.** `absent` alerts for every account in use, deduped per state change via tenant-level `credential.alerted`. Measured on the lab: three `absent` alerts, unchanged across three watchdog passes. ⚠ The clear-on-seed half is unproven until the tenant has credentials |
-| **five doc drifts, found by a fresh read of the code** | `AddTicket` checks for a window though `CONTRACTS` says it touches none; `CONTRACTS` describes `HEXISTS`-then-`HSET` where the code uses the better `HSETNX` loop; the constant is `ENTER_DELAY` while the env var is `PASTE_ENTER_DELAY`; trust seeding also writes `hasCompletedProjectOnboarding`; agy trust also sets `enableTelemetry = False` |
 | **decide: `AddTicket` to an agent with no window** | it dead-letters today. The board is *pulled*, so a ticket written to `tasks.todo` would simply wait for the agent to come back. Pause is safe (`interrupt_window`, and the adapter checks `paused` first) — the exposure is a crashed or not-yet-built window |
+| **decide: enforce invariant 2, or leave it documented as unverified** | `producer` is supplied to `send()` and never checked against the queue. It cannot redirect an envelope, but it is the identity shown to an agent and recorded as `created_by`, `actor` and in every log record. ⚠ **Seen in the wild:** a plumbing fixture made a real terminal show `[message from telegram]` from a client that did not exist |
 | **`tmuxhost` never removes the last stale window** | the `len(existing_windows) > 1` guard keeps the session alive, so a retired agent's window persists if it is the only one left |
 | **silent `except: pass` across trust setup** | `write_agent_guide` and all three `ensure_*_project_trusted` swallow every filesystem and JSON error. This is how the profile-blind trust bug hid: it failed silently and every agent sat at a picker |
-| **decide: enforce invariant 2, or leave it documented as unverified** | `producer` is supplied to `send()` and never checked against the queue. It cannot redirect an envelope, but it is the identity shown to an agent and recorded as `created_by`, `actor` and in every log record |
-| **a live terminal view** | wanted, and `:8081` already streams it — the client half is missing |
-| **`clients/` needs its own repo** | consumers sitting inside the framework for want of a remote |
-| **profile logins** | one interactive login per account. Not buildable — a person has to do it. ⚠ **Checked: nobody has solved this.** NVIDIA OpenShell treats credentials as named providers injected as env vars — API-key shaped — and its own tutorial says *"You must authenticate with your own account… It prints an authentication link. Open it in your browser… When prompted, trust the `/sandbox` workspace."* The browser flow and the trust prompt are exactly what we hit |
-| **logins do not survive a rebuild** | `container/seed-home.sh out` saves them and `in` restores; without it a rebuild leaves every CLI at `Not logged in`, which is what happened to the lab tenant. See the rebuild rule in [`LLD-container`](LLD-container.md) |
-| **security, parked deliberately** | TLS, CORS, per-client tokens, Redis ACLs |
+| **the console audits one door of two** | `audit.jsonl` records what passes through the console. Anything using the api token directly is invisible to it, which is how a plumbing run put a message in an operator's terminal with no trace. Either widen it or stop calling it an audit trail |
+| **`clients/` needs its own repo** | consumers sitting inside the framework for want of a remote. ⚠ Needs a repo created under `h-network` — not mine to do |
+| **profile logins** | one interactive login per account. Not buildable — a person has to do it. ⚠ **Checked: nobody has solved this.** NVIDIA OpenShell's own tutorial says you authenticate with your own account in a browser, and trust the workspace when prompted |
+| **local model: long-context behaviour unknown** | every test was a short turn against a 65k window. Nothing says what a local agent does when it fills |
+| **ollama — parked** | the installer asks, falls back to `/api/tags`, and warns when `/v1/messages` is missing, but none of it has been run. ⚠ ollama does not serve the Anthropic Messages API, so claude needs a translating proxy in front |
+| **security, parked deliberately** | TLS on the tenant doors, CORS, per-client tokens, Redis ACLs |
+
+**Recently closed:** the terminal view (the console has a full workspace), the
+five doc drifts (audit 06), credential staleness (a decision, not a fix),
+credential alerting, `delivery_unjudged`, and the octal/snapshot/telemetry
+defects a night of live running turned up.
 
 ⚠ **This index has been wrong four times in one day.** Each time a build closed
 an item and nobody told this file — the correction arrived in a later audit
