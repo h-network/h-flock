@@ -558,8 +558,10 @@ def create_app(*, settings: Settings | None = None, redis_client: Any = None) ->
         state = "blocked" if raw_blocked else presence_state
         since = _decode(raw_presence.get(b"since") or raw_presence.get("since")) or ""
         last_activity = _decode(raw_presence.get(b"last_activity") or raw_presence.get("last_activity")) or ""
+        agent_vab = vab(client, pod=settings.pod, tenant=settings.tenant, agent=agent)
         return {
             "agent": agent,
+            "vab": agent_vab,
             "depths": {
                 "ingress": client.llen(ingress),
                 "egress": client.llen(egress),

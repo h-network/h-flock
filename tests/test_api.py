@@ -409,6 +409,7 @@ def test_hyphenated_agent_names_with_digits(client):
     assert status_code == 200
     assert body == {
         "agent": "sme-2",
+        "vab": "api",
         "depths": {"ingress": 0, "egress": 0, "dead": 0},
         "presence": {"state": "unknown", "since": "", "last_activity": ""},
     }
@@ -496,6 +497,7 @@ def test_get_agent_queues_and_presence_populated(client):
     assert status_code == 200
     assert body == {
         "agent": "sme-2",
+        "vab": "tmux",
         "depths": {"ingress": 0, "egress": 0, "dead": 0},
         "presence": {
             "state": "working",
@@ -518,6 +520,7 @@ def test_unknown_agent_returns_404_enrolled_agent_returns_200(client):
     status, body = request(app, "GET", "/agents/sme-2", token="secret")
     assert status == 200
     assert body["agent"] == "sme-2"
+    assert body["vab"] == "tmux"
     assert body["depths"] == {"ingress": 0, "egress": 0, "dead": 0}
 
     status, body = request(app, "GET", "/agents/sme-2/board", token="secret")
