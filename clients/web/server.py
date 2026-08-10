@@ -8,6 +8,7 @@ import base64
 import hashlib
 import hmac
 import json
+from datetime import datetime
 import os
 import secrets
 import signal
@@ -451,7 +452,18 @@ class OfficeHandler(SimpleHTTPRequestHandler):
                 seen.add(key)
                 combined.append(msg)
 
-        combined.sort(key=lambda m: m.get("ts", ""))
+        # ⚠ Do not sort these as strings. The audit record is second-granular
+        # ("...:49Z") and a mailbox entry carries milliseconds ("...:49.123Z"),
+        # and lexicographically "Z" sorts after ".", so every prompt landed AFTER
+        # its own reply — a conversation with the answer above the question.
+        # Parse to a real instant, and break a genuine tie with outbound first.
+        def _instant(value: str) -> float:
+            try:
+                return datetime.fromisoformat(value.replace("Z", "+00:00")).timestamp()
+            except (ValueError, AttributeError):
+                return 0.0
+
+        combined.sort(key=lambda m: (_instant(m.get("ts", "")), 0 if m.get("direction") == "outbound" else 1))
 
         for idx, m in enumerate(combined):
             m["cursor"] = f"conv-{idx}"

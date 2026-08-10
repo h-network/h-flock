@@ -919,15 +919,21 @@ def test_conversation_audit_prompts_and_client_mailbox_replies(tmp_path):
             messages = data["messages"]
             assert len(messages) == 2
 
-            # Outbound prompt from audit.jsonl
-            assert messages[0]["direction"] == "outbound"
-            assert messages[0]["producer"] == "web"
-            assert messages[0]["payload"]["text"] == "Operator prompt to architect"
+            # ⚠ Do not assert on index. The conversation is ordered by real
+            # timestamp, and this fixture's reply is hard-coded to 10:01 while
+            # the outbound prompt is written to the audit log at run time — so
+            # the reply is genuinely the earlier of the two. Assert the contract:
+            # both directions present, with the right producer and text.
+            outbound = [m for m in messages if m["direction"] == "outbound"]
+            inbound = [m for m in messages if m["direction"] == "inbound"]
+            assert len(outbound) == 1 and len(inbound) == 1
+
+            assert outbound[0]["producer"] == "web"
+            assert outbound[0]["payload"]["text"] == "Operator prompt to architect"
 
             # Inbound reply from web client's mailbox (filtered for producer==architect)
-            assert messages[1]["direction"] == "inbound"
-            assert messages[1]["producer"] == "architect"
-            assert messages[1]["payload"]["text"] == "Agent reply to web"
+            assert inbound[0]["producer"] == "architect"
+            assert inbound[0]["payload"]["text"] == "Agent reply to web"
     finally:
         web_server.shutdown()
         web_server.server_close()
