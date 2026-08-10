@@ -34,6 +34,7 @@
 }
 
 .terminal-panel {
+  min-height: 520px;
   background: var(--term-bg);
   border-bottom: 1px solid var(--term-border);
   padding: 10px 16px;
@@ -113,6 +114,7 @@
 
 .terminal-container {
   width: 100%;
+  min-height: 460px;
   overflow-x: auto;
   background: #000000;
   padding: 6px;

@@ -148,6 +148,9 @@ export class TerminalPanel {
     if (statusEl) {
       statusEl.textContent = statusText;
       statusEl.className = `terminal-status ${statusClass}`;
+      // SPEC.md §7: absolute timestamp on hover, relative text at rest
+      const absTime = this.lastOutputTime ? new Date(this.lastOutputTime).toISOString() : new Date().toISOString();
+      statusEl.title = `Last Output: ${absTime}`;
     }
   }
 
