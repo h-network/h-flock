@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import re
 import shlex
 from collections import defaultdict, deque
 from dataclasses import dataclass, field
@@ -10,6 +11,26 @@ from typing import Any
 
 
 from flock.tmux import require_isolated_tmux
+
+
+_CONTROL_ESCAPE = re.compile(rb"\\(\\|[0-7]{3})")
+
+
+def _unescape_control(data: bytes) -> bytes:
+    """Turn tmux control-mode escapes back into the bytes they stand for.
+
+    ⚠ `%output` does not carry raw bytes. tmux escapes every non-printable as a
+    backslash and three OCTAL digits, so ESC arrives as the four characters
+    \\033 and a literal backslash as \\\\. Publishing that unchanged means a
+    terminal renders `\\033[?25l` as text instead of hiding the cursor — which
+    is exactly what an operator saw: screenfuls of escape sequences as prose.
+    """
+
+    def replace(match: "re.Match[bytes]") -> bytes:
+        body = match.group(1)
+        return b"\\" if body == b"\\" else bytes([int(body, 8)])
+
+    return _CONTROL_ESCAPE.sub(replace, data)
 
 
 class ControlModeError(RuntimeError):
@@ -157,7 +178,7 @@ class ControlModeClient:
         agent = self.pane_to_agent.get(pane)
         if agent is None:
             return
-        text = data.decode("latin-1")
+        text = _unescape_control(data).decode("latin-1")
         for subscriber in tuple(self._subscribers.get(agent, ())):
             buffer = subscriber.buffering.get(agent)
             if buffer is not None:
