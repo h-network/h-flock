@@ -105,7 +105,16 @@ read -rp "Point any agent at a local model endpoint? [y/N]: " USE_ENDPOINT
 if [[ "${USE_ENDPOINT:-n}" =~ ^[Yy] ]]; then
     # ⚠ No default. There is no sensible one — an address here was this
     # developer's own box, which is meaningless on anyone else's network.
-    read -rp "  Endpoint base URL, e.g. http://10.0.0.5:8000 (NO trailing /v1): " LOCAL_URL
+    # The kind decides the usual port and, more importantly, whether claude can
+    # use it at all — see the probe below.
+    read -rp "  Endpoint type — vllm or ollama [vllm]: " EP_KIND
+    EP_KIND="$(slug "${EP_KIND:-vllm}")"
+    case "$EP_KIND" in
+        vllm)   EP_HINT="http://10.0.0.5:8000" ;;
+        ollama) EP_HINT="http://10.0.0.5:11434" ;;
+        *)      echo "  unknown type '$EP_KIND' — treating it as vllm"; EP_KIND=vllm; EP_HINT="http://10.0.0.5:8000" ;;
+    esac
+    read -rp "  Endpoint base URL, e.g. $EP_HINT (NO trailing /v1): " LOCAL_URL
     while [ -z "$LOCAL_URL" ]; do
         read -rp "  An endpoint needs an address. URL (blank to skip endpoints): " LOCAL_URL
         [ -z "$LOCAL_URL" ] && break
@@ -113,10 +122,35 @@ if [[ "${USE_ENDPOINT:-n}" =~ ^[Yy] ]]; then
     LOCAL_URL="${LOCAL_URL%/}"
     # ⚠ claude appends /v1/messages itself; a base carrying /v1 gives /v1/v1.
     LOCAL_URL="${LOCAL_URL%/v1}"
-    # ⚠ The id must match GET /v1/models byte for byte. Offer what is served
-    # rather than asking someone to type it.
+
+    # ⚠ ASK, THEN VERIFY. claude speaks only the Anthropic Messages API, and
+    # ollama does not serve /v1/messages — it is OpenAI-shaped. An operator who
+    # points claude at a bare ollama gets "issue with the selected model", which
+    # reads as a model problem and is not one. Probe instead of assuming, because
+    # either kind may be sitting behind a translating proxy.
+    if [ -n "$LOCAL_URL" ]; then
+        MSG_CODE="$(curl -s -o /dev/null -w '%{http_code}' --max-time 6 \
+                    -H 'Content-Type: application/json' -X POST \
+                    -d '{"model":"probe","max_tokens":1,"messages":[{"role":"user","content":"hi"}]}' \
+                    "${LOCAL_URL}/v1/messages" 2>/dev/null || echo 000)"
+        case "$MSG_CODE" in
+            000) echo "  ⚠ could not reach ${LOCAL_URL} — check the address and that it is running" ;;
+            404) echo "  ⚠ ${LOCAL_URL} does not serve /v1/messages."
+                 echo "    claude speaks only the Anthropic Messages API, so it cannot use this endpoint directly."
+                 echo "    Put a translating proxy in front of it, or point codex/agy here instead." ;;
+            *)   echo "  ✓ /v1/messages answered ($MSG_CODE) — claude can use this endpoint" ;;
+        esac
+    fi
+
+    # ⚠ The id must match the served id byte for byte. Offer what is served
+    # rather than asking someone to type it: ollama ids carry a tag
+    # (gpt-oss:20b) and are easy to mistype as gpt-oss-20b.
     SERVED="$(curl -s --max-time 5 "${LOCAL_URL}/v1/models" 2>/dev/null \
               | python3 -c 'import sys,json;print(" ".join(m["id"] for m in json.load(sys.stdin).get("data",[])))' 2>/dev/null || true)"
+    if [ -z "$SERVED" ] && [ "$EP_KIND" = "ollama" ]; then
+        SERVED="$(curl -s --max-time 5 "${LOCAL_URL}/api/tags" 2>/dev/null \
+                  | python3 -c 'import sys,json;print(" ".join(m["name"] for m in json.load(sys.stdin).get("models",[])))' 2>/dev/null || true)"
+    fi
     [ -n "$SERVED" ] && echo "  served by that endpoint: $SERVED"
     read -rp "  Model id [${SERVED%% *}]: " LOCAL_MODEL
     LOCAL_MODEL="${LOCAL_MODEL:-${SERVED%% *}}"
@@ -170,6 +204,7 @@ TOKEN="$(grep -s '^API_TOKEN=' container/.env | cut -d= -f2)"
         echo "ENDPOINT_${EP_UPPER}_URL=${LOCAL_URL}"
         echo "ENDPOINT_${EP_UPPER}_MODEL=${LOCAL_MODEL}"
         echo "ENDPOINT_${EP_UPPER}_TOKEN=${LOCAL_TOKEN}"
+        echo "ENDPOINT_${EP_UPPER}_KIND=${EP_KIND}"
     fi
 } > container/.env
 chmod 600 container/.env
