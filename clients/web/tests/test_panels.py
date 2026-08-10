@@ -49,11 +49,52 @@ def test_alert_load_is_capped_batched_and_layout_is_reserved():
     styles = (WEB_DIR / "style.css").read_text(encoding="utf-8")
     readme = (WEB_DIR / "README.md").read_text(encoding="utf-8")
     assert "requestAnimationFrame" in alerts
-    assert "document.createDocumentFragment" in alerts
-    assert "root.children.length > 300" in alerts
+    assert "this.items.slice(0, 300)" in alerts
+    assert "const groups = new Map()" in alerts
+    assert "repeats" in alerts
     assert "content-visibility: auto" in styles
     assert "scrollbar-gutter: stable" in styles
     assert "capped at the newest 300" in readme
+
+
+def test_part_two_product_controls_and_preferences_ship_as_modules():
+    html = (WEB_DIR / "index.html").read_text(encoding="utf-8")
+    app = (WEB_DIR / "app.js").read_text(encoding="utf-8")
+    for module in ("palette", "preferences", "notifications"):
+        assert (WEB_DIR / "ui" / f"{module}.js").exists()
+        assert f'./ui/{module}.js' in app
+    for element in (
+        "global-search", "search-results-summary", "command-dialog",
+        "shortcuts-dialog", "preferences-dialog", "notification-control",
+    ):
+        assert f'id="{element}"' in html
+    assert "hflock.console.preferences.v1" in (WEB_DIR / "ui" / "preferences.js").read_text(encoding="utf-8")
+    assert "API_TOKEN" not in (WEB_DIR / "ui" / "preferences.js").read_text(encoding="utf-8")
+
+
+def test_global_search_filters_all_data_panels():
+    app = (WEB_DIR / "app.js").read_text(encoding="utf-8")
+    assert "agents.setFilter(query)" in app
+    assert "alerts.setFilter(query)" in app
+    assert "boards.setFilter(query)" in app
+    for module in ("agents.js", "alerts.js", "boards.js"):
+        assert "setFilter(value)" in (WEB_DIR / "ui" / module).read_text(encoding="utf-8")
+
+
+def test_composer_shortcuts_and_history_are_explicit():
+    messages = (WEB_DIR / "ui" / "messages.js").read_text(encoding="utf-8")
+    html = (WEB_DIR / "index.html").read_text(encoding="utf-8")
+    assert 'event.key === "Enter" && (event.ctrlKey || event.metaKey)' in messages
+    assert "this.sentHistory" in messages
+    assert "a reply may never come" in html
+
+
+def test_notification_delivery_waits_for_resolvable_alert_lifecycle():
+    notifications = (WEB_DIR / "ui" / "notifications.js").read_text(encoding="utf-8")
+    assert "Notification.requestPermission()" in notifications
+    assert "this.muted" in notifications
+    assert "alert.resolved || alert.cleared" in notifications
+    assert "new Notification(" not in notifications
 
 
 def test_keyboard_focus_and_relative_timestamp_contracts():
