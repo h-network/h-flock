@@ -234,6 +234,18 @@ export class TerminalPanel {
           this.setPanelStatus("Live", "connected");
         }
         if (typeof event.data === "string") {
+          try {
+            const parsed = JSON.parse(event.data);
+            if (parsed && typeof parsed === "object" && parsed.error) {
+              this.state = "error";
+              this.setPanelStatus(`Window error: ${parsed.error}`, "error");
+              this._announce(`Terminal error: agent window terminated (${parsed.error})`);
+              this.term.writeln(`\r\n\x1b[31;1m--- WINDOW TERMINATED: ${parsed.error} ---\x1b[0m`);
+              return;
+            }
+          } catch (_) {
+            // Not a JSON error message, plain terminal output string
+          }
           this.term.write(event.data);
         } else if (event.data instanceof ArrayBuffer) {
           this.term.write(new Uint8Array(event.data));
@@ -242,13 +254,17 @@ export class TerminalPanel {
 
       ws.onclose = (event) => {
         this.socket = null;
+        if (this.state === "error") {
+          // Terminal window terminated - do not silently reconnect or freeze
+          return;
+        }
         if (this.reconnectAttempts < this.maxReconnectAttempts) {
           this.reconnectAttempts++;
           this.state = "disconnected";
           const delaySec = Math.min(2 * Math.pow(1.5, this.reconnectAttempts), 15);
-          this.setPanelStatus(`Disconnected. Reconnecting in ${Math.round(delaySec)}s (attempt ${this.reconnectAttempts}/${this.maxReconnectAttempts})...`, "disconnected");
+          this.setPanelStatus(`Disconnected (${event.reason || 'session closed'}). Reconnecting in ${Math.round(delaySec)}s...`, "disconnected");
           this._announce(`Terminal disconnected. Reconnecting in ${Math.round(delaySec)} seconds.`);
-          this.term.writeln(`\r\n\x1b[33m--- Disconnected. Reconnecting in ${Math.round(delaySec)}s (attempt ${this.reconnectAttempts}/${this.maxReconnectAttempts})... ---\x1b[0m`);
+          this.term.writeln(`\r\n\x1b[33m--- Disconnected: ${event.reason || 'Session closed'}. Reconnecting in ${Math.round(delaySec)}s (attempt ${this.reconnectAttempts}/${this.maxReconnectAttempts})... ---\x1b[0m`);
 
           this.reconnectTimer = setTimeout(() => {
             this.connect(agentName);

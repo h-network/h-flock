@@ -116,10 +116,13 @@
   width: 100%;
   min-height: 460px;
   overflow-x: auto;
+  overflow-y: hidden;
   background: #000000;
   padding: 6px;
   border-radius: 6px;
   border: 1px solid var(--term-border);
+  scrollbar-width: thin;
+  scrollbar-color: var(--term-border) transparent;
 }
 
 .terminal-container:focus-within {
@@ -129,6 +132,7 @@
 
 .terminal-container .xterm {
   padding: 4px;
+  min-width: max-content;
 }
 
 /* Screen reader only utility class for live announcements */
