@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>chat</title>
+<link rel="stylesheet" href="chat.css">
+</head>
+<body>
+  <header class="bar">
+    <div class="who">
+      <span class="dot" id="dot" aria-hidden="true"></span>
+      <h1 id="agent">…</h1>
+      <span class="state" id="state">connecting</span>
+    </div>
+    <span class="as" id="as"></span>
+  </header>
+
+  <main id="thread" class="thread" role="log" aria-live="polite" aria-label="Conversation"></main>
+
+  <div id="notice" class="notice" hidden></div>
+
+  <form id="composer" class="composer">
+    <textarea id="input" rows="1" placeholder="Message…" aria-label="Message"></textarea>
+    <button id="send" type="submit">Send</button>
+  </form>
+  <p class="hint">⌃⏎ / ⌘⏎ sends · a reply may never come</p>
+
+<script type="module" src="chat.js"></script>
+</body>
+</html>
