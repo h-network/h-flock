@@ -25,7 +25,9 @@ function activateTab(name) {
   state.tab = name;
   for (const tab of ["activity", "terminal", "messages"]) {
     const selected = tab === name;
-    $(`${tab}-tab`).setAttribute("aria-selected", String(selected));
+    const button = $(`${tab}-tab`);
+    button.setAttribute("aria-selected", String(selected));
+    button.tabIndex = selected ? 0 : -1;
     const view = tab === "terminal" ? $("terminal-panel") : $(`${tab}-view`);
     view.hidden = !selected;
   }
@@ -37,6 +39,7 @@ async function selectAgent(agent) {
   const detail = agents.detail(agent);
   $("detail-title").textContent = agent;
   $("detail-subtitle").textContent = `${detail?.vab || "unknown VAB"} · ${detail?.presence?.state || "unknown"}`;
+  $("detail-title").focus();
   $("message").disabled = false;
   $("send").disabled = false;
   agents.render();
@@ -47,8 +50,21 @@ async function selectAgent(agent) {
 }
 
 function bindTabs() {
-  for (const name of ["activity", "terminal", "messages"]) {
-    $(`${name}-tab`).onclick = () => activateTab(name);
+  const names = ["activity", "terminal", "messages"];
+  for (const name of names) {
+    const button = $(`${name}-tab`);
+    button.onclick = () => activateTab(name);
+    button.onkeydown = (event) => {
+      let index = names.indexOf(name);
+      if (event.key === "ArrowRight") index = (index + 1) % names.length;
+      else if (event.key === "ArrowLeft") index = (index + names.length - 1) % names.length;
+      else if (event.key === "Home") index = 0;
+      else if (event.key === "End") index = names.length - 1;
+      else return;
+      event.preventDefault();
+      activateTab(names[index]);
+      $(`${names[index]}-tab`).focus();
+    };
   }
   document.addEventListener("keydown", (event) => {
     if (event.key === "Escape" && state.tab !== "activity") activateTab("activity");

@@ -50,17 +50,32 @@ poll because they have no stream. Alerts, activity and messages catch up from a
 persisted cursor and then use SSE with capped exponential reconnect backoff.
 One failed panel keeps its last honest data and cannot take down another.
 
-The alert DOM is capped at the newest 300 entries and updated one row at a time;
-that bounds layout work under alert load. Activity and each message history are
-capped at 100. Boards render every ticket inside independently scrolling,
-collapsible agent rows, so a 200-ticket board remains navigable without hiding
-work.
+The alert DOM is capped at the newest 300 entries. Catch-up additions are
+batched into one animation frame, off-screen rows use browser content
+visibility, and fixed scroll regions reserve their scrollbar gutter. This
+bounds rendering work and prevents the page grid shifting when a full alert
+history arrives. Activity and each message history are capped at 100. Boards
+render every ticket inside independently scrolling, collapsible agent rows, so
+a 200-ticket board remains navigable without hiding work.
 
 Every timestamp is relative in the layout and absolute on hover. `blocked` has
 an icon, text and a heavy border rather than relying on red; `unknown` is
 labelled and dashed rather than presented as ready. The terminal is read-only
 until its explicit mode control is switched, and terminal bytes populate no
 other panel.
+
+The agent list uses Up/Down/Home/End navigation and Enter or Space selects its
+focused row. Selecting an agent moves focus to the changed detail heading so a
+keyboard or screen-reader user immediately reaches the new context. Detail
+tabs use the standard Left/Right/Home/End roving-tabstop pattern; Escape returns
+to Activity. Native dialogs trap focus and Escape closes them.
+
+An HTTP 500 is not treated as a network drop. A polling panel with prior data
+keeps that data and labels it stale with the returned error and a Retry action;
+a first-load failure and a rejected write show an error in their own panel.
+Browser EventSource does not expose an SSE response status, so a stream-side 500
+is honestly shown as disconnected with the reconnect attempt and backoff rather
+than falsely labelled as a specific server error. Other panels remain live.
 
 The Agents panel sends lifecycle envelopes to `host`; it never mutates roster
 state directly. Hire validates the agent name and shows a pending row while the

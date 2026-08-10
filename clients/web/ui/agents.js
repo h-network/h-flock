@@ -53,10 +53,24 @@ export class AgentsPanel {
       const ticket = typeof doing[0] === "string" ? { title: doing[0] } : doing[0];
       const button = document.createElement("button");
       button.type = "button";
+      button.setAttribute("role", "option");
+      button.setAttribute("aria-selected", String(agent === this.selected));
       button.className = `agent-row state-${presence}${agent === this.selected ? " selected" : ""}`;
       button.setAttribute("aria-label", `${agent}, ${presence}${presence === "blocked" ? ", action required" : ""}`);
+      button.tabIndex = agent === this.selected || (!this.selected && agent === this.details.keys().next().value) ? 0 : -1;
       button.innerHTML = `<span class="state-icon" aria-hidden="true">${{ working: "●", idle: "○", blocked: "⊘", unknown: "?", pending: "…" }[presence] || "?"}</span><strong>${escapeHtml(agent)}</strong><span class="presence-label">${escapeHtml(presence)}${presence === "blocked" ? " · ACT" : ""}</span><span class="vab">${escapeHtml(detail.vab || "unknown VAB")}</span><span class="ticket">${presence === "pending" ? "Roster and window are converging" : ticket ? escapeHtml(ticket.title || ticket.id || "open ticket") : "No open ticket"}</span><span class="age">${ticket?.started_ts ? escapeHtml(relativeTime(ticket.started_ts)) : ""}</span><time title="${escapeHtml(detail.presence?.last_activity ? absoluteTime(detail.presence.last_activity) : "No activity recorded")}">${detail.presence?.last_activity ? escapeHtml(relativeTime(detail.presence.last_activity)) : "activity unknown"}</time>`;
       button.onclick = () => { this.selected = agent; this.onSelect(agent); };
+      button.onkeydown = (event) => {
+        if (!["ArrowDown", "ArrowUp", "Home", "End"].includes(event.key)) return;
+        const rows = Array.from(root.querySelectorAll(".agent-row"));
+        let index = rows.indexOf(button);
+        if (event.key === "ArrowDown") index = (index + 1) % rows.length;
+        else if (event.key === "ArrowUp") index = (index + rows.length - 1) % rows.length;
+        else if (event.key === "Home") index = 0;
+        else index = rows.length - 1;
+        event.preventDefault();
+        rows[index].focus();
+      };
       return button;
     }));
   }

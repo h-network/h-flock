@@ -5,6 +5,8 @@ import { absoluteTime, catchUp, escapeHtml, forceDemoState, PanelStatus, relativ
 export class AlertsPanel {
   constructor() {
     this.items = [];
+    this.pending = [];
+    this.renderFrame = null;
     this.client = "tenant";
     this.status = new PanelStatus("alerts-status", () => this.restart());
   }
@@ -23,13 +25,26 @@ export class AlertsPanel {
   add(alert) {
     this.items.unshift(alert);
     this.items = this.items.slice(0, 300);
-    const root = document.getElementById("alerts");
+    this.pending.push(alert);
+    if (this.renderFrame == null) this.renderFrame = requestAnimationFrame(() => this.flush());
+  }
+
+  element(alert) {
     const item = document.createElement("li");
     item.className = `alert alert-${alert.kind || "unknown"}`;
     const subject = alert.agent || alert.account || "tenant";
     const facts = [alert.cli, alert.status, alert.ticket, alert.unconsumed_s == null ? "" : `${alert.unconsumed_s}s unconsumed`, alert.doing_age_s == null ? "" : `${Math.floor(alert.doing_age_s / 60)}m open`].filter(Boolean);
     item.innerHTML = `<span class="alert-icon" aria-hidden="true">⚠</span><strong>${escapeHtml(alert.kind || "alert")}</strong><span>${escapeHtml(subject)}</span><span>${escapeHtml(facts.join(" · "))}</span><time datetime="${escapeHtml(alert.ts || "")}" title="${escapeHtml(absoluteTime(alert.ts))}">${escapeHtml(relativeTime(alert.ts))}</time>`;
-    root.prepend(item);
+    return item;
+  }
+
+  flush() {
+    this.renderFrame = null;
+    const root = document.getElementById("alerts");
+    const fragment = document.createDocumentFragment();
+    for (const alert of this.pending) fragment.prepend(this.element(alert));
+    this.pending = [];
+    root.prepend(fragment);
     while (root.children.length > 300) root.lastElementChild.remove();
   }
 
