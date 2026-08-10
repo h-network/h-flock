@@ -359,20 +359,56 @@ export class TerminalPanel {
           this.isRecording = false;
           recordBtn.classList.remove("recording");
           recordBtn.textContent = "Record";
-          this._announce(`Session recording stopped. ${this.recordingFrames.length} frames captured.`);
-          this.setPanelStatus(`Recording saved (${this.recordingFrames.length} frames).`, "connected");
+          const endTs = Date.now();
+          const sessionId = `rec_${this.agent || 'terminal'}_${Date.now()}`;
+          const recordingPayload = {
+            session_id: sessionId,
+            agent: this.agent || "unknown",
+            start_ts: this.recordingStartTime,
+            end_ts: endTs,
+            mode: this.isReadOnly ? "read-only" : "read-write",
+            chunks: this.recordingFrames
+          };
+
+          // SPEC §12: Persist session recording to server.py backend (/api/recordings)
+          fetch("/api/recordings", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(recordingPayload)
+          }).catch(() => {});
+
+          this._announce(`Session recording stopped. ${this.recordingFrames.length} frames saved to server.`);
+          this.setPanelStatus(`Recording saved to server (${this.recordingFrames.length} frames).`, "connected");
         }
       };
     }
 
     if (replayBtn && replayBar) {
       replayBtn.onclick = () => {
-        if (this.recordingFrames.length === 0) {
-          alert("No recorded session available. Click 'Record' first to capture a session.");
-          return;
-        }
-        replayBar.hidden = false;
-        this.startReplay();
+        // Fetch server-side recordings from GET /api/recordings
+        fetch("/api/recordings")
+          .then((res) => res.json())
+          .then((data) => {
+            const list = Array.isArray(data) ? data : (data.recordings || []);
+            if (list.length > 0) {
+              const rec = list[list.length - 1];
+              this.recordingFrames = rec.chunks || rec.frames || [];
+            }
+            if (this.recordingFrames.length === 0) {
+              alert("No recorded session available on server. Click 'Record' first to capture a session.");
+              return;
+            }
+            replayBar.hidden = false;
+            this.startReplay();
+          })
+          .catch(() => {
+            if (this.recordingFrames.length === 0) {
+              alert("No recorded session available. Click 'Record' first to capture a session.");
+              return;
+            }
+            replayBar.hidden = false;
+            this.startReplay();
+          });
       };
     }
 
