@@ -275,18 +275,28 @@ class OfficeHandler(SimpleHTTPRequestHandler):
                 self._json(404, {"detail": f"recording '{safe_id}' not found"})
                 return
 
-            if rec_file.stat().st_size >= max_recording_bytes:
-                self._json(413, {"detail": "recording file size limit reached (5MB max)"})
-                return
-
             try:
                 rec_obj = json.loads(rec_file.read_text(encoding="utf-8"))
             except Exception:
                 rec_obj = {"id": safe_id, "agent": "unknown", "frames": []}
             frames = rec_obj.get("frames", rec_obj.get("chunks", []))
-            if len(frames) >= max_recording_frames:
-                self._json(413, {"detail": f"recording frame count limit reached ({max_recording_frames} max)"})
+
+            reason = None
+            if rec_file.stat().st_size >= max_recording_bytes:
+                reason = f"recording file size limit reached ({max_recording_bytes} bytes max)"
+            elif len(frames) >= max_recording_frames:
+                reason = f"recording frame count limit reached ({max_recording_frames} max)"
+
+            if reason is not None:
+                if not rec_obj.get("truncated"):
+                    rec_obj["truncated"] = True
+                    rec_obj["truncated_at"] = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+                    rec_obj["truncate_reason"] = reason
+                    rec_file.write_text(json.dumps(rec_obj, indent=2), encoding="utf-8")
+                    self._audit_log("recording_truncated", {"id": safe_id, "reason": reason})
+                self._json(413, {"detail": reason, "truncated": True})
                 return
+
             frames.append(data)
             rec_obj["frames"] = frames
             rec_file.write_text(json.dumps(rec_obj, indent=2), encoding="utf-8")
