@@ -8,7 +8,9 @@ import hmac
 import json
 import os
 import secrets
+import signal
 import socket
+import ssl
 import sys
 import threading
 import time
@@ -21,6 +23,39 @@ from urllib.parse import urlsplit
 
 
 HERE = Path(__file__).resolve().parent
+
+
+def _load_config_file(config_path: str) -> dict[str, str | int | bool]:
+    path = Path(config_path)
+    if not path.exists():
+        raise FileNotFoundError(f"config file not found: {config_path}")
+    content = path.read_text(encoding="utf-8")
+    if path.suffix.lower() == ".json":
+        return json.loads(content)
+    elif path.suffix.lower() == ".toml":
+        try:
+            import tomllib
+            return tomllib.loads(content)
+        except ImportError:
+            pass
+    res = {}
+    for line in content.splitlines():
+        line = line.strip()
+        if not line or line.startswith("#") or line.startswith(";") or line.startswith("["):
+            continue
+        if "=" in line:
+            k, v = line.split("=", 1)
+            k = k.strip().replace("-", "_")
+            v = v.strip().strip('"').strip("'")
+            if v.lower() == "true":
+                res[k] = True
+            elif v.lower() == "false":
+                res[k] = False
+            elif v.isdigit():
+                res[k] = int(v)
+            else:
+                res[k] = v
+    return res
 
 
 def _is_loopback(address: str) -> bool:
@@ -104,8 +139,77 @@ class OfficeHandler(SimpleHTTPRequestHandler):
                 return True
         return False
 
+    def log_message(self, format: str, *args) -> None:
+        log_fmt = getattr(self.server, "log_format", "text")
+        if log_fmt == "json":
+            status = args[0] if len(args) > 0 else ""
+            record = {
+                "timestamp": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+                "client_ip": self.client_address[0],
+                "method": self.command,
+                "path": self.path,
+                "status": status,
+                "user_agent": self.headers.get("User-Agent", ""),
+            }
+            sys.stderr.write(json.dumps(record) + "\n")
+            sys.stderr.flush()
+        else:
+            super().log_message(format, *args)
+
+    def _get_session_id(self) -> str:
+        cookie_header = self.headers.get("Cookie", "")
+        if cookie_header:
+            cookies = SimpleCookie()
+            try:
+                cookies.load(cookie_header)
+                if "hflock_session" in cookies:
+                    return cookies["hflock_session"].value[:12] + "..."
+            except Exception:
+                pass
+        return "unauthenticated"
+
+    def _audit_log(self, event: str, details: dict) -> None:
+        audit_file = getattr(self.server, "audit_log", None)
+        if not audit_file:
+            return
+        record = {
+            "timestamp": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+            "event": event,
+            "session_id": self._get_session_id(),
+            "client_ip": self.client_address[0],
+            "user_agent": self.headers.get("User-Agent", ""),
+            "details": details,
+        }
+        line = json.dumps(record) + "\n"
+        lock = getattr(self.server, "sessions_lock", None)
+        if lock is not None:
+            with lock:
+                with open(audit_file, "a", encoding="utf-8") as f:
+                    f.write(line)
+        else:
+            with open(audit_file, "a", encoding="utf-8") as f:
+                f.write(line)
+
+    def _handle_readyz(self) -> None:
+        if getattr(self.server, "demo_mode", False):
+            self._json(200, {"status": "ready", "mode": "demo"})
+            return
+        try:
+            target = f"{self.server.api_base}/agents"
+            req = urllib.request.Request(target, headers={"Authorization": f"Bearer {self.server.api_token}"})
+            with urllib.request.urlopen(req, timeout=3) as resp:
+                if resp.status == 200:
+                    self._json(200, {"status": "ready"})
+                    return
+        except Exception as error:
+            self._json(503, {"status": "not_ready", "detail": f"upstream API unreachable: {error}"})
+
     def do_GET(self) -> None:
-        if self.path == "/client-config":
+        if self.path == "/healthz":
+            self._json(200, {"status": "ok"})
+        elif self.path == "/readyz":
+            self._handle_readyz()
+        elif self.path == "/client-config":
             self._json(200, {
                 "client": self.server.client_name,
                 "demo": self.server.demo_mode,
@@ -141,10 +245,24 @@ class OfficeHandler(SimpleHTTPRequestHandler):
             self._handle_logout()
         elif getattr(self.server, "secret", None) and not self._is_authenticated():
             self._json(401, {"detail": "authentication required"})
-        elif self.server.demo_mode and self.path.startswith("/api/"):
-            self._demo_api()
         elif self.path.startswith("/api/"):
-            self._proxy()
+            length = int(self.headers.get("Content-Length", "0"))
+            if length > self.MAX_BODY_SIZE:
+                self._json(413, {"detail": "request body too large (max 2MB)"})
+                return
+            body = self.rfile.read(length) if length else None
+            if body:
+                try:
+                    payload_data = json.loads(body.decode("utf-8"))
+                    kind = payload_data.get("kind", "")
+                    if kind:
+                        self._audit_log("operator_action", {"kind": kind, "path": self.path, "payload": payload_data.get("payload", {})})
+                except Exception:
+                    pass
+            if self.server.demo_mode:
+                self._demo_api()
+            else:
+                self._proxy(body=body)
         else:
             self.send_error(404)
 
@@ -202,6 +320,7 @@ class OfficeHandler(SimpleHTTPRequestHandler):
             self.send_header("Cache-Control", "no-store")
             self.end_headers()
             self.wfile.write(json.dumps({"authenticated": True}).encode("utf-8"))
+            self._audit_log("login_success", {})
         else:
             if lock is not None:
                 with lock:
@@ -212,9 +331,11 @@ class OfficeHandler(SimpleHTTPRequestHandler):
                 attempts = login_attempts.get(client_ip, [])
                 attempts.append(now)
                 login_attempts[client_ip] = attempts
+            self._audit_log("login_failure", {"reason": "invalid operator secret"})
             self._json(401, {"detail": "invalid operator secret"})
 
     def _handle_logout(self) -> None:
+        self._audit_log("logout", {})
         cookie_header = self.headers.get("Cookie", "")
         if cookie_header:
             cookies = SimpleCookie()
@@ -302,13 +423,24 @@ class OfficeHandler(SimpleHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(body)
 
-    def _proxy(self) -> None:
+    def _proxy(self, body: bytes | None = None) -> None:
         target = self.server.api_base + self.path.removeprefix("/api")
-        length = int(self.headers.get("Content-Length", "0"))
-        if length > self.MAX_BODY_SIZE:
-            self._json(413, {"detail": "request body too large (max 2MB)"})
-            return
-        body = self.rfile.read(length) if length else None
+        if body is None and self.command in {"POST", "PUT", "PATCH"}:
+            length = int(self.headers.get("Content-Length", "0"))
+            if length > self.MAX_BODY_SIZE:
+                self._json(413, {"detail": "request body too large (max 2MB)"})
+                return
+            body = self.rfile.read(length) if length else None
+
+        if self.command == "POST" and body:
+            try:
+                payload_data = json.loads(body.decode("utf-8"))
+                kind = payload_data.get("kind", "")
+                if kind:
+                    self._audit_log("operator_action", {"kind": kind, "path": self.path, "payload": payload_data.get("payload", {})})
+            except Exception:
+                pass
+
         headers = {"Authorization": f"Bearer {self.server.api_token}"}
         if body is not None:
             headers["Content-Type"] = self.headers.get("Content-Type", "application/json")
@@ -438,12 +570,23 @@ class OfficeHandler(SimpleHTTPRequestHandler):
                 except Exception:
                     pass
 
-        t1 = threading.Thread(target=forward, args=(client_sock, upstream_sock), daemon=True)
-        t2 = threading.Thread(target=forward, args=(upstream_sock, client_sock), daemon=True)
-        t1.start()
-        t2.start()
-        t1.join()
-        t2.join()
+        lock = getattr(self.server, "sessions_lock", None)
+        active_sockets = getattr(self.server, "active_sockets_set", None)
+        if lock and active_sockets is not None:
+            with lock:
+                active_sockets.add(client_sock)
+
+        try:
+            t1 = threading.Thread(target=forward, args=(client_sock, upstream_sock), daemon=True)
+            t2 = threading.Thread(target=forward, args=(upstream_sock, client_sock), daemon=True)
+            t1.start()
+            t2.start()
+            t1.join()
+            t2.join()
+        finally:
+            if lock and active_sockets is not None:
+                with lock:
+                    active_sockets.discard(client_sock)
 
     def _demo_api(self) -> None:
         subpath = self.path.removeprefix("/api")
@@ -613,58 +756,85 @@ def enrol(api_base: str, token: str, client: str) -> None:
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Serve the h-flock browser client")
-    parser.add_argument("--listen", default=os.environ.get("WEB_LISTEN", "127.0.0.1"))
-    parser.add_argument("--port", type=int, default=int(os.environ.get("WEB_PORT", "8090")))
-    parser.add_argument("--api", default=os.environ.get("HFLOCK_API", "http://127.0.0.1:8080"))
-    parser.add_argument("--session", default=os.environ.get("HFLOCK_SESSION", "http://127.0.0.1:8081"))
+    parser.add_argument("--config", help="Path to config file (.toml, .json, key-value)")
+    parser.add_argument("--listen", default=os.environ.get("WEB_LISTEN"))
+    parser.add_argument("--port", type=int, default=int(os.environ.get("WEB_PORT", "0")) if os.environ.get("WEB_PORT") else None)
+    parser.add_argument("--api", default=os.environ.get("HFLOCK_API"))
+    parser.add_argument("--session", default=os.environ.get("HFLOCK_SESSION"))
     parser.add_argument("--token", default=os.environ.get("API_TOKEN"))
-    parser.add_argument("--client", default=os.environ.get("HFLOCK_CLIENT", "web"))
+    parser.add_argument("--client", default=os.environ.get("HFLOCK_CLIENT"))
     parser.add_argument("--secret", default=os.environ.get("HFLOCK_SECRET"))
-    parser.add_argument("--demo", action="store_true", default=bool(os.environ.get("HFLOCK_DEMO")))
+    parser.add_argument("--tls-cert", default=os.environ.get("HFLOCK_TLS_CERT"))
+    parser.add_argument("--tls-key", default=os.environ.get("HFLOCK_TLS_KEY"))
+    parser.add_argument("--log-format", choices=["text", "json"], default=os.environ.get("HFLOCK_LOG_FORMAT", "text"))
+    parser.add_argument("--audit-log", default=os.environ.get("HFLOCK_AUDIT_LOG"))
+    parser.add_argument("--demo", action="store_true", default=None)
     args = parser.parse_args()
 
-    if not _is_loopback(args.listen) and not args.secret:
+    cfg: dict[str, str | int | bool] = {}
+    if args.config:
+        try:
+            cfg = _load_config_file(args.config)
+        except Exception as error:
+            parser.error(f"failed to load config file: {error}")
+
+    listen = args.listen or str(cfg.get("listen", "127.0.0.1"))
+    port = args.port or int(cfg.get("port", 8090))
+    api_url = args.api or str(cfg.get("api", "http://127.0.0.1:8080"))
+    session_url = args.session or str(cfg.get("session", "http://127.0.0.1:8081"))
+    token = args.token or (str(cfg.get("token")) if cfg.get("token") else None)
+    client = args.client or str(cfg.get("client", "web"))
+    secret = args.secret or (str(cfg.get("secret")) if cfg.get("secret") else None)
+    tls_cert = args.tls_cert or (str(cfg.get("tls_cert")) if cfg.get("tls_cert") else None)
+    tls_key = args.tls_key or (str(cfg.get("tls_key")) if cfg.get("tls_key") else None)
+    log_format = args.log_format if args.log_format != "text" else str(cfg.get("log_format", "text"))
+    audit_log = args.audit_log or (str(cfg.get("audit_log")) if cfg.get("audit_log") else None)
+
+    demo_mode = args.demo if args.demo is not None else bool(cfg.get("demo", bool(os.environ.get("HFLOCK_DEMO"))))
+    token = token or ("demo-secret" if demo_mode else None)
+
+    if not _is_loopback(listen) and not secret:
         print(
-            f"ERROR: Refusing to bind non-loopback interface '{args.listen}' without operator secret authentication.\n"
-            f"Provide --secret or set HFLOCK_SECRET to enable access control before exposing the console over the network.",
+            f"ERROR: Refusing to bind non-loopback interface '{listen}' without operator secret authentication.\n"
+            f"Provide --secret or set HFLOCK_SECRET or secret in config to enable access control before exposing the console over the network.",
             file=sys.stderr,
         )
         raise SystemExit(1)
 
-    demo_mode = args.demo
-    token = args.token or ("demo-secret" if demo_mode else None)
     if not token and not demo_mode:
-        parser.error("provide --token or API_TOKEN")
+        parser.error("provide --token, API_TOKEN, or token in --config")
 
-    api_base = args.api.rstrip("/")
+    api_base = api_url.rstrip("/")
     session_host = "127.0.0.1"
     session_port = 8081
 
     if not demo_mode:
-        parsed = urlsplit(args.api)
+        parsed = urlsplit(api_url)
         if parsed.scheme not in {"http", "https"} or not parsed.netloc:
             parser.error("--api must be an absolute http(s) URL")
 
-        parsed_session = urlsplit(args.session)
+        parsed_session = urlsplit(session_url)
         if parsed_session.scheme not in {"http", "https", "ws", "wss"} or not parsed_session.netloc:
             parser.error("--session must be an absolute http(s) or ws(s) URL")
         session_host = parsed_session.hostname or "127.0.0.1"
         session_port = parsed_session.port or 8081
 
         try:
-            enrol(api_base, token, args.client)
+            enrol(api_base, token, client)
         except (urllib.error.URLError, RuntimeError) as error:
-            print(f"could not enrol {args.client}: {error}", file=sys.stderr)
+            print(f"could not enrol {client}: {error}", file=sys.stderr)
             raise SystemExit(1) from error
 
-    server = ThreadingHTTPServer((args.listen, args.port), OfficeHandler)
+    server = ThreadingHTTPServer((listen, port), OfficeHandler)
     server.api_base = api_base
     server.session_host = session_host
     server.session_port = session_port
     server.api_token = token
-    server.client_name = args.client
+    server.client_name = client
     server.demo_mode = demo_mode
-    server.secret = args.secret
+    server.secret = secret
+    server.log_format = log_format
+    server.audit_log = audit_log
     server.valid_sessions = {}  # token -> created_timestamp
     server.session_ttl = int(os.environ.get("HFLOCK_SESSION_TTL", "86400"))  # 24 hours
     server.login_attempts = {}  # ip -> list of timestamp attempts
@@ -672,13 +842,42 @@ def main() -> None:
     server.rate_limit_window = int(os.environ.get("HFLOCK_RATE_LIMIT_WINDOW", "60"))
     server.max_sessions = int(os.environ.get("HFLOCK_MAX_SESSIONS", "16"))
     server.active_sessions = 0
+    server.active_sockets_set = set()
     server.sessions_lock = threading.Lock()
+
+    scheme = "http"
+    if tls_cert and tls_key:
+        ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+        ctx.load_cert_chain(certfile=tls_cert, keyfile=tls_key)
+        server.socket = ctx.wrap_socket(server.socket, server_side=True)
+        scheme = "https"
+
+    def _shutdown_handler(signum, frame):
+        print(f"\nReceived signal {signum}, initiating graceful shutdown...", file=sys.stderr)
+        with server.sessions_lock:
+            for s in list(server.active_sockets_set):
+                try:
+                    s.sendall(b"\x88\x00")
+                    s.shutdown(socket.SHUT_RDWR)
+                    s.close()
+                except Exception:
+                    pass
+            server.active_sockets_set.clear()
+        threading.Thread(target=server.shutdown, daemon=True).start()
+
+    try:
+        signal.signal(signal.SIGTERM, _shutdown_handler)
+        signal.signal(signal.SIGINT, _shutdown_handler)
+    except Exception:
+        pass
+
     mode_str = " (DEMO MODE)" if demo_mode else ""
-    auth_str = " [AUTH REQUIRED]" if args.secret else ""
-    print(f"office UI: http://{args.listen}:{args.port} (client {args.client}){mode_str}{auth_str}")
+    auth_str = " [AUTH REQUIRED]" if secret else ""
+    tls_str = " [TLS ENABLED]" if tls_cert else ""
+    print(f"office UI: {scheme}://{listen}:{port} (client {client}){mode_str}{auth_str}{tls_str}")
     try:
         server.serve_forever()
-    except KeyboardInterrupt:
+    except (KeyboardInterrupt, SystemExit):
         pass
     finally:
         server.server_close()
