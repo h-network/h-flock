@@ -38,8 +38,8 @@ def test_index_html_terminal_panel_elements_and_aria():
     """Verify index.html contains terminal panel markup, ARIA roles, and screen reader live region."""
     html = (WEB_DIR / "index.html").read_text(encoding="utf-8")
     assert 'id="terminal-panel"' in html
-    assert 'role="region"' in html
-    assert 'aria-label="Terminal Session Window"' in html
+    assert 'role="tabpanel"' in html
+    assert 'aria-labelledby="terminal-tab"' in html
     assert 'id="terminal-container"' in html
     assert 'id="terminal-mode-badge"' in html
     assert 'id="terminal-live-announcer"' in html
