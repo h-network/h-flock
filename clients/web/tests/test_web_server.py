@@ -287,13 +287,19 @@ def test_auth_secret_enforcement_and_login_flow():
     web_thread.start()
 
     try:
-        # 1. Unauthenticated API GET returns 401
+        # 1. The public login document loads successfully. A 401 here makes
+        # browsers report the only page they are allowed to see as a failure.
+        with urllib.request.urlopen(f"http://127.0.0.1:{web_port}/") as resp:
+            assert resp.status == 200
+            assert b"h-flock Operator Login" in resp.read()
+
+        # 2. Unauthenticated API GET returns 401
         req = urllib.request.Request(f"http://127.0.0.1:{web_port}/api/agents")
         with pytest.raises(urllib.error.HTTPError) as exc_info:
             urllib.request.urlopen(req)
         assert exc_info.value.code == 401
 
-        # 2. Unauthenticated WebSocket upgrade returns 401
+        # 3. Unauthenticated WebSocket upgrade returns 401
         sock = socket.create_connection(("127.0.0.1", web_port), timeout=5)
         request_raw = (
             "GET /session HTTP/1.1\r\n"
@@ -307,7 +313,7 @@ def test_auth_secret_enforcement_and_login_flow():
         assert "401" in status_line
         sock.close()
 
-        # 3. Invalid login returns 401
+        # 4. Invalid login returns 401
         req_bad_login = urllib.request.Request(
             f"http://127.0.0.1:{web_port}/login",
             data=json.dumps({"secret": "wrongsecret"}).encode(),
@@ -318,7 +324,7 @@ def test_auth_secret_enforcement_and_login_flow():
             urllib.request.urlopen(req_bad_login)
         assert exc_info.value.code == 401
 
-        # 4. Valid login returns 200 and Set-Cookie
+        # 5. Valid login returns 200 and Set-Cookie
         req_login = urllib.request.Request(
             f"http://127.0.0.1:{web_port}/login",
             data=json.dumps({"secret": "topsecret123"}).encode(),
@@ -715,4 +721,3 @@ def test_terminal_recordings_retention_and_limits(tmp_path):
     finally:
         web_server.shutdown()
         web_server.server_close()
-

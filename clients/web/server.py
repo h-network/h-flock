@@ -606,7 +606,10 @@ class OfficeHandler(SimpleHTTPRequestHandler):
 </body>
 </html>"""
         body = html.encode("utf-8")
-        self.send_response(401)
+        # The login document is the successful representation of this public
+        # route. Protected API and socket requests still return 401; returning
+        # 401 for the HTML itself makes browsers report a failed page resource.
+        self.send_response(200)
         self.send_header("Content-Type", "text/html; charset=utf-8")
         self.send_header("Content-Length", str(len(body)))
         self.send_header("Cache-Control", "no-store")

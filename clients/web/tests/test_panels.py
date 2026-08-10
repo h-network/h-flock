@@ -54,6 +54,9 @@ def test_alert_load_is_capped_batched_and_layout_is_reserved():
     assert "repeats" in alerts
     assert "content-visibility: auto" in styles
     assert "scrollbar-gutter: stable" in styles
+    assert ".alerts-panel:has(#alerts-status.state-loading)" in styles
+    assert ".alerts-panel:has(#alerts-status.state-empty)" in styles
+    assert "content: none; display: none" in styles
     assert "capped at the newest 300" in readme
 
 
