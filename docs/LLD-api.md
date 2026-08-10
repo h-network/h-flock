@@ -153,6 +153,8 @@ A bearer token, checked on every request including reads and documentation route
 is the security posture. Default to loopback and publish deliberately; a
 non-loopback bind with no token set should refuse to start rather than warn.
 
+⚠ **Operator Action Log vs Direct API Token Traffic**: The web console server maintains `audit.jsonl` as an **Operator Action Log** recording operations performed through the web proxy. Requests hitting `flock.api` directly using an `API_TOKEN` bypass the web proxy and do not appear in `audit.jsonl`; direct API envelope submissions are tracked in bus/adapter stdout logs and agent activity streams (`GET /agents/{agent}/activity`).
+
 ## 7. Return path & deferred items
 
 **Handing a reply back to the client that caused it — resolved in Build 12.** Of the

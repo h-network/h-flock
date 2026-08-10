@@ -158,13 +158,13 @@ window and session lifetime are configurable with the environment variables
 listed above. See the limitations below before exposing the console beyond a
 trusted operator network.
 
-### Audit trail scope and API invariants
+### Operator Action Log scope and API invariants
 
-- **Console Audit Log Scope**: The console audit log (`GET /api/audit` / `audit.jsonl`)
-  records operator authentications, session state changes, lifecycle calls, and terminal
+- **Console Operator Action Log Scope**: The console operator action log (`GET /api/audit` / `audit.jsonl`)
+  records operator authentications, session state changes, lifecycle calls, console prompt dispatches, and terminal
   recordings performed **through the console proxy**. Operations performed directly against
   the tenant API using an `API_TOKEN` without passing through the console server bypass
-  the console audit log.
+  the console operator action log entirely. Direct API token traffic is tracked in tenant bus/adapter stdout logs and agent activity feeds (`GET /agents/{agent}/activity`).
 - **Producer Identity (Invariant 2)**: Tenant API envelopes carry a `producer` attribute.
   Possessing the tenant `API_TOKEN` authorizes producing messages to the tenant API, but
   the backend does not enforce sub-client producer identity bindings. Any client with the
