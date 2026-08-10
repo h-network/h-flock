@@ -91,8 +91,8 @@ export class TerminalPanel {
     // Safety Rule (Invariant 7 & SPEC.md §5): Terminal bytes are rendering and user input ONLY.
     // NEVER scrape terminal bytes for presence or replies!
     this.term.onData((data) => {
-      if (!this.isReadOnly && this.socket && this.socket.readyState === WebSocket.OPEN) {
-        this.socket.send(data);
+      if (!this.isReadOnly && this.socket && this.socket.readyState === WebSocket.OPEN && this.agent) {
+        this.socket.send(JSON.stringify({ agent: this.agent, data: data }));
       }
     });
 
@@ -123,6 +123,9 @@ export class TerminalPanel {
   toggleInputMode() {
     this.isReadOnly = !this.isReadOnly;
     this.updateModeUI();
+    if (this.agent) {
+      this.connect(this.agent);
+    }
   }
 
   updateModeUI() {
@@ -214,6 +217,13 @@ export class TerminalPanel {
         this.lastOutputTime = Date.now();
         this.setPanelStatus("Live", "connected");
         this._announce(`Terminal connected to ${agentName} session.`);
+
+        // SPEC §6 & Invariant 7: Enforce server-side read-only mode on Session Door backend
+        const initialMode = this.isReadOnly ? "read-only" : "read-write";
+        try {
+          ws.send(JSON.stringify({ subscribe: [agentName], mode: initialMode }));
+        } catch (_) {}
+
         this.term.writeln(`\x1b[32m--- Connected [120x32, ${this.isReadOnly ? "read-only" : "interactive"}] ---\x1b[0m\r\n`);
       };
 
