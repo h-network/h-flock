@@ -19,6 +19,7 @@ def test_panel_modules_and_required_states_ship_without_a_build_step():
     shared = (WEB_DIR / "ui" / "shared.js").read_text(encoding="utf-8")
     for state in ("loading", "empty", "error", "stale", "disconnected"):
         assert state in shared
+    assert "!isNewCursor(cursorValue, previous)" in shared
     assert not (WEB_DIR / "package.json").exists()
 
 

@@ -68,6 +68,15 @@ export const classifyFailure = (status, error, hasData) => {
 
 export const cursorKey = (client, feed) => `hflock.cursor.${client}.${feed}`;
 
+const isNewCursor = (candidate, previous) => {
+  if (!previous) return true;
+  if (candidate === previous) return false;
+  const left = candidate.match(/^(\d+)-(\d+)$/);
+  const right = previous.match(/^(\d+)-(\d+)$/);
+  if (!left || !right) return true;
+  return BigInt(left[1]) > BigInt(right[1]) || (left[1] === right[1] && BigInt(left[2]) > BigInt(right[2]));
+};
+
 export class ResumableFeed {
   constructor({ path, eventName, feed, client, status, onEvent }) {
     Object.assign(this, { path, eventName, feed, client, status, onEvent });
@@ -94,7 +103,7 @@ export class ResumableFeed {
       try { value = JSON.parse(event.data); } catch (_) { return; }
       const cursorValue = value.cursor || event.lastEventId;
       const previous = localStorage.getItem(cursorKey(this.client, this.feed));
-      if (cursorValue && cursorValue === previous) return;
+      if (cursorValue && !isNewCursor(cursorValue, previous)) return;
       if (cursorValue) localStorage.setItem(cursorKey(this.client, this.feed), cursorValue);
       this.onEvent(value);
       this.status.ready("Live stream");
@@ -123,6 +132,8 @@ export async function catchUp({ path, collection, feed, client, onEvent }) {
   const join = path.includes("?") ? "&" : "?";
   const value = await api(`${path}${cursor ? `${join}after=${encodeURIComponent(cursor)}` : ""}`);
   for (const event of value[collection] || []) {
+    const previous = localStorage.getItem(cursorKey(client, feed));
+    if (event.cursor && !isNewCursor(event.cursor, previous)) continue;
     if (event.cursor) localStorage.setItem(cursorKey(client, feed), event.cursor);
     onEvent(event);
   }

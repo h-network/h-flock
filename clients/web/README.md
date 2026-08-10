@@ -62,6 +62,14 @@ labelled and dashed rather than presented as ready. The terminal is read-only
 until its explicit mode control is switched, and terminal bytes populate no
 other panel.
 
+The Agents panel sends lifecycle envelopes to `host`; it never mutates roster
+state directly. Hire validates the agent name and shows a pending row while the
+roster, window and CLI converge. Pause keeps the identity and queues in place.
+Retire requires typing the exact name and states before confirmation that
+identity state is purged while queues and boards survive. A selected profile is
+persisted before roster visibility so the first reconciled window uses the
+intended account.
+
 ## Documentation gaps found
 
 Built using only `docs/API.md` and the build brief. These details were missing or
