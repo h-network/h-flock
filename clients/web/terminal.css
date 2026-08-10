@@ -1,0 +1,85 @@
+/* Terminal Panel Styles (Build 33 - tmux lane) */
+.terminal-panel {
+  background: #0b0e14;
+  border-bottom: 1px solid #303945;
+  padding: 10px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.terminal-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  background: #161b22;
+  padding: 6px 12px;
+  border-radius: 6px;
+  border: 1px solid #30363d;
+}
+
+.terminal-info {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 0.85rem;
+}
+
+.terminal-label {
+  font-weight: 600;
+  color: #8b949e;
+}
+
+.badge {
+  font-size: 0.75rem;
+  font-weight: 700;
+  padding: 2px 8px;
+  border-radius: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.badge.mode-readonly {
+  background: #1f3750;
+  color: #58a6ff;
+  border: 1px solid #388bfd;
+}
+
+.badge.mode-interactive {
+  background: #4d2d00;
+  color: #ffa657;
+  border: 1px solid #d29922;
+}
+
+.terminal-controls {
+  display: flex;
+  gap: 8px;
+}
+
+.btn-mode {
+  font-size: 0.8rem;
+  padding: 4px 10px;
+  background: #21262d;
+  border: 1px solid #30363d;
+  border-radius: 4px;
+  color: inherit;
+  cursor: pointer;
+}
+
+.btn-mode:hover {
+  background: #30363d;
+}
+
+.terminal-container {
+  width: 100%;
+  overflow-x: auto;
+  background: #000000;
+  padding: 6px;
+  border-radius: 6px;
+  border: 1px solid #30363d;
+}
+
+.terminal-container .xterm {
+  padding: 4px;
+}
