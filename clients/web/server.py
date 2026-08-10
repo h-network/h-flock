@@ -590,33 +590,34 @@ class OfficeHandler(SimpleHTTPRequestHandler):
 
     def _demo_api(self) -> None:
         subpath = self.path.removeprefix("/api")
-        if subpath == "/agents":
+        clean_subpath = subpath.split("?")[0]
+        if clean_subpath == "/agents":
             self._json(200, {"agents": ["architect", "sme-2", "sme-3", "lab"]})
-        elif subpath == "/agents/architect":
+        elif clean_subpath == "/agents/architect":
             self._json(200, {
                 "agent": "architect", "vab": "tmux",
                 "depths": {"ingress": 0, "egress": 0, "dead": 0},
                 "presence": {"state": "working", "since": "2026-08-10T02:00:00Z", "last_activity": "2026-08-10T02:45:00Z"},
             })
-        elif subpath == "/agents/sme-2":
+        elif clean_subpath == "/agents/sme-2":
             self._json(200, {
                 "agent": "sme-2", "vab": "tmux",
                 "depths": {"ingress": 1, "egress": 0, "dead": 0},
                 "presence": {"state": "idle", "since": "2026-08-10T02:10:00Z", "last_activity": "2026-08-10T02:30:00Z"},
             })
-        elif subpath == "/agents/sme-3":
+        elif clean_subpath == "/agents/sme-3":
             self._json(200, {
                 "agent": "sme-3", "vab": "tmux",
                 "depths": {"ingress": 2, "egress": 0, "dead": 0},
                 "presence": {"state": "blocked", "since": "2026-08-10T02:15:00Z", "last_activity": "2026-08-10T02:20:00Z"},
             })
-        elif subpath == "/agents/lab":
+        elif clean_subpath == "/agents/lab":
             self._json(200, {
                 "agent": "lab", "vab": "tmux",
                 "depths": {"ingress": 0, "egress": 0, "dead": 0},
                 "presence": {"state": "unknown", "since": "", "last_activity": ""},
             })
-        elif subpath == "/board":
+        elif clean_subpath == "/board":
             self._json(200, {
                 "agents": [
                     {
@@ -655,7 +656,7 @@ class OfficeHandler(SimpleHTTPRequestHandler):
                     },
                 ]
             })
-        elif subpath == "/alerts":
+        elif clean_subpath == "/alerts":
             demo_alerts = [
                 {
                     "cursor": f"{1000 + i}-0",
@@ -671,20 +672,20 @@ class OfficeHandler(SimpleHTTPRequestHandler):
                 "alerts": demo_alerts,
                 "next_cursor": demo_alerts[-1]["cursor"],
             })
-        elif subpath == "/alerts/stream" or subpath.startswith("/alerts/stream"):
+        elif clean_subpath == "/alerts/stream" or clean_subpath.startswith("/alerts/stream"):
             self._demo_sse([
                 ("100-0", "alert", {"cursor": "100-0", "ts": "2026-08-10T02:20:00Z", "kind": "stalled", "agent": "sme-3", "doing_age_s": 900}),
                 ("101-0", "alert", {"cursor": "101-0", "ts": "2026-08-10T02:25:00Z", "kind": "credential", "account": "claude", "detail": "expired"}),
             ])
-        elif subpath.endswith("/activity/stream"):
+        elif clean_subpath.endswith("/activity/stream"):
             self._demo_sse([
                 ("act-1", "activity", {"cursor": "act-1", "ts": "2026-08-10T02:30:00Z", "kind": "tool", "tool": "pytest", "agent": "architect"}),
             ])
-        elif subpath.endswith("/messages/stream"):
+        elif clean_subpath.endswith("/messages/stream"):
             self._demo_sse([
                 ("msg-1", "message", {"cursor": "msg-1", "ts": "2026-08-10T02:35:00Z", "kind": "Message", "producer": "architect", "recipient": "web", "payload": {"text": "Please review Build 33 console UI."}}),
             ])
-        elif subpath.endswith("/envelopes") and self.command == "POST":
+        elif clean_subpath.endswith("/envelopes") and self.command == "POST":
             self._json(202, {"stream_id": "demo-stream-1", "correlation_id": "demo-corr-1"})
         else:
             self._json(200, {"status": "ok"})
