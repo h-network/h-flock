@@ -352,11 +352,6 @@ def main() -> None:
             print(f"could not enrol {args.client}: {error}", file=sys.stderr)
             raise SystemExit(1) from error
 
-    # ⚠ Without this a restart inside the TCP TIME_WAIT window fails with
-    # "Address already in use" even though nothing is listening. Measured on the
-    # lab: two consecutive restarts, second one dead. An operator restarts this
-    # far more often than they start it fresh.
-    ThreadingHTTPServer.allow_reuse_address = True
     server = ThreadingHTTPServer((args.listen, args.port), OfficeHandler)
     server.api_base = api_base
     server.session_host = session_host
