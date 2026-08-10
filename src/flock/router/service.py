@@ -1,5 +1,6 @@
 """Forward tenant egress queues without interpreting payloads."""
 
+import json
 import os
 import signal
 import subprocess
@@ -56,7 +57,21 @@ class Router:
             emit("router", "popped", {}, str(exc))
             emit("router", "dead_lettered", {}, str(exc))
             return True
+        claimed_producer = envelope["producer"]
+        if claimed_producer != sender:
+            # The popped queue is the ingress port and therefore the attribution
+            # source of truth. Correct rather than reject: rejecting a mismatch
+            # would let a raw queue writer destroy another participant's traffic.
+            envelope["producer"] = sender
+            raw = json.dumps(envelope, separators=(",", ":"))
         emit("router", "popped", envelope)
+        if claimed_producer != sender:
+            emit(
+                "router",
+                "producer_stamped",
+                envelope,
+                reason=f"claimed producer {claimed_producer!r} stamped from egress sender {sender!r}",
+            )
         recipient = envelope["recipient"]
         if recipient == "all":
             recipients = sorted(self._agents() - {sender})
