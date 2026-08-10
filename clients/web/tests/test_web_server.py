@@ -133,6 +133,12 @@ def test_demo_mode_responses():
             data = json.loads(resp.read().decode())
             architect_board = next(a for a in data["agents"] if a["agent"] == "architect")
             assert "Legacy bare ticket string in todo queue" in architect_board["todo"]
+
+        req = urllib.request.Request(f"http://127.0.0.1:{web_port}/api/alerts/stream")
+        with urllib.request.urlopen(req) as resp:
+            assert "text/event-stream" in resp.headers.get("Content-Type", "")
+            first_line = resp.readline().decode()
+            assert first_line.startswith("id: ")
     finally:
         web_server.shutdown()
         web_server.server_close()
