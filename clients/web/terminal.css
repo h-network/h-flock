@@ -41,6 +41,117 @@
   display: flex;
   flex-direction: column;
   gap: 8px;
+  height: 100%;
+}
+
+/* Terminals Workspace (SPEC §15 #/terminals) */
+.terminals-workspace {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 16px;
+  height: calc(100vh - 120px);
+  box-sizing: border-box;
+  background: var(--term-bg);
+}
+
+.term-tab-bar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: var(--term-bar-bg);
+  padding: 6px 12px;
+  border-radius: 8px;
+  border: 1px solid var(--term-border);
+  overflow-x: auto;
+}
+
+.term-tab {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 14px;
+  background: var(--term-btn-bg);
+  border: 1px solid var(--term-border);
+  border-radius: 6px;
+  color: var(--term-btn-text);
+  font-size: 0.85rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.term-tab:hover {
+  background: var(--term-btn-hover);
+}
+
+.term-tab.active {
+  background: var(--color-accent-blue, #1f6feb);
+  color: #ffffff;
+  border-color: #58a6ff;
+}
+
+.term-tab-close {
+  background: transparent;
+  border: none;
+  color: inherit;
+  font-size: 0.8rem;
+  padding: 2px 4px;
+  cursor: pointer;
+  border-radius: 50%;
+  opacity: 0.7;
+}
+
+.term-tab-close:hover {
+  opacity: 1;
+  background: rgba(255, 255, 255, 0.2);
+}
+
+.term-tab-add {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+/* Prominent Typing Control Banner (SPEC §16 Rule 3) */
+.typing-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 16px;
+  border-radius: 6px;
+  font-size: 0.85rem;
+  font-weight: 600;
+  transition: all 0.2s ease;
+}
+
+.typing-banner.readonly {
+  background: var(--term-readonly-bg);
+  border: 1px solid var(--term-readonly-border);
+  color: var(--term-readonly-fg);
+}
+
+.typing-banner.interactive {
+  background: var(--term-interactive-bg);
+  border: 1px solid var(--term-interactive-border);
+  color: var(--term-interactive-fg);
+}
+
+.typing-toggle-btn {
+  font-size: 0.85rem;
+  font-weight: 700;
+  padding: 6px 14px;
+  border-radius: 6px;
+  cursor: pointer;
+  border: 1px solid currentColor;
+  background: rgba(255, 255, 255, 0.1);
+  color: inherit;
+  transition: background 0.15s ease;
+}
+
+.typing-toggle-btn:hover {
+  background: rgba(255, 255, 255, 0.25);
 }
 
 .terminal-bar {

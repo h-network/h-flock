@@ -153,8 +153,13 @@ export class TerminalPanel {
 
   _bindControls() {
     const toggleBtn = document.getElementById("toggle-input-mode");
+    const bannerBtn = document.getElementById("terminal-typing-banner-btn");
+
     if (toggleBtn) {
       toggleBtn.onclick = () => this.toggleInputMode();
+    }
+    if (bannerBtn) {
+      bannerBtn.onclick = () => this.toggleInputMode();
     }
     const reconnectBtn = document.getElementById("reconnect-terminal");
     if (reconnectBtn) {
@@ -571,22 +576,51 @@ export class TerminalPanel {
   updateModeUI() {
     const badge = document.getElementById("terminal-mode-badge");
     const btn = document.getElementById("toggle-input-mode");
+    const banner = document.getElementById("terminal-typing-banner");
+    const bannerText = document.getElementById("terminal-typing-banner-text");
+    const bannerBtn = document.getElementById("terminal-typing-banner-btn");
+
     if (this.term) {
       this.term.options.disableStdin = this.isReadOnly;
     }
-    if (!badge || !btn) return;
 
     if (this.isReadOnly) {
-      badge.textContent = "READ-ONLY";
-      badge.className = "badge mode-readonly";
-      btn.textContent = "Enable Typing";
-      btn.setAttribute("aria-label", "Enable typing in terminal window");
+      if (badge) {
+        badge.textContent = "READ-ONLY";
+        badge.className = "badge mode-readonly";
+      }
+      if (btn) {
+        btn.textContent = "Enable Typing";
+        btn.setAttribute("aria-label", "Enable typing in terminal window");
+      }
+      if (banner) {
+        banner.className = "typing-banner readonly";
+      }
+      if (bannerText) {
+        bannerText.textContent = "🔒 READ-ONLY MODE (Locked for safety — Click button to enable keyboard input)";
+      }
+      if (bannerBtn) {
+        bannerBtn.textContent = "🔓 Enable Typing";
+      }
       this._announce("Terminal mode changed to READ-ONLY. Typing is disabled.");
     } else {
-      badge.textContent = "INTERACTIVE (TYPING)";
-      badge.className = "badge mode-interactive";
-      btn.textContent = "Disable Typing";
-      btn.setAttribute("aria-label", "Disable typing in terminal window");
+      if (badge) {
+        badge.textContent = "INTERACTIVE (TYPING)";
+        badge.className = "badge mode-interactive";
+      }
+      if (btn) {
+        btn.textContent = "Disable Typing";
+        btn.setAttribute("aria-label", "Disable typing in terminal window");
+      }
+      if (banner) {
+        banner.className = "typing-banner interactive";
+      }
+      if (bannerText) {
+        bannerText.textContent = "⌨️ INTERACTIVE TYPING MODE (Keystrokes sent directly to agent session)";
+      }
+      if (bannerBtn) {
+        bannerBtn.textContent = "🔒 Lock READ-ONLY";
+      }
       this._announce("Terminal mode changed to INTERACTIVE (TYPING). Keystrokes will be sent to agent session.");
     }
   }
@@ -748,4 +782,64 @@ export class TerminalPanel {
       try { this.term.dispose(); } catch (_) {}
     }
   }
+}
+
+/**
+ * Terminal Workspace Manager (SPEC §15 #/terminals)
+ *
+ * Manages long-lived agent terminal sessions so that WebSockets and xterm scrollback
+ * buffers survive navigation across sections (#/terminals <-> #/alerts <-> #/agents).
+ */
+export class TerminalWorkspace {
+  constructor() {
+    this.sessions = {}; // agentName -> { panel, agentName }
+    this.openTabs = []; // list of open agent names
+    this.activeAgent = null;
+    this.container = null;
+  }
+
+  initWorkspace(containerElement, initialAgents = []) {
+    this.container = containerElement;
+    if (!this.container) return;
+
+    if (initialAgents.length > 0 && this.openTabs.length === 0) {
+      this.openTabs = [...initialAgents];
+      this.activeAgent = initialAgents[0];
+    }
+  }
+
+  getOrCreateSession(agentName, containerId = "terminal-container") {
+    if (!this.sessions[agentName]) {
+      const panel = new TerminalPanel({ containerId });
+      this.sessions[agentName] = { panel, agentName };
+    }
+    return this.sessions[agentName];
+  }
+
+  openAgentTab(agentName) {
+    if (!this.openTabs.includes(agentName)) {
+      this.openTabs.push(agentName);
+    }
+    this.activeAgent = agentName;
+    const session = this.getOrCreateSession(agentName);
+    session.panel.connect(agentName);
+    return session;
+  }
+
+  closeAgentTab(agentName) {
+    this.openTabs = this.openTabs.filter(a => a !== agentName);
+    if (this.activeAgent === agentName) {
+      this.activeAgent = this.openTabs[0] || null;
+    }
+  }
+
+  // Socket & Scrollback Persistence (SPEC §16): Preserve sessions on hash route navigation!
+  preserveSessions() {
+    // WebSockets and panel scrollbacks remain connected in memory in this.sessions
+  }
+}
+
+export const globalTerminalWorkspace = new TerminalWorkspace();
+if (typeof window !== "undefined") {
+  window.__terminalWorkspace = globalTerminalWorkspace;
 }
