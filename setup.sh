@@ -123,25 +123,6 @@ if [[ "${USE_ENDPOINT:-n}" =~ ^[Yy] ]]; then
     # ⚠ claude appends /v1/messages itself; a base carrying /v1 gives /v1/v1.
     LOCAL_URL="${LOCAL_URL%/v1}"
 
-    # ⚠ ASK, THEN VERIFY. claude speaks only the Anthropic Messages API, and
-    # ollama does not serve /v1/messages — it is OpenAI-shaped. An operator who
-    # points claude at a bare ollama gets "issue with the selected model", which
-    # reads as a model problem and is not one. Probe instead of assuming, because
-    # either kind may be sitting behind a translating proxy.
-    if [ -n "$LOCAL_URL" ]; then
-        MSG_CODE="$(curl -s -o /dev/null -w '%{http_code}' --max-time 6 \
-                    -H 'Content-Type: application/json' -X POST \
-                    -d '{"model":"probe","max_tokens":1,"messages":[{"role":"user","content":"hi"}]}' \
-                    "${LOCAL_URL}/v1/messages" 2>/dev/null || echo 000)"
-        case "$MSG_CODE" in
-            000) echo "  ⚠ could not reach ${LOCAL_URL} — check the address and that it is running" ;;
-            404) echo "  ⚠ ${LOCAL_URL} does not serve /v1/messages."
-                 echo "    claude speaks only the Anthropic Messages API, so it cannot use this endpoint directly."
-                 echo "    Put a translating proxy in front of it, or point codex/agy here instead." ;;
-            *)   echo "  ✓ /v1/messages answered ($MSG_CODE) — claude can use this endpoint" ;;
-        esac
-    fi
-
     # ⚠ The id must match the served id byte for byte. Offer what is served
     # rather than asking someone to type it: ollama ids carry a tag
     # (gpt-oss:20b) and are easy to mistype as gpt-oss-20b.
@@ -154,6 +135,31 @@ if [[ "${USE_ENDPOINT:-n}" =~ ^[Yy] ]]; then
     [ -n "$SERVED" ] && echo "  served by that endpoint: $SERVED"
     read -rp "  Model id [${SERVED%% *}]: " LOCAL_MODEL
     LOCAL_MODEL="${LOCAL_MODEL:-${SERVED%% *}}"
+
+    # ⚠ ASK, THEN VERIFY — and probe with a REAL model id. claude speaks only
+    # the Anthropic Messages API; ollama is OpenAI-shaped and has no
+    # /v1/messages, so pointing claude at a bare one yields "issue with the
+    # selected model", which reads as a model problem and is not one.
+    #
+    # ⚠ A 404 alone does not mean the route is missing: vLLM answers an unknown
+    # model with 404 and {"type":"error","error":{"type":"NotFoundError"}}.
+    # Probing with a made-up id therefore condemns a working endpoint — measured.
+    # Use a served id and read the body.
+    if [ -n "$LOCAL_URL" ] && [ -n "$LOCAL_MODEL" ]; then
+        PROBE="$(curl -s --max-time 8 -H 'Content-Type: application/json' -X POST \
+                 -d "{\"model\":\"${LOCAL_MODEL}\",\"max_tokens\":1,\"messages\":[{\"role\":\"user\",\"content\":\"hi\"}]}" \
+                 "${LOCAL_URL}/v1/messages" 2>/dev/null || true)"
+        if echo "$PROBE" | grep -q '"type"[[:space:]]*:[[:space:]]*"message"'; then
+            echo "  ✓ /v1/messages answered — claude can use this endpoint"
+        elif [ -z "$PROBE" ]; then
+            echo "  ⚠ ${LOCAL_URL}/v1/messages returned nothing."
+            echo "    claude speaks only the Anthropic Messages API. ollama does not serve it."
+            echo "    Put a translating proxy in front, or point codex/agy here instead."
+        else
+            echo "  ⚠ /v1/messages answered, but not with a message:"
+            echo "    $(echo "$PROBE" | head -c 160)"
+        fi
+    fi
     read -rp "  Endpoint name [local]: " EP_NAME; EP_NAME="$(slug "${EP_NAME:-local}")"
     read -rp "  Which agents use it? (space-separated, blank for none): " EPS
     for want in $EPS; do
