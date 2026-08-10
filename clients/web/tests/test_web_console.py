@@ -125,4 +125,22 @@ def test_terminal_part_ii_overengineering_features():
     assert "recording-full" in js
 
 
+def test_terminal_part_iii_workspace_features():
+    """SPEC Part III §15-16 verification: TerminalWorkspace singleton session manager & prominent typing banner."""
+    js = (WEB_DIR / "ui" / "terminal.js").read_text(encoding="utf-8")
+    html = (WEB_DIR / "index.html").read_text(encoding="utf-8")
+
+    # 1. Prominent Typing Banner
+    assert "terminal-typing-banner" in html
+    assert "terminal-typing-banner-btn" in html
+    assert "typing-banner" in js
+    assert "READ-ONLY MODE" in js
+
+    # 2. TerminalWorkspace persistent session manager across navigation
+    assert "TerminalWorkspace" in js
+    assert "globalTerminalWorkspace" in js
+    assert "preserveSessions" in js
+
+
+
 
