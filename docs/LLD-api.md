@@ -45,7 +45,7 @@ restarted and deployed without disturbing the others.
 |---|---|---|
 | `GET` | `/health` | liveness |
 | `GET` | `/agents` | enrolled agents, from the roster |
-| `GET` | `/agents/{agent}` | queue depths and presence state (`working`, `idle`, `unknown`) |
+| `GET` | `/agents/{agent}` | queue depths, presence state (`working`, `idle`, `unknown`), and VAB status (`vab`) |
 | `POST` | `/agents/{agent}/envelopes` | put an envelope on the bus, of any kind (optional `as`) |
 | `GET` | `/agents/{agent}/messages` | get stored inbox messages for an api client (`?after=<cursor>&limit=100`) |
 | `GET` | `/agents/{agent}/messages/stream` | live SSE stream of inbox messages (`?after=<cursor>`) |
@@ -120,7 +120,7 @@ segment.
 - **Board reads** (`GET /agents/{agent}/board` and `GET /board`): Return four columns
   (`todo`, `doing`, `hold`, `done`). Entries are JSON-decoded ticket objects (or raw
   strings for backwards compatibility).
-- **Presence & Blocked Status** (`GET /agents/{agent}`): Reads queue depths alongside presence status hash
+- **Presence & Blocked Status** (`GET /agents/{agent}`): Reads queue depths and VAB (`vab`), alongside presence status hash
   `<prefix>:agent:<name>:presence` (`state`: `working` | `idle` | `unknown`, `since`, `last_activity`).
   Folded over by the router's `blocked` hash `<prefix>:agent:<name>:blocked` when set, so `presence.state` returns `"blocked"`
   when a delivery is judged unverified. An agent that has never produced activity (presence `"unknown"`) has its first delivery

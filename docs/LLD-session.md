@@ -60,10 +60,7 @@ windows in the session (the `-s` flag is essential e.g. for multiple windows), a
 refreshes on `%window-add`, `%window-close`, and `%window-renamed` events as well as
 on demand during subscription updates.
 
-⚠ `%output` data is escaped by tmux and carries raw terminal bytes including
-escape sequences. It is passed through untouched — rendering is the app's
-problem, and anything this module does to "clean up" a stream will be wrong for
-some TUI.
+⚠ `%output` data is octal-escaped by tmux control mode: non-printable characters arrive as a backslash and three octal digits (e.g. ESC as `\033` and `\` as `\\`). This module unescapes octal sequences back into raw bytes (`_unescape_control`) before publishing to subscribers, so terminals interpret ANSI escape sequences rather than rendering them as prose text.
 
 ## 3. Subscriptions
 
@@ -81,11 +78,9 @@ alternative — a connection per agent — pushes N sockets onto the app to save
 a filter we have to write anyway, since one control-mode client already receives
 everything.
 
-**A subscriber gets a snapshot first, then the stream.** `capture-pane` for the
-current contents, then `%output` from that point, so a terminal opens with
-scrollback rather than blank until the next keypress.
+**A subscriber gets a snapshot first, then the stream.** `capture-pane` (without `-S -`) captures the visible screen (not the full scrollback history), prefixed with clear-and-home (`\x1b[2J\x1b[H`), followed by the screen lines and cursor position restoration (`\x1b[{row};{col}H` queried via `display-message -p -t <pane> "#{cursor_y} #{cursor_x}"`), so row 1 of the client matches row 1 of the pane and live updates stay aligned without offset.
 
-⚠ `capture-pane` is used exclusively by this module to render terminal scrollback snapshots to human operators over the session door. Observation modules outside the session door (watchdog, router, adapters) never execute `capture-pane`.
+⚠ `capture-pane` is used exclusively by this module to render visible terminal screen snapshots to human operators over the session door. Observation modules outside the session door (watchdog, router, adapters) never execute `capture-pane`.
 
 ## 4. Writing: keystrokes
 
@@ -128,8 +123,8 @@ windows are gone. Reconnect when a server exists again and tell subscribers the
 stream broke rather than letting it silently stop.
 
 Nothing here is durable. A dropped connection loses nothing that was not already
-lost, because scrollback lives in tmux and a reconnecting client gets a fresh
-snapshot.
+lost, because visible screen state lives in tmux and a reconnecting client gets a fresh
+screen snapshot.
 
 ## 7. Deferred
 
