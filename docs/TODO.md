@@ -15,6 +15,16 @@ development happens in this repository; the framework is the product.
 | **security: what is left after build 36** | ⚠ **The boundaries are done** — TLS on both doors with a refusal to serve a non-loopback bind without it, `producer` stamped from its egress queue, and a tenant that will not start with a widened Redis bind and no password. What remains is **CORS and per-client tokens** on the api door. ⚠ **Nothing here isolates agents from each other**, deliberately: h-flock is a development office, agents are colleagues who were hired. HMAC envelopes, a brokered `office`, one OS user per window — that is a service executing work for callers it does not trust, a different product |
 | **ollama — parked** | the installer asks, falls back to `/api/tags`, and warns when `/v1/messages` is missing, but none of it has been run. ⚠ ollama does not serve the Anthropic Messages API, so claude needs a translating proxy in front |
 
+⚠ **TLS run end to end, 2026-08-11:** a tenant with a real certificate serves
+TLS 1.3 on both doors and passes the plumbing check 25/25. Two things only that
+run could find: the healthcheck probed plain HTTP at an HTTPS door, so a working
+TLS tenant sat unhealthy forever; and both checker scripts had the scheme baked
+in as a constant. ⚠ **Still open:** `sim-blocked`'s four hires fail against a TLS
+tenant while the identical `StartAgent` returns 202 and creates the window by
+hand, and the same script passes 19/19 on a plaintext tenant. That is a fault in
+the simulator or in how it is run, not a reproduced product fault — but it is
+not explained, and it should be before the simulator is trusted on a TLS tenant.
+
 ⚠ **Verified by running it, 2026-08-11:** plumbing check 25/25 and the failure
 simulator 19/19 against a real tenant, after a from-scratch image build. The
 same run found that build 36's TLS guard refused every container (a bind is not

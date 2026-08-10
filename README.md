@@ -331,6 +331,24 @@ So the entrypoint judges it. Running a door directly, outside a container,
 nobody has judged anything and the bind is the exposure: it refuses a
 non-loopback bind without TLS.
 
+⚠ **Certificates must exist before the tenant boots.** They are not baked into
+the image and not a volume, so they arrive by `docker cp` — and the doors start
+at boot, so copying into a *running* tenant is too late. Create, copy, then
+start:
+
+```bash
+docker compose -p h-flock-<tenant> --env-file container/.env -f container/compose.yaml create
+docker cp /path/to/certs <container>:/home/ubuntu/tlscerts
+docker compose -p h-flock-<tenant> --env-file container/.env -f container/compose.yaml start
+```
+
+**Verified end to end:** TLS 1.3 on both doors, `200` with a token and `401`
+without, plain HTTP refused, and the terminal socket answering
+`101 Switching Protocols` over `wss://`. The container healthcheck follows the
+scheme — with certs configured it probes `https`, because probing plain HTTP got
+`Empty reply from server` forever and a correctly serving TLS tenant never
+became healthy.
+
 ⚠ **Self-signed TLS certificates:** A browser will refuse the session WebSocket connection until the certificate is explicitly trusted by the browser, which manifests as a disconnected terminal view rather than a clear certificate prompt. Operators using self-signed certificates must open the HTTPS API door (`https://<host>:8080/restdoc`) in the browser and accept the certificate before opening the session WebSocket.
 
 Not built: per-client tokens, CORS. See [`docs/TODO.md`](docs/TODO.md), which says why for each.
