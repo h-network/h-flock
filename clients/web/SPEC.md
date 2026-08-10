@@ -4,9 +4,14 @@
 > as a demo. [`BUILD-33`](../../docs/BUILD-33-console.md) has the lane split and
 > the endpoints; this file is the bar.
 
-⚠ **Nothing in `src/flock/` may change.** The framework is finished for this
-build. If the console needs something the api does not offer, **say so and work
-around it** — a gap is a finding, not a licence to edit h-flock.
+⚠ **Treat `src/flock/` as frozen, but not sealed.** The framework is finished for
+this build. If the console needs something the api does not offer, **say so
+first** — a gap is a finding. Small, reviewed additions are allowed when the
+alternative is the client rediscovering what the api already knows.
+
+⚠ **One such change is already in:** `GET /agents/{agent}` returns `vab`. Use it.
+An earlier draft of this rule was absolute, and cost a lane an afternoon nearly
+building a probe-every-agent workaround for a field the api now states.
 
 ## 1. What "enterprise" means here
 
