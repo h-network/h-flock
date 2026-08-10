@@ -557,3 +557,94 @@ def test_config_file_loading_and_overrides(tmp_path, monkeypatch):
     assert loaded["secret"] == "myconfigsecret"
     assert loaded["demo"] is True
 
+
+def test_audit_log_rotation(tmp_path):
+    audit_file = tmp_path / "audit.jsonl"
+    web_server = ThreadingHTTPServer(("127.0.0.1", 0), OfficeHandler)
+    web_server.api_base = "http://127.0.0.1:8080"
+    web_server.audit_log = str(audit_file)
+    web_server.audit_max_bytes = 120  # small byte threshold to trigger rotation
+    web_server.audit_max_backups = 3
+    web_server.demo_mode = True
+    web_server.sessions_lock = threading.Lock()
+    web_port = web_server.server_address[1]
+
+    web_thread = threading.Thread(target=web_server.serve_forever, daemon=True)
+    web_thread.start()
+
+    try:
+        for i in range(5):
+            req = urllib.request.Request(
+                f"http://127.0.0.1:{web_port}/api/agents/host/envelopes",
+                data=json.dumps({"kind": "Message", "payload": {"text": f"hello padding string {i}" * 5}}).encode(),
+                headers={"Content-Type": "application/json"},
+                method="POST",
+            )
+            with urllib.request.urlopen(req) as resp:
+                assert resp.status == 202
+
+        assert audit_file.exists()
+        assert (tmp_path / "audit.jsonl.1").exists()
+    finally:
+        web_server.shutdown()
+        web_server.server_close()
+
+
+def test_terminal_recordings_endpoints(tmp_path):
+    rec_dir = tmp_path / "recordings"
+    web_server = ThreadingHTTPServer(("127.0.0.1", 0), OfficeHandler)
+    web_server.api_base = "http://127.0.0.1:8080"
+    web_server.recordings_dir = str(rec_dir)
+    web_server.sessions_lock = threading.Lock()
+    web_port = web_server.server_address[1]
+
+    web_thread = threading.Thread(target=web_server.serve_forever, daemon=True)
+    web_thread.start()
+
+    try:
+        # POST /api/recordings to create
+        req_post = urllib.request.Request(
+            f"http://127.0.0.1:{web_port}/api/recordings",
+            data=json.dumps({"agent": "architect"}).encode(),
+            headers={"Content-Type": "application/json"},
+            method="POST",
+        )
+        with urllib.request.urlopen(req_post) as resp:
+            assert resp.status == 201
+            resp_body = json.loads(resp.read().decode())
+            rec_id = resp_body["id"]
+            assert resp_body["agent"] == "architect"
+
+        # POST /api/recordings/<id>/frames to append frame
+        frame_data = {"delta_ms": 140, "direction": "out", "data": "ls -la\n"}
+        req_frame = urllib.request.Request(
+            f"http://127.0.0.1:{web_port}/api/recordings/{rec_id}/frames",
+            data=json.dumps(frame_data).encode(),
+            headers={"Content-Type": "application/json"},
+            method="POST",
+        )
+        with urllib.request.urlopen(req_frame) as resp:
+            assert resp.status == 200
+            frame_resp = json.loads(resp.read().decode())
+            assert frame_resp["status"] == "appended"
+            assert frame_resp["frame_count"] == 1
+
+        # GET /api/recordings list
+        with urllib.request.urlopen(f"http://127.0.0.1:{web_port}/api/recordings") as resp:
+            assert resp.status == 200
+            list_body = json.loads(resp.read().decode())
+            assert len(list_body) == 1
+            assert list_body[0]["id"] == rec_id
+            assert list_body[0]["frame_count"] == 1
+
+        # GET /api/recordings/<id> detail
+        with urllib.request.urlopen(f"http://127.0.0.1:{web_port}/api/recordings/{rec_id}") as resp:
+            assert resp.status == 200
+            detail_body = json.loads(resp.read().decode())
+            assert detail_body["agent"] == "architect"
+            assert len(detail_body["frames"]) == 1
+            assert detail_body["frames"][0]["data"] == "ls -la\n"
+    finally:
+        web_server.shutdown()
+        web_server.server_close()
+

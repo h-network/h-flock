@@ -181,14 +181,140 @@ class OfficeHandler(SimpleHTTPRequestHandler):
             "details": details,
         }
         line = json.dumps(record) + "\n"
-        lock = getattr(self.server, "sessions_lock", None)
-        if lock is not None:
-            with lock:
-                with open(audit_file, "a", encoding="utf-8") as f:
-                    f.write(line)
-        else:
+        max_bytes = getattr(self.server, "audit_max_bytes", 10 * 1024 * 1024)
+        max_backups = getattr(self.server, "audit_max_backups", 5)
+
+        def _do_write():
+            path = Path(audit_file)
+            path.parent.mkdir(parents=True, exist_ok=True)
+
+            if path.exists() and path.stat().st_size >= max_bytes:
+                for i in range(max_backups - 1, 0, -1):
+                    s = Path(f"{audit_file}.{i}")
+                    d = Path(f"{audit_file}.{i + 1}")
+                    if s.exists():
+                        s.rename(d)
+                if path.exists():
+                    path.rename(Path(f"{audit_file}.1"))
+
             with open(audit_file, "a", encoding="utf-8") as f:
                 f.write(line)
+
+        lock = getattr(self.server, "sessions_lock", None)
+        try:
+            if lock is not None:
+                with lock:
+                    _do_write()
+            else:
+                _do_write()
+        except Exception as error:
+            sys.stderr.write(f"CRITICAL: Audit log write failed for event '{event}': {error}\n")
+            sys.stderr.flush()
+            raise RuntimeError(f"audit log write failed: {error}") from error
+
+    def _handle_post_recordings(self) -> None:
+        length = int(self.headers.get("Content-Length", "0"))
+        if length > self.MAX_BODY_SIZE:
+            self._json(413, {"detail": "payload too large"})
+            return
+        raw_body = self.rfile.read(length) if length else b"{}"
+        try:
+            data = json.loads(raw_body.decode("utf-8"))
+        except Exception as error:
+            self._json(400, {"detail": f"invalid JSON payload: {error}"})
+            return
+
+        rec_dir = Path(getattr(self.server, "recordings_dir", HERE / "recordings"))
+        rec_dir.mkdir(parents=True, exist_ok=True)
+
+        if self.path.endswith("/frames"):
+            # POST /api/recordings/<id>/frames
+            parts = self.path.strip("/").split("/")
+            if len(parts) >= 3 and parts[0] == "api" and parts[1] == "recordings":
+                rec_id = parts[2]
+            else:
+                self._json(400, {"detail": "invalid recording frames endpoint"})
+                return
+            safe_id = "".join(c for c in rec_id if c.isalnum() or c in ("-", "_"))
+            rec_file = rec_dir / f"{safe_id}.json"
+            if not rec_file.exists():
+                self._json(404, {"detail": f"recording '{safe_id}' not found"})
+                return
+            try:
+                rec_obj = json.loads(rec_file.read_text(encoding="utf-8"))
+            except Exception:
+                rec_obj = {"id": safe_id, "agent": "unknown", "frames": []}
+            frames = rec_obj.get("frames", rec_obj.get("chunks", []))
+            frames.append(data)
+            rec_obj["frames"] = frames
+            rec_file.write_text(json.dumps(rec_obj, indent=2), encoding="utf-8")
+            self._json(200, {"status": "appended", "frame_count": len(frames)})
+            return
+
+        # POST /api/recordings (create new recording)
+        agent = data.get("agent", "unknown")
+        raw_id = data.get("id") or data.get("session_id") or f"rec_{time.strftime('%Y%m%d_%H%M%S')}_{secrets.token_hex(4)}"
+        safe_id = "".join(c for c in str(raw_id) if c.isalnum() or c in ("-", "_"))
+        iso_ts = data.get("created_at") or data.get("start_ts") or time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+
+        rec_file = rec_dir / f"{safe_id}.json"
+        rec_obj = {
+            "id": safe_id,
+            "session_id": safe_id,
+            "agent": agent,
+            "created_at": iso_ts,
+            "start_ts": iso_ts,
+            "frames": data.get("frames", data.get("chunks", [])),
+        }
+        rec_file.write_text(json.dumps(rec_obj, indent=2), encoding="utf-8")
+        self._audit_log("recording_created", {
+            "id": safe_id,
+            "agent": agent,
+        })
+        self._json(201, {
+            "id": safe_id,
+            "session_id": safe_id,
+            "agent": agent,
+            "created_at": iso_ts,
+        })
+
+    def _handle_get_recordings(self) -> None:
+        rec_dir = Path(getattr(self.server, "recordings_dir", HERE / "recordings"))
+        if not rec_dir.exists():
+            rec_dir.mkdir(parents=True, exist_ok=True)
+
+        if self.path in {"/api/recordings", "/api/recordings/"}:
+            recordings_list = []
+            for path in rec_dir.glob("*.json"):
+                try:
+                    meta = json.loads(path.read_text(encoding="utf-8"))
+                    frames = meta.get("frames", meta.get("chunks", []))
+                    rec_id = meta.get("id", meta.get("session_id", path.stem))
+                    recordings_list.append({
+                        "id": rec_id,
+                        "session_id": rec_id,
+                        "agent": meta.get("agent", "unknown"),
+                        "created_at": meta.get("created_at", meta.get("start_ts", "")),
+                        "frame_count": len(frames),
+                        "size_bytes": path.stat().st_size,
+                    })
+                except Exception:
+                    pass
+            recordings_list.sort(key=lambda r: r.get("created_at", ""), reverse=True)
+            self._json(200, recordings_list)
+        else:
+            session_id = self.path.removeprefix("/api/recordings/").strip("/")
+            safe_session_id = "".join(c for c in session_id if c.isalnum() or c in ("-", "_"))
+            rec_file = rec_dir / f"{safe_session_id}.json"
+            if not rec_file.exists():
+                self._json(404, {"detail": f"recording '{safe_session_id}' not found"})
+                return
+            content = rec_file.read_text(encoding="utf-8")
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Cache-Control", "no-store")
+            self.end_headers()
+            self.wfile.write(content.encode("utf-8"))
 
     def _handle_readyz(self) -> None:
         if getattr(self.server, "demo_mode", False):
@@ -226,6 +352,8 @@ class OfficeHandler(SimpleHTTPRequestHandler):
         elif self.path == "/" or self.path.startswith("/?"):
             self.path = "/index.html"
             super().do_GET()
+        elif self.path == "/api/recordings" or self.path.startswith("/api/recordings/"):
+            self._handle_get_recordings()
         elif self.server.demo_mode and self.path.startswith("/api/"):
             self._demo_api()
         elif self.path.startswith("/api/"):
@@ -245,6 +373,8 @@ class OfficeHandler(SimpleHTTPRequestHandler):
             self._handle_logout()
         elif getattr(self.server, "secret", None) and not self._is_authenticated():
             self._json(401, {"detail": "authentication required"})
+        elif self.path == "/api/recordings" or self.path.startswith("/api/recordings/"):
+            self._handle_post_recordings()
         elif self.path.startswith("/api/"):
             length = int(self.headers.get("Content-Length", "0"))
             if length > self.MAX_BODY_SIZE:
@@ -792,6 +922,20 @@ def main() -> None:
 
     demo_mode = args.demo if args.demo is not None else bool(cfg.get("demo", bool(os.environ.get("HFLOCK_DEMO"))))
     token = token or ("demo-secret" if demo_mode else None)
+
+    if audit_log:
+        try:
+            p = Path(audit_log)
+            p.parent.mkdir(parents=True, exist_ok=True)
+            with open(p, "a", encoding="utf-8") as f:
+                pass
+        except Exception as error:
+            print(
+                f"ERROR: Cannot write to audit log path '{audit_log}': {error}\n"
+                f"Refusing to start console without a verified writable audit log path.",
+                file=sys.stderr,
+            )
+            raise SystemExit(1)
 
     if not _is_loopback(listen) and not secret:
         print(
