@@ -40,8 +40,13 @@ let palette;
 
 function renderSearchSummary() {
   const query = $("global-search")?.value.trim();
+  const plural = (count, singular) => `${count} ${singular}${count === 1 ? "" : "s"}`;
+  const alertResult = state.results.alerts;
+  const alertsText = typeof alertResult === "object"
+    ? `${plural(alertResult.groups, "alert group")} (${plural(alertResult.alerts, "event")})`
+    : plural(alertResult, "alert");
   $("search-results-summary").textContent = query
-    ? `${state.results.agents} agents · ${state.results.alerts} alerts · ${state.results.boards} tickets`
+    ? `${plural(state.results.agents, "agent")} · ${alertsText} · ${plural(state.results.boards, "ticket")}`
     : "All office data";
 }
 
@@ -107,7 +112,7 @@ async function selectAgent(agent) {
 function commandList() {
   const commands = [
     { label: "Hire an agent", hint: "Lifecycle", keywords: "start enrol", run: () => $("hire-dialog").showModal() },
-    { label: "Open alerts", hint: "Panel", keywords: "filter warning", run: () => $("alerts-panel").scrollIntoView({ behavior: "smooth" }) },
+    { label: "Filter alerts", hint: "Panel", keywords: "search warning", run: () => { $("alerts-panel").scrollIntoView({ behavior: "smooth" }); $("global-search").focus(); } },
     { label: "Open task board", hint: "Panel", keywords: "tickets work", run: () => $("boards-panel").scrollIntoView({ behavior: "smooth" }) },
     { label: "Search the office", hint: "/", keywords: "filter agents alerts boards", run: () => $("global-search").focus() },
     { label: "Display preferences", hint: "Theme · density", keywords: "compact light dark size", run: () => $("preferences-dialog").showModal() },
@@ -115,6 +120,7 @@ function commandList() {
   ];
   for (const agent of agents.names()) {
     commands.push({ label: `Open ${agent}`, hint: "Agent", keywords: `${agents.detail(agent)?.presence?.state || "unknown"} terminal messages`, run: () => selectAgent(agent) });
+    commands.push({ label: `Open ${agent} board`, hint: "Task board", keywords: "tickets todo doing hold done", run: () => { $("global-search").value = agent; filterOffice(agent); $("boards-panel").scrollIntoView({ behavior: "smooth" }); } });
   }
   if (state.selected && agents.detail(state.selected)?.vab === "tmux") {
     commands.push(

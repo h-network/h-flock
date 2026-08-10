@@ -14,7 +14,7 @@
     <div class="brand"><span class="brand-mark" aria-hidden="true">HF</span><div><h1>h-flock Console</h1><p id="office-summary">Loading tenant</p></div></div>
     <div class="topbar-actions">
       <button id="open-command" type="button" class="quiet-button"><span>Commands</span><kbd>⌘K</kbd></button>
-      <button id="notification-control" type="button" class="quiet-button" aria-pressed="false">Enable alerts</button>
+      <button id="notification-control" type="button" class="quiet-button" aria-pressed="false">Enable notices</button>
       <button id="open-preferences" type="button" class="icon-button" aria-label="Open display preferences">⚙</button>
       <button id="open-shortcuts" type="button" class="icon-button" aria-label="Open keyboard shortcuts">?</button>
       <span id="global-connection" class="badge state-loading" role="status">connecting</span>
@@ -22,17 +22,20 @@
   </header>
   <section class="workbench-bar" aria-label="Global console tools">
     <label class="global-search"><span aria-hidden="true">⌕</span><span class="sr-only">Search agents, alerts and board tickets</span><input id="global-search" type="search" placeholder="Search the office…" autocomplete="off"><kbd>/</kbd></label>
-    <div id="search-results-summary" class="search-results-summary" role="status" aria-live="polite">All office data</div>
+    <div class="workbench-meta"><div id="search-results-summary" class="search-results-summary" role="status" aria-live="polite">All office data</div><div class="demo-slot">
+      <details id="demo-controls" class="demo-controls" hidden>
+        <summary>Demo states</summary>
+        <div aria-label="Demo panel states">
+          <button type="button" data-demo-state="loading">loading</button>
+          <button type="button" data-demo-state="empty">empty</button>
+          <button type="button" data-demo-state="error">error</button>
+          <button type="button" data-demo-state="stale">stale</button>
+          <button type="button" data-demo-state="disconnected">disconnected</button>
+          <button type="button" data-demo-state="ready">live data</button>
+        </div>
+      </details>
+    </div></div>
   </section>
-  <div id="demo-controls" class="demo-controls" hidden aria-label="Demo panel states">
-    <strong>Demo state</strong>
-    <button type="button" data-demo-state="loading">loading</button>
-    <button type="button" data-demo-state="empty">empty</button>
-    <button type="button" data-demo-state="error">error</button>
-    <button type="button" data-demo-state="stale">stale</button>
-    <button type="button" data-demo-state="disconnected">disconnected</button>
-    <button type="button" data-demo-state="ready">live data</button>
-  </div>
   <section id="empty-office" class="empty-office" aria-labelledby="empty-office-title" hidden>
     <div>
       <p class="eyebrow">Your office is ready</p>

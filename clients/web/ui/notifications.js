@@ -44,7 +44,7 @@ export class AlertNotifications {
   closeAll() { for (const notification of this.open.values()) notification.close(); this.open.clear(); }
 
   render(message = "") {
-    const label = !this.enabled ? "Enable alerts" : this.muted ? "Alerts muted" : "Alerts on";
+    const label = !this.enabled ? "Enable notices" : this.muted ? "Notices muted" : "Notices ready";
     this.button.textContent = label;
     this.button.setAttribute("aria-pressed", String(this.enabled && !this.muted));
     this.button.title = message || "Notification preference is ready; alert delivery awaits a resolvable lifecycle";

@@ -89,8 +89,9 @@ error in one panel does not make the rest of the office look offline.
 The console remains bounded under normal office load:
 
 - the roster is grouped and keyboard navigable at 40 agents;
-- the alert view is capped at the newest 300 entries and batches catch-up
-  rendering;
+- the alert history is capped at the newest 300 entries, folds repeated
+  condition/subject pairs into severity-coded rows with multipliers, and
+  batches catch-up rendering;
 - activity and message histories retain 100 entries each;
 - boards keep all tickets available inside collapsible, independently scrolling
   agent rows.
@@ -99,6 +100,30 @@ Every timestamp is relative at rest and absolute on hover. Blocked and unknown
 states use words, shapes and borders rather than relying on colour. The console
 supports keyboard navigation, visible focus, screen-reader regions, responsive
 layout, and system light/dark preference.
+
+## Operator workflow and preferences
+
+One global search filters agent identity and presence, alert facts, and every
+board ticket at the same time, with a result count for each panel. `Ctrl/⌘-K`
+opens a command palette for agents, lifecycle actions, boards, alerts and
+display settings. Press `?` for the complete shortcut reference; shortcuts not
+listed there are not part of the interface.
+
+Comfortable and compact density, system/light/dark theme, the last selected
+agent and the office/detail column balance persist in one namespaced
+`localStorage` preference record. It contains display choices only—never the
+operator secret, tenant token, messages, terminal content or commands.
+
+The message composer is multi-line. `Ctrl/⌘-Enter` sends, Up recalls the most
+recent sent text when the caret is at the start, and the interface says plainly
+that a reply may never arrive. Sent-text recall is bounded to the current page
+session and is not persisted.
+
+Desktop notification permission and mute/deduplication machinery are present,
+but alert delivery is deliberately not enabled. The alert API is historical
+and has no resolved event, so the browser could create a notification but could
+not honestly retire it when the condition clears. Delivery remains gated until
+the framework exposes an observable alert lifecycle.
 
 ## Lifecycle semantics
 
@@ -188,3 +213,12 @@ deployable in an air-gapped tenant.
 Automated checks live under `clients/web/tests/`. Product verification should
 also use a real tenant, exercise a terminal handshake, interrupt a live stream,
 and confirm that each affected panel reconnects without taking down the page.
+
+The Part II visual harness was run in Chromium in light and dark at 1600×900,
+1280×720 and 1024×768. All six renders had no horizontal overflow, console
+errors or failed requests. After fixed header tracks removed asynchronous
+wrapping, cumulative layout shift measured 0.018–0.025 and remained stable on
+independent reruns. Screenshots were inspected: the idle office overview,
+retained last-activity column and severity-grouped alert history rendered as
+specified. Rendering is verified; a screenshot alone does not establish frame
+rate, so performance claims remain limited to the explicit data and DOM caps.
