@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <title>h-flock office console</title>
-  <link rel="stylesheet" href="xterm.css">
+  <link rel="stylesheet" href="vendor/xterm.css">
   <link rel="stylesheet" href="terminal.css">
   <link rel="stylesheet" href="style.css">
 </head>
@@ -32,6 +32,7 @@
           <div class="terminal-info">
             <span class="terminal-label">Terminal Window (120x32)</span>
             <span id="terminal-mode-badge" class="badge mode-readonly">READ-ONLY</span>
+            <span id="terminal-status-text" class="terminal-status muted">Empty</span>
           </div>
           <div class="terminal-controls">
             <button id="toggle-input-mode" type="button" class="btn-mode">Enable Typing</button>
@@ -47,8 +48,7 @@
       </form>
     </section>
   </main>
-  <script src="xterm.js"></script>
-  <script src="terminal.js"></script>
-  <script src="app.js"></script>
+  <script src="vendor/xterm.js"></script>
+  <script type="module" src="app.js"></script>
 </body>
 </html>
