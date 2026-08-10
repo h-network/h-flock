@@ -10,6 +10,10 @@ import { TerminalPanel } from "./ui/terminal.js";
 import { Preferences } from "./ui/preferences.js";
 import { CommandPalette } from "./ui/palette.js";
 import { AlertNotifications } from "./ui/notifications.js";
+import { HashRouter } from "./ui/router.js";
+import { renderRecordingsSection } from "./ui/recordings.js";
+import { renderAuditSection } from "./ui/audit.js";
+import { PanelStatus } from "./ui/shared.js";
 
 const $ = (id) => document.getElementById(id);
 const state = { selected: "", tab: "activity", demo: false, roster: null, alertCount: null, results: { agents: 0, alerts: 0, boards: 0 } };
@@ -19,11 +23,12 @@ const notifications = new AlertNotifications();
 const updateResult = (panel) => (count) => { state.results[panel] = count; renderSearchSummary(); };
 const boards = new BoardsPanel({ onBoards: (value) => agents.setBoards(value), onResults: updateResult("boards") });
 const agents = new AgentsPanel({
-  onSelect: (agent) => selectAgent(agent),
+  onSelect: (agent) => router.go(`agents/${encodeURIComponent(agent)}`),
   onResults: updateResult("agents"),
   onRoster: (summary) => {
     state.roster = summary;
     $("empty-office").hidden = summary.staffed !== 0;
+    $("sidebar-agent-count").textContent = String(summary.total);
     updateOfficeSummary();
     populateTerminalAgents();
   },
@@ -32,11 +37,13 @@ const activity = new ActivityPanel();
 let messages;
 let lifecycle;
 const alerts = new AlertsPanel({
-  onCount: (count) => { state.alertCount = count; updateOfficeSummary(); },
+  onCount: (count) => { state.alertCount = count; $("sidebar-alert-count").textContent = String(count); updateOfficeSummary(); },
   onResults: updateResult("alerts"),
   onAlert: (alert) => notifications.receive(alert),
 });
 let palette;
+let router;
+const loadedSections = new Set();
 
 function renderSearchSummary() {
   const query = $("global-search")?.value.trim();
@@ -71,25 +78,25 @@ function updateOfficeSummary() {
   if (!state.roster) return;
   const { working, blocked } = state.roster;
   const alertsText = state.alertCount == null ? "alerts loading" : `${state.alertCount} retained alert${state.alertCount === 1 ? "" : "s"}`;
-  $("office-summary").textContent = `${working} working · ${blocked} blocked · ${alertsText}`;
-  $("office-summary").className = blocked || state.alertCount ? "summary-attention" : "summary-calm";
   $("overview-working").textContent = String(working);
   $("overview-blocked").textContent = String(blocked);
   $("overview-alerts").textContent = state.alertCount == null ? "—" : String(state.alertCount);
   $("overview-blocked-action").disabled = blocked === 0;
+  $("overview-blocked-action").classList.toggle("summary-attention", blocked > 0);
 }
 
 function activateTab(name) {
   state.tab = name;
-  for (const tab of ["activity", "terminal", "messages"]) {
+  for (const tab of ["activity", "terminal", "messages", "board", "lifecycle"]) {
     const selected = tab === name;
     const button = $(`${tab}-tab`);
     button.setAttribute("aria-selected", String(selected));
     button.tabIndex = selected ? 0 : -1;
-    const view = tab === "terminal" ? $("terminal-panel") : $(`${tab}-view`);
+    const view = tab === "terminal" ? $("terminal-panel") : $(`${tab === "board" ? "agent-board" : tab}-view`);
     view.hidden = !selected;
   }
   if (name === "terminal" && state.selected) terminal.connect(state.selected);
+  if (name === "board" && state.selected) boards.renderAgent(state.selected);
 }
 
 async function selectAgent(agent) {
@@ -97,7 +104,6 @@ async function selectAgent(agent) {
   preferences.rememberAgent(agent);
   const detail = agents.detail(agent);
   $("detail-title").textContent = agent;
-  $("detail-overview").hidden = true;
   $("detail-subtitle").textContent = `${detail?.vab || "unknown VAB"} · ${detail?.presence?.state || "unknown"}`;
   $("detail-title").focus();
   $("message").disabled = false;
@@ -106,21 +112,27 @@ async function selectAgent(agent) {
   lifecycle.select(agent);
   await activity.select(agent);
   messages.render(agent);
+  boards.renderAgent(agent);
   if (state.tab === "terminal") terminal.connect(agent);
 }
 
 function commandList() {
   const commands = [
     { label: "Hire an agent", hint: "Lifecycle", keywords: "start enrol", run: () => $("hire-dialog").showModal() },
-    { label: "Filter alerts", hint: "Panel", keywords: "search warning", run: () => { $("alerts-panel").scrollIntoView({ behavior: "smooth" }); $("global-search").focus(); } },
-    { label: "Open task board", hint: "Panel", keywords: "tickets work", run: () => $("boards-panel").scrollIntoView({ behavior: "smooth" }) },
+    { label: "Open overview", hint: "Section", keywords: "home health summary", run: () => router.go("overview") },
+    { label: "Open agents", hint: "Section", keywords: "roster presence", run: () => router.go("agents") },
+    { label: "Open terminals", hint: "Section", keywords: "sessions shell", run: () => router.go("terminals") },
+    { label: "Filter alerts", hint: "Section", keywords: "search warning", run: () => { router.go("alerts"); $("global-search").focus(); } },
+    { label: "Open task board", hint: "Section", keywords: "tickets work", run: () => router.go("boards") },
+    { label: "Open recordings", hint: "Section", keywords: "terminal replay", run: () => router.go("recordings") },
+    { label: "Open audit log", hint: "Section", keywords: "operator security actions", run: () => router.go("audit") },
     { label: "Search the office", hint: "/", keywords: "filter agents alerts boards", run: () => $("global-search").focus() },
-    { label: "Display preferences", hint: "Theme · density", keywords: "compact light dark size", run: () => $("preferences-dialog").showModal() },
+    { label: "Display preferences", hint: "Theme · density", keywords: "compact light dark size", run: () => router.go("settings") },
     { label: "Keyboard shortcuts", hint: "?", keywords: "help keys", run: () => $("shortcuts-dialog").showModal() },
   ];
   for (const agent of agents.names()) {
-    commands.push({ label: `Open ${agent}`, hint: "Agent", keywords: `${agents.detail(agent)?.presence?.state || "unknown"} terminal messages`, run: () => selectAgent(agent) });
-    commands.push({ label: `Open ${agent} board`, hint: "Task board", keywords: "tickets todo doing hold done", run: () => { $("global-search").value = agent; filterOffice(agent); $("boards-panel").scrollIntoView({ behavior: "smooth" }); } });
+    commands.push({ label: `Open ${agent}`, hint: "Agent", keywords: `${agents.detail(agent)?.presence?.state || "unknown"} terminal messages`, run: () => router.go(`agents/${encodeURIComponent(agent)}`) });
+    commands.push({ label: `Open ${agent} board`, hint: "Task board", keywords: "tickets todo doing hold done", run: () => { $("global-search").value = agent; filterOffice(agent); router.go("boards"); } });
   }
   if (state.selected && agents.detail(state.selected)?.vab === "tmux") {
     commands.push(
@@ -133,7 +145,7 @@ function commandList() {
 }
 
 function bindTabs() {
-  const names = ["activity", "terminal", "messages"];
+  const names = ["activity", "terminal", "messages", "board", "lifecycle"];
   for (const name of names) {
     const button = $(`${name}-tab`);
     button.onclick = () => activateTab(name);
@@ -171,7 +183,7 @@ function bindGlobalControls() {
   $("overview-command-action").onclick = () => palette.open();
   $("overview-blocked-action").onclick = () => {
     const blocked = agents.names().find((agent) => agents.detail(agent)?.presence?.state === "blocked");
-    if (blocked) selectAgent(blocked);
+    if (blocked) router.go(`agents/${encodeURIComponent(blocked)}`);
   };
   $("open-shortcuts").onclick = () => $("shortcuts-dialog").showModal();
   $("global-search").oninput = (event) => filterOffice(event.target.value);
@@ -190,20 +202,52 @@ function bindGlobalControls() {
   });
 }
 
+async function handleRoute(route) {
+  const labels = { overview: "Overview", agents: "Agents", agent: "Agent", terminals: "Terminals", alerts: "Alerts", boards: "Boards", recordings: "Recordings", audit: "Audit", settings: "Settings" };
+  $("office-summary").textContent = route.section === "agent" ? route.agent : labels[route.section];
+  $("office-summary").className = "";
+  if (route.section === "agent") {
+    if (agents.detail(route.agent)) await selectAgent(route.agent);
+    else {
+      $("detail-title").textContent = route.agent;
+      $("detail-subtitle").textContent = "Loading agent…";
+    }
+  }
+  if (route.section === "recordings" && !loadedSections.has("recordings")) {
+    loadedSections.add("recordings");
+    const status = new PanelStatus("recordings-status", () => renderRecordingsSection($("recordings-mount"), status));
+    renderRecordingsSection($("recordings-mount"), status);
+  }
+  if (route.section === "audit" && !loadedSections.has("audit")) {
+    loadedSections.add("audit");
+    const status = new PanelStatus("audit-status", () => renderAuditSection($("audit-mount"), status));
+    renderAuditSection($("audit-mount"), status);
+  }
+}
+
 async function start() {
   const config = await fetch("/client-config").then((response) => response.json());
   state.demo = Boolean(config.demo);
   messages = new MessagesPanel({ client: config.client });
   lifecycle = new LifecyclePanel({ agents });
+  router = new HashRouter({ onRoute: handleRoute });
   $("empty-office-hire").onclick = () => $("hire-dialog").showModal();
   bindTabs();
   bindDemoControls();
   bindGlobalControls();
+  $("settings-notification-control").onclick = () => $("notification-control").click();
+  $("logout-control").onclick = async () => {
+    await fetch("/logout", { method: "POST" });
+    location.assign("/");
+  };
+  router.start();
   $("global-connection").textContent = "live";
   $("global-connection").className = "badge state-ready";
+  $("sidebar-live-text").textContent = "Live";
+  $("sidebar-live-dot").className = "sidebar-live-dot state-ready";
   await Promise.allSettled([boards.start(), agents.start(), alerts.start(), messages.start()]);
   populateTerminalAgents();
-  if (preferences.value.selectedAgent && agents.detail(preferences.value.selectedAgent)) await selectAgent(preferences.value.selectedAgent);
+  handleRoute(router.current());
 }
 
 start().catch((error) => {

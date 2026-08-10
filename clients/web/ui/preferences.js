@@ -41,16 +41,13 @@ export class Preferences {
   }
 
   bind() {
-    const dialog = document.getElementById("preferences-dialog");
-    document.getElementById("open-preferences").onclick = () => dialog.showModal();
+    document.getElementById("open-preferences").onclick = () => { location.hash = "#/settings"; };
     document.getElementById("preferences-form").oninput = () => this.save({
       density: document.getElementById("preference-density").value,
       theme: document.getElementById("preference-theme").value,
       officeColumn: Number(document.getElementById("preference-panel-size").value),
     });
-    document.getElementById("close-preferences").onclick = () => dialog.close();
   }
 
   rememberAgent(agent) { this.save({ selectedAgent: agent }); }
 }
-

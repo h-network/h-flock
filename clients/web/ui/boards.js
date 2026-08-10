@@ -57,5 +57,19 @@ export class BoardsPanel {
     else root.replaceChildren(...rendered);
   }
 
+  renderAgent(agent) {
+    const root = document.getElementById("agent-board");
+    const board = this.boards.get(agent);
+    if (!root) return;
+    if (!board) {
+      root.innerHTML = `<div class="empty-state"><h3>No board activity</h3><p>${escapeHtml(agent)} has no tickets yet.</p></div>`;
+      return;
+    }
+    root.innerHTML = `<div class="board-columns">${columns.map((column) => {
+      const items = (board[column] || []).map(ticket);
+      return `<section><h3>${column} <span>${items.length}</span></h3><ol>${items.map((item) => `<li title="${escapeHtml(item.description || item.title || "")}"><span>${escapeHtml(item.title || item.id || "ticket")}</span>${item.priority ? `<small>${escapeHtml(item.priority)}</small>` : ""}</li>`).join("")}</ol></section>`;
+    }).join("")}</div>`;
+  }
+
   demoState(value) { forceDemoState(this.status, value); }
 }
