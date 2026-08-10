@@ -81,11 +81,11 @@ function displayAuditList(container, data, status) {
     <div style="padding: var(--space-4);">
       <header style="margin-bottom: var(--space-4); display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: var(--space-3);">
         <div>
-          <h2 style="font-size: var(--text-xl);">Operator Audit Trail</h2>
-          <p style="color: var(--text-secondary); font-size: var(--text-sm);">Structured security log of all operator actions, authentications, and session events</p>
+          <h2 style="font-size: var(--text-xl);">Operator Action Log</h2>
+          <p style="color: var(--text-secondary); font-size: var(--text-sm);">Log of operator actions, authentications, and session events performed through the console proxy. (Direct API token traffic to /agents/... bypasses the console proxy and is recorded in tenant activity logs.)</p>
         </div>
         <div style="display: flex; gap: var(--space-2); align-items: center; flex-wrap: wrap;">
-          <input type="search" id="audit-search-input" placeholder="Search audit trail…" value="${escapeHtml(currentQuery)}" style="min-width: 14rem; height: var(--control-height);" />
+          <input type="search" id="audit-search-input" placeholder="Search operator log…" value="${escapeHtml(currentQuery)}" style="min-width: 14rem; height: var(--control-height);" />
           <select id="audit-event-filter" style="height: var(--control-height);">
             <option value="" ${currentEvent === "" ? "selected" : ""}>All Events</option>
             <option value="login_success" ${currentEvent === "login_success" ? "selected" : ""}>login_success</option>

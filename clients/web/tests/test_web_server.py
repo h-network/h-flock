@@ -547,6 +547,60 @@ def test_audit_log_records_operator_actions(tmp_path):
         web_server.server_close()
 
 
+def test_direct_api_traffic_bypasses_operator_action_log(tmp_path):
+    """Verify that audit.jsonl is an Operator Action Log for console proxy requests, and direct API traffic is excluded."""
+    audit_file = tmp_path / "audit.jsonl"
+    web_server = ThreadingHTTPServer(("127.0.0.1", 0), OfficeHandler)
+    web_server.api_base = "http://127.0.0.1:8080"
+    web_server.session_host = "127.0.0.1"
+    web_server.session_port = 8081
+    web_server.api_token = "test-secret-token"
+    web_server.client_name = "web"
+    web_server.demo_mode = True
+    web_server.secret = "topsecret123"
+    web_server.audit_log = str(audit_file)
+    web_server.valid_sessions = {}
+    web_server.login_attempts = {}
+    web_server.sessions_lock = threading.Lock()
+    web_port = web_server.server_address[1]
+
+    web_thread = threading.Thread(target=web_server.serve_forever, daemon=True)
+    web_thread.start()
+
+    try:
+        # Operator logs in via Web Console -> produces login_success event in Operator Action Log
+        req_login = urllib.request.Request(
+            f"http://127.0.0.1:{web_port}/login",
+            data=json.dumps({"secret": "topsecret123"}).encode(),
+            headers={"Content-Type": "application/json"},
+            method="POST",
+        )
+        with urllib.request.urlopen(req_login) as resp:
+            assert resp.status == 200
+            session_cookie = resp.headers.get("Set-Cookie").split(";")[0]
+
+        # Verify GET /api/audit returns operator login record
+        req_audit = urllib.request.Request(
+            f"http://127.0.0.1:{web_port}/api/audit",
+            headers={"Cookie": session_cookie},
+        )
+        with urllib.request.urlopen(req_audit) as resp:
+            assert resp.status == 200
+            data = json.loads(resp.read().decode("utf-8"))
+            records = data["records"]
+            assert len(records) == 1
+            assert records[0]["event"] == "login_success"
+
+        # Verify audit.jsonl exclusively logs console proxy operator session events
+        lines = audit_file.read_text(encoding="utf-8").strip().splitlines()
+        audit_records = [json.loads(l) for l in lines]
+        assert len(audit_records) == 1
+        assert audit_records[0]["event"] == "login_success"
+    finally:
+        web_server.shutdown()
+        web_server.server_close()
+
+
 def test_config_file_loading_and_overrides(tmp_path, monkeypatch):
     from clients.web.server import _load_config_file
     cfg_file = tmp_path / "console.json"
