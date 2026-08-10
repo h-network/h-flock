@@ -4,6 +4,10 @@ Things decided-but-not-done, so they live somewhere other than a chat log.
 
 ## Open right now
 
+⚠ **`clients/` is finished.** The Telegram bot and the browser console stay as
+**demos** — two working examples someone can run on day one. No further client
+development happens in this repository; the framework is the product.
+
 | | |
 |---|---|
 | **decide: `AddTicket` to an agent with no window** | it dead-letters today. The board is *pulled*, so a ticket written to `tasks.todo` would simply wait for the agent to come back. Pause is safe (`interrupt_window`, and the adapter checks `paused` first) — the exposure is a crashed or not-yet-built window |
@@ -11,7 +15,6 @@ Things decided-but-not-done, so they live somewhere other than a chat log.
 | **`tmuxhost` never removes the last stale window** | the `len(existing_windows) > 1` guard keeps the session alive, so a retired agent's window persists if it is the only one left |
 | **silent `except: pass` across trust setup** | `write_agent_guide` and all three `ensure_*_project_trusted` swallow every filesystem and JSON error. This is how the profile-blind trust bug hid: it failed silently and every agent sat at a picker |
 | **the console audits one door of two** | `audit.jsonl` records what passes through the console. Anything using the api token directly is invisible to it, which is how a plumbing run put a message in an operator's terminal with no trace. Either widen it or stop calling it an audit trail |
-| **`clients/` needs its own repo** | consumers sitting inside the framework for want of a remote. ⚠ Needs a repo created under `h-network` — not mine to do |
 | **profile logins** | one interactive login per account. Not buildable — a person has to do it. ⚠ **Checked: nobody has solved this.** NVIDIA OpenShell's own tutorial says you authenticate with your own account in a browser, and trust the workspace when prompted |
 | **local model: long-context behaviour unknown** | every test was a short turn against a 65k window. Nothing says what a local agent does when it fills |
 | **ollama — parked** | the installer asks, falls back to `/api/tags`, and warns when `/v1/messages` is missing, but none of it has been run. ⚠ ollama does not serve the Anthropic Messages API, so claude needs a translating proxy in front |
