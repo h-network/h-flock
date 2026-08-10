@@ -10,7 +10,6 @@ development happens in this repository; the framework is the product.
 
 | | |
 |---|---|
-| **decide: `AddTicket` to an agent with no window** | it dead-letters today. The board is *pulled*, so a ticket written to `tasks.todo` would simply wait for the agent to come back. Pause is safe (`interrupt_window`, and the adapter checks `paused` first) — the exposure is a crashed or not-yet-built window |
 | **decide: enforce invariant 2, or leave it documented as unverified** | `producer` is supplied to `send()` and never checked against the queue. It cannot redirect an envelope, but it is the identity shown to an agent and recorded as `created_by`, `actor` and in every log record. ⚠ **Seen in the wild:** a plumbing fixture made a real terminal show `[message from telegram]` from a client that did not exist |
 | **`tmuxhost` never removes the last stale window** | the `len(existing_windows) > 1` guard keeps the session alive, so a retired agent's window persists if it is the only one left |
 | **silent `except: pass` across trust setup** | `write_agent_guide` and all three `ensure_*_project_trusted` swallow every filesystem and JSON error. This is how the profile-blind trust bug hid: it failed silently and every agent sat at a picker |
@@ -21,7 +20,8 @@ development happens in this repository; the framework is the product.
 | **security, parked deliberately** | TLS on the tenant doors, CORS, per-client tokens, Redis ACLs |
 
 **Recently closed:** the terminal view (the console has a full workspace), the
-five doc drifts (audit 06), credential staleness (a decision, not a fix),
+five doc drifts (audit 06), AddTicket delivery without a window (build 35),
+credential staleness (a decision, not a fix),
 credential alerting, `delivery_unjudged`, and the octal/snapshot/telemetry
 defects a night of live running turned up.
 

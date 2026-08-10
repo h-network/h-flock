@@ -3,7 +3,7 @@ import os
 from datetime import datetime, timezone
 from typing import Set
 
-from flock.bus import DeadLetter, prefix, record_task_event
+from flock.bus import DeadLetter, log_record, prefix, record_task_event
 from flock.tmux import list_windows, paste_text, run_tmux
 
 # Backwards compatibility helper for existing tests
@@ -121,14 +121,9 @@ def add_ticket_opener(
     session_name: str,
     socket: str | None = None,
 ) -> None:
-    stream_id = envelope.get("stream_id", "")
     corr_id = envelope.get("correlation_id")
     producer = envelope.get("producer", "unknown")
     payload = envelope.get("payload", {})
-
-    windows = list_windows(session_name, socket=socket)
-    if agent not in windows:
-        raise DeadLetter("window_missing")
 
     if isinstance(payload, dict) and "v" in payload and "id" in payload:
         ticket_obj = payload
@@ -165,7 +160,37 @@ def add_ticket_opener(
         }
 
     todo_key = prefix(pod, tenant, agent=agent, resource="tasks.todo")
-    r.rpush(todo_key, json.dumps(ticket_obj))
+    try:
+        depth = r.rpush(todo_key, json.dumps(ticket_obj))
+    except Exception as exc:
+        log_record(
+            "adapter",
+            "board_write_failed",
+            correlation_id=corr_id,
+            recipient=agent,
+            reason=str(exc),
+            task_id=ticket_obj.get("id", ""),
+        )
+        raise DeadLetter("board_write_failed") from exc
+    if not isinstance(depth, int) or depth < 1:
+        log_record(
+            "adapter",
+            "board_write_failed",
+            correlation_id=corr_id,
+            recipient=agent,
+            reason="RPUSH did not return a positive list length",
+            task_id=ticket_obj.get("id", ""),
+        )
+        raise DeadLetter("board_write_failed")
+
+    log_record(
+        "adapter",
+        "board_write_confirmed",
+        correlation_id=corr_id,
+        recipient=agent,
+        count=depth,
+        task_id=ticket_obj.get("id", ""),
+    )
 
     record_task_event(
         "add",
