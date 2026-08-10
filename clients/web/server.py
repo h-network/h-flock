@@ -368,6 +368,61 @@ class OfficeHandler(SimpleHTTPRequestHandler):
             self.end_headers()
             self.wfile.write(content.encode("utf-8"))
 
+    def _handle_get_audit(self) -> None:
+        audit_file = getattr(self.server, "audit_log", None)
+        qs = urllib.parse.parse_qs(urlsplit(self.path).query)
+        limit = min(500, max(1, int(qs.get("limit", ["50"])[0])))
+        offset = max(0, int(qs.get("offset", ["0"])[0]))
+        event_filter = qs.get("event", [""])[0]
+        session_filter = qs.get("session_id", [""])[0]
+        ip_filter = qs.get("client_ip", [""])[0]
+        agent_filter = qs.get("agent", [""])[0]
+        search_query = qs.get("q", [""])[0].lower()
+
+        records = []
+        if audit_file and Path(audit_file).exists():
+            audit_path = Path(audit_file)
+            files = [audit_path]
+            for i in range(1, 10):
+                b = Path(f"{audit_file}.{i}")
+                if b.exists():
+                    files.append(b)
+            for f in files:
+                try:
+                    lines = f.read_text(encoding="utf-8").strip().splitlines()
+                    for line in lines:
+                        if not line.strip():
+                            continue
+                        rec = json.loads(line)
+                        if event_filter and rec.get("event") != event_filter:
+                            continue
+                        if session_filter and session_filter not in rec.get("session_id", ""):
+                            continue
+                        if ip_filter and rec.get("client_ip") != ip_filter:
+                            continue
+                        if agent_filter:
+                            det = rec.get("details", {})
+                            det_agent = det.get("agent") or det.get("target") or (det.get("payload", {}) if isinstance(det.get("payload"), dict) else {}).get("agent", "")
+                            if agent_filter not in str(det_agent):
+                                continue
+                        if search_query:
+                            line_lower = line.lower()
+                            if search_query not in line_lower:
+                                continue
+                        records.append(rec)
+                except Exception:
+                    pass
+
+        records.sort(key=lambda r: r.get("timestamp", ""), reverse=True)
+        total = len(records)
+        paged = records[offset : offset + limit]
+        self._json(200, {
+            "total": total,
+            "limit": limit,
+            "offset": offset,
+            "records": paged,
+        })
+
     def _handle_readyz(self) -> None:
         if getattr(self.server, "demo_mode", False):
             self._json(200, {"status": "ready", "mode": "demo"})
@@ -406,6 +461,8 @@ class OfficeHandler(SimpleHTTPRequestHandler):
             super().do_GET()
         elif self.path == "/api/recordings" or self.path.startswith("/api/recordings/"):
             self._handle_get_recordings()
+        elif self.path == "/api/audit" or self.path.startswith("/api/audit?") or self.path.startswith("/api/audit/"):
+            self._handle_get_audit()
         elif self.server.demo_mode and self.path.startswith("/api/"):
             self._demo_api()
         elif self.path.startswith("/api/"):

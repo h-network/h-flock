@@ -721,3 +721,52 @@ def test_terminal_recordings_retention_and_limits(tmp_path):
     finally:
         web_server.shutdown()
         web_server.server_close()
+
+
+def test_audit_read_endpoint_filtering_and_pagination(tmp_path):
+    audit_file = tmp_path / "audit.jsonl"
+    web_server = ThreadingHTTPServer(("127.0.0.1", 0), OfficeHandler)
+    web_server.api_base = "http://127.0.0.1:8080"
+    web_server.audit_log = str(audit_file)
+    web_server.demo_mode = True
+    web_server.sessions_lock = threading.Lock()
+    web_port = web_server.server_address[1]
+
+    web_thread = threading.Thread(target=web_server.serve_forever, daemon=True)
+    web_thread.start()
+
+    try:
+        # Generate some audit entries
+        for agent_name in ["architect", "sme-2", "architect"]:
+            req = urllib.request.Request(
+                f"http://127.0.0.1:{web_port}/api/agents/host/envelopes",
+                data=json.dumps({"kind": "StartAgent", "payload": {"agent": agent_name}}).encode(),
+                headers={"Content-Type": "application/json"},
+                method="POST",
+            )
+            with urllib.request.urlopen(req) as resp:
+                assert resp.status == 202
+
+        # GET /api/audit (all records)
+        with urllib.request.urlopen(f"http://127.0.0.1:{web_port}/api/audit") as resp:
+            assert resp.status == 200
+            data = json.loads(resp.read().decode())
+            assert data["total"] == 3
+            assert len(data["records"]) == 3
+
+        # GET /api/audit with limit=2
+        with urllib.request.urlopen(f"http://127.0.0.1:{web_port}/api/audit?limit=2") as resp:
+            assert resp.status == 200
+            data = json.loads(resp.read().decode())
+            assert data["total"] == 3
+            assert len(data["records"]) == 2
+
+        # GET /api/audit with agent=sme-2 filter
+        with urllib.request.urlopen(f"http://127.0.0.1:{web_port}/api/audit?agent=sme-2") as resp:
+            assert resp.status == 200
+            data = json.loads(resp.read().decode())
+            assert data["total"] == 1
+            assert "sme-2" in json.dumps(data["records"])
+    finally:
+        web_server.shutdown()
+        web_server.server_close()
