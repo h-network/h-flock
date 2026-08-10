@@ -213,17 +213,23 @@ class OfficeHandler(SimpleHTTPRequestHandler):
                 "agents": [
                     {
                         "agent": "architect",
-                        "todo": [{"id": "t-1", "title": "Build 33 UI console review"}],
+                        "todo": [
+                            {"id": "t-1", "title": "Build 33 UI console review"},
+                            "Legacy bare ticket string in todo queue",
+                        ],
                         "doing": [{"id": "t-2", "title": "Integrate same-origin WebSocket proxy"}],
                         "hold": [],
-                        "done": [{"id": "t-0", "title": "Setup repository structure"}],
+                        "done": [
+                            {"id": "t-0", "title": "Setup repository structure"},
+                            "Raw unformatted ticket string #42",
+                        ],
                     },
                     {
                         "agent": "sme-2",
                         "todo": [{"id": "t-3", "title": "Audit documentation mentions"}],
                         "doing": [],
                         "hold": [],
-                        "done": [],
+                        "done": ["Bare string completed task"],
                     },
                     {
                         "agent": "sme-3",
@@ -242,12 +248,20 @@ class OfficeHandler(SimpleHTTPRequestHandler):
                 ]
             })
         elif subpath == "/alerts":
+            demo_alerts = [
+                {
+                    "cursor": f"{1000 + i}-0",
+                    "ts": f"2026-08-10T02:{i % 60:02d}:00Z",
+                    "kind": "stalled" if i % 2 == 0 else "credential",
+                    "agent": f"sme-{(i % 3) + 1}",
+                    "doing_age_s": (i + 1) * 30,
+                    "account": "claude" if i % 2 != 0 else None,
+                }
+                for i in range(300)
+            ]
             self._json(200, {
-                "alerts": [
-                    {"cursor": "100-0", "ts": "2026-08-10T02:20:00Z", "kind": "stalled", "agent": "sme-3", "doing_age_s": 900},
-                    {"cursor": "101-0", "ts": "2026-08-10T02:25:00Z", "kind": "credential", "account": "claude", "detail": "expired"},
-                ],
-                "next_cursor": "101-0",
+                "alerts": demo_alerts,
+                "next_cursor": demo_alerts[-1]["cursor"],
             })
         elif subpath.endswith("/envelopes") and self.command == "POST":
             self._json(202, {"stream_id": "demo-stream-1", "correlation_id": "demo-corr-1"})

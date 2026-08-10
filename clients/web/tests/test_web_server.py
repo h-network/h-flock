@@ -122,6 +122,55 @@ def test_demo_mode_responses():
         with urllib.request.urlopen(req) as resp:
             data = json.loads(resp.read().decode())
             assert "architect" in data["agents"]
+
+        req = urllib.request.Request(f"http://127.0.0.1:{web_port}/api/alerts")
+        with urllib.request.urlopen(req) as resp:
+            data = json.loads(resp.read().decode())
+            assert len(data["alerts"]) == 300
+
+        req = urllib.request.Request(f"http://127.0.0.1:{web_port}/api/board")
+        with urllib.request.urlopen(req) as resp:
+            data = json.loads(resp.read().decode())
+            architect_board = next(a for a in data["agents"] if a["agent"] == "architect")
+            assert "Legacy bare ticket string in todo queue" in architect_board["todo"]
     finally:
         web_server.shutdown()
         web_server.server_close()
+
+
+def test_proxy_websocket_session_down_returns_502():
+    # Pick a port where no session service is running
+    sock_unused = socket.socket()
+    sock_unused.bind(("127.0.0.1", 0))
+    down_port = sock_unused.getsockname()[1]
+    sock_unused.close()
+
+    web_server = ThreadingHTTPServer(("127.0.0.1", 0), OfficeHandler)
+    web_server.api_base = "http://127.0.0.1:8080"
+    web_server.session_host = "127.0.0.1"
+    web_server.session_port = down_port
+    web_server.api_token = "test-secret-token"
+    web_server.client_name = "web"
+    web_server.demo_mode = False
+    web_port = web_server.server_address[1]
+
+    web_thread = threading.Thread(target=web_server.serve_forever, daemon=True)
+    web_thread.start()
+
+    try:
+        sock = socket.create_connection(("127.0.0.1", web_port), timeout=5)
+        request_raw = (
+            "GET /session HTTP/1.1\r\n"
+            "Host: 127.0.0.1\r\n"
+            "Upgrade: websocket\r\n"
+            "Connection: Upgrade\r\n\r\n"
+        )
+        sock.sendall(request_raw.encode())
+        resp_file = sock.makefile("rb", buffering=0)
+        status_line = resp_file.readline().decode()
+        assert "502" in status_line
+        sock.close()
+    finally:
+        web_server.shutdown()
+        web_server.server_close()
+
