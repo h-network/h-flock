@@ -10,11 +10,11 @@ development happens in this repository; the framework is the product.
 
 | | |
 |---|---|
-| **decide: enforce invariant 2, or leave it documented as unverified** | `producer` is supplied to `send()` and never checked against the queue. It cannot redirect an envelope, but it is the identity shown to an agent and recorded as `created_by`, `actor` and in every log record. ⚠ **Seen in the wild:** a plumbing fixture made a real terminal show `[message from telegram]` from a client that did not exist |
+| **port security on `producer`** ⚠ *attribution, not defence* | `producer` is supplied to `send()` and never checked against the queue. It cannot redirect an envelope, but it is the identity shown to an agent and recorded as `created_by`, `actor` and in every log record. ⚠ **Seen in the wild:** a plumbing fixture made a real terminal show `[message from telegram]` from a client that did not exist |
 | **profile logins** | one interactive login per account. Not buildable — a person has to do it. ⚠ **Checked: nobody has solved this.** NVIDIA OpenShell's own tutorial says you authenticate with your own account in a browser, and trust the workspace when prompted |
 | **local model: long-context behaviour unknown** | every test was a short turn against a 65k window. Nothing says what a local agent does when it fills |
 | **ollama — parked** | the installer asks, falls back to `/api/tags`, and warns when `/v1/messages` is missing, but none of it has been run. ⚠ ollama does not serve the Anthropic Messages API, so claude needs a translating proxy in front |
-| **security, parked deliberately** | TLS on the tenant doors, CORS, per-client tokens, Redis ACLs |
+| **security, scoped deliberately** | TLS on the tenant doors, CORS, per-client tokens, and a Redis `requirepass`. ⚠ **These are the ones that cross a boundary.** h-flock is a development office: agents are colleagues who were hired, not untrusted callers. Isolating agents from each other — HMAC-signed envelopes, a setuid or brokered `office`, one OS user per account, removing `sudo` — belongs to a different product, a service executing work for callers it does not trust. Not this one |
 
 **Recently closed:** the stranded window (a `__init__` placeholder holds the
 session open now), silent trust and guide failures (recorded, still never
