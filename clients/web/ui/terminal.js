@@ -963,6 +963,20 @@ export class TerminalWorkspace {
     }
   }
 
+  // SPEC §26: Demote terminal to 'watch' panel beside the conversation on agent page
+  attachWatchPanel(agentName, mountContainer) {
+    if (!agentName || !mountContainer) return;
+    const session = this.getOrCreateSession(agentName, "terminal-container");
+    const container = document.getElementById("terminal-container");
+    if (container && container.parentElement !== mountContainer) {
+      mountContainer.appendChild(container);
+    }
+    if (session && session.panel) {
+      session.panel.connect(agentName);
+    }
+    return session;
+  }
+
   // Socket & Scrollback Persistence (SPEC §16): Preserve sessions on hash route navigation!
   preserveSessions() {
     // Sockets and scrollbacks remain connected in memory
