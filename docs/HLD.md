@@ -17,7 +17,7 @@ analogy is load-bearing rather than decorative:
 | L2 switch | h-flock |
 |---|---|
 | destination MAC | `recipient` — the only thing forwarding depends on |
-| source MAC | `producer` — ⚠ **supplied to `send()`**; the router derives its own `sender` from the queue but never rewrites the field |
+| source MAC | `producer` — **stamped from the egress queue** by the router before forwarding; a mismatch is corrected and logged |
 | MAC table | the **roster** — `name → VAB` |
 | port config | the **VAB** — a property of the port, not of the frame |
 | ethertype | `kind` — the router ignores it; an opener at the far edge reads it |
@@ -369,18 +369,20 @@ it is only true while nothing hands an agent a thread to pull.
 The short list that everything else assumes:
 
 1. **The router forwards on `recipient` alone** — never on content.
-2. **`producer` is supplied to `send()` and is never verified against the queue.**
-   `send()` writes the header and picks the egress queue from the same argument,
-   so they agree by construction; the router derives its own `sender` from the
-   popped key for dead-letter placement and broadcast exclusion, and forwards the
-   envelope unchanged. **Nothing compares the two.**
+2. **`producer` is stamped from the queue the envelope was popped from.**
+   `send()` writes the header and picks the egress from the same argument, so an
+   honest sender always agrees. The router compares them and, on a mismatch,
+   overwrites the claim and logs `producer_stamped` with what was claimed.
 
-   ⚠ **A mismatch cannot redirect an envelope, but it can spoof an identity.**
-   The unverified field is what an agent is shown — `[message from {producer}]` —
-   and what is recorded as `created_by` and `actor` in board history, in every log
-   record, and in the envelope an api client reads verbatim. No authentication
-   binds the declaration to a real identity. Control openers do not authorise from
-   it.
+   ⚠ **This is attribution, not authentication.** It guarantees the name matches
+   the queue; it says nothing about which process wrote that queue. Inside one
+   container that is the strongest claim available — and the right one, because
+   the failure it fixes is *wrong information*: an operator's terminal once
+   showed `[message from telegram]` from a client that did not exist.
+
+   ⚠ **Corrected, never dropped.** Dead-lettering a mismatch would let anything
+   able to write a queue destroy another agent's traffic.
+
 3. **No AGENT writes another agent's keys** — it sends an envelope. ⚠ The
    router writes a recipient's ingress and `AddTicket` writes a recipient's
    board: that is the delivery mechanism, and it is what the rule exists to
