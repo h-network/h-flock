@@ -75,14 +75,32 @@ class OfficeHandler(SimpleHTTPRequestHandler):
             return False
         token = session_cookie.value
         lock = getattr(self.server, "sessions_lock", None)
-        valid_sessions = getattr(self.server, "valid_sessions", set())
+        valid_sessions = getattr(self.server, "valid_sessions", {})
+        if isinstance(valid_sessions, set):
+            valid_sessions = {t: time.time() for t in valid_sessions}
+            self.server.valid_sessions = valid_sessions
+
+        session_ttl = getattr(self.server, "session_ttl", 86400)  # 24h lifetime
+        now = time.time()
+
         if lock is not None:
             with lock:
-                tokens = list(valid_sessions)
+                # Expire old sessions
+                expired = [t for t, created in valid_sessions.items() if now - created > session_ttl]
+                for exp in expired:
+                    del valid_sessions[exp]
+                created = valid_sessions.get(token)
         else:
-            tokens = list(valid_sessions)
-        for valid in tokens:
-            if hmac.compare_digest(token, valid):
+            expired = [t for t, created in valid_sessions.items() if now - created > session_ttl]
+            for exp in expired:
+                del valid_sessions[exp]
+            created = valid_sessions.get(token)
+
+        if created is None:
+            return False
+
+        for valid_tok in list(valid_sessions.keys()):
+            if hmac.compare_digest(token, valid_tok):
                 return True
         return False
 
@@ -131,6 +149,25 @@ class OfficeHandler(SimpleHTTPRequestHandler):
             self.send_error(404)
 
     def _handle_login(self) -> None:
+        client_ip = self.client_address[0]
+        now = time.time()
+        lock = getattr(self.server, "sessions_lock", None)
+        login_attempts = getattr(self.server, "login_attempts", {})
+        rate_limit_window = getattr(self.server, "rate_limit_window", 60)  # 60 seconds
+        max_attempts = getattr(self.server, "max_login_attempts", 5)  # max 5 failed attempts per min
+
+        if lock is not None:
+            with lock:
+                attempts = [t for t in login_attempts.get(client_ip, []) if now - t < rate_limit_window]
+                login_attempts[client_ip] = attempts
+                if len(attempts) >= max_attempts:
+                    self.send_response(429)
+                    self.send_header("Content-Type", "application/json")
+                    self.send_header("Retry-After", str(int(rate_limit_window)))
+                    self.end_headers()
+                    self.wfile.write(json.dumps({"detail": "too many login attempts, please try again later"}).encode("utf-8"))
+                    return
+
         length = int(self.headers.get("Content-Length", "0"))
         if length > self.MAX_BODY_SIZE:
             self._json(413, {"detail": "payload too large"})
@@ -144,14 +181,18 @@ class OfficeHandler(SimpleHTTPRequestHandler):
         secret = getattr(self.server, "secret", None)
         if secret and hmac.compare_digest(provided_secret, secret):
             token = secrets.token_hex(32)
-            lock = getattr(self.server, "sessions_lock", None)
             valid_sessions = getattr(self.server, "valid_sessions", None)
             if valid_sessions is not None:
+                if isinstance(valid_sessions, set):
+                    valid_sessions = {t: now for t in valid_sessions}
+                    self.server.valid_sessions = valid_sessions
                 if lock is not None:
                     with lock:
-                        valid_sessions.add(token)
+                        valid_sessions[token] = now
+                        login_attempts.pop(client_ip, None)
                 else:
-                    valid_sessions.add(token)
+                    valid_sessions[token] = now
+                    login_attempts.pop(client_ip, None)
             cookie_header = f"hflock_session={token}; Path=/; HttpOnly; SameSite=Strict"
             if getattr(self.server, "api_base", "").startswith("https://"):
                 cookie_header += "; Secure"
@@ -162,6 +203,15 @@ class OfficeHandler(SimpleHTTPRequestHandler):
             self.end_headers()
             self.wfile.write(json.dumps({"authenticated": True}).encode("utf-8"))
         else:
+            if lock is not None:
+                with lock:
+                    attempts = login_attempts.get(client_ip, [])
+                    attempts.append(now)
+                    login_attempts[client_ip] = attempts
+            else:
+                attempts = login_attempts.get(client_ip, [])
+                attempts.append(now)
+                login_attempts[client_ip] = attempts
             self._json(401, {"detail": "invalid operator secret"})
 
     def _handle_logout(self) -> None:
@@ -177,9 +227,9 @@ class OfficeHandler(SimpleHTTPRequestHandler):
                     if valid_sessions is not None:
                         if lock is not None:
                             with lock:
-                                valid_sessions.discard(tok)
+                                valid_sessions.pop(tok, None)
                         else:
-                            valid_sessions.discard(tok)
+                            valid_sessions.pop(tok, None)
             except Exception:
                 pass
         clear_cookie = "hflock_session=; Path=/; Max-Age=0; HttpOnly; SameSite=Strict"
@@ -615,7 +665,11 @@ def main() -> None:
     server.client_name = args.client
     server.demo_mode = demo_mode
     server.secret = args.secret
-    server.valid_sessions = set()
+    server.valid_sessions = {}  # token -> created_timestamp
+    server.session_ttl = int(os.environ.get("HFLOCK_SESSION_TTL", "86400"))  # 24 hours
+    server.login_attempts = {}  # ip -> list of timestamp attempts
+    server.max_login_attempts = int(os.environ.get("HFLOCK_MAX_LOGIN_ATTEMPTS", "5"))
+    server.rate_limit_window = int(os.environ.get("HFLOCK_RATE_LIMIT_WINDOW", "60"))
     server.max_sessions = int(os.environ.get("HFLOCK_MAX_SESSIONS", "16"))
     server.active_sessions = 0
     server.sessions_lock = threading.Lock()
