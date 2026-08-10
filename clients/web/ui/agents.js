@@ -98,7 +98,7 @@ export class AgentsPanel {
     const columns = [["agent", "Agent"], ["presence", "Presence"], ["vab", "Host"], ["task", "Open task"], ["started", "Started"], ["activity", "Last activity"]];
     const table = document.createElement("table");
     table.className = "roster-table";
-    table.innerHTML = `<thead><tr>${columns.map(([key, label]) => `<th scope="col"><button type="button" data-sort="${key}" aria-sort="${this.sort.key === key ? (this.sort.direction === "asc" ? "ascending" : "descending") : "none"}">${label}<span aria-hidden="true">${this.sort.key === key ? (this.sort.direction === "asc" ? "↑" : "↓") : "↕"}</span></button></th>`).join("")}</tr></thead><tbody>${entries.map(([agent, detail]) => this.agentRow(agent, detail)).join("")}</tbody>`;
+    table.innerHTML = `<thead><tr>${columns.map(([key, label]) => `<th scope="col" aria-sort="${this.sort.key === key ? (this.sort.direction === "asc" ? "ascending" : "descending") : "none"}"><button type="button" data-sort="${key}">${label}<span aria-hidden="true">${this.sort.key === key ? (this.sort.direction === "asc" ? "↑" : "↓") : "↕"}</span></button></th>`).join("")}</tr></thead><tbody>${entries.map(([agent, detail]) => this.agentRow(agent, detail)).join("")}</tbody>`;
     root.replaceChildren(table);
     for (const button of table.querySelectorAll("[data-sort]")) button.onclick = () => {
       const key = button.dataset.sort;
