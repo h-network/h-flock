@@ -671,15 +671,32 @@ export class TerminalPanel {
 
         let rawData = event.data;
         if (typeof rawData === "string") {
+          // ⚠ The session door speaks JSON envelopes, not bare bytes:
+          // {"agent": "<name>", "data": "<terminal output>"}. Write the DATA
+          // FIELD, never the envelope. Writing the raw string put the literal
+          // JSON — agent name, escape codes as text, the lot — on screen where
+          // the terminal should have been, which is what an operator saw.
+          let parsed = null;
           try {
-            const parsed = JSON.parse(rawData);
-            if (parsed && typeof parsed === "object" && parsed.error) {
+            parsed = JSON.parse(rawData);
+          } catch (_) {}
+          if (parsed && typeof parsed === "object") {
+            if (parsed.error) {
               this.state = "error";
               this.setPanelStatus(`Window error: ${parsed.error}`, "error");
               this._announce(`Terminal error: agent window terminated (${parsed.error})`);
               return;
             }
-          } catch (_) {}
+            if (typeof parsed.data === "string") {
+              this._recordFrame("out", parsed.data);
+              this.term.write(parsed.data);
+              return;
+            }
+            // A JSON object with neither error nor data is protocol chatter —
+            // an ack or a subscribe confirmation. It is not agent output and
+            // must not reach the buffer.
+            return;
+          }
           this._recordFrame("out", rawData);
           this.term.write(rawData);
         } else if (rawData instanceof ArrayBuffer) {
