@@ -286,6 +286,37 @@ def test_loopback_bind_also_requires_token():
         create_app(settings=Settings(pod="test", tenant="office"), redis_client=FakeRedis())
 
 
+def test_non_loopback_bind_requires_tls():
+    with pytest.raises(RuntimeError, match="API_TLS_CERT and API_TLS_KEY are required"):
+        create_app(
+            settings=Settings(pod="test", tenant="office", api_token="secret", api_bind="0.0.0.0"),
+            redis_client=FakeRedis(),
+        )
+
+
+def test_partial_tls_configuration_raises_error():
+    with pytest.raises(RuntimeError, match="Both API_TLS_CERT and API_TLS_KEY must be provided"):
+        create_app(
+            settings=Settings(pod="test", tenant="office", api_token="secret", api_tls_cert="/cert.pem"),
+            redis_client=FakeRedis(),
+        )
+
+
+def test_non_loopback_bind_with_tls_succeeds():
+    app = create_app(
+        settings=Settings(
+            pod="test",
+            tenant="office",
+            api_token="secret",
+            api_bind="0.0.0.0",
+            api_tls_cert="/cert.pem",
+            api_tls_key="/key.pem",
+        ),
+        redis_client=FakeRedis(),
+    )
+    assert app is not None
+
+
 def test_reply_collection_endpoint_is_not_exposed(client):
     app, _ = client
     assert request(app, "GET", "/messages/correlation", token="secret")[0] == 404

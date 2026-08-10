@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import hmac
+import ipaddress
 import json
 import os
 import uuid
@@ -17,6 +18,16 @@ from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from .control import ControlModeClient, ControlModeError, Subscriber
 
 
+def _is_loopback(bind: str) -> bool:
+    host = bind.strip("[]")
+    if host.lower() == "localhost":
+        return True
+    try:
+        return ipaddress.ip_address(host).is_loopback
+    except ValueError:
+        return False
+
+
 @dataclass(frozen=True)
 class SessionSettings:
     tenant: str
@@ -25,6 +36,8 @@ class SessionSettings:
     session_bind: str = "127.0.0.1"
     session_port: int = 8081
     tmux_socket: str | None = None
+    session_tls_cert: str | None = None
+    session_tls_key: str | None = None
 
     @classmethod
     def from_env(cls) -> "SessionSettings":
@@ -32,6 +45,8 @@ class SessionSettings:
         if not token:
             raise RuntimeError("API_TOKEN is required")
         tenant = os.environ["TENANT"]
+        cert = os.getenv("SESSION_TLS_CERT") or os.getenv("API_TLS_CERT") or None
+        key = os.getenv("SESSION_TLS_KEY") or os.getenv("API_TLS_KEY") or None
         return cls(
             tenant=tenant,
             api_token=token,
@@ -39,7 +54,20 @@ class SessionSettings:
             session_bind=os.getenv("SESSION_BIND", "127.0.0.1"),
             session_port=int(os.getenv("SESSION_PORT", "8081")),
             tmux_socket=os.getenv("TMUX_SOCKET") or None,
+            session_tls_cert=cert,
+            session_tls_key=key,
         )
+
+    def validate(self) -> None:
+        if not self.api_token:
+            if not _is_loopback(self.session_bind):
+                raise RuntimeError("API_TOKEN is required when SESSION_BIND is not loopback")
+            raise RuntimeError("API_TOKEN is required")
+        if not _is_loopback(self.session_bind):
+            if not (self.session_tls_cert and self.session_tls_key):
+                raise RuntimeError("SESSION_TLS_CERT and SESSION_TLS_KEY are required when SESSION_BIND is not loopback")
+        if bool(self.session_tls_cert) != bool(self.session_tls_key):
+            raise RuntimeError("Both SESSION_TLS_CERT and SESSION_TLS_KEY must be provided for TLS")
 
 
 def _now() -> str:
@@ -88,6 +116,7 @@ def create_app(
     controller: ControlModeClient | None = None,
 ) -> FastAPI:
     settings = settings or SessionSettings.from_env()
+    settings.validate()
     controller = controller or ControlModeClient(settings.session_name, settings.tmux_socket)
 
     @asynccontextmanager

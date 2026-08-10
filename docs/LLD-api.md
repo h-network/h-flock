@@ -153,6 +153,8 @@ A bearer token, checked on every request including reads and documentation route
 is the security posture. Default to loopback and publish deliberately; a
 non-loopback bind with no token set should refuse to start rather than warn.
 
+⚠ **TLS Enforcement on non-loopback bind**: `API_TLS_CERT` and `API_TLS_KEY` configure TLS for `flock.api` (passed as `ssl_certfile` and `ssl_keyfile` to `uvicorn.run`). A non-loopback `API_BIND` without TLS configured refuses to serve and raises a `RuntimeError` on startup.
+
 ⚠ **Operator Action Log vs Direct API Token Traffic**: The web console server maintains `audit.jsonl` as an **Operator Action Log** recording operations performed through the web proxy. Requests hitting `flock.api` directly using an `API_TOKEN` bypass the web proxy and do not appear in `audit.jsonl`; direct API envelope submissions are tracked in bus/adapter stdout logs and agent activity streams (`GET /agents/{agent}/activity`).
 
 ## 7. Return path & deferred items
@@ -183,8 +185,7 @@ and nothing about the REST surface is designed around them.
 
 **Per-client identity.** One shared token now (with `as` validated against the roster).
 
-**TLS.** Not needed on a loopback bind; terminating it outside this process is
-likely simpler than inside.
+**TLS — resolved in Build 36.** Configured via `API_TLS_CERT` and `API_TLS_KEY`. A non-loopback `API_BIND` without TLS configured refuses to serve.
 
 ## 8. What this is not
 

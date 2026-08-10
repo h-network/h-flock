@@ -28,6 +28,8 @@ class Settings:
     api_token: str | None = None
     api_bind: str = "127.0.0.1"
     api_port: int = 8080
+    api_tls_cert: str | None = None
+    api_tls_key: str | None = None
 
     @classmethod
     def from_env(cls) -> "Settings":
@@ -38,6 +40,8 @@ class Settings:
             api_token=os.getenv("API_TOKEN") or None,
             api_bind=os.getenv("API_BIND", "127.0.0.1"),
             api_port=int(os.getenv("API_PORT", "8080")),
+            api_tls_cert=os.getenv("API_TLS_CERT") or None,
+            api_tls_key=os.getenv("API_TLS_KEY") or None,
         )
 
     def validate(self) -> None:
@@ -45,6 +49,11 @@ class Settings:
             if not _is_loopback(self.api_bind):
                 raise RuntimeError("API_TOKEN is required when API_BIND is not loopback")
             raise RuntimeError("API_TOKEN is required")
+        if not _is_loopback(self.api_bind):
+            if not (self.api_tls_cert and self.api_tls_key):
+                raise RuntimeError("API_TLS_CERT and API_TLS_KEY are required when API_BIND is not loopback")
+        if bool(self.api_tls_cert) != bool(self.api_tls_key):
+            raise RuntimeError("Both API_TLS_CERT and API_TLS_KEY must be provided for TLS")
 
 
 def _is_loopback(bind: str) -> bool:
