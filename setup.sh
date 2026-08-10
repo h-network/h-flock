@@ -103,8 +103,13 @@ declare -A AGENT_ENDPOINT_OF
 ENDPOINT_MAP=(); LOCAL_URL=""; LOCAL_MODEL=""; LOCAL_TOKEN="local"
 read -rp "Point any agent at a local model endpoint? [y/N]: " USE_ENDPOINT
 if [[ "${USE_ENDPOINT:-n}" =~ ^[Yy] ]]; then
-    read -rp "  Endpoint base URL (NO trailing /v1) [http://172.16.0.11:8000]: " LOCAL_URL
-    LOCAL_URL="${LOCAL_URL:-http://172.16.0.11:8000}"
+    # ⚠ No default. There is no sensible one — an address here was this
+    # developer's own box, which is meaningless on anyone else's network.
+    read -rp "  Endpoint base URL, e.g. http://10.0.0.5:8000 (NO trailing /v1): " LOCAL_URL
+    while [ -z "$LOCAL_URL" ]; do
+        read -rp "  An endpoint needs an address. URL (blank to skip endpoints): " LOCAL_URL
+        [ -z "$LOCAL_URL" ] && break
+    done
     LOCAL_URL="${LOCAL_URL%/}"
     # ⚠ claude appends /v1/messages itself; a base carrying /v1 gives /v1/v1.
     LOCAL_URL="${LOCAL_URL%/v1}"
@@ -115,10 +120,11 @@ if [[ "${USE_ENDPOINT:-n}" =~ ^[Yy] ]]; then
     [ -n "$SERVED" ] && echo "  served by that endpoint: $SERVED"
     read -rp "  Model id [${SERVED%% *}]: " LOCAL_MODEL
     LOCAL_MODEL="${LOCAL_MODEL:-${SERVED%% *}}"
+    read -rp "  Endpoint name [local]: " EP_NAME; EP_NAME="$(slug "${EP_NAME:-local}")"
     read -rp "  Which agents use it? (space-separated, blank for none): " EPS
     for want in $EPS; do
         for a in "${AGENTS[@]}"; do
-            [ "$a" = "$(slug "$want")" ] && AGENT_ENDPOINT_OF["$a"]=local
+            [ "$a" = "$(slug "$want")" ] && AGENT_ENDPOINT_OF["$a"]="$EP_NAME"
         done
     done
 fi
@@ -160,9 +166,10 @@ TOKEN="$(grep -s '^API_TOKEN=' container/.env | cut -d= -f2)"
     [ "${#PROFILE_MAP[@]}" -gt 0 ] && echo "AGENT_PROFILES=$(IFS=,; echo "${PROFILE_MAP[*]}")"
     if [ "${#ENDPOINT_MAP[@]}" -gt 0 ]; then
         echo "AGENT_ENDPOINTS=$(IFS=,; echo "${ENDPOINT_MAP[*]}")"
-        echo "ENDPOINT_LOCAL_URL=${LOCAL_URL}"
-        echo "ENDPOINT_LOCAL_MODEL=${LOCAL_MODEL}"
-        echo "ENDPOINT_LOCAL_TOKEN=${LOCAL_TOKEN}"
+        EP_UPPER="$(echo "$EP_NAME" | tr '[:lower:]-' '[:upper:]_')"
+        echo "ENDPOINT_${EP_UPPER}_URL=${LOCAL_URL}"
+        echo "ENDPOINT_${EP_UPPER}_MODEL=${LOCAL_MODEL}"
+        echo "ENDPOINT_${EP_UPPER}_TOKEN=${LOCAL_TOKEN}"
     fi
 } > container/.env
 chmod 600 container/.env

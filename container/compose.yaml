@@ -14,6 +14,10 @@ services:
       context: ..
       dockerfile: container/Dockerfile
     image: h-flock:latest
+    # Everything in container/.env reaches the container, so an operator can
+    # define any number of endpoints under any names without editing this file.
+    env_file:
+      - .env
     environment:
       POD: "${POD:-acme}"
       TENANT: "${TENANT:-hq}"
@@ -30,14 +34,15 @@ services:
       # reaches the container if it is named here as well.
       AGENT_CLIS: "${AGENT_CLIS:-}"
       AGENT_PROFILES: "${AGENT_PROFILES:-}"
-      # Which agents run against a local model, and where that model lives.
-      # The NAME is per agent; the address is tenant configuration, so an agent
-      # cannot read or change the endpoint it is pointed at.
+      # Which agents run against a model endpoint. The NAME is per agent; the
+      # address is tenant configuration, so an agent cannot read or change the
+      # endpoint it is pointed at.
+      #
+      # ⚠ The ENDPOINT_<NAME>_* variables are NOT listed here. Naming them would
+      # hardcode the endpoint name — only "local" would ever reach the container,
+      # and a tenant with "gpu-a" and "gpu-b" could not work. env_file passes
+      # whatever the operator named.
       AGENT_ENDPOINTS: "${AGENT_ENDPOINTS:-}"
-      ENDPOINT_LOCAL_URL: "${ENDPOINT_LOCAL_URL:-}"
-      ENDPOINT_LOCAL_TOKEN: "${ENDPOINT_LOCAL_TOKEN:-}"
-      ENDPOINT_LOCAL_MODEL: "${ENDPOINT_LOCAL_MODEL:-}"
-      ENDPOINT_LOCAL_SMALL_MODEL: "${ENDPOINT_LOCAL_SMALL_MODEL:-}"
       # No default. The container refuses to start without it.
       API_TOKEN: "${API_TOKEN:?set API_TOKEN in container/.env}"
     ports:
