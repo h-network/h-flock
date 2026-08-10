@@ -66,6 +66,9 @@ Command-line options override the corresponding environment defaults.
 | console participant name | `--client` | `HFLOCK_CLIENT` | `web` |
 | shared operator secret | `--secret` | `HFLOCK_SECRET` | none on loopback |
 | simultaneous terminal sockets | — | `HFLOCK_MAX_SESSIONS` | `16` |
+| operator session lifetime, seconds | — | `HFLOCK_SESSION_TTL` | `86400` (24 hours) |
+| failed logins allowed per window/IP | — | `HFLOCK_MAX_LOGIN_ATTEMPTS` | `5` |
+| login rate-limit window, seconds | — | `HFLOCK_RATE_LIMIT_WINDOW` | `60` |
 
 Run `python3 server.py --help` for the command-line surface.
 
@@ -123,9 +126,12 @@ times out slow clients.
 
 Operator authentication uses one shared secret and an opaque `HttpOnly`,
 `SameSite=Strict` session cookie. Secret and session-token comparisons are
-constant-time. Sessions are held in server memory and are invalidated by the
-logout endpoint or a server restart. See the limitations below before exposing
-the console beyond a trusted operator network.
+constant-time. By default, five failed logins from one IP within 60 seconds
+trigger HTTP 429 with a `Retry-After` response. Sessions expire after 24 hours
+by default and also end at explicit logout or server restart. The attempt limit,
+window and session lifetime are configurable with the environment variables
+listed above. See the limitations below before exposing the console beyond a
+trusted operator network.
 
 ## Deliberate limitations
 
@@ -139,7 +145,7 @@ The console does **not** currently provide:
 - a general command-execution button;
 - a guarantee that an agent will reply to a message;
 - indefinite browser history—each high-volume view has the stated cap;
-- server persistence for operator sessions.
+- server persistence for operator sessions—restart invalidates every session.
 
 The shared secret answers “may this operator enter?”, not “which operator did
 this?”. Real acknowledgement would likewise require a backend identity, actor
