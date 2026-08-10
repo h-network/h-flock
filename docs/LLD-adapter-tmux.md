@@ -139,6 +139,8 @@ creates a v1 ticket entry in the recipient agent's `tasks.todo` Redis list, reco
 the `add` event via `flock.bus.record_task_event`, and **pastes nothing** into the
 window.
 
+⚠ **Window check:** Even though `AddTicket` pastes nothing into the window and only mutates Redis keys, `add_ticket_opener` currently checks `list_windows` and dead-letters the envelope with `reason="window_missing"` if the target agent's tmux window is absent. (Whether `AddTicket` should require a window is an open architectural decision).
+
 ### Verification Markers (`pending.verify`)
 
 Before pasting a `Message` or `Command` into a `vab: tmux` window, the adapter records a pending verification marker in Redis Stream `<prefix>:agent:<name>:pending.verify` via `XADD MAXLEN ~ 100`:
@@ -168,7 +170,7 @@ shift+enter by interactive prompts.
 
 **Keep a small delay before Enter.** Sending the paste and Enter together causes
 the CLI's input handling to coalesce them into a single input line, swallowing the submit.
-The delay is **0.5s**, from `PASTE_ENTER_DELAY`. ⚠ It is **not** a fix for slow
+The delay is **0.5s**, configured via environment variable `PASTE_ENTER_DELAY` (read into module constant `ENTER_DELAY` in `src/flock/tmux/ops.py`). ⚠ It is **not** a fix for slow
 terminals or waiting for the terminal to be ready — it is two distinct writes because
 of CLI input coalescing. A shell never shows the difference; a real TUI does.
 

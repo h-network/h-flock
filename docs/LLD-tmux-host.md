@@ -134,6 +134,8 @@ an emptied session is destroyed and does not come back (§2). Creating first
 means the session always holds at least one window and the destructive half is
 never the last thing standing.
 
+⚠ **Last window retention (`len(existing_windows) > 1`):** The cleanup loop in `reconcile_once` explicitly checks `if len(existing_windows) > 1:` before killing any non-roster window. This deliberate guard keeps the session alive so tmux does not destroy it. As a consequence, if a retired agent's window is the only remaining window in the session, it persists until a new agent window is created or the session is reset.
+
 Nothing announces a roster change, so this module polls for it like the others.
 Having no queue to block on, it polls on a loop of its own, every
 `ROSTER_POLL_SECONDS` — the same value the router and the adapter take from the
@@ -149,6 +151,9 @@ what it is told to start, in the working directory `/workdir/<agent>` it is told
 with `AGENT_GUIDE=/workdir/<agent>/AGENTS.md` and `OFFICE_TOOLS=office` in the environment.
 `write_agent_guide` generates both `AGENTS.md` and `CLAUDE.md` (rendering lead guidance based on `<prefix>:lead`, including instructing the lead to check `office status` and hold work if an agent is `blocked`)
 and pre-approves project trust across all three CLIs in a **profile-aware** manner (`.claude-<profile>.json`, `.codex-<profile>/config.toml`, `.gemini/.../settings.json`). Blind to profiles, a profiled agent sits at a workspace trust prompt while presence reads `idle`.
+- Claude trust (`ensure_claude_project_trusted`) writes both `hasTrustDialogAccepted: true` and `hasCompletedProjectOnboarding: true` to `.claude.json` (or `.claude-<profile>/.claude.json`).
+- Agy trust (`ensure_agy_project_trusted`) explicitly sets `enableTelemetry: False` in `settings.json` in addition to appending `cwd` to `trustedWorkspaces`.
+- ⚠ **Silent error handling:** `write_agent_guide` and all three `ensure_*_project_trusted` routines wrap operations in bare `try...except: pass`. Failures (such as filesystem permissions or JSON parse errors) are silent and unlogged, which is how the profile-blind trust bug remained hidden.
 When a CLI is configured, window creation routes through `startAgent <cli>` so permission and auto-approval flags apply.
 
 ⚠ **OAuth Refresh Token Rotation (RTR) & Profile Credential Sharing (Build 32):**
