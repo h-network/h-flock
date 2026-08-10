@@ -153,7 +153,19 @@ A bearer token, checked on every request including reads and documentation route
 is the security posture. Default to loopback and publish deliberately; a
 non-loopback bind with no token set should refuse to start rather than warn.
 
-⚠ **TLS Enforcement on non-loopback bind**: `API_TLS_CERT` and `API_TLS_KEY` configure TLS for `flock.api` (passed as `ssl_certfile` and `ssl_keyfile` to `uvicorn.run`). A non-loopback `API_BIND` without TLS configured refuses to serve and raises a `RuntimeError` on startup.
+⚠ **TLS**: `API_TLS_CERT` and `API_TLS_KEY` configure TLS for `flock.api`
+(passed as `ssl_certfile` and `ssl_keyfile` to `uvicorn.run`). A non-loopback
+`API_BIND` without TLS raises `RuntimeError` on startup — **unless
+`FLOCK_ALLOW_PLAINTEXT=1` says something better informed has already judged the
+exposure.**
+
+⚠ **Why the escape exists, and why it is not a weakening.** A bind is not an
+exposure. In a container this door binds `0.0.0.0` by design and the port
+mapping decides whether anything can reach it; the process cannot see that
+mapping. Enforcing on the bind alone therefore refuses *every* container — which
+is precisely what shipped, and the tenant crash-looped until the judgement moved
+to `entrypoint.sh`, which is told the published host. Outside a container
+nothing sets the variable and the bind is the exposure. See `LLD-container` §3.
 
 ⚠ **Operator Action Log vs Direct API Token Traffic**: The web console server maintains `audit.jsonl` as an **Operator Action Log** recording operations performed through the web proxy. Requests hitting `flock.api` directly using an `API_TOKEN` bypass the web proxy and do not appear in `audit.jsonl`; direct API envelope submissions are tracked in bus/adapter stdout logs and agent activity streams (`GET /agents/{agent}/activity`).
 

@@ -15,6 +15,13 @@ development happens in this repository; the framework is the product.
 | **security: what is left after build 36** | ⚠ **The boundaries are done** — TLS on both doors with a refusal to serve a non-loopback bind without it, `producer` stamped from its egress queue, and a tenant that will not start with a widened Redis bind and no password. What remains is **CORS and per-client tokens** on the api door. ⚠ **Nothing here isolates agents from each other**, deliberately: h-flock is a development office, agents are colleagues who were hired. HMAC envelopes, a brokered `office`, one OS user per window — that is a service executing work for callers it does not trust, a different product |
 | **ollama — parked** | the installer asks, falls back to `/api/tags`, and warns when `/v1/messages` is missing, but none of it has been run. ⚠ ollama does not serve the Anthropic Messages API, so claude needs a translating proxy in front |
 
+⚠ **Verified by running it, 2026-08-11:** plumbing check 25/25 and the failure
+simulator 19/19 against a real tenant, after a from-scratch image build. The
+same run found that build 36's TLS guard refused every container (a bind is not
+an exposure — `LLD-container` §3.1), and two defects in the check itself: it
+hardcoded session `hq`, and sourcing `container/.env` overwrote an exported
+`POD`/`TENANT`, so its documented override checked the wrong tenant.
+
 **Recently closed:** port security on `producer` and TLS on both doors (build 36 — each forced on the lab, not reasoned about), the stranded window (a `__init__` placeholder holds the
 session open now), silent trust and guide failures (recorded, still never
 raising), the console audit scope (renamed to Operator Action Log), the terminal view (the console has a full workspace), the

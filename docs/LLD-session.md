@@ -115,7 +115,12 @@ This module logs **one record per connection**, not per keystroke: who connected
 which agents, read-only or not, and when it closed. Enough to answer "who was
 typing in frontend's window", without a log line per character.
 
-⚠ **TLS Enforcement on non-loopback bind**: Configured via `SESSION_TLS_CERT` and `SESSION_TLS_KEY` (falling back to `API_TLS_CERT` / `API_TLS_KEY`). Passed as `ssl_certfile` and `ssl_keyfile` to `uvicorn.run`. A non-loopback `SESSION_BIND` without TLS configured refuses to serve and raises a `RuntimeError` on startup.
+⚠ **TLS**: configured via `SESSION_TLS_CERT` and `SESSION_TLS_KEY` (falling
+back to `API_TLS_CERT` / `API_TLS_KEY`), passed as `ssl_certfile` and
+`ssl_keyfile` to `uvicorn.run`. A non-loopback `SESSION_BIND` without TLS raises
+`RuntimeError` on startup unless `FLOCK_ALLOW_PLAINTEXT=1` is set by the
+entrypoint, which is the only component told the published host. Same rule and
+same reasoning as the api door — see `LLD-api` §6 and `LLD-container` §3.
 
 ## 6. Lifecycle
 

@@ -62,9 +62,33 @@ tenant container instead.
 
 ## 3. Only doors are published, and each one separately
 
-Redis binds loopback and is **never** port-mapped. It has no authentication in
-this build, so exposing it would hand anyone the whole tenant — every queue,
-every board, and the ability to write into any agent's ingress directly.
+Redis binds loopback and is **never** port-mapped. It has no authentication by
+default, so exposing it would hand anyone the whole tenant — every queue, every
+board, and the ability to write into any agent's ingress directly. Widening
+`REDIS_BIND` without a `REDIS_PASSWORD` stops the tenant starting.
+
+### 3.1 A bind is not an exposure
+
+⚠ **This section exists because getting it wrong crash-looped every tenant.**
+Build 36 made both doors refuse a non-loopback bind without TLS. But the doors
+bind `0.0.0.0` *inside* the container **by design** — that is how a published
+port reaches them at all — so the refusal fired on every container that had ever
+run, and the deployed tenant looped on
+`SESSION_TLS_CERT … required when SESSION_BIND is not loopback`.
+
+What decides whether plaintext leaves the machine is the **port mapping**
+(`API_HOST`, `SESSION_HOST`), and no door process can see it. So the judgement
+is made in one place that is told:
+
+- compose passes the published host in, per door
+- `entrypoint.sh` refuses **before starting anything** when a door is published
+  beyond loopback with no cert and no `ALLOW_PLAINTEXT_PUBLISH=1`
+- having decided, it exports `FLOCK_ALLOW_PLAINTEXT=1` and the doors stop
+  second-guessing a bind they cannot interpret
+
+Outside a container nobody has judged anything, the variable is unset, and the
+door's own bind check is the right one. **The rule generalises:** a check
+belongs where the decision is made, not where its consequence lands.
 
 Two processes are reachable from outside, on separate ports:
 

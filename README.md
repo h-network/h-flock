@@ -317,7 +317,19 @@ alone: a **Telegram bot** and a **browser console** with live presence, boards,
 alerts, terminals into any agent, session recording and an operator login. They
 are examples, not products — the framework is the product.
 
-Both doors support TLS via `API_TLS_CERT`/`API_TLS_KEY` and `SESSION_TLS_CERT`/`SESSION_TLS_KEY`. A non-loopback bind (`API_BIND` / `SESSION_BIND`) without TLS refuses to serve.
+Both doors support TLS via `API_TLS_CERT`/`API_TLS_KEY` and
+`SESSION_TLS_CERT`/`SESSION_TLS_KEY`. **A door published beyond loopback without
+TLS stops the tenant starting**, because the bearer token — and everything typed
+into a terminal — would cross the network in clear text. `setup.sh` asks; if you
+accept plain HTTP it records `ALLOW_PLAINTEXT_PUBLISH=1` in `container/.env`, so
+it is a typed answer rather than a default nobody saw.
+
+⚠ **A bind is not an exposure.** Both doors bind `0.0.0.0` *inside* the
+container by design — publishing is the deliberate act, and the port mapping
+that decides it (`API_HOST`, `SESSION_HOST`) is invisible to the door process.
+So the entrypoint judges it. Running a door directly, outside a container,
+nobody has judged anything and the bind is the exposure: it refuses a
+non-loopback bind without TLS.
 
 ⚠ **Self-signed TLS certificates:** A browser will refuse the session WebSocket connection until the certificate is explicitly trusted by the browser, which manifests as a disconnected terminal view rather than a clear certificate prompt. Operators using self-signed certificates must open the HTTPS API door (`https://<host>:8080/restdoc`) in the browser and accept the certificate before opening the session WebSocket.
 

@@ -1,7 +1,9 @@
 # Build 36 — the two boundaries that are real
 
-> ✅ **Shipped and demonstrated on the lab**, all three forced rather than
-> reasoned about — see §4. `main` at 293 tests.
+> ✅ **Shipped, then corrected, then run.** All three forced on the lab (§4), and
+> a full test run afterwards found what forcing them did not: §2 as written
+> refused every container. See §2a. `main` at 299 tests, plumbing check 25/25
+> and the failure simulator 19/19 on a real tenant.
 
 > Everything that crosses out of the container, and the one claim that crosses
 > between agents. Small, and the last framework items before the list is
@@ -69,6 +71,27 @@ and continue — a warning in a log is how this ships by accident.
 - ⚠ **say what a self-signed cert costs.** A browser will refuse the session
   WebSocket until the cert is trusted, and that failure looks like a broken
   terminal rather than a certificate problem. Put it in the README
+
+## 2a. ⚠ §2 was wrong, and only a test run showed it
+
+The refusal above was keyed on the **bind**. Both doors bind `0.0.0.0` inside the
+container by design — that is how a published port reaches them — so it fired on
+every container, and the deployed tenant crash-looped on
+`SESSION_TLS_CERT … required when SESSION_BIND is not loopback`.
+
+A bind is not an exposure; the **port mapping** is, and no door can see it. The
+judgement moved to `entrypoint.sh`, which compose tells the published host,
+refuses before anything starts, and then sets `FLOCK_ALLOW_PLAINTEXT=1` for the
+doors. Accepting plain HTTP is now a typed `ALLOW_PLAINTEXT_PUBLISH=1` that
+`setup.sh` asks for. Outside a container nothing sets it and the door's own bind
+check stands.
+
+⚠ **The lesson is about the demonstration, not the code.** §4 asked for the
+refusal to be forced, and it was — a door bound `0.0.0.0` refused, exactly as
+specified. What no one did was start a tenant the ordinary way afterwards. A
+demonstration that the guard fires is not a demonstration that the product still
+runs; **a build is finished when the thing boots, not when the new behaviour
+proves itself.**
 
 ## 3. Not doing: a Redis password
 
