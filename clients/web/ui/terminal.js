@@ -512,7 +512,8 @@ export class TerminalPanel {
       try { this.socket.close(); } catch (_) {}
     }
     this.term.reset();
-    this.term.writeln("\x1b[35;1m--- SESSION REPLAY STARTED ---\x1b[0m\r\n");
+    this.setPanelStatus("Replaying recorded session...", "loading");
+    this._announce("Terminal session replay started.");
 
     let index = 0;
     const speedSelect = document.getElementById("replay-speed");
@@ -521,7 +522,8 @@ export class TerminalPanel {
     const playNext = () => {
       if (!this.isPlayingReplay || index >= this.recordingFrames.length) {
         this.isPlayingReplay = false;
-        this.term.writeln("\r\n\x1b[35;1m--- SESSION REPLAY FINISHED ---\x1b[0m");
+        this.setPanelStatus("Replay finished.", "connected");
+        this._announce("Terminal session replay finished.");
         return;
       }
 
@@ -715,7 +717,6 @@ export class TerminalPanel {
       this.state = "error";
       this.setPanelStatus(`Error: ${err.message}`, "error");
       this._announce(`Terminal error: ${err.message}`);
-      this.term.writeln(`\r\n\x1b[31mFailed to create WebSocket: ${err.message}\x1b[0m`);
     }
   }
 
