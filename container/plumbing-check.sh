@@ -82,6 +82,18 @@ ckc "in the mailbox"   "$M" "reply-from-$AG1-99"
 ckc "producer is $AG1" "$M" "\"producer\": *\"$AG1\""
 ckc "cursor present"    "$M" '"cursor"'
 
+# ⚠ Retire the fixtures. This suite enrols telegram and webapp and pastes a
+# message into a live agent's window. Left behind, they sit in the operator's
+# roster forever and the message reads as traffic from a client that does not
+# exist — measured: the owner saw "[message from telegram] hello from the app"
+# in his terminal and asked who sent it. A check that changes the office it
+# checks must put it back.
+for _fixture in telegram webapp; do
+    cu -X POST -H 'Content-Type: application/json' \
+       -d "{\"kind\":\"StopAgent\",\"payload\":{\"agent\":\"$_fixture\"}}" \
+       $A/agents/host/envelopes >/dev/null
+done
+
 echo "== 7. cursor resume =="
 CUR=$(echo "$M" | python3 -c "import sys,json;print(json.load(sys.stdin)['next_cursor'])")
 ck "after=cursor is empty" "$(cu "$A/agents/telegram/messages?after=$CUR" | python3 -c 'import sys,json;print(len(json.load(sys.stdin)["messages"]))')" "0"
