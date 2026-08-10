@@ -1,8 +1,8 @@
 # The console — product specification
 
 > The web UI for running an office. Judge it as a product someone pays for, not
-> as a demo. [`BUILD-33`](../../docs/BUILD-33-console.md) has the lane split and
-> the endpoints; this file is the bar.
+> as a demo. this file is the bar. The build spec it was written against has been
+> retired — the clients are demos now, not a workstream.
 
 ⚠ **Treat `src/flock/` as frozen, but not sealed.** The framework is finished for
 this build. If the console needs something the api does not offer, **say so

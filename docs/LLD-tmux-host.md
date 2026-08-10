@@ -157,7 +157,22 @@ and pre-approves project trust across all three CLIs in a **profile-aware** mann
 When a CLI is configured, window creation routes through `startAgent <cli>` so permission and auto-approval flags apply.
 
 ⚠ **OAuth Refresh Token Rotation (RTR) & Profile Credential Sharing (Build 32):**
-Anthropic OAuth enforces Refresh Token Rotation (RTR): every token refresh yields a new access token and a new single-use refresh token, while invalidating the old refresh token (`BUILD-32-FINDINGS.md`). Duplicating `.credentials.json` into multiple per-agent config directories is structurally broken, as the first agent to refresh invalidates all other copies within 1 hour. Therefore, agents assigned to the same account profile share the single profile config directory (`CLAUDE_CONFIG_DIR=~/.claude-<profile>`). Distinct profiles maintain separate directories with their own independent OAuth logins.
+⚠ **Do not duplicate `.credentials.json` across per-agent config directories.**
+Agents on one account share one config directory
+(`CLAUDE_CONFIG_DIR=~/.claude-<profile>`); distinct profiles keep their own, each
+with its own login.
+
+⚠ **The mechanism is a hypothesis, not a measurement, and the doc should not
+pretend otherwise.** Refresh-token rotation — each refresh invalidating the
+previous token, so copies race for a single-use value — is the leading
+explanation and was never confirmed: no before/after token value was recorded and
+no rejection was observed. What *was* measured: the source credential file was
+rewritten at 15:25:48Z and a live agent running on a copy stopped working about
+four minutes later.
+
+⚠ **An access token lives about 8 hours, not 1.** The one-hour figure came from
+assuming the lifetime and subtracting it from `expiresAt`; measured against the
+file's mtime the gap is 7:59:59. Therefore, agents assigned to the same account profile share the single profile config directory (`CLAUDE_CONFIG_DIR=~/.claude-<profile>`). Distinct profiles maintain separate directories with their own independent OAuth logins.
 
 ⚠ **Launch and Profile State Ordering:** `start_agent` (`flock.control.openers`) writes the `launch` (`pod:<pod>:tenant:<tenant>:agent:<name>:launch`) and `profile` keys to Redis *before* writing roster membership (`r.hset(roster_key, agent, agent_vab)`). `tmuxhost` reconciles windows as soon as the agent row appears in the roster; writing launch or profile after roster membership created a race condition where `tmuxhost` built a window with the default CLI or wrong account before the launch/profile keys were set.
 

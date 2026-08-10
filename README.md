@@ -139,6 +139,33 @@ flow. `setup.sh` asks for them by name, then assigns by defaults-plus-exceptions
 Secrets travel by `docker cp` from `container/home/`, never baked into the image
 and never a volume.
 
+### Your own model
+
+An agent can run against a **local inference server** instead of a vendor
+account. `setup.sh` asks, offers the model ids the endpoint actually serves, and
+checks it speaks the API the CLI needs before writing anything down.
+
+```bash
+Point any agent at a local model endpoint? [y/N]: y
+  Endpoint type — vllm or ollama [vllm]:
+  Endpoint base URL, e.g. http://10.0.0.5:8000 (NO trailing /v1):
+  served by that endpoint: qwen3-vl-32b
+  ✓ /v1/messages answered — claude can use this endpoint
+  Which agents use it? (space-separated): sme-3
+```
+
+Such an agent needs **no login at all** — the CLI talks to your server — and is
+an agent like any other: same window, same paste, same activity feed, same
+board. Measured on a live vLLM: tool calls, multi-step work, and `office send`
+to a colleague who replied.
+
+⚠ **The endpoint name is per agent; the address is tenant configuration.** An
+agent cannot read or change which model it is pointed at.
+
+⚠ **claude speaks only the Anthropic Messages API.** A bare ollama is
+OpenAI-shaped and needs a translating proxy in front — `setup.sh` probes and
+tells you rather than letting you find out as a model error.
+
 ## 🧑‍💻 What an agent sees
 
 Its whole world, and nothing else:
@@ -285,8 +312,15 @@ never to an agent. It also warns before a login expires, and marks an agent
 claude and codex sitting at a login prompt. An agent that has never spoken is
 `unknown`, and its first delivery is not judged at all.
 
-Not built: per-client tokens, TLS, CORS. See
-[`docs/TODO.md`](docs/TODO.md), which says why for each.
+Two **demo clients** ship with it, both built from `docs/API.md` and a token
+alone: a **Telegram bot** and a **browser console** with live presence, boards,
+alerts, terminals into any agent, session recording and an operator login. They
+are examples, not products — the framework is the product.
+
+Not built: per-client tokens, TLS on the tenant doors, CORS. And `producer` is
+**supplied by the sender and never verified** — it cannot redirect an envelope,
+but it is the identity an agent sees. See [`docs/TODO.md`](docs/TODO.md), which
+says why for each.
 
 ⚠ Agents run with `sudo` in the container, deliberately. Nothing inside it is a
 boundary — the container is. Tools and a clean environment remove the *reason* to
@@ -307,6 +341,9 @@ went the way it did rather than only what it was.
 | [`LLD-api.md`](docs/LLD-api.md) · [`LLD-session.md`](docs/LLD-session.md) | the two doors |
 | [`LLD-container.md`](docs/LLD-container.md) | one container is one tenant |
 | [`CONTRACTS.md`](docs/CONTRACTS.md) | what more than one module depends on |
+| [`LLD-watchdog.md`](docs/LLD-watchdog.md) | what it watches, and why it tells a human and never an agent |
+| [`UNDERSTANDING.md`](docs/UNDERSTANDING.md) | the whole system in one file, written to be checked |
+| [`REVIEW-04-local-endpoints.md`](docs/REVIEW-04-local-endpoints.md) | running an agent on your own model — measured, and what is not |
 
 ---
 
