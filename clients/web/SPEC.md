@@ -289,3 +289,77 @@ server, never in the browser.
 ⚠ No one has rendered this. Say "unverified — no browser available" for anything
 visual, every time. A build that lies about what it has seen is worth less than
 one that admits the gap.
+
+
+---
+
+# Part III — it needs to be an application, not a dashboard
+
+⚠ **This corrects a mistake in my own spec.** Part I said "one page, panels are
+independent" and drew four quadrants. You built that faithfully and it is the
+problem: four panels squeezed into one window, everything competing, nothing with
+room. An operator's tool is an application with places you go, not a wall you
+stare at.
+
+## 14. An application shell
+
+**A persistent left sidebar** with sections, and a **hash route per section** so
+every view is linkable, bookmarkable and survives a refresh. No build step —
+`location.hash` and a switch is enough.
+
+```
+  ┌────────────┬──────────────────────────────────────────────────────┐
+  │ HF  office │  <the section fills everything, with room to breathe> │
+  │            │                                                       │
+  │ ▸ Overview │                                                       │
+  │ ▸ Agents 6 │                                                       │
+  │ ▸ Terminals│                                                       │
+  │ ▸ Alerts 0 │                                                       │
+  │ ▸ Boards   │                                                       │
+  │ ▸ Recordings                                                       │
+  │ ▸ Audit    │                                                       │
+  │ ▸ Settings │                                                       │
+  ├────────────┤                                                       │
+  │ ● live     │                                                       │
+  └────────────┴──────────────────────────────────────────────────────┘
+```
+
+⚠ **Counts and state live in the sidebar** — agents, unread alerts, a live dot.
+That is how a person knows to switch section without leaving the one they are in.
+
+## 15. The sections
+
+| route | is |
+|---|---|
+| `#/overview` | the office at a glance: health, what needs attention, recent activity. The only place a summary belongs |
+| `#/agents` | the roster, full width. Selecting one opens `#/agents/<name>` — a **full agent page** with its own tabs: Activity · Terminal · Messages · Board · Lifecycle |
+| `#/terminals` | a terminal **workspace**: tabs per open agent, and split/grid as a layout of that workspace rather than a control crammed in a corner |
+| `#/alerts` | full page. Filter by kind, severity, agent; group; expand a group to its events |
+| `#/boards` | every agent's four columns with room to actually read a ticket |
+| `#/recordings` | list recordings, open one, replay it with the transport controls |
+| `#/audit` | the audit log, filterable by session, action and agent. It exists; nothing surfaces it |
+| `#/settings` | density, theme, notifications, terminal font and scrollback, session info, logout |
+
+⚠ **An agent page is the unit of work**, not a detail pane. When someone is
+dealing with a wedged agent they want its activity, its terminal, its messages
+and its board in one place, at full size.
+
+## 16. Rules for the shell
+
+⚠ **Every section is reachable by keyboard**, and the command palette jumps
+straight to any of them.
+
+⚠ **Deep links must work**: `#/agents/sme-3` opens that agent's page cold, after
+a refresh, from a pasted URL. This is how an operator sends a colleague a link to
+the thing that is broken.
+
+⚠ **Terminals stay alive across navigation.** Switching to Alerts and back must
+not drop the socket or lose scrollback — a terminal is a session, not a view.
+
+⚠ **The typing control must be obvious.** An operator hit the terminal, could not
+type, and had no idea why. Read-only is correct as a default; being unable to
+discover the switch is not. Put the mode and its toggle where a person looks
+first, and say what it does.
+
+⚠ **Nothing shrinks to fit.** If a section needs the window, it takes the window.
+The four-panel compromise is what we are removing.
