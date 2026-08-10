@@ -448,3 +448,75 @@ typography, generous space, one consistent component set. That is the target.
 
 ⚠ **You may not use a CSS framework** (§2 still holds) — but everything above is
 custom properties and care, not a dependency.
+
+
+---
+
+# Part V — we built a tmux viewer and forgot the product
+
+⚠ **The owner's words: "we now have a glorified tmux web interface."** He is
+right. The terminal got scrollback search, split panes, recording and replay. The
+thing you actually do with an agent — **talk to it** — is a tab buried inside an
+agent page.
+
+⚠ **`HLD` §7 says it outright:** *an app must never parse a terminal to obtain an
+answer. Answers are messages; the terminal is for watching.* We built the
+watching and neglected the answering. The Telegram bot had this right months
+before the console did: you typed, tool calls streamed as it worked, a reply
+arrived.
+
+## 24. Conversation is the primary surface
+
+`#/agents/<name>` opens **the conversation**, not a dashboard of tabs. Terminal,
+board and lifecycle are secondary to it.
+
+```
+  ┌─ sme-3 ────────────────────────── ⊘ blocked ── [watch] [board] [⋯] ─┐
+  │                                                                     │
+  │   you        14:02   can you check the auth change?                 │
+  │                                                                     │
+  │   sme-3      14:02   ⚙ Read  auth.py                                │
+  │                      ⚙ Bash  pytest -q                              │
+  │                      ⚙ Edit  auth.py                                │
+  │                                                                     │
+  │   sme-3      14:04   Fixed — the token check was inverted.          │
+  │                                                                     │
+  │  ┌───────────────────────────────────────────────────────────────┐  │
+  │  │ message sme-3…                                    ⌃⏎ to send  │  │
+  └──┴───────────────────────────────────────────────────────────────┴──┘
+```
+
+## 25. What the conversation must do
+
+- **activity streams inline, in place** — `⚙ Bash`, `⚙ Read` appearing under the
+  agent's turn as it works, collapsing runs (`⚙ Bash ×10`) the way the Telegram
+  client already does. ⚠ **Tool names only, never arguments** — the feed has none
+  and must not gain any
+- **presence drives the composer.** `working` shows the agent is busy;
+  `blocked` says plainly *not accepting messages* and why; `unknown` warns a
+  reply may never come. ⚠ **Never a spinner implying a reply is due**
+- **the reply is a message from `/messages/stream`**, never scraped from the
+  terminal
+- **history on open** — catch up by cursor, so opening a conversation shows what
+  was said before, not an empty box
+- ⚠ **who said it must be honest.** `producer` is unverified (`HLD` invariant 2),
+  so a message from an api client is *claimed* identity. Render agent messages
+  and client messages differently, and do not present a producer string as proof
+  of anything
+
+## 26. Everything else demotes
+
+| was | becomes |
+|---|---|
+| Terminal, the centrepiece | **watch** — a panel beside the conversation, for seeing it work or completing a login |
+| `#/terminals` workspace | stays, for watching several agents at once. Not the way you talk to one |
+| Activity as its own tab | folded into the conversation, where it belongs |
+
+⚠ **The overview should open a conversation, not a dashboard.** "Review blocked"
+means *talk to the blocked agent*, which is what a person came to do.
+
+## 27. The test
+
+⚠ **Can a person hire an agent, ask it something, watch it work and read the
+answer — without ever opening a terminal?** Today they cannot. That is the whole
+product, and it is the one path we never built.
