@@ -789,41 +789,115 @@ export class TerminalPanel {
  *
  * Manages long-lived agent terminal sessions so that WebSockets and xterm scrollback
  * buffers survive navigation across sections (#/terminals <-> #/alerts <-> #/agents).
+ * Provides per-session container IDs (term-container-<agent>) to prevent DOM collisions
+ * when rendering workspace tabs per open agent.
  */
 export class TerminalWorkspace {
   constructor() {
-    this.sessions = {}; // agentName -> { panel, agentName }
+    this.sessions = {}; // agentName -> { panel, agentName, containerId }
     this.openTabs = []; // list of open agent names
     this.activeAgent = null;
-    this.container = null;
+    this.mountElement = null;
   }
 
-  initWorkspace(containerElement, initialAgents = []) {
-    this.container = containerElement;
-    if (!this.container) return;
-
-    if (initialAgents.length > 0 && this.openTabs.length === 0) {
-      this.openTabs = [...initialAgents];
-      this.activeAgent = initialAgents[0];
-    }
-  }
-
-  getOrCreateSession(agentName, containerId = "terminal-container") {
+  getOrCreateSession(agentName, customContainerId = null) {
+    const containerId = customContainerId || `term-container-${agentName}`;
     if (!this.sessions[agentName]) {
+      let containerEl = document.getElementById(containerId);
+      if (!containerEl && this.mountElement) {
+        containerEl = document.createElement("div");
+        containerEl.id = containerId;
+        containerEl.className = "terminal-container";
+        this.mountElement.appendChild(containerEl);
+      }
       const panel = new TerminalPanel({ containerId });
-      this.sessions[agentName] = { panel, agentName };
+      this.sessions[agentName] = { panel, agentName, containerId };
     }
     return this.sessions[agentName];
   }
 
-  openAgentTab(agentName) {
+  renderWorkspace(mountElement, availableAgents = []) {
+    this.mountElement = mountElement;
+    if (!mountElement) return;
+
+    if (availableAgents.length > 0 && this.openTabs.length === 0) {
+      this.openTabs = [...availableAgents];
+      this.activeAgent = availableAgents[0];
+    }
+
+    let workspaceEl = mountElement.querySelector(".terminals-workspace");
+    if (!workspaceEl) {
+      workspaceEl = document.createElement("div");
+      workspaceEl.className = "terminals-workspace";
+      mountElement.appendChild(workspaceEl);
+    }
+
+    let tabBar = workspaceEl.querySelector(".term-tab-bar");
+    if (!tabBar) {
+      tabBar = document.createElement("div");
+      tabBar.className = "term-tab-bar";
+      workspaceEl.appendChild(tabBar);
+    }
+
+    tabBar.innerHTML = this.openTabs.map(agent => `
+      <button type="button" class="term-tab ${agent === this.activeAgent ? 'active' : ''}" data-agent="${agent}">
+        <span>${agent}</span>
+        <span class="term-tab-close" data-close="${agent}" title="Close tab">✕</span>
+      </button>
+    `).join("") + `
+      <div class="term-tab-add">
+        <select id="term-open-agent-select" class="btn-sm">
+          <option value="">+ Open Terminal</option>
+          ${availableAgents.filter(a => !this.openTabs.includes(a)).map(a => `<option value="${a}">${a}</option>`).join("")}
+        </select>
+      </div>
+    `;
+
+    tabBar.querySelectorAll(".term-tab").forEach(btn => {
+      btn.onclick = (e) => {
+        if (e.target.classList.contains("term-tab-close")) {
+          const closeAgent = e.target.getAttribute("data-close");
+          this.closeAgentTab(closeAgent);
+          this.renderWorkspace(mountElement, availableAgents);
+        } else {
+          const agent = btn.getAttribute("data-agent");
+          this.switchTab(agent);
+          this.renderWorkspace(mountElement, availableAgents);
+        }
+      };
+    });
+
+    const addSelect = tabBar.querySelector("#term-open-agent-select");
+    if (addSelect) {
+      addSelect.onchange = (e) => {
+        if (e.target.value) {
+          this.openAgentTab(e.target.value);
+          this.renderWorkspace(mountElement, availableAgents);
+        }
+      };
+    }
+
+    if (this.activeAgent) {
+      const session = this.getOrCreateSession(this.activeAgent);
+      if (session && session.panel) {
+        session.panel.connect(this.activeAgent);
+      }
+    }
+  }
+
+  switchTab(agentName) {
+    this.activeAgent = agentName;
     if (!this.openTabs.includes(agentName)) {
       this.openTabs.push(agentName);
     }
-    this.activeAgent = agentName;
     const session = this.getOrCreateSession(agentName);
-    session.panel.connect(agentName);
-    return session;
+    if (session && session.panel) {
+      session.panel.connect(agentName);
+    }
+  }
+
+  openAgentTab(agentName) {
+    this.switchTab(agentName);
   }
 
   closeAgentTab(agentName) {
@@ -835,7 +909,7 @@ export class TerminalWorkspace {
 
   // Socket & Scrollback Persistence (SPEC §16): Preserve sessions on hash route navigation!
   preserveSessions() {
-    // WebSockets and panel scrollbacks remain connected in memory in this.sessions
+    // Sockets and scrollbacks remain connected in memory
   }
 }
 
