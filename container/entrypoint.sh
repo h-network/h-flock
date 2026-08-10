@@ -55,7 +55,34 @@ trap shutdown EXIT INT TERM
 # ── redis ─────────────────────────────────────────────────────────────────────
 # Loopback only and never published. No persistence: a skeleton losing its
 # queues on a restart is acceptable (§2, §7).
-start redis redis-server --bind 127.0.0.1 --port 6379 --save '' --appendonly no --dir /tmp
+redis_bind="${REDIS_BIND:-127.0.0.1}"
+redis_password="${REDIS_PASSWORD:-}"
+
+# Refuse a non-loopback bind without a password (BUILD-36 §3).
+is_loopback=$(python3 -c '
+import ipaddress, sys
+host = sys.argv[1]
+try:
+    print("1" if ipaddress.ip_address(host).is_loopback else "0")
+except ValueError:
+    print("1" if host in ("localhost", "127.0.0.1", "::1") else "0")
+' "$redis_bind")
+
+if [ "$is_loopback" = "0" ] && [ -z "$redis_password" ]; then
+  echo "entrypoint: REDIS_PASSWORD is required when REDIS_BIND is not loopback ('$redis_bind')" >&2
+  exit 1
+fi
+
+redis_cmd=(redis-server --bind "$redis_bind" --port 6379 --save '' --appendonly no --dir /tmp)
+if [ -n "$redis_password" ]; then
+  redis_cmd+=(--requirepass "$redis_password")
+  export REDISCLI_AUTH="$redis_password"
+  if [ -z "${REDIS_URL:-}" ]; then
+    export REDIS_URL="redis://:${redis_password}@127.0.0.1:6379/0"
+  fi
+fi
+
+start redis "${redis_cmd[@]}"
 until redis-cli -h 127.0.0.1 ping >/dev/null 2>&1; do sleep 0.2; done
 
 # ── seed the roster ───────────────────────────────────────────────────────────
