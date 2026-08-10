@@ -38,11 +38,13 @@ hosted.** If routing and delivery live in one component, the bus can only ever
 reach the kind of agent that component knows how to drive.
 
 **Everything reaches the bus through an adapter.** Not a workaround for agents
-that cannot speak Redis — the rule for all of them. Nothing at an edge writes or
-reads an envelope queue directly: `send` writes what its agent emits onto egress,
-and `receive` takes what arrives on ingress and passes it to an opener. The
-router owns the middle, where it pops egress and writes ingress. The two edge
-directions are symmetric — one puts an envelope on the bus, the other opens one.
+that cannot speak Redis — the rule for all of them. For registered VABs, `send`
+writes what its participant emits onto egress and `receive` takes what arrives
+on ingress and passes it to an opener. The router owns the middle, where it pops
+egress and writes ingress. There is one explicit fallback: an unknown roster VAB
+uses `deliver_unroutable`, which directly pops one ingress item, validates it and
+parks it with an `unroutable VAB` reason because there is no opener table to
+dispatch to.
 
 What differs between participants is only the far end. One delivery routine
 types into a terminal window; another appends the unchanged envelope to a
@@ -57,22 +59,26 @@ through.
 
 ### The two doors
 
-**Every envelope enters and leaves an edge through one of exactly two tools.**
-Nothing else at an edge performs a raw queue write or pop. The router necessarily
-does both in the middle. The doors are the edge inspectors, and having only two
-of them is what makes behaviour deterministic:
+**Normal envelope traffic enters and leaves an edge through two tools.** The
+router necessarily performs raw queue operations in the middle; the unknown-VAB
+fallback above is the sole edge exception. The doors are the normal edge
+inspectors:
 
 | | Does | Rejects |
 |---|---|---|
-| **send** | builds the envelope, writes the caller's own egress, logs | nothing malformed can be constructed |
+| **send** | builds the envelope, writes the egress selected by `producer`, logs | nothing malformed can be constructed |
 | **receive** | validates what came off ingress, dispatches on `kind` to an opener, logs | unknown kind → dead-letter |
 
-Each check therefore has exactly one home. An envelope cannot be malformed
-because only one thing builds them; an agent cannot write outside its own prefix
-because only one thing writes; nothing arrives unlogged because only one thing
-pops. This is the same argument as `prefix()` being the sole key builder — an
-invariant held in one place holds everywhere, and an invariant checked in ten
-places eventually isn't.
+For registered VABs, each check therefore has one home. An envelope built by
+`send` cannot be malformed because only one thing builds it, and `receive` owns
+normal ingress validation and terminal logging. `deliver_unroutable` duplicates
+that parse/park boundary for the exceptional VAB case. `send` does **not**,
+however, authenticate its caller: its
+`producer` argument selects both the envelope field and the egress prefix. The
+agent CLI supplies that argument from `AGENT_NAME`, but the library itself does
+not enforce that a caller writes only its own prefix. This is the same argument
+as `prefix()` being the sole key builder where the constructor really does hold
+the invariant — and the explicit boundary where it does not.
 
 A consequence worth stating: **an agent never learns a queue name.** Components
 at the edge use `send` and `receive`; a terminal agent sees the `office` verbs
@@ -94,8 +100,10 @@ sender:
   nothing for anyone addressing it, because nobody was addressing a queue.
 - **gone.** An unresolvable name dead-letters in one place with a reason, rather
   than each sender discovering it separately.
-- **many tenants on one Redis.** One router per tenant, and the boundary is
-  enforced where envelopes enter rather than in every producer.
+- **many tenants on one Redis.** One router watches only the validated prefixes
+  for its configured tenant. The present shared Redis credential is not a
+  security boundary between direct callers; tenant isolation here is routing
+  scope, not authorization.
 
 ⚠ Note what this is *not* justified by, because the tempting argument is the
 weak one: it is **not** about hiding topology from producers. In this build every
@@ -135,10 +143,11 @@ payload. That is the whole design.
   └────────────────────────────────────────────────────────────────────┘
 ```
 
-An agent never writes to another agent's ingress queue. It writes to **its own**
-egress, and the router decides what happens next. Two things follow: routing
-decisions happen in exactly one place, and a producer can only write inside its
-own prefix — so the tenancy boundary is enforced on entry, not only on exit.
+The supported agent command never writes to another agent's ingress queue. It
+calls `send` with its own `AGENT_NAME`, and the router decides what happens next.
+Routing decisions therefore happen in exactly one place. This is not a Redis
+authorization boundary: a direct library caller can supply another valid name
+as `producer`, and the current shared Redis credential does not prevent it.
 
 ## 3. Addressing
 
@@ -198,19 +207,21 @@ without adding depth:
   pod:acme:tenant:hq:agent:backend     : pending.verify delivery evidence to judge
 ```
 
-An address at any level can carry resources, so tenant-level and pod-level state
-have a home without a special case. Envelope queues are LISTs. Retained or
-independently judged observations use Streams: an app `inbox`, an agent's
+Tenant and agent addresses can carry resources; the current `prefix()` requires
+both pod and tenant and therefore has no pod-only resource form. Envelope queues
+are LISTs. Retained or independently judged observations use Streams: an app `inbox`, an agent's
 `activity`, and its transient `pending.verify` markers. The distinction is the
 reader model: a queue is consumed once, while a mailbox or observation feed can
 be read at independent positions and verification markers are deleted only
 after judgment.
 
-Address-segment rule: `^[a-z0-9][a-z0-9-]{0,62}$` — lowercase alnum and dash. No glob
-metacharacters, so a prefix is safe to drop into a Redis `SCAN MATCH`. No
-underscore, so that per-agent filesystem directories named `<a>_<b>` stay
-unambiguous to split. A resource is one or more such segments separated by dots;
-each sub-segment is validated and may not be a reserved word.
+Address-segment rule: `^[a-z0-9][a-z0-9-]{0,62}$` — lowercase alnum and dash —
+plus a rejection of all-digit values because tmux resolves a numeric window name
+as an index. No glob metacharacters, so a prefix is safe to drop into a Redis
+`SCAN MATCH`. No underscore, so that per-agent filesystem directories named
+`<a>_<b>` stay unambiguous to split. A resource is one or more such segments
+separated by dots; each sub-segment is validated, may not be a reserved word,
+and is subject to the same all-digit rejection.
 
 **Every key goes through `prefix()`.** There is no API that yields a flat key.
 This is what makes many tenants on one Redis safe, and it is the invariant that
@@ -320,8 +331,11 @@ what is started in its window, its credentials, its configuration — belongs to
 whichever module starts it, not to membership.
 
 Lifecycle branches on VAB. For `tmux`, desired state comes before actual state
-in both directions: `StartAgent` writes the optional profile and the launch key
-**before the roster row becomes visible**, then creates the window. The roster
+in both directions: `StartAgent` writes the optional profile, optional endpoint
+name and launch key **before the roster row becomes visible**, then creates the
+window. Both the control path and tmux-host resolve the endpoint name against
+the tenant's `ENDPOINT_<NAME>_*` environment before calling the name-idempotent
+window creator. The roster
 row is tmux-host's reconciliation trigger; publishing it first races the host
 into creating a window with the wrong CLI or account, and the name-idempotent
 create cannot correct that window. `StopAgent` reads the VAB, removes the roster
@@ -634,8 +648,8 @@ reliability layer — it does not recover a lost envelope, it only guarantees th
 loss is visible. That trade is the decision; revisit it if losses turn out to be
 common rather than theoretical.
 
-`send` and `receive` log at their own ends too, so a delivered envelope leaves
-**five** records across its life:
+`send` and `receive` log at their own ends too, so every delivered envelope
+leaves **five transport records** across its life:
 
 ```
   sent        the producer's own end            (flock.bus.doors)
@@ -645,9 +659,11 @@ common rather than theoretical.
   opened      … and what it then did            (adapter)
 ```
 
-The pair-per-component is what matters: each component records that it took
-custody and what it then did. `send` has no pair because it has no custody to
-hand on — it is the origin.
+An opener may add a kind-specific lifecycle record between `received` and
+`opened`; `AddTicket`, for example, emits `board_write_confirmed`, so its complete
+trace has six records. The pair-per-component is what matters: each component
+records that it took custody and what it then did. `send` has no pair because it
+has no custody to hand on — it is the origin.
 
 ⚠ **This said "four" until build 20, and the arithmetic never worked**: two
 paired components plus `send` is 1+2+2. It read as true only because `sent` was
@@ -711,18 +727,22 @@ reading the payload — §6.4 holds.
 ## 6. Invariants
 
 1. **`prefix()` on every key.** No flat keys, anywhere, ever.
-2. **The sender comes from the queue the envelope was popped from**, never from
-   its contents. Cross-tenant leakage is therefore structural, not a runtime
-   check.
-3. **A participant may only write to its own `egress` queue.** The router is the
-   only writer of `ingress` queues. This is what makes the router load-bearing
-   rather than a naming convention.
+2. **The routing sender comes from the queue the envelope was popped from**, not
+   from the envelope's `producer`. The router uses that queue-derived name when
+   it parks a routing dead-letter. It does not rewrite or authenticate the
+   `producer` field, which remains the displayed and logged identity.
+3. **Supported participant tools write to their own `egress`; the router is the
+   only supported writer of `ingress`.** This is an API boundary, not an enforced
+   Redis ACL: `send(producer=...)` accepts any valid participant name. The router
+   remains load-bearing because supported sends name a recipient rather than
+   writing its ingress directly.
 4. **The router never reads the payload.** It forwards on `recipient` and
    derives the sender from the queue key. Nothing else in an envelope affects
    where it goes. Reading a payload to route makes it a middlebox, and every
    change to what a message means becomes a change to the router.
-5. **The bus is lifecycle-agnostic.** It moves opaque strings. Task state,
-   correlation and session context live above it.
+5. **The bus is lifecycle-agnostic.** It validates the envelope's structural
+   fields, while `kind` and the meaning of `payload` remain opaque to the router.
+   Task state and session context live above it.
 6. **Envelope queues are lists, not pub/sub.** Retained mailboxes and
    observation records use Streams where cursors or later judgment require
    them; they are not envelope queues.
@@ -733,9 +753,9 @@ reading the payload — §6.4 holds.
    the roster's *fields*, never its *values*, so it cannot know a participant's
    VAB. It kicks one fixed command with a name. This is structural, not a
    convention anyone has to remember.
-9. **One bad envelope never stops the loop.** Malformed JSON, an unparseable
-   queue name, an unresolvable recipient: log and skip or dead-letter, per
-   envelope.
+9. **One bad envelope never stops the loop.** Malformed JSON and an unresolvable
+   recipient are logged and dead-lettered per envelope. Queue names are generated
+   from validated roster members rather than parsed as untrusted envelope data.
 
 ## 7. Built extensions and deferred work
 
@@ -768,7 +788,8 @@ roster write path, and it is reached over the bus like anything else:
         ▼  api egress ──► router ──► …:agent:host:ingress ──kick──► adapter host
                                                                         │
                                             VAB `control` → StartAgent opener:
-                                            write desired state, create the window
+                                            write profile/endpoint/launch state,
+                                            resolve endpoint, create the window
 ```
 
 Nothing in the router or the bus changes to allow this, which is the point. The
@@ -824,13 +845,10 @@ prints ticket IDs and titles, while taking prints the structured ticket; title
 and description remain opaque text.
 
 **Subscribe-set fairness.** `BLPOP` returns from the first non-empty key in
-argument order, so a fixed order can in principle starve later queues. It cannot
-happen here: the router's loop is pop, resolve, push — a few local round trips —
-and no participant produces fast enough to keep its queue non-empty across that.
-The problem belongs to designs where routing and delivery share a loop, and the
-layer split in §1 is what removes it. Rotating the key list each pass
-is not fixing a defect this design has. The router nevertheless rotates the
-sorted key list one position per pass; the cheap insurance is built.
+argument order, so a fixed order can starve later queues whenever an earlier
+producer keeps its queue non-empty. The code makes no claim about producer rate:
+the router rotates the sorted key list one position per pass, ensuring that a
+permanently busy first queue does not permanently occupy the first position.
 
 ## 8. What this is not
 
