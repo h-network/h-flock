@@ -263,10 +263,41 @@ class OfficeHandler(SimpleHTTPRequestHandler):
                 "alerts": demo_alerts,
                 "next_cursor": demo_alerts[-1]["cursor"],
             })
+        elif subpath == "/alerts/stream" or subpath.startswith("/alerts/stream"):
+            self._demo_sse([
+                ("100-0", "alert", {"cursor": "100-0", "ts": "2026-08-10T02:20:00Z", "kind": "stalled", "agent": "sme-3", "doing_age_s": 900}),
+                ("101-0", "alert", {"cursor": "101-0", "ts": "2026-08-10T02:25:00Z", "kind": "credential", "account": "claude", "detail": "expired"}),
+            ])
+        elif subpath.endswith("/activity/stream"):
+            self._demo_sse([
+                ("act-1", "activity", {"cursor": "act-1", "ts": "2026-08-10T02:30:00Z", "kind": "tool", "summary": "Running pytest", "agent": "architect"}),
+            ])
+        elif subpath.endswith("/messages/stream"):
+            self._demo_sse([
+                ("msg-1", "envelope", {"cursor": "msg-1", "ts": "2026-08-10T02:35:00Z", "from": "architect", "to": "sme-2", "text": "Please review Build 33 console UI."}),
+            ])
         elif subpath.endswith("/envelopes") and self.command == "POST":
             self._json(202, {"stream_id": "demo-stream-1", "correlation_id": "demo-corr-1"})
         else:
             self._json(200, {"status": "ok"})
+
+    def _demo_sse(self, events: list[tuple[str, str, dict]]) -> None:
+        self.send_response(200)
+        self.send_header("Content-Type", "text/event-stream")
+        self.send_header("Cache-Control", "no-store")
+        self.send_header("X-Accel-Buffering", "no")
+        self.end_headers()
+        try:
+            for event_id, event_type, data in events:
+                payload = f"id: {event_id}\nevent: {event_type}\ndata: {json.dumps(data)}\n\n"
+                self.wfile.write(payload.encode("utf-8"))
+                self.wfile.flush()
+            while True:
+                time.sleep(2)
+                self.wfile.write(b": keepalive\n\n")
+                self.wfile.flush()
+        except (BrokenPipeError, ConnectionResetError, OSError):
+            pass
 
     def _demo_websocket(self) -> None:
         self.close_connection = True
