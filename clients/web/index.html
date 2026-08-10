@@ -25,13 +25,13 @@
   </div>
   <main class="console-grid">
     <section id="agents-panel" class="panel agents-panel" aria-labelledby="agents-title">
-      <header class="panel-header"><div><h2 id="agents-title">Agents</h2><p>Presence, work and last activity</p></div><div class="panel-actions"><div id="agents-status"></div><button id="hire-agent" type="button">Hire agent</button></div></header>
-      <div id="agents" class="agent-list" aria-live="polite"></div>
+      <header class="panel-header"><div><h2 id="agents-title">Agents</h2><p>Presence, work and last activity</p></div><div class="panel-actions"><div id="agents-status" role="status"></div><button id="hire-agent" type="button">Hire agent</button></div></header>
+      <div id="agents" class="agent-list" role="listbox" aria-label="Office participants" aria-live="polite"></div>
     </section>
 
     <section id="detail" class="panel detail-panel" aria-labelledby="detail-title">
       <header class="panel-header">
-        <div><h2 id="detail-title">Select an agent</h2><p id="detail-subtitle">Activity, terminal and messages</p></div>
+        <div><h2 id="detail-title" tabindex="-1">Select an agent</h2><p id="detail-subtitle">Activity, terminal and messages</p></div>
         <div class="panel-actions lifecycle-actions">
           <div id="lifecycle-status" role="status"></div>
           <button id="pause-agent" type="button" disabled>Pause</button>
@@ -39,13 +39,13 @@
           <button id="retire-agent" type="button" class="danger-button" disabled>Retire</button>
         </div>
       </header>
-      <nav class="tabs" aria-label="Agent detail">
-        <button id="activity-tab" type="button" role="tab" aria-controls="activity-view" aria-selected="true">Activity</button>
-        <button id="terminal-tab" type="button" role="tab" aria-controls="terminal-panel" aria-selected="false">Terminal</button>
-        <button id="messages-tab" type="button" role="tab" aria-controls="messages-view" aria-selected="false">Messages</button>
+      <nav class="tabs" role="tablist" aria-label="Agent detail">
+        <button id="activity-tab" type="button" role="tab" aria-controls="activity-view" aria-selected="true" tabindex="0">Activity</button>
+        <button id="terminal-tab" type="button" role="tab" aria-controls="terminal-panel" aria-selected="false" tabindex="-1">Terminal</button>
+        <button id="messages-tab" type="button" role="tab" aria-controls="messages-view" aria-selected="false" tabindex="-1">Messages</button>
       </nav>
       <section id="activity-view" class="tab-view" role="tabpanel" aria-labelledby="activity-tab">
-        <div id="activity-status"></div>
+        <div id="activity-status" role="status"></div>
         <ol id="activity" class="event-list" aria-live="polite"></ol>
       </section>
       <section id="terminal-panel" class="terminal-panel tab-view" role="tabpanel" aria-labelledby="terminal-tab" hidden>
@@ -64,7 +64,7 @@
         <div id="terminal-container" class="terminal-container"></div>
       </section>
       <section id="messages-view" class="tab-view messages-view" role="tabpanel" aria-labelledby="messages-tab" hidden>
-        <div id="messages-status"></div>
+        <div id="messages-status" role="status"></div>
         <ol id="messages" class="message-list" aria-live="polite"></ol>
         <form id="composer">
           <label class="sr-only" for="message">Message selected agent</label>
@@ -75,12 +75,12 @@
     </section>
 
     <section id="alerts-panel" class="panel alerts-panel" aria-labelledby="alerts-title">
-      <header class="panel-header"><div><h2 id="alerts-title">Alerts</h2><p>Facts requiring human attention</p></div><div id="alerts-status"></div></header>
-      <ol id="alerts" class="alert-list" aria-live="assertive"></ol>
+      <header class="panel-header"><div><h2 id="alerts-title">Alerts</h2><p>Facts requiring human attention · newest 300 retained</p></div><div id="alerts-status" role="status"></div></header>
+      <ol id="alerts" class="alert-list" aria-live="assertive" aria-relevant="additions"></ol>
     </section>
 
     <section id="boards-panel" class="panel boards-panel" aria-labelledby="boards-title">
-      <header class="panel-header"><div><h2 id="boards-title">Board</h2><p>Every agent, four columns</p></div><div id="boards-status"></div></header>
+      <header class="panel-header"><div><h2 id="boards-title">Board</h2><p>Every agent, four columns</p></div><div id="boards-status" role="status"></div></header>
       <div id="boards" aria-live="polite"></div>
     </section>
   </main>

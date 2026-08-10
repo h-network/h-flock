@@ -42,3 +42,42 @@ def test_lifecycle_uses_control_envelopes_and_safe_name_validation():
     html = (WEB_DIR / "index.html").read_text(encoding="utf-8")
     assert "Queues and boards survive" in html
     assert 'id="retire-confirm"' in html
+
+
+def test_alert_load_is_capped_batched_and_layout_is_reserved():
+    alerts = (WEB_DIR / "ui" / "alerts.js").read_text(encoding="utf-8")
+    styles = (WEB_DIR / "style.css").read_text(encoding="utf-8")
+    readme = (WEB_DIR / "README.md").read_text(encoding="utf-8")
+    assert "requestAnimationFrame" in alerts
+    assert "document.createDocumentFragment" in alerts
+    assert "root.children.length > 300" in alerts
+    assert "content-visibility: auto" in styles
+    assert "scrollbar-gutter: stable" in styles
+    assert "capped at the newest 300" in readme
+
+
+def test_keyboard_focus_and_relative_timestamp_contracts():
+    app = (WEB_DIR / "app.js").read_text(encoding="utf-8")
+    agents = (WEB_DIR / "ui" / "agents.js").read_text(encoding="utf-8")
+    html = (WEB_DIR / "index.html").read_text(encoding="utf-8")
+    for key in ("ArrowRight", "ArrowLeft", "Home", "End"):
+        assert key in app
+    for key in ("ArrowDown", "ArrowUp", "Home", "End"):
+        assert key in agents
+    assert '$("detail-title").focus()' in app
+    assert 'role="tablist"' in html
+    assert 'role="listbox"' in html
+    for module in ("activity.js", "messages.js", "alerts.js"):
+        content = (WEB_DIR / "ui" / module).read_text(encoding="utf-8")
+        assert "relativeTime(" in content
+        assert "absoluteTime(" in content
+
+
+def test_http_500_degrades_panels_without_claiming_network_failure():
+    shared = (WEB_DIR / "ui" / "shared.js").read_text(encoding="utf-8")
+    readme = (WEB_DIR / "README.md").read_text(encoding="utf-8")
+    assert "error.status = response.status" in shared
+    assert "if (hasData) status.stale" in shared
+    assert "else status.error(error)" in shared
+    assert "An HTTP 500 is not treated as a network drop" in readme
+    assert "EventSource does not expose an SSE response status" in readme

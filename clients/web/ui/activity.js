@@ -1,6 +1,6 @@
 "use strict";
 
-import { absoluteTime, catchUp, escapeHtml, forceDemoState, PanelStatus, ResumableFeed } from "./shared.js";
+import { absoluteTime, catchUp, escapeHtml, forceDemoState, PanelStatus, relativeTime, ResumableFeed } from "./shared.js";
 
 export class ActivityPanel {
   constructor() {
@@ -29,7 +29,7 @@ export class ActivityPanel {
     this.count += 1;
     const item = document.createElement("li");
     item.className = `activity-${event.kind || "unknown"}`;
-    item.innerHTML = `<time datetime="${escapeHtml(event.ts || "")}" title="${escapeHtml(absoluteTime(event.ts))}">${escapeHtml(event.ts ? new Date(event.ts).toLocaleTimeString() : "")}</time><span class="activity-kind">${escapeHtml(event.kind || "activity")}</span><strong>${escapeHtml(event.kind === "tool" ? event.tool || "tool" : "")}</strong>`;
+    item.innerHTML = `<time datetime="${escapeHtml(event.ts || "")}" title="${escapeHtml(absoluteTime(event.ts))}">${escapeHtml(relativeTime(event.ts))}</time><span class="activity-kind">${escapeHtml(event.kind || "activity")}</span><strong>${escapeHtml(event.kind === "tool" ? event.tool || "tool" : "")}</strong>`;
     const root = document.getElementById("activity");
     root.append(item);
     while (root.children.length > 100) root.firstElementChild.remove();

@@ -1,6 +1,6 @@
 "use strict";
 
-import { absoluteTime, api, catchUp, escapeHtml, forceDemoState, PanelStatus, ResumableFeed } from "./shared.js";
+import { absoluteTime, api, catchUp, escapeHtml, forceDemoState, PanelStatus, relativeTime, ResumableFeed } from "./shared.js";
 
 export class MessagesPanel {
   constructor({ client }) {
@@ -41,7 +41,7 @@ export class MessagesPanel {
   element(envelope) {
     const item = document.createElement("li");
     item.className = "reply";
-    item.innerHTML = `<strong>${escapeHtml(envelope.producer || "agent")}</strong><span>${escapeHtml(envelope.payload.text)}</span><time datetime="${escapeHtml(envelope.ts || "")}" title="${escapeHtml(absoluteTime(envelope.ts))}">${escapeHtml(envelope.ts ? new Date(envelope.ts).toLocaleTimeString() : "")}</time>`;
+    item.innerHTML = `<strong>${escapeHtml(envelope.producer || "agent")}</strong><span>${escapeHtml(envelope.payload.text)}</span><time datetime="${escapeHtml(envelope.ts || "")}" title="${escapeHtml(absoluteTime(envelope.ts))}">${escapeHtml(relativeTime(envelope.ts))}</time>`;
     return item;
   }
 
