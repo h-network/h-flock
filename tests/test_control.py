@@ -39,7 +39,7 @@ class RecordingRedis:
         return self.ingress_depth
 
 
-def test_start_agent_orders_roster_launch_then_window():
+def test_start_agent_orders_launch_roster_then_window():
     events = []
     r = RecordingRedis(events)
     start_agent(
@@ -50,8 +50,8 @@ def test_start_agent_orders_roster_launch_then_window():
         create_window=lambda agent, cli: events.append(("create_window", agent, cli)),
     )
     assert events == [
-        ("hset", prefix("acme", "hq", resource="roster"), "dave", "tmux"),
         ("set", prefix("acme", "hq", "dave", "launch"), "codex"),
+        ("hset", prefix("acme", "hq", resource="roster"), "dave", "tmux"),
         ("create_window", "dave", "codex"),
     ]
 
@@ -65,8 +65,9 @@ def test_start_agent_defaults_cli_to_claude():
         envelope={"payload": {"agent": "dave"}},
         create_window=lambda agent, cli: events.append(("create_window", agent, cli)),
     )
-    assert events[-2:] == [
+    assert events == [
         ("set", prefix("acme", "hq", "dave", "launch"), "claude"),
+        ("hset", prefix("acme", "hq", resource="roster"), "dave", "tmux"),
         ("create_window", "dave", "claude"),
     ]
 
@@ -82,8 +83,8 @@ def test_start_agent_writes_profile_before_roster_visibility():
     )
     assert events == [
         ("set", prefix("acme", "hq", "dave", "profile"), "client-b"),
-        ("hset", prefix("acme", "hq", resource="roster"), "dave", "tmux"),
         ("set", prefix("acme", "hq", "dave", "launch"), "codex"),
+        ("hset", prefix("acme", "hq", resource="roster"), "dave", "tmux"),
         ("create_window", "dave", "codex"),
     ]
 
@@ -321,8 +322,8 @@ def test_tmux_failure_raises_after_desired_state_is_written(monkeypatch):
             session_name="hq",
         )
     assert events == [
-        ("hset", prefix("acme", "hq", resource="roster"), "dave", "tmux"),
         ("set", prefix("acme", "hq", "dave", "launch"), "claude"),
+        ("hset", prefix("acme", "hq", resource="roster"), "dave", "tmux"),
         ("get", prefix("acme", "hq", "dave", "profile")),
     ]
 

@@ -52,8 +52,10 @@ def start_agent(
         raise ValueError("StartAgent payload.profile must be a segment string")
 
     launch_key = prefix(pod, tenant, agent=agent, resource="launch")
-    r.hset(roster_key, agent, agent_vab)
+    # Publish all launch state before roster membership: tmuxhost reconciles on
+    # that row and an early window cannot be corrected by name-idempotent create.
     r.set(launch_key, cli)
+    r.hset(roster_key, agent, agent_vab)
     create_window(agent, cli)
 
 
