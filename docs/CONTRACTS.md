@@ -150,10 +150,21 @@ def generate_agents_md(agent_name: str, tenant: str = "default") -> str
     # the guide text itself. Names the board, because nothing else will:
     # a board is pulled, so a silent guide makes it invisible
 
-def ensure_claude_project_trusted(cwd: str) -> None
-    # writes hasTrustDialogAccepted for that directory in ~/.claude.json
+def ensure_claude_project_trusted(cwd: str, profile: str | None = None) -> None
+    # writes hasTrustDialogAccepted AND hasCompletedProjectOnboarding for that
+    # directory, in ~/.claude.json or ~/.claude-<profile>/.claude.json
     # per-directory, so a new agent home needs its own — found by running
     # a real CLI into a first-run gate
+
+def ensure_agy_project_trusted(cwd: str) -> None
+    # appends cwd to trustedWorkspaces AND sets enableTelemetry = False
+    # in ~/.gemini/antigravity-cli/settings.json — global, not per-profile
+
+⚠ **Every routine in this group swallows its own errors** — `write_agent_guide`
+and all three `ensure_*_project_trusted` wrap their work in a bare
+`except Exception: pass`. A caller cannot tell success from silent failure, and
+that is exactly how the profile-blind trust bug hid: seeding failed quietly and
+every profiled agent sat at a picker, unreachable, reading as `idle`.
 
 def paste_text(session_name: str, agent_name: str, text: str,
                stream_id: str = "", socket: str | None = None) -> None
@@ -277,7 +288,10 @@ the whole tenant.
 (process start, busy tag, `HGET`, `BLPOP`) and `received` → `opened` 226 ms (the
 paste).
 
-⚠ **That measurement predates `PASTE_ENTER_DELAY = 0.5`** (`tmux/ops.py`), which
+⚠ **`PASTE_ENTER_DELAY` is the environment variable; `ENTER_DELAY` is the module
+constant it is read into** (`tmux/ops.py`). Both names refer to the same thing.
+
+⚠ **That measurement predates `PASTE_ENTER_DELAY = 0.5`**, which
 adds 500 ms inside the second half — a delivery now costs about a second. The
 delay is not slack for a slow terminal: the paste and the Enter are **two
 writes**, and a CLI arriving at both together takes the text and drops the
