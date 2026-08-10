@@ -230,6 +230,24 @@ carrying `/v1` produces `/v1/v1/messages`. `window_env` strips a trailing `/v1`
 for exactly this reason. codex wants the opposite, which is how it gets copied
 in wrong.
 
+⚠ **The model id must match the served id byte for byte.** `gpt-oss:20b` is not
+`gpt-oss-20b`, and a mismatch is reported by the CLI as a model that does not
+exist. `setup.sh` offers what `/v1/models` returns rather than asking anyone to
+type one.
+
+⚠ **Tool calls are the server's problem, not ours.** A model that answers text
+but emits literal `<tool_call>{…}</tool_call>` is a server missing
+`--enable-auto-tool-choice` and a `--tool-call-parser` matching its template
+(`hermes` for Qwen). An agent whose tools do not work is useless for real work,
+and nothing in h-flock can fix it. Measured working on a vLLM serving
+`qwen3-vl-32b`: `Write` then `Read`, and `office send` to a colleague who
+replied.
+
+⚠ **A local model leaves suggestion text in the pane.** After a turn the CLI may
+show a proposed next prompt in its input box. It is a rendering, not input — a
+bare Enter does nothing and a paste replaces it — but it looks alarming in a
+screenshot and in a terminal panel.
+
 ⚠ **Inherited `ANTHROPIC_*` are unset first.** A previous subscription's
 variables win over what we set, which is the quietest way for a local endpoint to
 look broken.

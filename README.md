@@ -342,8 +342,6 @@ went the way it did rather than only what it was.
 | [`LLD-container.md`](docs/LLD-container.md) | one container is one tenant |
 | [`CONTRACTS.md`](docs/CONTRACTS.md) | what more than one module depends on |
 | [`LLD-watchdog.md`](docs/LLD-watchdog.md) | what it watches, and why it tells a human and never an agent |
-| [`UNDERSTANDING.md`](docs/UNDERSTANDING.md) | the whole system in one file, written to be checked |
-| [`REVIEW-04-local-endpoints.md`](docs/REVIEW-04-local-endpoints.md) | running an agent on your own model — measured, and what is not |
 
 ---
 
