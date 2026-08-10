@@ -9,17 +9,29 @@ import { LifecyclePanel } from "./ui/lifecycle.js";
 import { TerminalPanel } from "./ui/terminal.js";
 
 const $ = (id) => document.getElementById(id);
-const state = { selected: "", tab: "activity", demo: false };
+const state = { selected: "", tab: "activity", demo: false, roster: null, alertCount: null };
 const terminal = new TerminalPanel();
 const boards = new BoardsPanel({ onBoards: (value) => agents.setBoards(value) });
 const agents = new AgentsPanel({
   onSelect: (agent) => selectAgent(agent),
-  onSummary: (text) => { $("office-summary").textContent = text; },
+  onRoster: (summary) => {
+    state.roster = summary;
+    $("empty-office").hidden = summary.staffed !== 0;
+    updateOfficeSummary();
+  },
 });
 const activity = new ActivityPanel();
 let messages;
 let lifecycle;
-const alerts = new AlertsPanel();
+const alerts = new AlertsPanel({ onCount: (count) => { state.alertCount = count; updateOfficeSummary(); } });
+
+function updateOfficeSummary() {
+  if (!state.roster) return;
+  const { working, blocked } = state.roster;
+  const alertsText = state.alertCount == null ? "alerts loading" : `${state.alertCount} retained alert${state.alertCount === 1 ? "" : "s"}`;
+  $("office-summary").textContent = `${working} working · ${blocked} blocked · ${alertsText}`;
+  $("office-summary").className = blocked || state.alertCount ? "summary-attention" : "summary-calm";
+}
 
 function activateTab(name) {
   state.tab = name;
@@ -87,6 +99,7 @@ async function start() {
   state.demo = Boolean(config.demo);
   messages = new MessagesPanel({ client: config.client });
   lifecycle = new LifecyclePanel({ agents });
+  $("empty-office-hire").onclick = () => $("hire-dialog").showModal();
   bindTabs();
   bindDemoControls();
   $("global-connection").textContent = "live";

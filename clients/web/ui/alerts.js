@@ -3,11 +3,12 @@
 import { absoluteTime, catchUp, escapeHtml, forceDemoState, PanelStatus, relativeTime, ResumableFeed } from "./shared.js";
 
 export class AlertsPanel {
-  constructor() {
+  constructor({ onCount = () => {} } = {}) {
     this.items = [];
     this.pending = [];
     this.renderFrame = null;
     this.client = "tenant";
+    this.onCount = onCount;
     this.status = new PanelStatus("alerts-status", () => this.restart());
   }
 
@@ -15,6 +16,7 @@ export class AlertsPanel {
     this.status.loading("Loading alert history…");
     try {
       await catchUp({ path: "/alerts", collection: "alerts", feed: "alerts", client: this.client, onEvent: (item) => this.add(item) });
+      this.onCount(this.items.length);
       if (!this.items.length) this.status.empty("No alerts · office is calm");
       this.feed = new ResumableFeed({ path: "/alerts/stream", eventName: "alert", feed: "alerts", client: this.client, status: this.status, onEvent: (item) => this.add(item) }).start();
     } catch (error) { this.status.error(error); }
@@ -46,6 +48,7 @@ export class AlertsPanel {
     this.pending = [];
     root.prepend(fragment);
     while (root.children.length > 300) root.lastElementChild.remove();
+    this.onCount(this.items.length);
   }
 
   demoState(value) { forceDemoState(this.status, value); }

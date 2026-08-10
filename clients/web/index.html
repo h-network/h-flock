@@ -23,6 +23,14 @@
     <button type="button" data-demo-state="disconnected">disconnected</button>
     <button type="button" data-demo-state="ready">live data</button>
   </div>
+  <section id="empty-office" class="empty-office" aria-labelledby="empty-office-title" hidden>
+    <div>
+      <p class="eyebrow">Your office is ready</p>
+      <h2 id="empty-office-title">Staff your first agent</h2>
+      <p>No agents are enrolled yet. Hire one to create its identity, window and CLI; alerts and boards will fill as the office starts working.</p>
+    </div>
+    <button id="empty-office-hire" type="button">Hire your first agent</button>
+  </section>
   <main class="console-grid">
     <section id="agents-panel" class="panel agents-panel" aria-labelledby="agents-title">
       <header class="panel-header"><div><h2 id="agents-title">Agents</h2><p>Presence, work and last activity</p></div><div class="panel-actions"><div id="agents-status" role="status"></div><button id="hire-agent" type="button">Hire agent</button></div></header>
