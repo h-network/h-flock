@@ -30,6 +30,14 @@ services:
       # reaches the container if it is named here as well.
       AGENT_CLIS: "${AGENT_CLIS:-}"
       AGENT_PROFILES: "${AGENT_PROFILES:-}"
+      # Which agents run against a local model, and where that model lives.
+      # The NAME is per agent; the address is tenant configuration, so an agent
+      # cannot read or change the endpoint it is pointed at.
+      AGENT_ENDPOINTS: "${AGENT_ENDPOINTS:-}"
+      ENDPOINT_LOCAL_URL: "${ENDPOINT_LOCAL_URL:-}"
+      ENDPOINT_LOCAL_TOKEN: "${ENDPOINT_LOCAL_TOKEN:-}"
+      ENDPOINT_LOCAL_MODEL: "${ENDPOINT_LOCAL_MODEL:-}"
+      ENDPOINT_LOCAL_SMALL_MODEL: "${ENDPOINT_LOCAL_SMALL_MODEL:-}"
       # No default. The container refuses to start without it.
       API_TOKEN: "${API_TOKEN:?set API_TOKEN in container/.env}"
     ports:
