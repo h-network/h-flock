@@ -277,7 +277,7 @@ def test_auth_secret_enforcement_and_login_flow():
     web_server.client_name = "web"
     web_server.demo_mode = True
     web_server.secret = "topsecret123"
-    web_server.valid_sessions = set()
+    web_server.valid_sessions = {}
     web_server.max_sessions = 16
     web_server.active_sessions = 0
     web_server.sessions_lock = threading.Lock()
@@ -360,6 +360,90 @@ def test_auth_secret_enforcement_and_login_flow():
         with pytest.raises(urllib.error.HTTPError) as exc_info:
             urllib.request.urlopen(req_after_logout)
         assert exc_info.value.code == 401
+    finally:
+        web_server.shutdown()
+        web_server.server_close()
+
+
+def test_auth_login_rate_limiting_returns_429():
+    web_server = ThreadingHTTPServer(("127.0.0.1", 0), OfficeHandler)
+    web_server.api_base = "http://127.0.0.1:8080"
+    web_server.session_host = "127.0.0.1"
+    web_server.session_port = 8081
+    web_server.api_token = "test-secret-token"
+    web_server.client_name = "web"
+    web_server.demo_mode = True
+    web_server.secret = "topsecret123"
+    web_server.valid_sessions = {}
+    web_server.session_ttl = 86400
+    web_server.login_attempts = {}
+    web_server.max_login_attempts = 3
+    web_server.rate_limit_window = 60
+    web_server.max_sessions = 16
+    web_server.active_sessions = 0
+    web_server.sessions_lock = threading.Lock()
+    web_port = web_server.server_address[1]
+
+    web_thread = threading.Thread(target=web_server.serve_forever, daemon=True)
+    web_thread.start()
+
+    try:
+        req_bad = urllib.request.Request(
+            f"http://127.0.0.1:{web_port}/login",
+            data=json.dumps({"secret": "wrongsecret"}).encode(),
+            headers={"Content-Type": "application/json"},
+            method="POST",
+        )
+
+        # Fail 3 times
+        for _ in range(3):
+            with pytest.raises(urllib.error.HTTPError) as exc_info:
+                urllib.request.urlopen(req_bad)
+            assert exc_info.value.code == 401
+
+        # 4th attempt returns 429 Too Many Requests
+        with pytest.raises(urllib.error.HTTPError) as exc_info:
+            urllib.request.urlopen(req_bad)
+        assert exc_info.value.code == 429
+        assert exc_info.value.headers.get("Retry-After") == "60"
+    finally:
+        web_server.shutdown()
+        web_server.server_close()
+
+
+def test_auth_session_ttl_expiry():
+    web_server = ThreadingHTTPServer(("127.0.0.1", 0), OfficeHandler)
+    web_server.api_base = "http://127.0.0.1:8080"
+    web_server.session_host = "127.0.0.1"
+    web_server.session_port = 8081
+    web_server.api_token = "test-secret-token"
+    web_server.client_name = "web"
+    web_server.demo_mode = True
+    web_server.secret = "topsecret123"
+    # Seed an expired session token (created 100 seconds ago, with a TTL of 10 seconds)
+    web_server.valid_sessions = {"expired-token-123": time.time() - 100}
+    web_server.session_ttl = 10
+    web_server.login_attempts = {}
+    web_server.max_login_attempts = 5
+    web_server.rate_limit_window = 60
+    web_server.max_sessions = 16
+    web_server.active_sessions = 0
+    web_server.sessions_lock = threading.Lock()
+    web_port = web_server.server_address[1]
+
+    web_thread = threading.Thread(target=web_server.serve_forever, daemon=True)
+    web_thread.start()
+
+    try:
+        # Request with expired session cookie should be rejected with 401
+        req_exp = urllib.request.Request(
+            f"http://127.0.0.1:{web_port}/api/agents",
+            headers={"Cookie": "hflock_session=expired-token-123"},
+        )
+        with pytest.raises(urllib.error.HTTPError) as exc_info:
+            urllib.request.urlopen(req_exp)
+        assert exc_info.value.code == 401
+        assert "expired-token-123" not in web_server.valid_sessions
     finally:
         web_server.shutdown()
         web_server.server_close()
