@@ -271,7 +271,7 @@ class OfficeHandler(SimpleHTTPRequestHandler):
             ])
         elif subpath.endswith("/activity/stream"):
             self._demo_sse([
-                ("act-1", "activity", {"cursor": "act-1", "ts": "2026-08-10T02:30:00Z", "kind": "tool", "name": "pytest", "agent": "architect"}),
+                ("act-1", "activity", {"cursor": "act-1", "ts": "2026-08-10T02:30:00Z", "kind": "tool", "tool": "pytest", "agent": "architect"}),
             ])
         elif subpath.endswith("/messages/stream"):
             self._demo_sse([
