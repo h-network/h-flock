@@ -4,20 +4,32 @@
 from __future__ import annotations
 
 import argparse
+import hmac
 import json
 import os
+import secrets
 import socket
 import sys
 import threading
 import time
 import urllib.error
 import urllib.request
+from http.cookies import SimpleCookie
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import urlsplit
 
 
 HERE = Path(__file__).resolve().parent
+
+
+def _is_loopback(address: str) -> bool:
+    addr = address.strip().lower()
+    if addr in {"127.0.0.1", "localhost", "::1", "localhost.localdomain"}:
+        return True
+    if addr.startswith("127."):
+        return True
+    return False
 
 
 def _read_socket_line(sock: socket.socket) -> str:
@@ -46,9 +58,49 @@ class OfficeHandler(SimpleHTTPRequestHandler):
         except Exception:
             pass
 
+    def _is_authenticated(self) -> bool:
+        secret = getattr(self.server, "secret", None)
+        if not secret:
+            return True
+        cookie_header = self.headers.get("Cookie", "")
+        if not cookie_header:
+            return False
+        cookies = SimpleCookie()
+        try:
+            cookies.load(cookie_header)
+        except Exception:
+            return False
+        session_cookie = cookies.get("hflock_session")
+        if not session_cookie or not session_cookie.value:
+            return False
+        token = session_cookie.value
+        lock = getattr(self.server, "sessions_lock", None)
+        valid_sessions = getattr(self.server, "valid_sessions", set())
+        if lock is not None:
+            with lock:
+                tokens = list(valid_sessions)
+        else:
+            tokens = list(valid_sessions)
+        for valid in tokens:
+            if hmac.compare_digest(token, valid):
+                return True
+        return False
+
     def do_GET(self) -> None:
         if self.path == "/client-config":
-            self._json(200, {"client": self.server.client_name, "demo": self.server.demo_mode})
+            self._json(200, {
+                "client": self.server.client_name,
+                "demo": self.server.demo_mode,
+                "auth_required": bool(getattr(self.server, "secret", None)),
+                "authenticated": self._is_authenticated(),
+            })
+        elif getattr(self.server, "secret", None) and not self._is_authenticated():
+            if self.path == "/login.html" or self.path == "/style.css":
+                super().do_GET()
+            elif self.path.startswith("/api/") or self.path.startswith("/session") or self.headers.get("Upgrade", "").lower() == "websocket":
+                self._json(401, {"detail": "authentication required"})
+            else:
+                self._serve_login_page()
         elif self.path == "/" or self.path.startswith("/?"):
             self.path = "/index.html"
             super().do_GET()
@@ -65,12 +117,140 @@ class OfficeHandler(SimpleHTTPRequestHandler):
             super().do_GET()
 
     def do_POST(self) -> None:
-        if self.server.demo_mode and self.path.startswith("/api/"):
+        if self.path == "/login":
+            self._handle_login()
+        elif self.path == "/logout":
+            self._handle_logout()
+        elif getattr(self.server, "secret", None) and not self._is_authenticated():
+            self._json(401, {"detail": "authentication required"})
+        elif self.server.demo_mode and self.path.startswith("/api/"):
             self._demo_api()
         elif self.path.startswith("/api/"):
             self._proxy()
         else:
             self.send_error(404)
+
+    def _handle_login(self) -> None:
+        length = int(self.headers.get("Content-Length", "0"))
+        if length > self.MAX_BODY_SIZE:
+            self._json(413, {"detail": "payload too large"})
+            return
+        raw_body = self.rfile.read(length) if length else b"{}"
+        try:
+            data = json.loads(raw_body.decode("utf-8"))
+        except Exception:
+            data = {}
+        provided_secret = data.get("secret", "")
+        secret = getattr(self.server, "secret", None)
+        if secret and hmac.compare_digest(provided_secret, secret):
+            token = secrets.token_hex(32)
+            lock = getattr(self.server, "sessions_lock", None)
+            valid_sessions = getattr(self.server, "valid_sessions", None)
+            if valid_sessions is not None:
+                if lock is not None:
+                    with lock:
+                        valid_sessions.add(token)
+                else:
+                    valid_sessions.add(token)
+            cookie_header = f"hflock_session={token}; Path=/; HttpOnly; SameSite=Strict"
+            if getattr(self.server, "api_base", "").startswith("https://"):
+                cookie_header += "; Secure"
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Set-Cookie", cookie_header)
+            self.send_header("Cache-Control", "no-store")
+            self.end_headers()
+            self.wfile.write(json.dumps({"authenticated": True}).encode("utf-8"))
+        else:
+            self._json(401, {"detail": "invalid operator secret"})
+
+    def _handle_logout(self) -> None:
+        cookie_header = self.headers.get("Cookie", "")
+        if cookie_header:
+            cookies = SimpleCookie()
+            try:
+                cookies.load(cookie_header)
+                if "hflock_session" in cookies:
+                    tok = cookies["hflock_session"].value
+                    lock = getattr(self.server, "sessions_lock", None)
+                    valid_sessions = getattr(self.server, "valid_sessions", None)
+                    if valid_sessions is not None:
+                        if lock is not None:
+                            with lock:
+                                valid_sessions.discard(tok)
+                        else:
+                            valid_sessions.discard(tok)
+            except Exception:
+                pass
+        clear_cookie = "hflock_session=; Path=/; Max-Age=0; HttpOnly; SameSite=Strict"
+        self.send_response(200)
+        self.send_header("Content-Type", "application/json")
+        self.send_header("Set-Cookie", clear_cookie)
+        self.send_header("Cache-Control", "no-store")
+        self.end_headers()
+        self.wfile.write(json.dumps({"authenticated": False}).encode("utf-8"))
+
+    def _serve_login_page(self) -> None:
+        html = """<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>h-flock Console — Authentication Required</title>
+  <style>
+    body { display: flex; align-items: center; justify-content: center; height: 100vh; margin: 0; background: #0d1117; color: #c9d1d9; font-family: monospace, system-ui; }
+    .login-card { background: #161b22; border: 1px solid #30363d; border-radius: 8px; padding: 2rem; width: 360px; box-shadow: 0 8px 24px rgba(0,0,0,0.5); }
+    .login-card h2 { margin-top: 0; color: #58a6ff; font-size: 1.25rem; }
+    .login-card label { display: block; margin-bottom: 0.5rem; font-size: 0.875rem; color: #8b949e; }
+    .login-card input[type="password"] { width: 100%; padding: 0.5rem; border: 1px solid #30363d; border-radius: 4px; background: #0d1117; color: #c9d1d9; font-size: 1rem; box-sizing: border-box; margin-bottom: 1rem; }
+    .login-card button { width: 100%; padding: 0.6rem; border: none; border-radius: 4px; background: #238636; color: white; font-weight: bold; cursor: pointer; }
+    .login-card button:hover { background: #2ea043; }
+    .error-msg { color: #f85149; font-size: 0.85rem; margin-top: 0.75rem; display: none; }
+  </style>
+</head>
+<body>
+  <div class="login-card">
+    <h2>h-flock Console</h2>
+    <p style="font-size: 0.85rem; color: #8b949e; margin-bottom: 1.25rem;">Operator secret required to access console & terminal.</p>
+    <form id="login-form">
+      <label for="secret-input">Operator Secret</label>
+      <input type="password" id="secret-input" autocomplete="current-password" required placeholder="Enter HFLOCK_SECRET">
+      <button type="submit">Unlock Console</button>
+      <div id="error-msg" class="error-msg">Invalid operator secret</div>
+    </form>
+  </div>
+  <script>
+    document.getElementById("login-form").addEventListener("submit", async (e) => {
+      e.preventDefault();
+      const secret = document.getElementById("secret-input").value;
+      const err = document.getElementById("error-msg");
+      err.style.display = "none";
+      try {
+        const resp = await fetch("/login", {
+          method: "POST",
+          headers: {"Content-Type": "application/json"},
+          body: JSON.stringify({secret})
+        });
+        if (resp.ok) {
+          window.location.reload();
+        } else {
+          err.style.display = "block";
+        }
+      } catch (ex) {
+        err.textContent = "Connection error";
+        err.style.display = "block";
+      }
+    });
+  </script>
+</body>
+</html>"""
+        body = html.encode("utf-8")
+        self.send_response(401)
+        self.send_header("Content-Type", "text/html; charset=utf-8")
+        self.send_header("Content-Length", str(len(body)))
+        self.send_header("Cache-Control", "no-store")
+        self.end_headers()
+        self.wfile.write(body)
 
     def _proxy(self) -> None:
         target = self.server.api_base + self.path.removeprefix("/api")
@@ -111,6 +291,10 @@ class OfficeHandler(SimpleHTTPRequestHandler):
 
     def _proxy_websocket(self) -> None:
         self.close_connection = True
+        if getattr(self.server, "secret", None) and not self._is_authenticated():
+            self._json(401, {"detail": "authentication required"})
+            return
+
         lock = getattr(self.server, "sessions_lock", None)
         max_sessions = getattr(self.server, "max_sessions", 16)
 
@@ -385,8 +569,17 @@ def main() -> None:
     parser.add_argument("--session", default=os.environ.get("HFLOCK_SESSION", "http://127.0.0.1:8081"))
     parser.add_argument("--token", default=os.environ.get("API_TOKEN"))
     parser.add_argument("--client", default=os.environ.get("HFLOCK_CLIENT", "web"))
+    parser.add_argument("--secret", default=os.environ.get("HFLOCK_SECRET"))
     parser.add_argument("--demo", action="store_true", default=bool(os.environ.get("HFLOCK_DEMO")))
     args = parser.parse_args()
+
+    if not _is_loopback(args.listen) and not args.secret:
+        print(
+            f"ERROR: Refusing to bind non-loopback interface '{args.listen}' without operator secret authentication.\n"
+            f"Provide --secret or set HFLOCK_SECRET to enable access control before exposing the console over the network.",
+            file=sys.stderr,
+        )
+        raise SystemExit(1)
 
     demo_mode = args.demo
     token = args.token or ("demo-secret" if demo_mode else None)
@@ -421,11 +614,14 @@ def main() -> None:
     server.api_token = token
     server.client_name = args.client
     server.demo_mode = demo_mode
+    server.secret = args.secret
+    server.valid_sessions = set()
     server.max_sessions = int(os.environ.get("HFLOCK_MAX_SESSIONS", "16"))
     server.active_sessions = 0
     server.sessions_lock = threading.Lock()
     mode_str = " (DEMO MODE)" if demo_mode else ""
-    print(f"office UI: http://{args.listen}:{args.port} (client {args.client}){mode_str}")
+    auth_str = " [AUTH REQUIRED]" if args.secret else ""
+    print(f"office UI: http://{args.listen}:{args.port} (client {args.client}){mode_str}{auth_str}")
     try:
         server.serve_forever()
     except KeyboardInterrupt:

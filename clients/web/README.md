@@ -42,6 +42,17 @@ The browser connects only to this server. HTTP and SSE use `/api`; the terminal
 uses the same-origin `/session` WebSocket. The server attaches the token to both
 upstreams, so it never enters page source, JavaScript or browser storage.
 
+## Access control & operator authentication
+
+The web console provides operator authentication via a single shared operator secret (`--secret <secret>` or `HFLOCK_SECRET=<secret>`).
+
+- **Non-loopback Enforcement**: If `--listen` is set to any non-loopback interface (such as `0.0.0.0` or a public IP), `server.py` **refuses to serve** unless `--secret` or `HFLOCK_SECRET` is configured. It exits immediately with an explicit error to prevent accidental unauthenticated exposure.
+- **Constant-Time Verification**: Secrets and session tokens are compared using constant-time digest comparison (`hmac.compare_digest`) to prevent timing side-channel leaks.
+- **Cookie Session Security**: Successful login issues a cryptographically secure random session token (`secrets.token_hex(32)`) in an `HttpOnly; SameSite=Strict; Path=/` cookie (`hflock_session`). Credentials are never accepted or passed in query parameters.
+- **Terminal Socket Protection**: The WebSocket proxy for `/session` validates the session cookie on the upgrade HTTP handshake before establishing a connection. Unauthenticated upgrade attempts are rejected with `HTTP 401 Unauthorized`.
+
+> ⚠ **What this authentication is NOT**: Operator authentication answers **"may this person in"**, not **"which person was this"**. It provides a single shared operator credential boundary for the office. It does **NOT** provide individual user identities, role-based access control (RBAC), or audit logging of which specific user performed an action or typed a command into the terminal.
+
 ## Panel architecture
 
 `app.js` is wiring only. Each independent panel lives under `ui/` and owns its

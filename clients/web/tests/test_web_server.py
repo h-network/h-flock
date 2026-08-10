@@ -258,3 +258,109 @@ def test_proxy_websocket_max_sessions_limit_returns_503():
         web_server.shutdown()
         web_server.server_close()
 
+
+def test_refuse_non_loopback_without_secret(monkeypatch):
+    from clients.web.server import main
+    monkeypatch.setattr("sys.argv", ["server.py", "--listen", "0.0.0.0", "--demo"])
+    monkeypatch.setenv("HFLOCK_SECRET", "")
+    with pytest.raises(SystemExit) as exc_info:
+        main()
+    assert exc_info.value.code == 1
+
+
+def test_auth_secret_enforcement_and_login_flow():
+    web_server = ThreadingHTTPServer(("127.0.0.1", 0), OfficeHandler)
+    web_server.api_base = "http://127.0.0.1:8080"
+    web_server.session_host = "127.0.0.1"
+    web_server.session_port = 8081
+    web_server.api_token = "test-secret-token"
+    web_server.client_name = "web"
+    web_server.demo_mode = True
+    web_server.secret = "topsecret123"
+    web_server.valid_sessions = set()
+    web_server.max_sessions = 16
+    web_server.active_sessions = 0
+    web_server.sessions_lock = threading.Lock()
+    web_port = web_server.server_address[1]
+
+    web_thread = threading.Thread(target=web_server.serve_forever, daemon=True)
+    web_thread.start()
+
+    try:
+        # 1. Unauthenticated API GET returns 401
+        req = urllib.request.Request(f"http://127.0.0.1:{web_port}/api/agents")
+        with pytest.raises(urllib.error.HTTPError) as exc_info:
+            urllib.request.urlopen(req)
+        assert exc_info.value.code == 401
+
+        # 2. Unauthenticated WebSocket upgrade returns 401
+        sock = socket.create_connection(("127.0.0.1", web_port), timeout=5)
+        request_raw = (
+            "GET /session HTTP/1.1\r\n"
+            "Host: 127.0.0.1\r\n"
+            "Upgrade: websocket\r\n"
+            "Connection: Upgrade\r\n\r\n"
+        )
+        sock.sendall(request_raw.encode())
+        resp_file = sock.makefile("rb", buffering=0)
+        status_line = resp_file.readline().decode()
+        assert "401" in status_line
+        sock.close()
+
+        # 3. Invalid login returns 401
+        req_bad_login = urllib.request.Request(
+            f"http://127.0.0.1:{web_port}/login",
+            data=json.dumps({"secret": "wrongsecret"}).encode(),
+            headers={"Content-Type": "application/json"},
+            method="POST",
+        )
+        with pytest.raises(urllib.error.HTTPError) as exc_info:
+            urllib.request.urlopen(req_bad_login)
+        assert exc_info.value.code == 401
+
+        # 4. Valid login returns 200 and Set-Cookie
+        req_login = urllib.request.Request(
+            f"http://127.0.0.1:{web_port}/login",
+            data=json.dumps({"secret": "topsecret123"}).encode(),
+            headers={"Content-Type": "application/json"},
+            method="POST",
+        )
+        with urllib.request.urlopen(req_login) as resp:
+            assert resp.status == 200
+            cookie_header = resp.headers.get("Set-Cookie")
+            assert "hflock_session=" in cookie_header
+            assert "HttpOnly" in cookie_header
+            assert "SameSite=Strict" in cookie_header
+            session_cookie = cookie_header.split(";")[0]
+
+        # 5. Authenticated API GET with cookie returns 200
+        req_auth = urllib.request.Request(
+            f"http://127.0.0.1:{web_port}/api/agents",
+            headers={"Cookie": session_cookie},
+        )
+        with urllib.request.urlopen(req_auth) as resp:
+            assert resp.status == 200
+            data = json.loads(resp.read().decode())
+            assert "architect" in data["agents"]
+
+        # 6. Logout clears session cookie
+        req_logout = urllib.request.Request(
+            f"http://127.0.0.1:{web_port}/logout",
+            headers={"Cookie": session_cookie},
+            method="POST",
+        )
+        with urllib.request.urlopen(req_logout) as resp:
+            assert resp.status == 200
+
+        # 7. Subsequent request without valid session returns 401
+        req_after_logout = urllib.request.Request(
+            f"http://127.0.0.1:{web_port}/api/agents",
+            headers={"Cookie": session_cookie},
+        )
+        with pytest.raises(urllib.error.HTTPError) as exc_info:
+            urllib.request.urlopen(req_after_logout)
+        assert exc_info.value.code == 401
+    finally:
+        web_server.shutdown()
+        web_server.server_close()
+
