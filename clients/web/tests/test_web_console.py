@@ -87,3 +87,38 @@ def test_terminal_js_readonly_guarantee_and_bypass_protection():
     assert "if (!this.isReadOnly && this.socket && this.socket.readyState === WebSocket.OPEN && this.agent)" in js
     assert 'mode: initialMode' in js or 'mode: mode' in js
 
+
+def test_terminal_part_ii_overengineering_features():
+    """SPEC §12 Over-engineering verification: search, copy/paste protection, local storage persistence, multi-grid & recording."""
+    js = (WEB_DIR / "ui" / "terminal.js").read_text(encoding="utf-8")
+    html = (WEB_DIR / "index.html").read_text(encoding="utf-8")
+
+    # 1. Scrollback search & vendored addon
+    assert (WEB_DIR / "vendor" / "xterm-addon-search.js").exists()
+    assert 'src="vendor/xterm-addon-search.js"' in html
+    assert "terminal-search-input" in html
+    assert "searchAddon" in js
+    assert "findNext" in js
+
+    # 2. Copy/paste protection & multi-line warning modal
+    assert "paste-confirm-dialog" in html
+    assert "Paste blocked: Terminal is in READ-ONLY mode" in js
+    assert "_showPasteConfirmationModal" in js
+
+    # 3. LocalStorage settings persistence (font size & scrollback depth)
+    assert "hflock.terminal.fontSize" in js
+    assert "hflock.terminal.scrollback" in js
+
+    # 4. Multi-terminal side-by-side grid
+    assert "terminal-multi-grid" in html
+    assert "term-view-single" in html
+    assert "term-view-split" in html
+    assert "term-view-grid" in html
+
+    # 5. Session recording & replay player
+    assert "record-session-btn" in html
+    assert "session-replay-bar" in html
+    assert "recordingFrames" in js
+    assert "startReplay" in js
+
+

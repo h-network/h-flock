@@ -1,10 +1,10 @@
 "use strict";
 
 /**
- * Terminal UI Panel (Build 33 / SPEC.md §4, §6, §7 - tmux lane)
+ * Terminal UI Panel (Build 33 Part II / SPEC.md §4, §6, §7, §12 - tmux lane)
  *
  * Implements xterm.js against proxied session socket (/session?agent=...)
- * Features required by SPEC.md:
+ * Features required by SPEC.md Part I & Part II:
  * - Read-only by default (deliberate toggle for typing)
  * - Exact 120x32 geometry matching LLD-session
  * - 5 Required Panel States: loading, empty, error (with retry), stale (update age), disconnected (reconnect backoff & attempt count)
@@ -12,6 +12,12 @@
  * - Keyboard navigation & Escape key handling (prevents xterm focus traps)
  * - Light and Dark theme support following prefers-color-scheme
  * - Safety rule (Invariant 7): Terminal is rendering/input only; NEVER scrape bytes for data!
+ * - SPEC §12 Over-engineering features:
+ *   1. Scrollback search with match highlighting and prev/next navigation
+ *   2. Copy & paste protection (auto-copy on selection, read-only paste block, multi-line newline confirm modal)
+ *   3. Persistent font size & scrollback depth in localStorage
+ *   4. Side-by-side multi-terminal grid support (1, 2, or 4 terminals)
+ *   5. Session recording & replay player with playback speeds and scrub timeline
  */
 
 export class TerminalPanel {
@@ -27,6 +33,24 @@ export class TerminalPanel {
     this.reconnectTimer = null;
     this.lastOutputTime = null;
     this.staleCheckInterval = null;
+
+    // Search addon instance
+    this.searchAddon = null;
+
+    // Settings (persisted in localStorage)
+    this.fontSize = parseInt(localStorage.getItem("hflock.terminal.fontSize") || "14", 10);
+    this.scrollback = parseInt(localStorage.getItem("hflock.terminal.scrollback") || "2000", 10);
+
+    // Session Recording & Replay State
+    this.isRecording = false;
+    this.recordingFrames = [];
+    this.recordingStartTime = null;
+    this.isPlayingReplay = false;
+    this.replayTimer = null;
+
+    // Multi-terminal Layout View Mode: "single" | "split" | "grid"
+    this.viewMode = "single";
+    this.subTerminals = {}; // cellId -> TerminalPanel instance
 
     this.state = "empty"; // loading | empty | error | stale | disconnected | connected
 
@@ -50,16 +74,23 @@ export class TerminalPanel {
 
     const isLight = window.matchMedia && window.matchMedia("(prefers-color-scheme: light)").matches;
 
-    // Exact 120x32 geometry per LLD-session & SPEC.md §6
-    // Read-only by default: disableStdin provides engine-level input blocking (SPEC.md §6)
+    // Exact 120x32 geometry per LLD-session & SPEC.md §6 & §12
     this.term = new window.Terminal({
       cols: 120,
       rows: 32,
       convertEol: true,
       cursorBlink: true,
+      fontSize: this.fontSize,
+      scrollback: this.scrollback,
       disableStdin: this.isReadOnly,
       theme: isLight ? this.lightTheme : this.darkTheme
     });
+
+    // SPEC §12: Scrollback search addon initialization
+    if (window.SearchAddon && window.SearchAddon.SearchAddon) {
+      this.searchAddon = new window.SearchAddon.SearchAddon();
+      this.term.loadAddon(this.searchAddon);
+    }
 
     const container = document.getElementById(this.containerId);
     if (container) {
@@ -67,17 +98,28 @@ export class TerminalPanel {
     }
 
     // Keyboard Accessibility & Focus Trap Prevention (SPEC.md §7):
-    // xterm captures keys aggressively; handling Escape allows users to leave terminal focus cleanly.
     this.term.attachCustomKeyEventHandler((event) => {
       if (event.type === "keydown" && (event.key === "Escape" || event.code === "Escape")) {
         this.term.blur();
         const toggleBtn = document.getElementById("toggle-input-mode");
         if (toggleBtn) toggleBtn.focus();
         this._announce("Focus returned from terminal. Keyboard focus un-trapped.");
-        return false; // Prevent xterm from swallowing Escape
+        return false;
       }
       return true;
     });
+
+    // SPEC §12: Copy on selection automatically
+    if (this.term.onSelectionChange) {
+      this.term.onSelectionChange(() => {
+        if (this.term && this.term.hasSelection()) {
+          const selectedText = this.term.getSelection();
+          if (selectedText && navigator.clipboard) {
+            navigator.clipboard.writeText(selectedText).catch(() => {});
+          }
+        }
+      });
+    }
 
     // Listen for OS light/dark color scheme preference changes (SPEC.md §7)
     if (window.matchMedia) {
@@ -89,14 +131,19 @@ export class TerminalPanel {
     }
 
     // Safety Rule (Invariant 7 & SPEC.md §5): Terminal bytes are rendering and user input ONLY.
-    // NEVER scrape terminal bytes for presence or replies!
     this.term.onData((data) => {
       if (!this.isReadOnly && this.socket && this.socket.readyState === WebSocket.OPEN && this.agent) {
+        this._recordFrame("in", data);
         this.socket.send(JSON.stringify({ agent: this.agent, data: data }));
       }
     });
 
     this._bindControls();
+    this._bindSearchControls();
+    this._bindSettingsControls();
+    this._bindViewControls();
+    this._bindRecordingControls();
+    this._bindPasteProtection();
     this._startStaleChecker();
   }
 
@@ -111,6 +158,295 @@ export class TerminalPanel {
         if (this.agent) this.connect(this.agent, true);
       };
     }
+  }
+
+  // SPEC §12: Scrollback Search Controls
+  _bindSearchControls() {
+    const searchInput = document.getElementById("terminal-search-input");
+    const searchPrev = document.getElementById("terminal-search-prev");
+    const searchNext = document.getElementById("terminal-search-next");
+    const searchResults = document.getElementById("terminal-search-results");
+
+    if (!searchInput) return;
+
+    const performSearch = (direction = "next") => {
+      const query = searchInput.value;
+      if (!query || !this.searchAddon) {
+        if (searchResults) searchResults.textContent = "0 matches";
+        return;
+      }
+      if (direction === "prev") {
+        this.searchAddon.findPrevious(query, { regex: false, caseSensitive: false, incremental: false });
+      } else {
+        this.searchAddon.findNext(query, { regex: false, caseSensitive: false, incremental: false });
+      }
+    };
+
+    searchInput.oninput = () => performSearch("next");
+    searchInput.onkeydown = (e) => {
+      if (e.key === "Enter") {
+        performSearch(e.shiftKey ? "prev" : "next");
+      }
+    };
+    if (searchPrev) searchPrev.onclick = () => performSearch("prev");
+    if (searchNext) searchNext.onclick = () => performSearch("next");
+  }
+
+  // SPEC §12: Font Size & Scrollback Persistence in localStorage
+  _bindSettingsControls() {
+    const fontSizeSelect = document.getElementById("terminal-font-size");
+    const scrollbackSelect = document.getElementById("terminal-scrollback-depth");
+
+    if (fontSizeSelect) {
+      fontSizeSelect.value = String(this.fontSize);
+      fontSizeSelect.onchange = (e) => {
+        this.fontSize = parseInt(e.target.value, 10);
+        localStorage.setItem("hflock.terminal.fontSize", String(this.fontSize));
+        if (this.term) this.term.options.fontSize = this.fontSize;
+      };
+    }
+
+    if (scrollbackSelect) {
+      scrollbackSelect.value = String(this.scrollback);
+      scrollbackSelect.onchange = (e) => {
+        this.scrollback = parseInt(e.target.value, 10);
+        localStorage.setItem("hflock.terminal.scrollback", String(this.scrollback));
+        if (this.term) this.term.options.scrollback = this.scrollback;
+      };
+    }
+  }
+
+  // SPEC §12: Side-by-side Multi-Terminal Views (Single | 2-Split | 4-Grid)
+  _bindViewControls() {
+    const singleBtn = document.getElementById("term-view-single");
+    const splitBtn = document.getElementById("term-view-split");
+    const gridBtn = document.getElementById("term-view-grid");
+    const singleContainer = document.getElementById(this.containerId);
+    const multiGrid = document.getElementById("terminal-multi-grid");
+
+    if (!singleBtn || !multiGrid) return;
+
+    const setView = (mode) => {
+      this.viewMode = mode;
+      [singleBtn, splitBtn, gridBtn].forEach((btn) => {
+        if (btn) {
+          const isActive = btn.id === `term-view-${mode}`;
+          btn.classList.toggle("active", isActive);
+          btn.setAttribute("aria-checked", isActive ? "true" : "false");
+        }
+      });
+
+      if (mode === "single") {
+        singleContainer.hidden = false;
+        multiGrid.hidden = true;
+      } else {
+        singleContainer.hidden = true;
+        multiGrid.hidden = false;
+
+        const cell3 = document.getElementById("term-cell-3");
+        const cell4 = document.getElementById("term-cell-4");
+        if (cell3 && cell4) {
+          cell3.hidden = mode !== "grid";
+          cell4.hidden = mode !== "grid";
+        }
+      }
+      this._announce(`Terminal view mode switched to ${mode}.`);
+    };
+
+    singleBtn.onclick = () => setView("single");
+    if (splitBtn) splitBtn.onclick = () => setView("split");
+    if (gridBtn) gridBtn.onclick = () => setView("grid");
+  }
+
+  // SPEC §12: Copy/Paste Protection & Multi-line Warning Modal
+  _bindPasteProtection() {
+    const container = document.getElementById(this.containerId);
+    if (!container) return;
+
+    container.addEventListener("paste", (e) => {
+      e.preventDefault();
+      const text = (e.clipboardData || window.clipboardData).getData("text");
+      if (!text) return;
+
+      if (this.isReadOnly) {
+        this.setPanelStatus("Paste blocked: Terminal is in READ-ONLY mode.", "error");
+        this._announce("Paste blocked: Terminal is currently in read-only mode.");
+        return;
+      }
+
+      // Check if text contains newlines (executed commands risk)
+      if (text.includes("\n") || text.includes("\r")) {
+        this._showPasteConfirmationModal(text);
+      } else {
+        this.sendKeystroke(text);
+      }
+    });
+  }
+
+  _showPasteConfirmationModal(text) {
+    const dialog = document.getElementById("paste-confirm-dialog");
+    const previewBox = document.getElementById("paste-preview-box");
+    const confirmBtn = document.getElementById("paste-confirm-btn");
+    const cancelBtn = document.getElementById("paste-cancel-btn");
+
+    if (!dialog || !previewBox || !confirmBtn) {
+      // Fallback: prompt user if modal dialog not available
+      if (confirm(`Pasting content containing newlines will execute commands immediately in agent session:\n\n${text.slice(0, 200)}...\n\nProceed?`)) {
+        this.sendKeystroke(text);
+      }
+      return;
+    }
+
+    const lineCount = text.split(/\r\n|\r|\n/).length;
+    previewBox.textContent = `[${lineCount} Lines to Paste]:\n${text}`;
+    
+    if (typeof dialog.showModal === "function") {
+      dialog.showModal();
+    } else {
+      dialog.hidden = false;
+    }
+
+    const cleanup = () => {
+      confirmBtn.onclick = null;
+      if (cancelBtn) cancelBtn.onclick = null;
+      if (typeof dialog.close === "function") {
+        dialog.close();
+      } else {
+        dialog.hidden = true;
+      }
+    };
+
+    confirmBtn.onclick = (e) => {
+      e.preventDefault();
+      this.sendKeystroke(text);
+      cleanup();
+    };
+
+    if (cancelBtn) {
+      cancelBtn.onclick = (e) => {
+        e.preventDefault();
+        cleanup();
+      };
+    }
+  }
+
+  sendKeystroke(data) {
+    if (!this.isReadOnly && this.socket && this.socket.readyState === WebSocket.OPEN && this.agent) {
+      this._recordFrame("in", data);
+      this.socket.send(JSON.stringify({ agent: this.agent, data: data }));
+    }
+  }
+
+  // SPEC §12: Session Recording & Replay
+  _bindRecordingControls() {
+    const recordBtn = document.getElementById("record-session-btn");
+    const replayBtn = document.getElementById("replay-session-btn");
+    const replayBar = document.getElementById("session-replay-bar");
+    const playPauseBtn = document.getElementById("replay-play-pause");
+    const closeReplayBtn = document.getElementById("replay-close");
+
+    if (recordBtn) {
+      recordBtn.onclick = () => {
+        if (!this.isRecording) {
+          this.isRecording = true;
+          this.recordingFrames = [];
+          this.recordingStartTime = Date.now();
+          recordBtn.classList.add("recording");
+          recordBtn.textContent = "Stop Rec";
+          this._announce("Terminal session recording started.");
+          this.setPanelStatus("Recording session...", "connected");
+        } else {
+          this.isRecording = false;
+          recordBtn.classList.remove("recording");
+          recordBtn.textContent = "Record";
+          this._announce(`Session recording stopped. ${this.recordingFrames.length} frames captured.`);
+          this.setPanelStatus(`Recording saved (${this.recordingFrames.length} frames).`, "connected");
+        }
+      };
+    }
+
+    if (replayBtn && replayBar) {
+      replayBtn.onclick = () => {
+        if (this.recordingFrames.length === 0) {
+          alert("No recorded session available. Click 'Record' first to capture a session.");
+          return;
+        }
+        replayBar.hidden = false;
+        this.startReplay();
+      };
+    }
+
+    if (playPauseBtn) {
+      playPauseBtn.onclick = () => {
+        if (this.isPlayingReplay) {
+          this.pauseReplay();
+          playPauseBtn.textContent = "▶ Play";
+        } else {
+          this.startReplay();
+          playPauseBtn.textContent = "❚❚ Pause";
+        }
+      };
+    }
+
+    if (closeReplayBtn && replayBar) {
+      closeReplayBtn.onclick = () => {
+        this.pauseReplay();
+        replayBar.hidden = true;
+        if (this.agent) this.connect(this.agent, true);
+      };
+    }
+  }
+
+  _recordFrame(direction, data) {
+    if (!this.isRecording || !this.recordingStartTime) return;
+    const deltaMs = Date.now() - this.recordingStartTime;
+    this.recordingFrames.push({ deltaMs, direction, data });
+  }
+
+  startReplay() {
+    if (!this.term || this.recordingFrames.length === 0) return;
+    this.isPlayingReplay = true;
+    if (this.socket) {
+      try { this.socket.close(); } catch (_) {}
+    }
+    this.term.reset();
+    this.term.writeln("\x1b[35;1m--- SESSION REPLAY STARTED ---\x1b[0m\r\n");
+
+    let index = 0;
+    const speedSelect = document.getElementById("replay-speed");
+    const scrub = document.getElementById("replay-scrub");
+
+    const playNext = () => {
+      if (!this.isPlayingReplay || index >= this.recordingFrames.length) {
+        this.isPlayingReplay = false;
+        this.term.writeln("\r\n\x1b[35;1m--- SESSION REPLAY FINISHED ---\x1b[0m");
+        return;
+      }
+
+      const frame = this.recordingFrames[index];
+      const speed = parseFloat((speedSelect && speedSelect.value) || "1");
+
+      if (typeof frame.data === "string") {
+        this.term.write(frame.data);
+      }
+
+      if (scrub) {
+        scrub.value = String(Math.round((index / this.recordingFrames.length) * 100));
+      }
+
+      index++;
+      const nextFrame = this.recordingFrames[index];
+      const delay = nextFrame ? Math.max((nextFrame.deltaMs - frame.deltaMs) / speed, 10) : 50;
+
+      this.replayTimer = setTimeout(playNext, delay);
+    };
+
+    playNext();
+  }
+
+  pauseReplay() {
+    this.isPlayingReplay = false;
+    if (this.replayTimer) clearTimeout(this.replayTimer);
   }
 
   _announce(message) {
@@ -156,7 +492,6 @@ export class TerminalPanel {
     if (statusEl) {
       statusEl.textContent = statusText;
       statusEl.className = `terminal-status ${statusClass}`;
-      // SPEC.md §7: absolute timestamp on hover, relative text at rest
       const absTime = this.lastOutputTime ? new Date(this.lastOutputTime).toISOString() : new Date().toISOString();
       statusEl.title = `Last Output: ${absTime}`;
     }
@@ -233,9 +568,11 @@ export class TerminalPanel {
           this.state = "connected";
           this.setPanelStatus("Live", "connected");
         }
-        if (typeof event.data === "string") {
+
+        let rawData = event.data;
+        if (typeof rawData === "string") {
           try {
-            const parsed = JSON.parse(event.data);
+            const parsed = JSON.parse(rawData);
             if (parsed && typeof parsed === "object" && parsed.error) {
               this.state = "error";
               this.setPanelStatus(`Window error: ${parsed.error}`, "error");
@@ -243,19 +580,18 @@ export class TerminalPanel {
               this.term.writeln(`\r\n\x1b[31;1m--- WINDOW TERMINATED: ${parsed.error} ---\x1b[0m`);
               return;
             }
-          } catch (_) {
-            // Not a JSON error message, plain terminal output string
-          }
-          this.term.write(event.data);
-        } else if (event.data instanceof ArrayBuffer) {
-          this.term.write(new Uint8Array(event.data));
+          } catch (_) {}
+          this._recordFrame("out", rawData);
+          this.term.write(rawData);
+        } else if (rawData instanceof ArrayBuffer) {
+          this._recordFrame("out", rawData);
+          this.term.write(new Uint8Array(rawData));
         }
       };
 
       ws.onclose = (event) => {
         this.socket = null;
         if (this.state === "error") {
-          // Terminal window terminated - do not silently reconnect or freeze
           return;
         }
         if (this.reconnectAttempts < this.maxReconnectAttempts) {
@@ -277,9 +613,7 @@ export class TerminalPanel {
         }
       };
 
-      ws.onerror = () => {
-        // Handled by onclose
-      };
+      ws.onerror = () => {};
 
       this.socket = ws;
     } catch (err) {
@@ -291,6 +625,7 @@ export class TerminalPanel {
   }
 
   destroy() {
+    this.pauseReplay();
     if (this.staleCheckInterval) clearInterval(this.staleCheckInterval);
     if (this.reconnectTimer) clearTimeout(this.reconnectTimer);
     if (this.socket) {

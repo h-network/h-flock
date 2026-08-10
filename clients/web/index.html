@@ -65,11 +65,70 @@
             <span id="terminal-live-announcer" class="sr-only" aria-live="polite" aria-atomic="true"></span>
           </div>
           <div class="terminal-controls">
+            <div class="terminal-search-box">
+              <label for="terminal-search-input" class="sr-only">Search terminal scrollback</label>
+              <input id="terminal-search-input" type="search" placeholder="Search scrollback…" aria-label="Search terminal scrollback">
+              <button id="terminal-search-prev" type="button" class="btn-sm" title="Previous match (Shift+Enter)">▲</button>
+              <button id="terminal-search-next" type="button" class="btn-sm" title="Next match (Enter)">▼</button>
+              <span id="terminal-search-results" class="search-count muted">0 matches</span>
+            </div>
+            <div class="terminal-view-mode" role="radiogroup" aria-label="Terminal layout view mode">
+              <button id="term-view-single" type="button" class="btn-sm active" aria-checked="true">Single</button>
+              <button id="term-view-split" type="button" class="btn-sm" aria-checked="false">2-Split</button>
+              <button id="term-view-grid" type="button" class="btn-sm" aria-checked="false">4-Grid</button>
+            </div>
+            <div class="terminal-settings-box">
+              <label for="terminal-font-size" class="sr-only">Terminal font size</label>
+              <select id="terminal-font-size" title="Font Size">
+                <option value="12">12px</option>
+                <option value="14" selected>14px</option>
+                <option value="16">16px</option>
+                <option value="18">18px</option>
+              </select>
+              <label for="terminal-scrollback-depth" class="sr-only">Scrollback depth</label>
+              <select id="terminal-scrollback-depth" title="Scrollback Lines">
+                <option value="1000">1000 lines</option>
+                <option value="2000" selected>2000 lines</option>
+                <option value="5000">5000 lines</option>
+                <option value="10000">10000 lines</option>
+              </select>
+            </div>
+            <button id="record-session-btn" type="button" class="btn-mode btn-record" aria-label="Record terminal session">Record</button>
+            <button id="replay-session-btn" type="button" class="btn-mode" aria-label="Replay recorded session">Replay</button>
             <button id="toggle-input-mode" type="button" class="btn-mode" aria-label="Enable typing in terminal window">Enable Typing</button>
             <button id="reconnect-terminal" type="button" class="btn-mode" aria-label="Reconnect terminal session">Reconnect</button>
           </div>
         </div>
+        <div id="session-replay-bar" class="session-replay-bar" hidden>
+          <button id="replay-play-pause" type="button" class="btn-sm">▶ Play</button>
+          <input id="replay-scrub" type="range" min="0" max="100" value="0" aria-label="Session replay progress scrub timeline">
+          <span id="replay-time" class="replay-time muted">00:00 / 00:00</span>
+          <select id="replay-speed" title="Replay Speed">
+            <option value="1">1x Speed</option>
+            <option value="2">2x Speed</option>
+            <option value="5">5x Speed</option>
+          </select>
+          <button id="replay-close" type="button" class="btn-sm">Close Replay</button>
+        </div>
         <div id="terminal-container" class="terminal-container"></div>
+        <div id="terminal-multi-grid" class="terminal-multi-grid" hidden>
+          <div id="term-cell-1" class="term-grid-cell">
+            <div class="cell-bar"><span class="cell-title">Terminal 1</span><select id="cell-agent-1" class="cell-agent-select"><option value="">Select Agent</option></select></div>
+            <div id="term-container-1" class="terminal-container cell-container"></div>
+          </div>
+          <div id="term-cell-2" class="term-grid-cell">
+            <div class="cell-bar"><span class="cell-title">Terminal 2</span><select id="cell-agent-2" class="cell-agent-select"><option value="">Select Agent</option></select></div>
+            <div id="term-container-2" class="terminal-container cell-container"></div>
+          </div>
+          <div id="term-cell-3" class="term-grid-cell cell-secondary" hidden>
+            <div class="cell-bar"><span class="cell-title">Terminal 3</span><select id="cell-agent-3" class="cell-agent-select"><option value="">Select Agent</option></select></div>
+            <div id="term-container-3" class="terminal-container cell-container"></div>
+          </div>
+          <div id="term-cell-4" class="term-grid-cell cell-secondary" hidden>
+            <div class="cell-bar"><span class="cell-title">Terminal 4</span><select id="cell-agent-4" class="cell-agent-select"><option value="">Select Agent</option></select></div>
+            <div id="term-container-4" class="terminal-container cell-container"></div>
+          </div>
+        </div>
       </section>
       <section id="messages-view" class="tab-view messages-view" role="tabpanel" aria-labelledby="messages-tab" hidden>
         <div id="messages-status" role="status"></div>
@@ -88,8 +147,8 @@
     </section>
 
     <section id="boards-panel" class="panel boards-panel" aria-labelledby="boards-title">
-      <header class="panel-header"><div><h2 id="boards-title">Board</h2><p>Every agent, four columns</p></div><div id="boards-status" role="status"></div></header>
-      <div id="boards" aria-live="polite"></div>
+      <header class="panel-header"><div><h2 id="boards-title">Task board</h2><p>Overview of active work across all agents</p></div><div id="boards-status" role="status"></div></header>
+      <div id="boards" class="board-grid"></div>
     </section>
   </main>
   <dialog id="hire-dialog" aria-labelledby="hire-title">
@@ -111,7 +170,18 @@
       <footer><button type="button" data-close-dialog="retire-dialog">Cancel</button><button id="retire-confirm-button" type="submit" class="danger-button" disabled>Retire agent</button></footer>
     </form>
   </dialog>
+  <dialog id="paste-confirm-dialog" aria-labelledby="paste-confirm-title">
+    <form id="paste-confirm-form" method="dialog">
+      <header><div><h2 id="paste-confirm-title">Confirm Multi-line Paste</h2><p>Pasting multi-line content containing newlines will execute commands immediately in the interactive session.</p></div></header>
+      <div id="paste-preview-box" class="paste-preview-box"></div>
+      <footer>
+        <button id="paste-cancel-btn" type="button" data-close-dialog="paste-confirm-dialog">Cancel</button>
+        <button id="paste-confirm-btn" type="submit" class="danger-button">Execute & Paste</button>
+      </footer>
+    </form>
+  </dialog>
   <script src="vendor/xterm.js"></script>
+  <script src="vendor/xterm-addon-search.js"></script>
   <script type="module" src="app.js"></script>
 </body>
 </html>
