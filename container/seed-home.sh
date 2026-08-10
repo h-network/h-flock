@@ -111,8 +111,22 @@ case "$MODE" in
                 agy_path=""
             fi
 
+            # ⚠ A file is not a login. Measured on a from-scratch install: a
+            # 281-byte credentials file with expiresAt of 0 reported "logged in"
+            # while every agent sat at "Not logged in · Run /login". Check the
+            # token, not the inode.
             if [ -s "$claude_path" ]; then
-                printf "  %-9s %-7s %s\n" "$p" "claude" "logged in"
+                claude_state="$(python3 - "$claude_path" <<'PY' 2>/dev/null || echo UNREADABLE
+import json, sys, time
+try:
+    d = json.load(open(sys.argv[1]))["claudeAiOauth"]
+except Exception:
+    print("UNREADABLE"); raise SystemExit
+exp = d.get("refreshTokenExpiresAt") or d.get("expiresAt") or 0
+print("logged in" if exp / 1000 > time.time() else "EXPIRED")
+PY
+)"
+                printf "  %-9s %-7s %s\n" "$p" "claude" "$claude_state"
             else
                 printf "  %-9s %-7s %s\n" "$p" "claude" "NEEDS LOGIN"
             fi
