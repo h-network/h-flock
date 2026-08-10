@@ -14,7 +14,7 @@ def test_token_not_in_browser_assets():
 
 
 def test_panel_modules_and_required_states_ship_without_a_build_step():
-    for name in ("agents", "alerts", "boards", "activity", "messages", "terminal"):
+    for name in ("agents", "alerts", "boards", "activity", "messages", "lifecycle", "terminal"):
         assert (WEB_DIR / "ui" / f"{name}.js").exists()
     shared = (WEB_DIR / "ui" / "shared.js").read_text(encoding="utf-8")
     for state in ("loading", "empty", "error", "stale", "disconnected"):
@@ -29,3 +29,15 @@ def test_accessible_panel_mounts_and_terminal_controls():
     for element in ("terminal-container", "terminal-mode-badge", "terminal-live-announcer", "toggle-input-mode"):
         assert f'id="{element}"' in html
     assert 'aria-live="assertive"' in html
+
+
+def test_lifecycle_uses_control_envelopes_and_safe_name_validation():
+    lifecycle = (WEB_DIR / "ui" / "lifecycle.js").read_text(encoding="utf-8")
+    for kind in ("StartAgent", "StopAgent", "PauseAgent", "ResumeAgent"):
+        assert kind in lifecycle
+    assert 'api("/agents/host/envelopes"' in lifecycle
+    assert "(?![0-9]+$)" in lifecycle
+    assert "queues and boards retained" in lifecycle
+    html = (WEB_DIR / "index.html").read_text(encoding="utf-8")
+    assert "Queues and boards survive" in html
+    assert 'id="retire-confirm"' in html

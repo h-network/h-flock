@@ -5,6 +5,7 @@ import { AlertsPanel } from "./ui/alerts.js";
 import { BoardsPanel } from "./ui/boards.js";
 import { ActivityPanel } from "./ui/activity.js";
 import { MessagesPanel } from "./ui/messages.js";
+import { LifecyclePanel } from "./ui/lifecycle.js";
 import { TerminalPanel } from "./ui/terminal.js";
 
 const $ = (id) => document.getElementById(id);
@@ -17,6 +18,7 @@ const agents = new AgentsPanel({
 });
 const activity = new ActivityPanel();
 let messages;
+let lifecycle;
 const alerts = new AlertsPanel();
 
 function activateTab(name) {
@@ -38,6 +40,7 @@ async function selectAgent(agent) {
   $("message").disabled = false;
   $("send").disabled = false;
   agents.render();
+  lifecycle.select(agent);
   await activity.select(agent);
   messages.render(agent);
   if (state.tab === "terminal") terminal.connect(agent);
@@ -67,6 +70,7 @@ async function start() {
   const config = await fetch("/client-config").then((response) => response.json());
   state.demo = Boolean(config.demo);
   messages = new MessagesPanel({ client: config.client });
+  lifecycle = new LifecyclePanel({ agents });
   bindTabs();
   bindDemoControls();
   $("global-connection").textContent = "live";

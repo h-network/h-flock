@@ -40,6 +40,17 @@ def start_agent(
     if not isinstance(cli, str) or not cli:
         raise ValueError("StartAgent payload.cli must be a non-empty string")
 
+    profile = payload.get("profile")
+    if profile:
+        # A profile becomes part of a config-directory path. Validate it before
+        # any state mutation, then persist it before roster visibility: tmuxhost
+        # may reconcile as soon as the row appears and must see the right account.
+        profile_key = prefix(pod, tenant, agent=agent, resource="profile")
+        prefix("check", "check", agent=profile, resource="profile")
+        r.set(profile_key, profile)
+    elif profile not in (None, ""):
+        raise ValueError("StartAgent payload.profile must be a segment string")
+
     launch_key = prefix(pod, tenant, agent=agent, resource="launch")
     r.hset(roster_key, agent, agent_vab)
     r.set(launch_key, cli)

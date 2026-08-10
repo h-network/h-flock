@@ -8,6 +8,7 @@ export class AgentsPanel {
     this.onSummary = onSummary;
     this.details = new Map();
     this.boards = new Map();
+    this.pending = new Set();
     this.selected = "";
     this.status = new PanelStatus("agents-status", () => this.refresh());
   }
@@ -27,12 +28,20 @@ export class AgentsPanel {
       const names = (roster.agents || []).map((value) => typeof value === "string" ? value : value.agent);
       const details = await Promise.all(names.map(async (agent) => [agent, await api(`/agents/${encodeURIComponent(agent)}`)]));
       this.details = new Map(details);
+      for (const agent of names) this.pending.delete(agent);
+      for (const agent of this.pending) this.details.set(agent, { vab: "tmux", presence: { state: "pending" } });
       if (this.details.size) this.status.ready(`${this.details.size} participants`);
       else this.status.empty("No enrolled participants");
       const blocked = Array.from(this.details.values()).filter((detail) => detail.presence?.state === "blocked").length;
       this.onSummary(`${this.details.size} participants${blocked ? ` · ${blocked} blocked` : " · no blocked agents"}`);
       this.render();
     } catch (error) { classifyFailure(this.status, error, this.details.size > 0); }
+  }
+
+  addPending(agent) {
+    this.pending.add(agent);
+    this.details.set(agent, { vab: "tmux", presence: { state: "pending" } });
+    this.render();
   }
 
   render() {
@@ -46,7 +55,7 @@ export class AgentsPanel {
       button.type = "button";
       button.className = `agent-row state-${presence}${agent === this.selected ? " selected" : ""}`;
       button.setAttribute("aria-label", `${agent}, ${presence}${presence === "blocked" ? ", action required" : ""}`);
-      button.innerHTML = `<span class="state-icon" aria-hidden="true">${{ working: "●", idle: "○", blocked: "⊘", unknown: "?" }[presence] || "?"}</span><strong>${escapeHtml(agent)}</strong><span class="presence-label">${escapeHtml(presence)}${presence === "blocked" ? " · ACT" : ""}</span><span class="vab">${escapeHtml(detail.vab || "unknown VAB")}</span><span class="ticket">${ticket ? escapeHtml(ticket.title || ticket.id || "open ticket") : "No open ticket"}</span><span class="age">${ticket?.started_ts ? escapeHtml(relativeTime(ticket.started_ts)) : ""}</span><time title="${escapeHtml(detail.presence?.last_activity ? absoluteTime(detail.presence.last_activity) : "No activity recorded")}">${detail.presence?.last_activity ? escapeHtml(relativeTime(detail.presence.last_activity)) : "activity unknown"}</time>`;
+      button.innerHTML = `<span class="state-icon" aria-hidden="true">${{ working: "●", idle: "○", blocked: "⊘", unknown: "?", pending: "…" }[presence] || "?"}</span><strong>${escapeHtml(agent)}</strong><span class="presence-label">${escapeHtml(presence)}${presence === "blocked" ? " · ACT" : ""}</span><span class="vab">${escapeHtml(detail.vab || "unknown VAB")}</span><span class="ticket">${presence === "pending" ? "Roster and window are converging" : ticket ? escapeHtml(ticket.title || ticket.id || "open ticket") : "No open ticket"}</span><span class="age">${ticket?.started_ts ? escapeHtml(relativeTime(ticket.started_ts)) : ""}</span><time title="${escapeHtml(detail.presence?.last_activity ? absoluteTime(detail.presence.last_activity) : "No activity recorded")}">${detail.presence?.last_activity ? escapeHtml(relativeTime(detail.presence.last_activity)) : "activity unknown"}</time>`;
       button.onclick = () => { this.selected = agent; this.onSelect(agent); };
       return button;
     }));

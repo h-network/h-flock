@@ -71,6 +71,39 @@ def test_start_agent_defaults_cli_to_claude():
     ]
 
 
+def test_start_agent_writes_profile_before_roster_visibility():
+    events = []
+    start_agent(
+        RecordingRedis(events),
+        pod="acme",
+        tenant="hq",
+        envelope={"payload": {"agent": "dave", "cli": "codex", "profile": "client-b"}},
+        create_window=lambda agent, cli: events.append(("create_window", agent, cli)),
+    )
+    assert events == [
+        ("set", prefix("acme", "hq", "dave", "profile"), "client-b"),
+        ("hset", prefix("acme", "hq", resource="roster"), "dave", "tmux"),
+        ("set", prefix("acme", "hq", "dave", "launch"), "codex"),
+        ("create_window", "dave", "codex"),
+    ]
+
+
+@pytest.mark.parametrize("profile", [None, ""])
+def test_start_agent_without_profile_writes_no_profile_key(profile):
+    events = []
+    payload = {"agent": "dave"}
+    if profile is not None:
+        payload["profile"] = profile
+    start_agent(
+        RecordingRedis(events),
+        pod="acme",
+        tenant="hq",
+        envelope={"payload": payload},
+        create_window=lambda agent, cli: events.append(("create_window", agent, cli)),
+    )
+    assert not any(":profile" in str(part) for event in events for part in event)
+
+
 def test_start_api_client_only_writes_roster_row():
     events = []
     start_agent(
@@ -102,6 +135,7 @@ def test_stop_agent_orders_roster_launch_then_window():
         ("hdel", prefix("acme", "hq", resource="delivering"), "dave"),
         ("kill_window", "dave"),
     ]
+    assert "profile" in AGENT_STATE_RESOURCES
 
 
 def test_stop_api_client_removes_roster_and_mailbox_without_tmux():
@@ -131,6 +165,9 @@ def test_stop_api_client_removes_roster_and_mailbox_without_tmux():
         {"agent": "dave", "cli": 42},
         {"agent": "dave", "vab": "control"},
         {"agent": "dave", "vab": 42},
+        {"agent": "dave", "profile": "../client-b"},
+        {"agent": "dave", "profile": "Client-B"},
+        {"agent": "dave", "profile": 42},
     ],
 )
 def test_start_agent_rejects_invalid_payload_before_mutation(payload):
