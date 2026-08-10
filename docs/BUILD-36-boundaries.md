@@ -1,5 +1,8 @@
 # Build 36 — the two boundaries that are real
 
+> ✅ **Shipped and demonstrated on the lab**, all three forced rather than
+> reasoned about — see §4. `main` at 293 tests.
+
 > Everything that crosses out of the container, and the one claim that crosses
 > between agents. Small, and the last framework items before the list is
 > decisions and parked work only.
@@ -79,7 +82,28 @@ own window.
 widened beyond loopback, the tenant must refuse to start without a password. One
 check in `entrypoint.sh`, `tmux`'s file.
 
-## 4. Done when
+## 4. Done when — what actually happened
+
+- **forged producer:** an envelope claiming `producer: telegram` written straight
+  into `architect`'s egress arrived at the recipient as `producer: architect`,
+  and the router logged it:
+  `producer_stamped … "claimed producer 'telegram' stamped from egress sender 'architect'"`
+- **both doors:** `API_BIND=0.0.0.0` with no cert →
+  `RuntimeError: API_TLS_CERT and API_TLS_KEY are required when API_BIND is not loopback`,
+  and the same for `SESSION_BIND`
+- **widened Redis bind:** `REDIS_BIND=0.0.0.0` with no password →
+  `entrypoint: REDIS_PASSWORD is required when REDIS_BIND is not loopback ('0.0.0.0')`
+  and the tenant stopped, `exit=1`
+- ⚠ **and the password path itself now works.** It was half-built: `redis-cli`
+  prints `NOAUTH` and still exits 0, so readiness passed while every seeding
+  command failed silently — a tenant that starts with an empty roster and no
+  error. With the `rcli` helper, a passworded tenant seeds
+  `architect,api,host` and an unauthenticated read gets `NOAUTH`.
+- ⚠ **`producer_stamped` goes to stdout, not to a Redis list** — the log is the
+  container's stdout (`docker logs`). Worth knowing before writing a checker
+  that looks in Redis and concludes nothing was logged.
+
+## 4b. Originally specified as
 
 - a forged `producer` arrives stamped with the queue's own sender, and the
   correction is logged
