@@ -168,14 +168,14 @@ class OfficeHandler(SimpleHTTPRequestHandler):
                 pass
         return "unauthenticated"
 
-    def _audit_log(self, event: str, details: dict) -> None:
+    def _audit_log(self, event: str, details: dict, session_id: str | None = None) -> None:
         audit_file = getattr(self.server, "audit_log", None)
         if not audit_file:
             return
         record = {
             "timestamp": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
             "event": event,
-            "session_id": self._get_session_id(),
+            "session_id": session_id or self._get_session_id(),
             "client_ip": self.client_address[0],
             "user_agent": self.headers.get("User-Agent", ""),
             "details": details,
@@ -384,11 +384,18 @@ class OfficeHandler(SimpleHTTPRequestHandler):
             if body:
                 try:
                     payload_data = json.loads(body.decode("utf-8"))
-                    kind = payload_data.get("kind", "")
-                    if kind:
-                        self._audit_log("operator_action", {"kind": kind, "path": self.path, "payload": payload_data.get("payload", {})})
+                    kind = payload_data.get("kind") or "Message"
+                    self._audit_log("operator_action", {
+                        "kind": kind,
+                        "path": self.path,
+                        "payload": payload_data.get("payload", payload_data)
+                    })
                 except Exception:
-                    pass
+                    self._audit_log("operator_action", {
+                        "kind": "Message",
+                        "path": self.path,
+                        "raw_bytes": len(body)
+                    })
             if self.server.demo_mode:
                 self._demo_api()
             else:
@@ -450,7 +457,8 @@ class OfficeHandler(SimpleHTTPRequestHandler):
             self.send_header("Cache-Control", "no-store")
             self.end_headers()
             self.wfile.write(json.dumps({"authenticated": True}).encode("utf-8"))
-            self._audit_log("login_success", {})
+            session_id_str = token[:12] + "..."
+            self._audit_log("login_success", {}, session_id=session_id_str)
         else:
             if lock is not None:
                 with lock:
@@ -497,44 +505,44 @@ class OfficeHandler(SimpleHTTPRequestHandler):
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>h-flock Console — Authentication Required</title>
+  <title>h-flock Operator Login</title>
+  <link rel="stylesheet" href="/style.css">
   <style>
-    body { display: flex; align-items: center; justify-content: center; height: 100vh; margin: 0; background: #0d1117; color: #c9d1d9; font-family: monospace, system-ui; }
-    .login-card { background: #161b22; border: 1px solid #30363d; border-radius: 8px; padding: 2rem; width: 360px; box-shadow: 0 8px 24px rgba(0,0,0,0.5); }
-    .login-card h2 { margin-top: 0; color: #58a6ff; font-size: 1.25rem; }
-    .login-card label { display: block; margin-bottom: 0.5rem; font-size: 0.875rem; color: #8b949e; }
-    .login-card input[type="password"] { width: 100%; padding: 0.5rem; border: 1px solid #30363d; border-radius: 4px; background: #0d1117; color: #c9d1d9; font-size: 1rem; box-sizing: border-box; margin-bottom: 1rem; }
-    .login-card button { width: 100%; padding: 0.6rem; border: none; border-radius: 4px; background: #238636; color: white; font-weight: bold; cursor: pointer; }
-    .login-card button:hover { background: #2ea043; }
-    .error-msg { color: #f85149; font-size: 0.85rem; margin-top: 0.75rem; display: none; }
+    body { display: flex; align-items: center; justify-content: center; min-height: 100vh; margin: 0; background: #0f172a; color: #f8fafc; font-family: system-ui, sans-serif; }
+    .card { background: #1e293b; padding: 2rem; border-radius: 0.5rem; box-shadow: 0 10px 15px -3px rgba(0,0,0,0.5); width: 100%; max-width: 400px; border: 1px solid #334155; }
+    h2 { margin-top: 0; font-size: 1.25rem; }
+    input[type="password"] { width: 100%; padding: 0.75rem; margin: 1rem 0; border: 1px solid #475569; border-radius: 0.25rem; background: #0f172a; color: #fff; box-sizing: border-box; }
+    button { width: 100%; padding: 0.75rem; background: #2563eb; color: #fff; border: none; border-radius: 0.25rem; font-weight: 600; cursor: pointer; }
+    button:hover { background: #1d4ed8; }
+    .error { color: #f87171; font-size: 0.875rem; display: none; margin-top: 0.5rem; }
   </style>
 </head>
 <body>
-  <div class="login-card">
-    <h2>h-flock Console</h2>
-    <p style="font-size: 0.85rem; color: #8b949e; margin-bottom: 1.25rem;">Operator secret required to access console & terminal.</p>
+  <div class="card">
+    <h2>h-flock Operator Login</h2>
     <form id="login-form">
-      <label for="secret-input">Operator Secret</label>
-      <input type="password" id="secret-input" autocomplete="current-password" required placeholder="Enter HFLOCK_SECRET">
-      <button type="submit">Unlock Console</button>
-      <div id="error-msg" class="error-msg">Invalid operator secret</div>
+      <label for="secret">Operator Secret</label>
+      <input type="password" id="secret" name="secret" required autofocus placeholder="Enter shared secret">
+      <button type="submit">Sign In</button>
+      <div id="error" class="error">Invalid operator secret</div>
     </form>
   </div>
   <script>
     document.getElementById("login-form").addEventListener("submit", async (e) => {
       e.preventDefault();
-      const secret = document.getElementById("secret-input").value;
-      const err = document.getElementById("error-msg");
+      const secret = document.getElementById("secret").value;
+      const err = document.getElementById("error");
       err.style.display = "none";
       try {
-        const resp = await fetch("/login", {
+        const res = await fetch("/login", {
           method: "POST",
-          headers: {"Content-Type": "application/json"},
-          body: JSON.stringify({secret})
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ secret })
         });
-        if (resp.ok) {
-          window.location.reload();
+        if (res.ok) {
+          window.location.href = "/";
         } else {
+          err.textContent = res.status === 429 ? "Too many failed attempts. Try again in 60s." : "Invalid operator secret";
           err.style.display = "block";
         }
       } catch (ex) {
@@ -561,15 +569,6 @@ class OfficeHandler(SimpleHTTPRequestHandler):
                 self._json(413, {"detail": "request body too large (max 2MB)"})
                 return
             body = self.rfile.read(length) if length else None
-
-        if self.command == "POST" and body:
-            try:
-                payload_data = json.loads(body.decode("utf-8"))
-                kind = payload_data.get("kind", "")
-                if kind:
-                    self._audit_log("operator_action", {"kind": kind, "path": self.path, "payload": payload_data.get("payload", {})})
-            except Exception:
-                pass
 
         headers = {"Authorization": f"Bearer {self.server.api_token}"}
         if body is not None:
