@@ -105,6 +105,17 @@ map_each() {   # $1=map  $2=resource ; SETs pod:…:agent:<name>:<resource>
     redis-cli -h 127.0.0.1 SET "pod:${POD}:tenant:${TENANT}:agent:${name}:$2" "$value" >/dev/null
   done
 }
+# ⚠ Default every tmux agent to claude BEFORE the exception maps are applied.
+# setup.sh writes AGENT_CLIS only for agents that differ from the default, so a
+# plain single-account install writes no AGENT_CLIS at all. Without this, no
+# agent gets a launch key, tmuxhost builds every window as a bare shell, and the
+# whole office comes up as three bash prompts with presence 'unknown'. Measured
+# on a from-scratch install taking every default.
+for _i in "${!agents[@]}"; do
+  [ "${fields[$(( _i * 2 + 1 ))]}" = "tmux" ] || continue
+  redis-cli -h 127.0.0.1 SET "pod:${POD}:tenant:${TENANT}:agent:${agents[$_i]}:launch" claude >/dev/null
+done
+
 map_each "${AGENT_CLIS:-}"     launch
 map_each "${AGENT_PROFILES:-}" profile
 
