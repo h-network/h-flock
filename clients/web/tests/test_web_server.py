@@ -703,6 +703,15 @@ def test_terminal_recordings_retention_and_limits(tmp_path):
         with pytest.raises(urllib.error.HTTPError) as exc_info:
             urllib.request.urlopen(req_f3)
         assert exc_info.value.code == 413
+        err_body = json.loads(exc_info.value.read().decode())
+        assert err_body.get("truncated") is True
+
+        # Verify recording on disk is explicitly marked truncated
+        with urllib.request.urlopen(f"http://127.0.0.1:{web_port}/api/recordings/{rec_id}") as resp:
+            rec_obj = json.loads(resp.read().decode())
+            assert rec_obj.get("truncated") is True
+            assert "truncated_at" in rec_obj
+            assert "truncate_reason" in rec_obj
     finally:
         web_server.shutdown()
         web_server.server_close()
