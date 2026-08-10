@@ -8,6 +8,7 @@ _ENVELOPE_EVENTS = {
     "sent",
     "popped",
     "forwarded",
+    "producer_stamped",
     "dead_lettered",
     "received",
     "opened",

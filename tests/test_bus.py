@@ -169,6 +169,57 @@ class DoorsAndRouterTest(unittest.TestCase):
         self.assertEqual(len(self.r.lists[prefix("acme", "hq", "alice", "dead")]), 1)
         self.popen.assert_not_called()
 
+    def test_router_stamps_forged_producer_from_egress_queue(self):
+        envelope = build("Message", "carol", "bob", {"text": "forged"})
+        self.r.rpush(prefix("acme", "hq", "alice", "egress"), json.dumps(envelope))
+
+        output = io.StringIO()
+        with redirect_stdout(output):
+            self.assertTrue(Router(self.r, pod="acme", tenant="hq").step())
+
+        raw = self.r.lists[prefix("acme", "hq", "bob", "ingress")][0]
+        self.assertEqual(json.loads(raw)["producer"], "alice")
+        records = [json.loads(line) for line in output.getvalue().splitlines()]
+        self.assertEqual(
+            [record["event"] for record in records],
+            ["popped", "producer_stamped", "forwarded"],
+        )
+        stamped = records[1]
+        self.assertEqual(stamped["producer"], "alice")
+        self.assertEqual(stamped["stream_id"], envelope["stream_id"])
+        self.assertEqual(
+            stamped["reason"],
+            "claimed producer 'carol' stamped from egress sender 'alice'",
+        )
+
+    def test_router_does_not_log_stamp_when_producer_matches_queue(self):
+        send(
+            self.r,
+            pod="acme",
+            tenant="hq",
+            producer="alice",
+            recipient="bob",
+            payload={"text": "honest"},
+        )
+
+        output = io.StringIO()
+        with redirect_stdout(output):
+            self.assertTrue(Router(self.r, pod="acme", tenant="hq").step())
+
+        events = [json.loads(line)["event"] for line in output.getvalue().splitlines()]
+        self.assertEqual(events, ["popped", "forwarded"])
+
+    def test_forged_broadcast_is_stamped_and_excludes_queue_sender(self):
+        envelope = build("Message", "carol", "all", {"text": "forged broadcast"})
+        self.r.rpush(prefix("acme", "hq", "alice", "egress"), json.dumps(envelope))
+
+        self.assertTrue(Router(self.r, pod="acme", tenant="hq").step())
+
+        self.assertNotIn(prefix("acme", "hq", "alice", "ingress"), self.r.lists)
+        for agent in ("bob", "carol"):
+            raw = self.r.lists[prefix("acme", "hq", agent, "ingress")][0]
+            self.assertEqual(json.loads(raw)["producer"], "alice")
+
     def test_unknown_kind_dead_letters_under_receiver(self):
         envelope = build("Mystery", "alice", "bob", {})
         self.r.rpush(prefix("acme", "hq", "bob", "ingress"), json.dumps(envelope))

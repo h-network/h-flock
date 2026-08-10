@@ -75,10 +75,11 @@ normal ingress validation and terminal logging. `deliver_unroutable` duplicates
 that parse/park boundary for the exceptional VAB case. `send` does **not**,
 however, authenticate its caller: its
 `producer` argument selects both the envelope field and the egress prefix. The
-agent CLI supplies that argument from `AGENT_NAME`, but the library itself does
-not enforce that a caller writes only its own prefix. This is the same argument
-as `prefix()` being the sole key builder where the constructor really does hold
-the invariant — and the explicit boundary where it does not.
+agent CLI supplies that argument from `AGENT_NAME`. At the router, the popped
+egress key is authoritative: a mismatched `producer` field is overwritten with
+the queue owner and logged as `producer_stamped`. This makes attribution honest,
+but does not authenticate which process wrote that queue or prevent a direct
+caller from choosing another participant's valid egress prefix.
 
 A consequence worth stating: **an agent never learns a queue name.** Components
 at the edge use `send` and `receive`; a terminal agent sees the `office` verbs
@@ -147,7 +148,9 @@ The supported agent command never writes to another agent's ingress queue. It
 calls `send` with its own `AGENT_NAME`, and the router decides what happens next.
 Routing decisions therefore happen in exactly one place. This is not a Redis
 authorization boundary: a direct library caller can supply another valid name
-as `producer`, and the current shared Redis credential does not prevent it.
+as `producer` and thereby select that participant's egress queue. The router
+attributes the envelope to that queue; the current shared Redis credential does
+not establish which process wrote it.
 
 ## 3. Addressing
 
@@ -610,8 +613,8 @@ one tenant and stops there, the way a broadcast domain ends at a router.
 Reaching another tenant is explicit addressing, never implicit fan-out.
 
 **`recipient: "all"` is the broadcast address.** The router walks the roster and
-writes one copy to each member's ingress, skipping the producer — a participant
-does not receive its own broadcast.
+writes one copy to each member's ingress, skipping the sender derived from the
+popped egress key — a participant does not receive its own broadcast.
 
 That raw protocol broadcast includes every roster participant, so an enrolled
 app client receives a copy in its mailbox. `office broadcast` is deliberately a
@@ -661,9 +664,11 @@ leaves **five transport records** across its life:
 
 An opener may add a kind-specific lifecycle record between `received` and
 `opened`; `AddTicket`, for example, emits `board_write_confirmed`, so its complete
-trace has six records. The pair-per-component is what matters: each component
-records that it took custody and what it then did. `send` has no pair because it
-has no custody to hand on — it is the origin.
+trace has six records. A corrected producer adds `producer_stamped` between
+`popped` and `forwarded`; the event carries the corrected producer and names the
+original claim in `reason`. The pair-per-component is what matters: each
+component records that it took custody and what it then did. `send` has no pair
+because it has no custody to hand on — it is the origin.
 
 ⚠ **This said "four" until build 20, and the arithmetic never worked**: two
 paired components plus `send` is 1+2+2. It read as true only because `sent` was
@@ -724,13 +729,22 @@ is mailbox data there; tmux and control still dead-letter kinds they cannot open
 Both `producer` and `recipient` are header fields, so reading them is not
 reading the payload — §6.4 holds.
 
+`producer` is **port-stamped attribution**. `send` initially writes the caller's
+claim, but before any forwarding the router compares it with the participant
+name in the popped egress key and overwrites a mismatch. It does not reject the
+envelope: rejection would let any process able to write that queue destroy its
+owner's traffic. A changed value emits `producer_stamped`; a matching value adds
+no record. This is not agent isolation or writer authentication — all agents are
+colleagues inside one development office, using one reachable Redis.
+
 ## 6. Invariants
 
 1. **`prefix()` on every key.** No flat keys, anywhere, ever.
-2. **The routing sender comes from the queue the envelope was popped from**, not
-   from the envelope's `producer`. The router uses that queue-derived name when
-   it parks a routing dead-letter. It does not rewrite or authenticate the
-   `producer` field, which remains the displayed and logged identity.
+2. **`producer` is stamped from the popped egress queue before forwarding.** The
+   router uses that queue-derived sender for dead-letter placement and broadcast
+   exclusion, overwrites a mismatched claim, and logs `producer_stamped` only
+   when the value changes. This guarantees queue attribution, not the identity
+   of the process that wrote the queue.
 3. **Supported participant tools write to their own `egress`; the router is the
    only supported writer of `ingress`.** This is an API boundary, not an enforced
    Redis ACL: `send(producer=...)` accepts any valid participant name. The router
