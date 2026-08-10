@@ -96,15 +96,48 @@ for a in "${AGENTS[@]}"; do
     fi
 done
 
+# A local model endpoint. An agent pointed at one uses NO account credential —
+# claude talks to the server directly — so it needs no login and the watchdog's
+# credential check does not apply to it.
+declare -A AGENT_ENDPOINT_OF
+ENDPOINT_MAP=(); LOCAL_URL=""; LOCAL_MODEL=""; LOCAL_TOKEN="local"
+read -rp "Point any agent at a local model endpoint? [y/N]: " USE_ENDPOINT
+if [[ "${USE_ENDPOINT:-n}" =~ ^[Yy] ]]; then
+    read -rp "  Endpoint base URL (NO trailing /v1) [http://172.16.0.11:8000]: " LOCAL_URL
+    LOCAL_URL="${LOCAL_URL:-http://172.16.0.11:8000}"
+    LOCAL_URL="${LOCAL_URL%/}"
+    # ⚠ claude appends /v1/messages itself; a base carrying /v1 gives /v1/v1.
+    LOCAL_URL="${LOCAL_URL%/v1}"
+    # ⚠ The id must match GET /v1/models byte for byte. Offer what is served
+    # rather than asking someone to type it.
+    SERVED="$(curl -s --max-time 5 "${LOCAL_URL}/v1/models" 2>/dev/null \
+              | python3 -c 'import sys,json;print(" ".join(m["id"] for m in json.load(sys.stdin).get("data",[])))' 2>/dev/null || true)"
+    [ -n "$SERVED" ] && echo "  served by that endpoint: $SERVED"
+    read -rp "  Model id [${SERVED%% *}]: " LOCAL_MODEL
+    LOCAL_MODEL="${LOCAL_MODEL:-${SERVED%% *}}"
+    read -rp "  Which agents use it? (space-separated, blank for none): " EPS
+    for want in $EPS; do
+        for a in "${AGENTS[@]}"; do
+            [ "$a" = "$(slug "$want")" ] && AGENT_ENDPOINT_OF["$a"]=local
+        done
+    done
+fi
+
 # Only exceptions travel, so the env stays small and readable.
+for a in "${AGENTS[@]}"; do
+    [ -n "${AGENT_ENDPOINT_OF[$a]:-}" ] && ENDPOINT_MAP+=("${a}=${AGENT_ENDPOINT_OF[$a]}")
+done
 for a in "${AGENTS[@]}"; do
     [ "${AGENT_PROFILE[$a]}" != "default" ] && PROFILE_MAP+=("${a}=${AGENT_PROFILE[$a]}")
     [ "${AGENT_CLI_OF[$a]}"  != "claude"  ] && CLI_MAP+=("${a}=${AGENT_CLI_OF[$a]}")
 done
 
 echo
-printf '  %-16s %-8s %s\n' AGENT CLI ACCOUNT
-for a in "${AGENTS[@]}"; do printf '  %-16s %-8s %s\n' "$a" "${AGENT_CLI_OF[$a]}" "${AGENT_PROFILE[$a]}"; done
+printf '  %-16s %-8s %-10s %s\n' AGENT CLI ACCOUNT MODEL
+for a in "${AGENTS[@]}"; do
+    printf '  %-16s %-8s %-10s %s\n' "$a" "${AGENT_CLI_OF[$a]}" "${AGENT_PROFILE[$a]}" \
+        "${AGENT_ENDPOINT_OF[$a]:+$LOCAL_MODEL (local)}"
+done
 echo
 
 # Every agent is a tmux agent; api and host are added by the entrypoint.
@@ -125,6 +158,12 @@ TOKEN="$(grep -s '^API_TOKEN=' container/.env | cut -d= -f2)"
     echo "SESSION_PORT=8081"
     [ "${#CLI_MAP[@]}"     -gt 0 ] && echo "AGENT_CLIS=$(IFS=,; echo "${CLI_MAP[*]}")"
     [ "${#PROFILE_MAP[@]}" -gt 0 ] && echo "AGENT_PROFILES=$(IFS=,; echo "${PROFILE_MAP[*]}")"
+    if [ "${#ENDPOINT_MAP[@]}" -gt 0 ]; then
+        echo "AGENT_ENDPOINTS=$(IFS=,; echo "${ENDPOINT_MAP[*]}")"
+        echo "ENDPOINT_LOCAL_URL=${LOCAL_URL}"
+        echo "ENDPOINT_LOCAL_MODEL=${LOCAL_MODEL}"
+        echo "ENDPOINT_LOCAL_TOKEN=${LOCAL_TOKEN}"
+    fi
 } > container/.env
 chmod 600 container/.env
 echo "wrote container/.env"
