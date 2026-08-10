@@ -42,10 +42,11 @@ read -r AG1 AG2 <<<"$(docker exec $C redis-cli --no-raw HGETALL $ROSTER \
   | paste - - | grep '"tmux"' | awk -F'"' '{print $2}' | sort | head -2 | tr '\n' ' ')"
 [ -n "${AG1:-}" ] && [ -n "${AG2:-}" ] || { echo "plumbing-check: need two tmux agents in the roster" >&2; exit 2; }
 echo "using agents: $AG1 (sender) and $AG2 (recipient)"
-A="http://127.0.0.1:8080"
+# The door speaks TLS when certs are configured, so the scheme is not a constant.
+if [ -n "$(dx printenv API_TLS_CERT 2>/dev/null)" ]; then A="https://127.0.0.1:8080"; else A="http://127.0.0.1:8080"; fi
 H="Authorization: Bearer $T"
 dx() { docker exec "$C" "$@"; }
-cu() { dx curl -s -H "$H" "$@"; }
+cu() { dx curl -sk -H "$H" "$@"; }
 pass=0; fail=0
 ck() { if [ "$2" = "$3" ]; then echo "  ok    $1"; pass=$((pass+1)); else echo "  FAIL  $1 : expected [$3] got [$2]"; fail=$((fail+1)); fi; }
 ckc() { if echo "$2" | grep -q "$3"; then echo "  ok    $1"; pass=$((pass+1)); else echo "  FAIL  $1 : [$2] lacks [$3]"; fail=$((fail+1)); fi; }
@@ -53,7 +54,7 @@ ckc() { if echo "$2" | grep -q "$3"; then echo "  ok    $1"; pass=$((pass+1)); e
 echo "== 1. doors =="
 ckc "health"        "$(cu $A/health)" '"ok"'
 ckc "agents list"   "$(cu $A/agents)" "$AG1"
-ck  "no token 401"  "$(dx curl -s -o /dev/null -w '%{http_code}' $A/agents)" "401"
+ck  "no token 401"  "$(dx curl -sk -o /dev/null -w '%{http_code}' $A/agents)" "401"
 
 echo "== 2. agent -> agent message =="
 dx bash -lc "cd /workdir/$AG1 && AGENT_NAME=$AG1 office send -a $AG2 plumbing-check-42" >/dev/null 2>&1

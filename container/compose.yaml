@@ -67,7 +67,11 @@ services:
     restart: unless-stopped
     init: false  # tini is PID 1 from the image's own ENTRYPOINT
     healthcheck:
-      test: ["CMD-SHELL", "curl -fsS -H \"Authorization: Bearer $$API_TOKEN\" http://127.0.0.1:8080/health || exit 1"]
+      # ⚠ Scheme follows the door. With certs configured the api speaks TLS, and
+      # a plaintext probe gets "Empty reply from server" forever — measured: a
+      # TLS tenant that served perfectly sat `health: starting` until it went
+      # unhealthy. -k because the cert is for the published name, not 127.0.0.1.
+      test: ["CMD-SHELL", "if [ -n \"$$API_TLS_CERT\" ]; then curl -fsSk -H \"Authorization: Bearer $$API_TOKEN\" https://127.0.0.1:8080/health || exit 1; else curl -fsS -H \"Authorization: Bearer $$API_TOKEN\" http://127.0.0.1:8080/health || exit 1; fi"]
       interval: 10s
       timeout: 3s
       retries: 5

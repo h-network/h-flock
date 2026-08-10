@@ -21,10 +21,11 @@ ROSTER="pod:$POD:tenant:$TENANT:roster"
 T=$(docker exec "$C" printenv API_TOKEN 2>/dev/null || true)
 [ -n "$T" ] || { echo "sim-blocked: container $C is not running" >&2; exit 1; }
 
-A="http://127.0.0.1:8080"
+# The door speaks TLS when certs are configured, so the scheme is not a constant.
+if [ -n "$(dx printenv API_TLS_CERT 2>/dev/null)" ]; then A="https://127.0.0.1:8080"; else A="http://127.0.0.1:8080"; fi
 H="Authorization: Bearer $T"
 dx() { docker exec "$C" "$@"; }
-cu() { dx curl -s -H "$H" "$@"; }
+cu() { dx curl -sk -H "$H" "$@"; }
 
 pass=0; fail=0
 ck() { if [ "$2" = "$3" ]; then echo "  ok    $1"; pass=$((pass+1)); else echo "  FAIL  $1 : expected [$3] got [$2]"; fail=$((fail+1)); fi; }

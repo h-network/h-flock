@@ -280,7 +280,8 @@ fi
 
 echo
 echo "Tenant '${TENANT}' up."
-echo "  api      http://127.0.0.1:8080   token in container/.env"
+SCHEME=http; [ -n "$TLS_CERT" ] && SCHEME=https
+echo "  api      ${SCHEME}://127.0.0.1:8080   token in container/.env"
 echo "  session  ws://127.0.0.1:8081/session"
 echo "  attach   docker exec -it -e TMUX_TMPDIR=/home/ubuntu/.flock/tmux $CONTAINER tmux attach -t ${TENANT}"
 echo
