@@ -363,3 +363,88 @@ first, and say what it does.
 
 ⚠ **Nothing shrinks to fit.** If a section needs the window, it takes the window.
 The four-panel compromise is what we are removing.
+
+
+---
+
+# Part IV — the design language, which I never specified
+
+⚠ **Read §1 again: it says "Not chrome."** That was wrong, and it is why this
+looks like an internal admin page. I defined enterprise as correctness, safety
+and accessibility, then measured only CLS, ARIA counts and console errors — so
+that is what got built. Nothing in this document has ever asked for craft in how
+it looks. This part does.
+
+⚠ **Correctness is table stakes, not the product.** Everything in Parts I–III
+stands. This adds the layer that makes someone believe the thing is finished.
+
+## 17. A type system, not a font
+
+- **one family, three weights** — a system stack is fine, but pick and declare it
+- **a modular scale**, declared as tokens: `--text-xs` through `--text-2xl`. No
+  literal `font-size` anywhere else
+- ⚠ **hierarchy comes from weight and size, not colour.** A page title, a section
+  heading and a row label must be distinguishable in greyscale
+- **tabular numerals for all numbers** — counts, ages, ticket totals. Numbers
+  that jitter as they update look broken
+- **line length capped** for prose; nothing runs the full width of a wide screen
+
+## 18. Space and rhythm
+
+- **a spacing scale in tokens** — 4/8/12/16/24/32/48. Never an arbitrary pixel
+- ⚠ **whitespace is the difference between cramped and considered.** The current
+  build fills every pixel. Sections need generous outer padding and consistent
+  gutters, and elements need room to be separate things
+- **an 8px baseline grid**, so unrelated components still line up
+- **alignment is deliberate**: labels left, numbers right, one axis per column
+
+## 19. Colour with meaning
+
+- **a semantic set**, not a palette: `--surface`, `--surface-raised`, `--border`,
+  `--text`, `--text-muted`, `--accent`, and state colours for
+  working / idle / unknown / blocked / warning / critical
+- ⚠ **state colour is used once per state and nowhere else.** If blocked is red,
+  nothing decorative may be red
+- **both schemes derive from the same tokens** — no second palette
+- **contrast meets WCAG AA**, and state is never carried by colour alone
+
+## 20. Components, consistent everywhere
+
+One implementation each, used everywhere: button (primary / secondary / danger /
+ghost), input, select, badge, tag, card, table row, tab, modal, toast, empty
+state, skeleton, tooltip.
+
+⚠ **If two sections style the same thing differently, it is a bug.** That
+inconsistency is what a person reads as unfinished, even when they cannot say
+why.
+
+## 21. Density and data display
+
+- **tables for tabular data.** The roster is a table: sortable columns, aligned
+  numbers, a stable row height
+- **truncate with intent** — ellipsis plus a title, never a mid-word break
+- **relative time at rest, absolute on hover**, everywhere, one implementation
+- ⚠ **a number and its label are one unit.** "6" and "participants" must never
+  wrap apart
+
+## 22. The moments that carry the product
+
+- **empty states**: an illustration or icon, one line saying what this is, one
+  action. A fresh office should look like an invitation, not a failure
+- **loading**: skeletons matching the final geometry. Never a spinner in a layout
+- **errors**: what failed, what it means, what to do. Never a raw status code
+- **destructive confirmations** that state the consequence in words
+- **motion**: 120–200ms, ease-out, on state change only. ⚠ **Nothing animates on
+  data arriving** — a busy office would never settle
+
+## 23. The bar
+
+⚠ **Would you put a screenshot of this on a pricing page?** That is the test.
+Not "does it work" — it works. Whether it looks like something a company sells.
+
+Look at the tools this competes with: Grafana, Datadog, Vercel, Linear, Sentry.
+None of them is decorated. They are *composed* — restrained colour, real
+typography, generous space, one consistent component set. That is the target.
+
+⚠ **You may not use a CSS framework** (§2 still holds) — but everything above is
+custom properties and care, not a dependency.
