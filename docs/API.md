@@ -213,6 +213,29 @@ data: {"v": 1, "kind": "Message", "stream_id": "71d1dec5203c434c91df2af82e693637
 
 ---
 
+## 4a. Four things a client builder learns the hard way
+
+Reported by the lanes that built the console against this document.
+
+⚠ **An office overview takes three calls, not one.** `GET /agents` returns names
+only. Presence, `blocked`, queue depths and `vab` come from `GET /agents/{agent}`,
+one call per agent, and the boards from `GET /board`. There is no combined view,
+deliberately — but budget for it rather than discovering it mid-render.
+
+⚠ **`GET /agents/{agent}` does not include the agent's open ticket.** The
+`office status` CLI shows one; the api does not. Read `GET /agents/{agent}/board`
+and take the head of `doing`.
+
+⚠ **Cursor expiry is unspecified.** Mailboxes and activity are Redis Streams
+trimmed by `MAXLEN`, so a cursor older than the retained window will not error —
+it resumes from what survives. A client that has been away longer than the
+retention silently misses the difference. Treat a large gap as "I have been away",
+not as an error.
+
+⚠ **SSE heartbeats are not guaranteed.** Do not use silence to infer a dead
+connection: an idle office is silent and a dead socket is silent. Track the
+transport, not the message rate.
+
 ## 5. REST API Reference
 
 ### Liveness Check
