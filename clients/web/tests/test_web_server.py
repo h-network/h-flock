@@ -137,8 +137,14 @@ def test_demo_mode_responses():
         req = urllib.request.Request(f"http://127.0.0.1:{web_port}/api/alerts/stream")
         with urllib.request.urlopen(req) as resp:
             assert "text/event-stream" in resp.headers.get("Content-Type", "")
-            first_line = resp.readline().decode()
-            assert first_line.startswith("id: ")
+            lines = []
+            for _ in range(20):
+                line = resp.readline().decode()
+                lines.append(line)
+                if line.startswith(": keepalive"):
+                    break
+            assert any(l.startswith("id: ") for l in lines)
+            assert any(l.startswith(": keepalive") for l in lines)
     finally:
         web_server.shutdown()
         web_server.server_close()
