@@ -74,7 +74,9 @@ def parse(raw: str) -> dict          # raises EnvelopeError on malformed input
 # flock.bus.doors
 def send(r, *, pod, tenant, producer, recipient, payload,
          kind="Message", correlation_id=None) -> str
-    # builds, writes the producer's OWN egress, logs. Returns stream_id.
+    # builds, writes the egress NAMED BY `producer`, logs. Returns stream_id.
+    # ⚠ Not "its own" — the caller supplies `producer`, and the same value
+    # picks the queue. They agree by construction, not by verification.
 class DeadLetter(Exception)             # opener rejection; reason is str(exc)
 def receive(r, *, pod, tenant, agent, openers: dict[str, callable],
             timeout: int) -> None
@@ -132,7 +134,9 @@ def list_windows(session_name: str, socket: str | None = None) -> set[str]
 def create_window(session_name: str, agent_name: str,
                   command: list[str] | None = None,
                   cwd: str | None = None,
-                  socket: str | None = None) -> tuple[int, str, str]
+                  socket: str | None = None,
+                  lead: str | None = None,
+                  profile: str | None = None) -> tuple[int, str, str]
     # command defaults to ["env", f"AGENT_NAME={agent_name}", "bash", "-il"]
     # cwd -> tmux -c. Defaults to /workdir/<agent_name>
     # targets "<session>:" — the trailing colon is load-bearing, see
@@ -141,7 +145,8 @@ def create_window(session_name: str, agent_name: str,
 def kill_window(session_name: str, window_name: str,
                 socket: str | None = None) -> tuple[int, str, str]
 
-def write_agent_guide(agent_name: str, tenant: str, cwd: str) -> None
+def write_agent_guide(cwd: str, agent_name: str, tenant: str = "default",
+                      lead: str | None = None, profile: str | None = None) -> None
     # AGENTS.md *and* CLAUDE.md, both, in the agent's own directory
     # every window gets one — create_window calls this for all callers,
     # so a guide is not something a caller can forget

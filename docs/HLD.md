@@ -381,7 +381,10 @@ The short list that everything else assumes:
    record, and in the envelope an api client reads verbatim. No authentication
    binds the declaration to a real identity. Control openers do not authorise from
    it.
-3. **Nothing writes another agent's keys** — it sends an envelope.
+3. **No AGENT writes another agent's keys** — it sends an envelope. ⚠ The
+   router writes a recipient's ingress and `AddTicket` writes a recipient's
+   board: that is the delivery mechanism, and it is what the rule exists to
+   route work *through*.
 4. **The router reads roster fields, never values.** It cannot know a VAB.
 5. **Adapters do not exist between deliveries.**
 6. **The api does not validate `kind`** — which kinds are openable is a fact

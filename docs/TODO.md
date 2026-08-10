@@ -11,15 +11,14 @@ development happens in this repository; the framework is the product.
 | | |
 |---|---|
 | **decide: enforce invariant 2, or leave it documented as unverified** | `producer` is supplied to `send()` and never checked against the queue. It cannot redirect an envelope, but it is the identity shown to an agent and recorded as `created_by`, `actor` and in every log record. ⚠ **Seen in the wild:** a plumbing fixture made a real terminal show `[message from telegram]` from a client that did not exist |
-| **`tmuxhost` never removes the last stale window** | the `len(existing_windows) > 1` guard keeps the session alive, so a retired agent's window persists if it is the only one left |
-| **silent `except: pass` across trust setup** | `write_agent_guide` and all three `ensure_*_project_trusted` swallow every filesystem and JSON error. This is how the profile-blind trust bug hid: it failed silently and every agent sat at a picker |
-| **the console audits one door of two** | `audit.jsonl` records what passes through the console. Anything using the api token directly is invisible to it, which is how a plumbing run put a message in an operator's terminal with no trace. Either widen it or stop calling it an audit trail |
 | **profile logins** | one interactive login per account. Not buildable — a person has to do it. ⚠ **Checked: nobody has solved this.** NVIDIA OpenShell's own tutorial says you authenticate with your own account in a browser, and trust the workspace when prompted |
 | **local model: long-context behaviour unknown** | every test was a short turn against a 65k window. Nothing says what a local agent does when it fills |
 | **ollama — parked** | the installer asks, falls back to `/api/tags`, and warns when `/v1/messages` is missing, but none of it has been run. ⚠ ollama does not serve the Anthropic Messages API, so claude needs a translating proxy in front |
 | **security, parked deliberately** | TLS on the tenant doors, CORS, per-client tokens, Redis ACLs |
 
-**Recently closed:** the terminal view (the console has a full workspace), the
+**Recently closed:** the stranded window (a `__init__` placeholder holds the
+session open now), silent trust and guide failures (recorded, still never
+raising), the console audit scope (renamed to Operator Action Log), the terminal view (the console has a full workspace), the
 five doc drifts (audit 06), AddTicket delivery without a window (build 35),
 credential staleness (a decision, not a fix),
 credential alerting, `delivery_unjudged`, and the octal/snapshot/telemetry

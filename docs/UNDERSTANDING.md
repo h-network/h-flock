@@ -230,7 +230,7 @@ falling out of pull semantics, and `HLD` §9 still says so. Both are wrong.
 ## 11. The invariants — cite by name, never by number
 
 1. the router forwards on `recipient` alone
-2. `producer` is derived from the queue
+2. `producer` is **supplied to `send()`** and never checked against the queue — see §2a
 3. nothing writes another agent's keys — ⚠ **scoped to agents using the
    supported doors.** The router legitimately writes a recipient's ingress, and
    openers write the far edge's keys; that is the mechanism, not a violation
