@@ -1,145 +1,190 @@
-# Browser office
+# h-flock Console
 
-A dependency-free browser client for one h-flock tenant. It shows the roster
-and live presence, agent activity, mailbox replies, watchdog alerts, boards and
-a human-operated terminal.
+The h-flock Console is the browser control surface for one AI office. It gives
+an operator one place to answer three questions: who is working, what needs
+attention, and what work is moving.
 
-The small Python server is required even though the page is static. h-flock
-sends no CORS headers, so a page served from another origin cannot call it.
-Native browser `EventSource` also cannot attach the required Bearer header. This
-server serves the page and proxies authenticated API and SSE requests on the
-same origin; the token is never placed in browser storage or JavaScript.
+From one page an operator can:
 
-## Run
+- see every agent's presence and current ticket;
+- put blocked and unknown agents ahead of healthy agents;
+- inspect live tool activity, messages, alerts and task boards;
+- hire, pause, resume and retire agents;
+- watch an agent's terminal, then deliberately enable typing when intervention
+  is necessary.
 
-Python 3 is the only dependency.
+The console is intentionally honest about uncertainty. Each panel reports its
+own loading, empty, stale, disconnected and error state. A silent office is not
+called broken, an unknown agent is not called idle, and a message never implies
+that a reply is guaranteed.
+
+## Start the console
+
+The console has no build step and no package installation. Python 3 serves the
+vendored browser assets and proxies one tenant's HTTP, event-stream and terminal
+connections through the same origin.
+
+For local access on the machine running h-flock:
 
 ```bash
 cd clients/web
-API_TOKEN=<tenant-token> python3 server.py --api http://HOST:8080
+API_TOKEN=<tenant-token> python3 server.py
 ```
 
-Open <http://127.0.0.1:8090>. The server enrols an idempotent `web` API
-participant on startup. Use `--client NAME`, `--listen ADDRESS`, or `--port N`
-to change those defaults. It binds to loopback unless explicitly told
-otherwise.
+Open <http://127.0.0.1:8090>. The server enrols an idempotent API participant
+named `web`, keeps the tenant token server-side, and connects to the API at
+`http://127.0.0.1:8080` and session door at `http://127.0.0.1:8081` by default.
 
-For fixtures, including every panel state in `SPEC.md` §4:
+To serve other operators, configure the shared operator secret and bind the
+intended interface:
 
 ```bash
-python3 server.py --demo
+API_TOKEN=<tenant-token> \
+HFLOCK_SECRET=<long-random-operator-secret> \
+python3 server.py --listen 0.0.0.0
 ```
 
-Demo mode needs no tenant or token and exposes a state toolbar. It is for visual
-exercise, not evidence that a tenant works.
+The process refuses any non-loopback bind without an operator secret. Operators
+receive a login page; the console API and terminal socket reject requests
+without a valid session cookie.
 
-The browser persists the last cursor for mailbox, alert and per-agent activity
-streams in `localStorage`. Browser SSE reconnects carry `Last-Event-ID` through
-the proxy, and a reload starts each stream after its persisted cursor. A silent
-mailbox remains open indefinitely and is not treated as an error.
+Use TLS at the network edge whenever the console crosses a trusted host. The
+shared secret, session cookie, messages and terminal traffic are sensitive even
+though the tenant API token never enters the browser.
 
-The browser connects only to this server. HTTP and SSE use `/api`; the terminal
-uses the same-origin `/session` WebSocket. The server attaches the token to both
-upstreams, so it never enters page source, JavaScript or browser storage.
+## Configuration
 
-## Access control & operator authentication
+Command-line options override the corresponding environment defaults.
 
-The web console provides operator authentication via a single shared operator secret (`--secret <secret>` or `HFLOCK_SECRET=<secret>`).
+| Purpose | Option | Environment | Default |
+|---|---|---|---|
+| listen address | `--listen` | `WEB_LISTEN` | `127.0.0.1` |
+| console port | `--port` | `WEB_PORT` | `8090` |
+| tenant API | `--api` | `HFLOCK_API` | `http://127.0.0.1:8080` |
+| terminal session door | `--session` | `HFLOCK_SESSION` | `http://127.0.0.1:8081` |
+| tenant bearer token | `--token` | `API_TOKEN` | required |
+| console participant name | `--client` | `HFLOCK_CLIENT` | `web` |
+| shared operator secret | `--secret` | `HFLOCK_SECRET` | none on loopback |
+| simultaneous terminal sockets | — | `HFLOCK_MAX_SESSIONS` | `16` |
+| operator session lifetime, seconds | — | `HFLOCK_SESSION_TTL` | `86400` (24 hours) |
+| failed logins allowed per window/IP | — | `HFLOCK_MAX_LOGIN_ATTEMPTS` | `5` |
+| login rate-limit window, seconds | — | `HFLOCK_RATE_LIMIT_WINDOW` | `60` |
 
-- **Non-loopback Enforcement**: If `--listen` is set to any non-loopback interface (such as `0.0.0.0` or a public IP), `server.py` **refuses to serve** unless `--secret` or `HFLOCK_SECRET` is configured. It exits immediately with an explicit error to prevent accidental unauthenticated exposure.
-- **Constant-Time Verification**: Secrets and session tokens are compared using constant-time digest comparison (`hmac.compare_digest`) to prevent timing side-channel leaks.
-- **Cookie Session Security & Expiry**: Successful login issues a cryptographically secure random session token (`secrets.token_hex(32)`) in an `HttpOnly; SameSite=Strict; Path=/` cookie (`hflock_session`). Session tokens have a strict **24-hour lifetime (TTL)** (`HFLOCK_SESSION_TTL`, default 86,400s); expired sessions are purged and require re-authentication. Credentials are never accepted or passed in query parameters.
-- **Login Rate Limiting**: `POST /login` is protected against brute-force attacks by sliding-window IP rate limiting (`HFLOCK_MAX_LOGIN_ATTEMPTS=5`, `HFLOCK_RATE_LIMIT_WINDOW=60`). Exceeding 5 failed attempts in 60 seconds returns `HTTP 429 Too Many Requests` with a `Retry-After: 60` header.
-- **Terminal Socket Protection**: The WebSocket proxy for `/session` validates the session cookie on the upgrade HTTP handshake before establishing a connection. Unauthenticated upgrade attempts are rejected with `HTTP 401 Unauthorized`.
+Run `python3 server.py --help` for the command-line surface.
 
-> ⚠ **What this authentication is NOT**: Operator authentication answers **"may this person in"**, not **"which person was this"**. It provides a single shared operator credential boundary for the office. It does **NOT** provide individual user identities, role-based access control (RBAC), or audit logging of which specific user performed an action or typed a command into the terminal.
+## What operators see
 
-## Panel architecture
+The page summary reports working agents, blocked agents and active alerts at a
+glance. The roster groups agents in action order—blocked, unknown, pending,
+working, then idle—so a problem cannot hide below healthy rows. A new office
+with infrastructure participants but no tmux agents shows a single clear next
+step: hire the first agent.
 
-`app.js` is wiring only. Each independent panel lives under `ui/` and owns its
-loading, empty, error, stale and disconnected presentation. Presence and boards
-poll because they have no stream. Alerts, activity and messages catch up from a
-persisted cursor and then use SSE with capped exponential reconnect backoff.
-One failed panel keeps its last honest data and cannot take down another.
+Panels fail independently. Presence and boards poll because the API exposes
+them as snapshots. Alerts, activity and messages resume event streams from
+browser-persisted cursors with visible reconnect attempts and capped backoff.
+Prior data remains visible but is marked stale after a failed refresh. A server
+error in one panel does not make the rest of the office look offline.
 
-A successfully loaded roster with no tmux staff adds one page-level onboarding
-callout with the existing Hire flow as its primary action. This deliberately
-ignores infrastructure/API participants—the console enrols one itself, so a
-literal empty roster is not a state the running product can rely on. The
-individual alerts and board panels still say that they are calmly empty; the
-callout supplies the missing meaning that the office is ready and waiting to be
-staffed. It disappears as soon as a hire is pending rather than waiting for
-tmux reconciliation.
+The console remains bounded under normal office load:
 
-The roster is grouped in action order: blocked, unknown, pending, working, then
-idle. Each group is alphabetic and has a sticky count heading. This keeps every
-agent discoverable while ensuring a blocked agent cannot sit below thirty
-healthy rows. The page header independently combines working and blocked roster
-counts with the retained alert count, so the operator can see whether attention
-is needed before reading a panel. Alerts are called retained, not
-unacknowledged: the API has no acknowledgement operation or field, and a
-browser-local fiction would disagree between operators.
+- the roster is grouped and keyboard navigable at 40 agents;
+- the alert view is capped at the newest 300 entries and batches catch-up
+  rendering;
+- activity and message histories retain 100 entries each;
+- boards keep all tickets available inside collapsible, independently scrolling
+  agent rows.
 
-The alert DOM is capped at the newest 300 entries. Catch-up additions are
-batched into one animation frame, off-screen rows use browser content
-visibility, and fixed scroll regions reserve their scrollbar gutter. This
-bounds rendering work and prevents the page grid shifting when a full alert
-history arrives. Activity and each message history are capped at 100. Boards
-render every ticket inside independently scrolling, collapsible agent rows, so
-a 200-ticket board remains navigable without hiding work.
+Every timestamp is relative at rest and absolute on hover. Blocked and unknown
+states use words, shapes and borders rather than relying on colour. The console
+supports keyboard navigation, visible focus, screen-reader regions, responsive
+layout, and system light/dark preference.
 
-Every timestamp is relative in the layout and absolute on hover. `blocked` has
-an icon, text and a heavy border rather than relying on red; `unknown` is
-labelled and dashed rather than presented as ready. The terminal is read-only
-until its explicit mode control is switched, and terminal bytes populate no
-other panel.
+## Lifecycle semantics
 
-The agent list uses Up/Down/Home/End navigation and Enter or Space selects its
-focused row. Selecting an agent moves focus to the changed detail heading so a
-keyboard or screen-reader user immediately reaches the new context. Detail
-tabs use the standard Left/Right/Home/End roving-tabstop pattern; Escape returns
-to Activity. Native dialogs trap focus and Escape closes them.
+Hiring creates a tmux agent through the same control-envelope path used by other
+clients. The roster row appears before the window and CLI finish reconciling, so
+the console shows the hire as pending rather than failed.
 
-An HTTP 500 is not treated as a network drop. A polling panel with prior data
-keeps that data and labels it stale with the returned error and a Retry action;
-a first-load failure and a rejected write show an error in their own panel.
-Browser EventSource does not expose an SSE response status, so a stream-side 500
-is honestly shown as disconnected with the reconnect attempt and backoff rather
-than falsely labelled as a specific server error. Other panels remain live.
+Pause and retire are different operations:
 
-The Agents panel sends lifecycle envelopes to `host`; it never mutates roster
-state directly. Hire validates the agent name and shows a pending row while the
-roster, window and CLI converge. Pause keeps the identity and queues in place.
-Retire requires typing the exact name and states before confirmation that
-identity state is purged while queues and boards survive. A selected profile is
-persisted before roster visibility so the first reconciled window uses the
-intended account.
+- **Pause** stops the CLI but preserves identity, queues, boards and window.
+  Envelopes queue and drain after resume.
+- **Retire** removes roster membership and identity state. It preserves queues
+  and boards for a later re-hire, and requires typing the agent name to confirm.
 
-## Documentation gaps found
+The console does not expose a `Command` action. Terminal typing is read-only in
+the UI until an operator explicitly changes its visible mode.
 
-Built using only `docs/API.md` and the build brief. These details were missing or
-internally incomplete:
+## Security model
 
-- `GET /agents` returns names, not the overview data. The console fans out to
-  `GET /agents/{agent}` for VAB and presence, and joins `/board` for open work.
-  At 40 agents this is 41 HTTP reads per presence refresh; it works with the
-  frozen backend but is the largest avoidable client cost.
-- `GET /agents/{agent}` has no open-ticket field even though the console needs
-  one beside presence. The all-agent board supplies it without a new endpoint.
-- The alerts section shows only the `stalled` record shape even though it names
-  delivery and credential alerts too. Their fields are not documented, so the
-  alert list renders only common fields and the optional stall age.
-- The reference does not state that repeating `StartAgent` for an already
-  enrolled API participant is idempotent. The build brief does, and the server
-  relies on that property to make restarts safe.
-- Every REST request requires an Authorization header, but the reference does
-  not discuss browser SSE: `EventSource` has no API for setting that header.
-  A same-origin authenticated proxy is therefore necessary for live browser
-  feeds even apart from CORS.
-- Cursor retention is described, but the reference does not state what happens
-  when a saved cursor has aged out of the approximately 1000 retained entries.
-  The client cannot distinguish that condition from an ordinary reconnect.
-- SSE event examples are given, but heartbeat behavior and server disconnect
-  behavior are unspecified. The client relies on standard `EventSource`
-  reconnection and displays its connection state without declaring silence an
-  error.
+The Python server is a security boundary, not just a static-file server. It
+keeps the bearer token out of HTML, JavaScript, browser storage and query
+strings; attaches it only on upstream requests; authenticates HTTP, SSE and
+WebSocket access; limits request bodies and simultaneous terminal sockets; and
+times out slow clients.
+
+Operator authentication uses one shared secret and an opaque `HttpOnly`,
+`SameSite=Strict` session cookie. Secret and session-token comparisons are
+constant-time. By default, five failed logins from one IP within 60 seconds
+trigger HTTP 429 with a `Retry-After` response. Sessions expire after 24 hours
+by default and also end at explicit logout or server restart. The attempt limit,
+window and session lifetime are configurable with the environment variables
+listed above. See the limitations below before exposing the console beyond a
+trusted operator network.
+
+## Deliberate limitations
+
+The console does **not** currently provide:
+
+- individual operator identities, roles or RBAC;
+- attribution of a lifecycle action or terminal keystroke to a named person;
+- a durable, multi-operator alert acknowledgement model—alerts are active facts,
+  not browser-local checkboxes;
+- tenant selection or a combined view across several offices;
+- a general command-execution button;
+- a guarantee that an agent will reply to a message;
+- indefinite browser history—each high-volume view has the stated cap;
+- server persistence for operator sessions—restart invalidates every session.
+
+The shared secret answers “may this operator enter?”, not “which operator did
+this?”. Real acknowledgement would likewise require a backend identity, actor
+and timestamp. Inventing either feature in browser-local state would make two
+operators see different truths.
+
+## Failure and recovery behavior
+
+- An HTTP 500 is not treated as a network drop. It remains a panel-local server
+  failure, with prior data preserved where available.
+- A polling panel keeps its last data and marks it stale when a refresh returns
+  an HTTP error. A first-load failure shows an error and Retry action.
+- EventSource does not expose an SSE response status. A stream-side
+  error is therefore shown as disconnected with attempt count and backoff,
+  rather than being mislabelled as a particular HTTP failure.
+- Mailbox silence is valid and is not treated as a dead socket.
+- Saved cursors resume alert, activity and message streams after reload. If a
+  cursor has aged out of server retention, the API does not currently expose a
+  distinct expiry error.
+
+## Demo and verification
+
+Run the built-in fixtures without a tenant or token:
+
+```bash
+python3 clients/web/server.py --demo
+```
+
+Demo mode supplies working, idle, blocked and unknown agents, mixed board entry
+shapes, 300 alerts, held event streams and terminal fixtures. Its toolbar can
+force each panel's loading, empty, error, stale and disconnected presentation.
+It is useful for review and accessibility work; it is not evidence that a real
+tenant is healthy.
+
+The browser assets are source files under `clients/web/`: ES modules under
+`ui/`, vendored xterm assets under `vendor/`, and no npm, framework, bundler or
+generated distribution. This keeps the console inspectable, offline-capable and
+deployable in an air-gapped tenant.
+
+Automated checks live under `clients/web/tests/`. Product verification should
+also use a real tenant, exercise a terminal handshake, interrupt a live stream,
+and confirm that each affected panel reconnects without taking down the page.
