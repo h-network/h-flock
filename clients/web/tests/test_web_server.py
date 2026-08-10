@@ -801,3 +801,39 @@ def test_demo_websocket_handshake(tmp_path):
     finally:
         web_server.shutdown()
         web_server.server_close()
+
+
+def test_demo_messages_and_activity_history_endpoints(tmp_path):
+    web_server = ThreadingHTTPServer(("127.0.0.1", 0), OfficeHandler)
+    web_server.api_base = "http://127.0.0.1:8080"
+    web_server.demo_mode = True
+    web_server.sessions_lock = threading.Lock()
+    web_port = web_server.server_address[1]
+
+    web_thread = threading.Thread(target=web_server.serve_forever, daemon=True)
+    web_thread.start()
+
+    try:
+        # GET /api/agents/architect/messages
+        with urllib.request.urlopen(f"http://127.0.0.1:{web_port}/api/agents/architect/messages") as resp:
+            assert resp.status == 200
+            data = json.loads(resp.read().decode())
+            assert "messages" in data
+            assert len(data["messages"]) >= 2
+            assert data["messages"][0]["cursor"] == "msg-0"
+
+        # GET /api/agents/architect/messages?after=msg-0
+        with urllib.request.urlopen(f"http://127.0.0.1:{web_port}/api/agents/architect/messages?after=msg-0") as resp:
+            assert resp.status == 200
+            data = json.loads(resp.read().decode())
+            assert "messages" in data
+
+        # GET /api/agents/architect/activity
+        with urllib.request.urlopen(f"http://127.0.0.1:{web_port}/api/agents/architect/activity") as resp:
+            assert resp.status == 200
+            data = json.loads(resp.read().decode())
+            assert "activity" in data
+            assert len(data["activity"]) >= 2
+    finally:
+        web_server.shutdown()
+        web_server.server_close()
