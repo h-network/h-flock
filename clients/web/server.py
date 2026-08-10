@@ -370,6 +370,98 @@ class OfficeHandler(SimpleHTTPRequestHandler):
             self.end_headers()
             self.wfile.write(content.encode("utf-8"))
 
+    def _handle_get_conversation(self) -> None:
+        parts = self.path.split("?")[0].strip("/").split("/")
+        agent_name = parts[2] if len(parts) >= 4 else "architect"
+
+        outbound = []
+        audit_file = getattr(self.server, "audit_log", None)
+        if audit_file and Path(audit_file).exists():
+            try:
+                for line in Path(audit_file).read_text(encoding="utf-8").splitlines():
+                    if not line.strip():
+                        continue
+                    rec = json.loads(line)
+                    if rec.get("event") == "operator_action":
+                        det = rec.get("details", {})
+                        path = det.get("path", "")
+                        if f"/agents/{agent_name}" in path or det.get("agent") == agent_name:
+                            payload = det.get("payload", {})
+                            text = payload.get("text") or (payload.get("payload", {}).get("text") if isinstance(payload.get("payload"), dict) else "")
+                            if text:
+                                outbound.append({
+                                    "ts": rec.get("timestamp", ""),
+                                    "kind": "Message",
+                                    "producer": "operator",
+                                    "recipient": agent_name,
+                                    "direction": "outbound",
+                                    "payload": {"text": text},
+                                })
+            except Exception:
+                pass
+
+        inbound = []
+        if getattr(self.server, "demo_mode", False):
+            inbound = [
+                {
+                    "ts": "2026-08-10T02:30:00Z",
+                    "kind": "Message",
+                    "producer": "operator",
+                    "recipient": agent_name,
+                    "direction": "outbound",
+                    "payload": {"text": f"Can you check the build status for {agent_name}?"},
+                },
+                {
+                    "ts": "2026-08-10T02:35:00Z",
+                    "kind": "Message",
+                    "producer": agent_name,
+                    "recipient": "operator",
+                    "direction": "inbound",
+                    "payload": {"text": f"Build complete and verified for {agent_name}."},
+                },
+            ]
+        else:
+            try:
+                req = urllib.request.Request(
+                    f"{self.server.api_base}/agents/{agent_name}/messages",
+                    headers={"Authorization": f"Bearer {self.server.api_token}"},
+                )
+                with urllib.request.urlopen(req, timeout=5) as resp:
+                    if resp.status == 200:
+                        data = json.loads(resp.read().decode())
+                        for msg in data.get("messages", []):
+                            msg["direction"] = "inbound" if msg.get("producer") != "operator" else "outbound"
+                            inbound.append(msg)
+            except Exception:
+                pass
+
+        combined = []
+        seen = set()
+        for msg in (inbound + outbound):
+            key = f"{msg.get('ts')}:{msg.get('producer')}:{json.dumps(msg.get('payload'))}"
+            if key not in seen:
+                seen.add(key)
+                combined.append(msg)
+
+        combined.sort(key=lambda m: m.get("ts", ""))
+
+        for idx, m in enumerate(combined):
+            m["cursor"] = f"conv-{idx}"
+
+        qs = urllib.parse.parse_qs(urlsplit(self.path).query)
+        after_cursor = qs.get("after", [""])[0]
+        if after_cursor:
+            filtered = []
+            found = False
+            for m in combined:
+                if found:
+                    filtered.append(m)
+                elif m["cursor"] == after_cursor:
+                    found = True
+            combined = filtered
+
+        self._json(200, {"agent": agent_name, "messages": combined})
+
     def _handle_get_audit(self) -> None:
         audit_file = getattr(self.server, "audit_log", None)
         qs = urllib.parse.parse_qs(urlsplit(self.path).query)
@@ -465,6 +557,8 @@ class OfficeHandler(SimpleHTTPRequestHandler):
             self._handle_get_recordings()
         elif self.path == "/api/audit" or self.path.startswith("/api/audit?") or self.path.startswith("/api/audit/"):
             self._handle_get_audit()
+        elif "/conversation" in self.path:
+            self._handle_get_conversation()
         elif self.server.demo_mode and self.path.startswith("/api/"):
             self._demo_api()
         elif self.path.startswith("/api/"):

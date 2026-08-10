@@ -801,3 +801,45 @@ def test_demo_websocket_handshake(tmp_path):
     finally:
         web_server.shutdown()
         web_server.server_close()
+
+
+def test_get_conversation_2way_thread_endpoint(tmp_path):
+    audit_file = tmp_path / "audit.jsonl"
+    web_server = ThreadingHTTPServer(("127.0.0.1", 0), OfficeHandler)
+    web_server.api_base = "http://127.0.0.1:8080"
+    web_server.audit_log = str(audit_file)
+    web_server.demo_mode = True
+    web_server.sessions_lock = threading.Lock()
+    web_port = web_server.server_address[1]
+
+    web_thread = threading.Thread(target=web_server.serve_forever, daemon=True)
+    web_thread.start()
+
+    try:
+        # Send an operator prompt via POST /api/agents/architect/envelopes
+        req = urllib.request.Request(
+            f"http://127.0.0.1:{web_port}/api/agents/architect/envelopes",
+            data=json.dumps({"text": "Please run unit tests for architect."}).encode(),
+            headers={"Content-Type": "application/json"},
+            method="POST",
+        )
+        with urllib.request.urlopen(req) as resp:
+            assert resp.status == 202
+
+        # GET /api/agents/architect/conversation
+        with urllib.request.urlopen(f"http://127.0.0.1:{web_port}/api/agents/architect/conversation") as resp:
+            assert resp.status == 200
+            data = json.loads(resp.read().decode())
+            assert data["agent"] == "architect"
+            messages = data["messages"]
+            assert len(messages) >= 2
+
+            directions = [m.get("direction") for m in messages]
+            assert "outbound" in directions
+            assert "inbound" in directions
+
+            cursors = [m.get("cursor") for m in messages]
+            assert "conv-0" in cursors
+    finally:
+        web_server.shutdown()
+        web_server.server_close()
