@@ -1,5 +1,7 @@
 import json
 import os
+
+from flock.bus.logging import log_record
 import subprocess
 import time
 from typing import Set
@@ -131,8 +133,13 @@ def ensure_claude_project_trusted(cwd: str, profile: str | None = None) -> None:
 
         with open(config_path, "w", encoding="utf-8") as f:
             json.dump(data, f, indent=2)
-    except Exception:
-        pass
+    except Exception as exc:
+        # ⚠ Never raise into a delivery path — but never vanish either.
+        # Silence here is how the profile-blind trust bug hid: seeding
+        # failed, every profiled agent sat at a picker unreachable, and
+        # presence read `idle` because idle is what a prompt looks like.
+        log_record("tmux", "error",
+                   reason=f"claude trust seeding failed for {cwd}: {exc}")
 
 
 def ensure_codex_project_trusted(cwd: str, profile: str | None = None) -> None:
@@ -161,8 +168,13 @@ def ensure_codex_project_trusted(cwd: str, profile: str | None = None) -> None:
             if not content.endswith("\n"):
                 f.write("\n")
             f.write(f"\n{entry}")
-    except Exception:
-        pass
+    except Exception as exc:
+        # ⚠ Never raise into a delivery path — but never vanish either.
+        # Silence here is how the profile-blind trust bug hid: seeding
+        # failed, every profiled agent sat at a picker unreachable, and
+        # presence read `idle` because idle is what a prompt looks like.
+        log_record("tmux", "error",
+                   reason=f"codex trust seeding failed for {cwd}: {exc}")
 
 
 def ensure_agy_project_trusted(cwd: str) -> None:
@@ -195,8 +207,13 @@ def ensure_agy_project_trusted(cwd: str) -> None:
 
         with open(config_path, "w", encoding="utf-8") as f:
             json.dump(data, f, indent=2)
-    except Exception:
-        pass
+    except Exception as exc:
+        # ⚠ Never raise into a delivery path — but never vanish either.
+        # Silence here is how the profile-blind trust bug hid: seeding
+        # failed, every profiled agent sat at a picker unreachable, and
+        # presence read `idle` because idle is what a prompt looks like.
+        log_record("tmux", "error",
+                   reason=f"agy trust seeding failed for {cwd}: {exc}")
 
 
 def window_env(
@@ -282,8 +299,13 @@ def write_agent_guide(
         ensure_claude_project_trusted(cwd, profile=profile)
         ensure_codex_project_trusted(cwd, profile=profile)
         ensure_agy_project_trusted(cwd)
-    except Exception:
-        pass
+    except Exception as exc:
+        # ⚠ Never raise into a delivery path — but never vanish either.
+        # Silence here is how the profile-blind trust bug hid: seeding
+        # failed, every profiled agent sat at a picker unreachable, and
+        # presence read `idle` because idle is what a prompt looks like.
+        log_record("tmux", "error",
+                   reason=f"guide write failed for {cwd}: {exc}")
 
 
 def create_window(

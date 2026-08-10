@@ -182,12 +182,30 @@ class TmuxHost:
         # Re-fetch after creations to decide cleanup
         existing_windows = self.get_windows()
 
-        # Remove windows that are no longer in roster (never leaving 0 windows in session)
-        for window in sorted(list(existing_windows)):
-            if window not in roster_agents:
-                if len(existing_windows) > 1:
-                    if self.kill_window(window):
-                        existing_windows.remove(window)
+        # Remove windows that are no longer in roster.
+        #
+        # ⚠ The session must keep at least one window or tmux exits, but the
+        # guard used to mean a RETIRED AGENT'S window survived forever when it
+        # was the last one — an office showing a name that is no longer a member,
+        # which is the "present but unaddressable" state we work hardest to
+        # avoid. Put up the placeholder the empty-roster path already uses, then
+        # retire the agent properly.
+        stale = [w for w in sorted(existing_windows) if w not in roster_agents]
+        if stale and len(stale) == len(existing_windows):
+            placeholder = "__init__"
+            if placeholder not in existing_windows:
+                ret, _, stderr = tmux_ops.create_window(
+                    self.session_name, placeholder, command=["bash", "-il"], socket=self.socket
+                )
+                if ret == 0:
+                    existing_windows.append(placeholder)
+                else:
+                    log_record("tmuxhost", "error", recipient=placeholder,
+                               reason=f"placeholder window failed, keeping stale window: {stderr}")
+        for window in stale:
+            if len(existing_windows) > 1:
+                if self.kill_window(window):
+                    existing_windows.remove(window)
 
     def run_forever(self) -> None:
         r = redis.Redis.from_url(self.redis_url)
