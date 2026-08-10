@@ -383,18 +383,17 @@ it now dead-letters with a reason, which is the right answer and a visible one.
 The lesson is in the delay: a compatibility shim with a date but no owner keeps
 its date and loses its removal.
 
-⚠ **`AddTicket` is opened by `tmux` and writes only a board — but it does check the
-window exists.** It is in this table
-under the VAB that opens it, not the thing it does — a board write is the one
-delivery routine that produces no terminal output, deliberately: the board is
-pulled, so nothing notifies the agent. A ticket waits until that agent runs
-`office take`.
+⚠ **`AddTicket` is opened by `tmux` but does not require a tmux window.** It
+writes only the board and produces no terminal output: the board is pulled, so
+the ticket waits in `tasks.todo` until the agent runs `office take`, including
+while its window is crashed or not yet reconciled. A name absent from the roster
+never reaches this opener because the router dead-letters it first.
 
-⚠ **It still requires the window to exist.** `add_ticket_opener` checks
-`list_windows` and raises `DeadLetter("window_missing")` if the agent has none,
-even though the ticket itself is only a Redis write. Whether that is right is
-open — the board being pulled means a ticket could simply wait for the agent to
-come back — but it is what happens today.
+The opener confirms the synchronous `RPUSH` from its returned list length and
+logs `board_write_confirmed`. A failed or unconfirmed write logs
+`board_write_failed` and raises `DeadLetter`; it never creates a
+`pending.verify` marker or a `blocked` state because no CLI consumption is
+expected for a board write.
 
 `vab` defaults to `tmux` and accepts `tmux` or `api`; `cli` defaults to `claude`.
 

@@ -7,7 +7,7 @@ from unittest.mock import patch, MagicMock
 from flock.adapter.openers import add_ticket_opener, message_opener, command_opener, get_tmux_windows
 from flock.adapter.cli import main as cli_main
 from flock.adapter.runner import run_adapter
-from flock.bus import DeadLetter, build as build_envelope
+from flock.bus import DeadLetter, build as build_envelope, prefix, receive
 
 
 class MockRedis:
@@ -27,6 +27,7 @@ class MockRedis:
         if key not in self.lists:
             self.lists[key] = []
         self.lists[key].append(value)
+        return len(self.lists[key])
 
     def blpop(self, key, timeout=0):
         if key in self.lists and self.lists[key]:
@@ -165,6 +166,97 @@ def test_add_ticket_opener_writes_v1_ticket(mock_run_tmux, mock_list_windows):
 
     load_buffer_calls = [call for call in mock_run_tmux.call_args_list if "load-buffer" in call[0]]
     assert len(load_buffer_calls) == 0
+
+
+@patch("flock.adapter.openers.list_windows")
+def test_add_ticket_opener_writes_when_window_is_missing(mock_list_windows, capsys):
+    mock_list_windows.return_value = {"architect"}
+    r = MockRedis()
+    env = build_envelope(
+        kind="AddTicket",
+        producer="architect",
+        recipient="backend",
+        payload={"title": "wait for recovery"},
+    )
+
+    add_ticket_opener(r, pod="acme", tenant="hq", agent="backend", envelope=env, session_name="hq")
+
+    assert mock_list_windows.call_count == 0
+    todo_key = "pod:acme:tenant:hq:agent:backend:tasks.todo"
+    assert json.loads(r.lists[todo_key][0])["title"] == "wait for recovery"
+    record = json.loads(capsys.readouterr().out)
+    assert record["event"] == "board_write_confirmed"
+    assert record["recipient"] == "backend"
+    assert record["count"] == 1
+
+
+def test_add_ticket_opener_dead_letters_failed_board_write(capsys):
+    class FaultyRedis(MockRedis):
+        def rpush(self, key, value):
+            raise RuntimeError("board unavailable")
+
+    env = build_envelope(
+        kind="AddTicket",
+        producer="architect",
+        recipient="backend",
+        payload={"title": "cannot land"},
+    )
+
+    with pytest.raises(DeadLetter, match="board_write_failed"):
+        add_ticket_opener(
+            FaultyRedis(),
+            pod="acme",
+            tenant="hq",
+            agent="backend",
+            envelope=env,
+            session_name="hq",
+        )
+
+    record = json.loads(capsys.readouterr().out)
+    assert record["event"] == "board_write_failed"
+    assert record["reason"] == "board unavailable"
+
+
+def test_failed_board_write_is_parked_once_by_receive(capsys):
+    class FaultyBoardRedis(MockRedis):
+        def rpush(self, key, value):
+            if key.endswith(":tasks.todo"):
+                raise RuntimeError("board unavailable")
+            return super().rpush(key, value)
+
+    r = FaultyBoardRedis()
+    env = build_envelope(
+        kind="AddTicket",
+        producer="architect",
+        recipient="backend",
+        payload={"title": "cannot land"},
+    )
+    ingress_key = prefix("acme", "hq", agent="backend", resource="ingress")
+    r.rpush(ingress_key, json.dumps(env))
+
+    receive(
+        r,
+        pod="acme",
+        tenant="hq",
+        agent="backend",
+        openers={
+            "AddTicket": lambda envelope: add_ticket_opener(
+                r,
+                pod="acme",
+                tenant="hq",
+                agent="backend",
+                envelope=envelope,
+                session_name="hq",
+            )
+        },
+        timeout=0,
+        module="adapter",
+    )
+
+    events = [json.loads(line)["event"] for line in capsys.readouterr().out.splitlines()]
+    assert events == ["received", "board_write_failed", "dead_lettered"]
+    dead_key = prefix("acme", "hq", agent="backend", resource="dead")
+    assert len(r.lists[dead_key]) == 1
 
 
 def test_assign_task_is_no_longer_a_kind():

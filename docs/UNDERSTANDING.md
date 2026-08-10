@@ -201,9 +201,10 @@ Measured live, each precondition proved on screen (`sim-blocked.sh`, 19/0):
 a test asserting an absence that passed whenever the router had not yet judged.
 It was the only thing that ever argued for a screen scraper.
 
-⚠ **Only `Message` and `Command` are ever judged.** Both call
-`mark_delivery_pending(...)`; `AddTicket` does not, so it is never verified and
-can never produce `blocked`.
+⚠ **Only `Message` and `Command` are judged from later CLI input.** Both call
+`mark_delivery_pending(...)`. `AddTicket` instead confirms its synchronous
+board write from the returned list length; it never produces `blocked`, because
+an untaken ticket is the normal state of a pulled board.
 
 ⚠ **And only for an agent that has produced activity before** —
 `return bool(self.r.exists(offset_key) or self.r.xlen(activity_key))`. No

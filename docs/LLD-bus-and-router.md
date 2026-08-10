@@ -806,8 +806,12 @@ skipped, and `--dry-run` performs no writes.
 
 **The ticket board is pulled at the agent edge.** `AddTicket` is the one bus
 delivery that mutates a board: its opener appends to the recipient's
-`tasks.todo` and pastes nothing. The recipient later moves its own ticket; no
-command directly mutates another participant's board. `office take` refuses
+`tasks.todo` and pastes nothing. The write does not require a current window;
+the opener confirms the returned list length synchronously, while a failed or
+unconfirmed write dead-letters. It never uses `pending.verify` or `blocked`,
+because an untaken ticket is normal board state rather than an unconsumed
+terminal delivery. The recipient later moves its own ticket; no command directly
+mutates another participant's board. `office take` refuses
 while `tasks.doing` is non-empty, so the one-open-ticket rule is explicit rather
 than an emergent property of pull delivery. It distinguishes that refusal from
 an empty `tasks.todo`, because callers act differently on those outcomes.

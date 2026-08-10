@@ -139,7 +139,12 @@ creates a v1 ticket entry in the recipient agent's `tasks.todo` Redis list, reco
 the `add` event via `flock.bus.record_task_event`, and **pastes nothing** into the
 window.
 
-⚠ **Window check:** Even though `AddTicket` pastes nothing into the window and only mutates Redis keys, `add_ticket_opener` currently checks `list_windows` and dead-letters the envelope with `reason="window_missing"` if the target agent's tmux window is absent. (Whether `AddTicket` should require a window is an open architectural decision).
+⚠ **No window check:** The opener writes for a rostered agent even when its
+tmux window is absent. The pulled ticket waits in `tasks.todo` for a later
+`office take`; a roster-less recipient is rejected by the router before adapter
+delivery. The returned `RPUSH` list length confirms the synchronous mutation:
+success logs `board_write_confirmed`, while an exception or non-positive result
+logs `board_write_failed` and raises `DeadLetter`.
 
 ### Verification Markers (`pending.verify`)
 
@@ -149,7 +154,7 @@ Before pasting a `Message` or `Command` into a `vab: tmux` window, the adapter r
 ```
 - **Ordering**: The marker is written *before* the paste sequence into the window. Writing it before paste prevents a sub-second race where a fast agent's reply arrives before the marker lands in Redis.
 - **Allowlist `{claude, codex}`**: Markers are recorded only for CLIs on an explicit allowlist (`claude`, `codex`).
-- **Skipped for `AddTicket`**: `AddTicket` pastes nothing into the window and is not verified via activity inputs.
+- **Confirmed synchronously for `AddTicket`**: `AddTicket` pastes nothing, so it confirms its board write directly and is not verified via activity inputs. It never creates `blocked`; an untaken ticket is normal board state.
 - **Skipped for `agy` and `bash`**: `agy` has no session log file / activity feed and `bash` has no CLI turn records, so markers are skipped to avoid false unverified alerts.
 - **Fail-safe**: Marker creation is wrapped in `try...except` so stream write failures never impact envelope delivery.
 - **`blocked` state**: The router checks these markers on its pass. If an agent has produced prior activity and a delivery is unverified with no activity produced since, the router writes `<prefix>:agent:<name>:blocked`. It catches wedged processes, trust pickers, and unauthenticated login prompts. An agent with no prior activity is `unknown` and its first delivery is `unjudged` rather than `blocked`.
