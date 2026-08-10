@@ -489,6 +489,8 @@ export class TerminalPanel {
     }
   }
 
+  // Purity Rule (Invariant 7 & SPEC.md §5): Terminal buffer contains ONLY raw agent-emitted bytes.
+  // Console state, errors, and recording alerts are reflected strictly in panel chrome and screen reader live regions.
   _handleRecordingCapReached() {
     if (!this.isRecording) return;
     this.isRecording = false;
@@ -501,9 +503,6 @@ export class TerminalPanel {
     }
     this.setPanelStatus("Recording stopped: Server retention cap reached (5MB / 5000 frames limit).", "error");
     this._announce("ALERT: Terminal session recording automatically stopped. Server storage retention limit reached.");
-    if (this.term) {
-      this.term.writeln("\r\n\x1b[33;1m--- RECORDING CAPPED: Server retention limit reached (5MB / 5000 frames cap) ---\x1b[0m");
-    }
   }
 
   startReplay() {
@@ -639,8 +638,6 @@ export class TerminalPanel {
     this.setPanelStatus(`Connecting to ${agentName}...`, "loading");
     this._announce(`Connecting terminal to agent ${agentName}`);
     this.term.reset();
-    this.term.writeln(`\x1b[36m--- Terminal Window for ${agentName} (120x32) ---\x1b[0m`);
-    this.term.writeln(`\x1b[90mConnecting to /session?agent=${encodeURIComponent(agentName)}...\x1b[0m\r\n`);
 
     const protocol = location.protocol === "https:" ? "wss:" : "ws:";
     const wsUrl = `${protocol}//${location.host}/session?agent=${encodeURIComponent(agentName)}`;
@@ -661,8 +658,6 @@ export class TerminalPanel {
         try {
           ws.send(JSON.stringify({ subscribe: [agentName], mode: initialMode }));
         } catch (_) {}
-
-        this.term.writeln(`\x1b[32m--- Connected [120x32, ${this.isReadOnly ? "read-only" : "interactive"}] ---\x1b[0m\r\n`);
       };
 
       ws.onmessage = (event) => {
@@ -680,7 +675,6 @@ export class TerminalPanel {
               this.state = "error";
               this.setPanelStatus(`Window error: ${parsed.error}`, "error");
               this._announce(`Terminal error: agent window terminated (${parsed.error})`);
-              this.term.writeln(`\r\n\x1b[31;1m--- WINDOW TERMINATED: ${parsed.error} ---\x1b[0m`);
               return;
             }
           } catch (_) {}
@@ -703,7 +697,6 @@ export class TerminalPanel {
           const delaySec = Math.min(2 * Math.pow(1.5, this.reconnectAttempts), 15);
           this.setPanelStatus(`Disconnected (${event.reason || 'session closed'}). Reconnecting in ${Math.round(delaySec)}s...`, "disconnected");
           this._announce(`Terminal disconnected. Reconnecting in ${Math.round(delaySec)} seconds.`);
-          this.term.writeln(`\r\n\x1b[33m--- Disconnected: ${event.reason || 'Session closed'}. Reconnecting in ${Math.round(delaySec)}s (attempt ${this.reconnectAttempts}/${this.maxReconnectAttempts})... ---\x1b[0m`);
 
           this.reconnectTimer = setTimeout(() => {
             this.connect(agentName);
@@ -712,7 +705,6 @@ export class TerminalPanel {
           this.state = "error";
           this.setPanelStatus("Connection failed (max retries reached). Click Reconnect.", "error");
           this._announce("Terminal connection failed after maximum attempts. Click Reconnect to retry.");
-          this.term.writeln(`\r\n\x1b[31m--- Connection failed after ${this.maxReconnectAttempts} attempts. Click Reconnect to retry. ---\x1b[0m`);
         }
       };
 
