@@ -52,6 +52,37 @@ shutdown() {
 }
 trap shutdown EXIT INT TERM
 
+# ⚠ A bind is not an exposure. Both doors bind 0.0.0.0 *inside* the container by
+# design (Dockerfile) — what decides whether plaintext leaves this machine is the
+# port mapping, which the door process cannot see. So the judgement is made here,
+# once, from the published host compose passes in, and the doors are told the
+# answer via FLOCK_ALLOW_PLAINTEXT (BUILD-36 §2).
+#
+# Unset means not published at all — a bare `docker run` with no -p — which is
+# why the default is loopback rather than 0.0.0.0.
+for door in API SESSION; do
+  eval "published=\"\${${door}_HOST:-127.0.0.1}\""
+  eval "cert=\"\${${door}_TLS_CERT:-}\""
+  eval "key=\"\${${door}_TLS_KEY:-}\""
+  [ "$door" = "SESSION" ] && [ -z "$cert" ] && cert="${API_TLS_CERT:-}" && key="${API_TLS_KEY:-}"
+  loopback=$(python3 -c '
+import ipaddress, sys
+host = sys.argv[1].strip("[]")
+try:
+    print("1" if ipaddress.ip_address(host).is_loopback else "0")
+except ValueError:
+    print("1" if host.lower() == "localhost" else "0")
+' "$published")
+  if [ "$loopback" = "0" ] && [ -z "$cert$key" ] && [ "${ALLOW_PLAINTEXT_PUBLISH:-0}" != "1" ]; then
+    echo "entrypoint: the $(echo "$door" | tr 'A-Z' 'a-z') door is published on '$published' without TLS." >&2
+    echo "  The bearer token would cross the network in clear text. Either set" >&2
+    echo "  ${door}_TLS_CERT and ${door}_TLS_KEY, or publish to 127.0.0.1 only," >&2
+    echo "  or set ALLOW_PLAINTEXT_PUBLISH=1 in container/.env to accept it." >&2
+    exit 1
+  fi
+done
+export FLOCK_ALLOW_PLAINTEXT=1
+
 # ── redis ─────────────────────────────────────────────────────────────────────
 # Loopback only and never published. No persistence: a skeleton losing its
 # queues on a restart is acceptable (§2, §7).

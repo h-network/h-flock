@@ -18,6 +18,17 @@ from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from .control import ControlModeClient, ControlModeError, Subscriber
 
 
+def _plaintext_allowed() -> bool:
+    """Whether something outside this process has already judged the exposure.
+
+    ⚠ A bind is not an exposure — inside a container both doors bind `0.0.0.0`
+    by design and the port mapping that decides publication is invisible from
+    here. The entrypoint judges it and sets this. See `flock.api.app` for the
+    same helper and `LLD-container` §3 for why the judgement lives there.
+    """
+    return os.getenv("FLOCK_ALLOW_PLAINTEXT") == "1"
+
+
 def _is_loopback(bind: str) -> bool:
     host = bind.strip("[]")
     if host.lower() == "localhost":
@@ -63,7 +74,7 @@ class SessionSettings:
             if not _is_loopback(self.session_bind):
                 raise RuntimeError("API_TOKEN is required when SESSION_BIND is not loopback")
             raise RuntimeError("API_TOKEN is required")
-        if not _is_loopback(self.session_bind):
+        if not _is_loopback(self.session_bind) and not _plaintext_allowed():
             if not (self.session_tls_cert and self.session_tls_key):
                 raise RuntimeError("SESSION_TLS_CERT and SESSION_TLS_KEY are required when SESSION_BIND is not loopback")
         if bool(self.session_tls_cert) != bool(self.session_tls_key):

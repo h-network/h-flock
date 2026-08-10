@@ -49,11 +49,25 @@ class Settings:
             if not _is_loopback(self.api_bind):
                 raise RuntimeError("API_TOKEN is required when API_BIND is not loopback")
             raise RuntimeError("API_TOKEN is required")
-        if not _is_loopback(self.api_bind):
+        if not _is_loopback(self.api_bind) and not _plaintext_allowed():
             if not (self.api_tls_cert and self.api_tls_key):
                 raise RuntimeError("API_TLS_CERT and API_TLS_KEY are required when API_BIND is not loopback")
         if bool(self.api_tls_cert) != bool(self.api_tls_key):
             raise RuntimeError("Both API_TLS_CERT and API_TLS_KEY must be provided for TLS")
+
+
+def _plaintext_allowed() -> bool:
+    """Whether something outside this process has already judged the exposure.
+
+    ⚠ A bind is not an exposure. Inside a container the doors bind `0.0.0.0` by
+    design (`Dockerfile`) — publishing is the deliberate act, and the port
+    mapping that decides it is invisible from in here. So the entrypoint judges
+    publication and sets this when plaintext cannot leave the host, or when the
+    operator has acknowledged that it can. Outside a container nobody has
+    judged anything and the bind is the exposure, which is why the default is
+    to refuse. See `LLD-container` §3.
+    """
+    return os.getenv("FLOCK_ALLOW_PLAINTEXT") == "1"
 
 
 def _is_loopback(bind: str) -> bool:

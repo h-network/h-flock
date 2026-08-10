@@ -45,6 +45,17 @@ services:
       AGENT_ENDPOINTS: "${AGENT_ENDPOINTS:-}"
       # No default. The container refuses to start without it.
       API_TOKEN: "${API_TOKEN:?set API_TOKEN in container/.env}"
+      # ⚠ The published host, passed in so the entrypoint can judge exposure —
+      # the doors bind 0.0.0.0 inside the container and cannot see this mapping.
+      # A door published beyond loopback without TLS stops the tenant starting
+      # unless ALLOW_PLAINTEXT_PUBLISH=1 says that is intended (BUILD-36 §2).
+      API_HOST: "${API_HOST:-0.0.0.0}"
+      SESSION_HOST: "${SESSION_HOST:-0.0.0.0}"
+      ALLOW_PLAINTEXT_PUBLISH: "${ALLOW_PLAINTEXT_PUBLISH:-0}"
+      API_TLS_CERT: "${API_TLS_CERT:-}"
+      API_TLS_KEY: "${API_TLS_KEY:-}"
+      SESSION_TLS_CERT: "${SESSION_TLS_CERT:-}"
+      SESSION_TLS_KEY: "${SESSION_TLS_KEY:-}"
     ports:
       # Both doors published, one mapping each, so exposure is a decision per
       # door and neither module depends on the other (LLD-container §3).

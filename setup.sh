@@ -169,6 +169,27 @@ if [[ "${USE_ENDPOINT:-n}" =~ ^[Yy] ]]; then
     done
 fi
 
+# ── how the doors are published ───────────────────────────────────────────────
+# The console and the api carry a bearer token. Published beyond loopback with
+# no TLS it crosses the network in clear text, so the tenant refuses to start
+# unless that is an answered question rather than a default nobody saw.
+TLS_CERT=""; TLS_KEY=""; ALLOW_PLAINTEXT=0; DOOR_HOST="0.0.0.0"
+echo
+read -rp "Reach the console from another machine? [Y/n]: " REMOTE
+if [ "${REMOTE:-y}" = "n" ] || [ "${REMOTE:-y}" = "N" ]; then
+    DOOR_HOST="127.0.0.1"   # published to this host only; plaintext never leaves it
+else
+    read -rp "  Path to a TLS certificate (blank for plain HTTP): " TLS_CERT
+    if [ -n "$TLS_CERT" ]; then
+        read -rp "  Path to its key: " TLS_KEY
+    else
+        echo "  ⚠ Plain HTTP: the api token and everything typed into a terminal"
+        echo "    cross the network unencrypted. Fine on a trusted LAN, not on one"
+        echo "    you share. Recorded as ALLOW_PLAINTEXT_PUBLISH=1 in container/.env."
+        ALLOW_PLAINTEXT=1
+    fi
+fi
+
 # Only exceptions travel, so the env stays small and readable.
 for a in "${AGENTS[@]}"; do
     [ -n "${AGENT_ENDPOINT_OF[$a]:-}" ] && ENDPOINT_MAP+=("${a}=${AGENT_ENDPOINT_OF[$a]}")
@@ -202,6 +223,15 @@ TOKEN="$(grep -s '^API_TOKEN=' container/.env | cut -d= -f2)"
     echo "API_TOKEN=${TOKEN}"
     echo "API_PORT=8080"
     echo "SESSION_PORT=8081"
+    echo "API_HOST=${DOOR_HOST}"
+    echo "SESSION_HOST=${DOOR_HOST}"
+    [ "$ALLOW_PLAINTEXT" = "1" ] && echo "ALLOW_PLAINTEXT_PUBLISH=1"
+    if [ -n "$TLS_CERT" ]; then
+        echo "API_TLS_CERT=${TLS_CERT}"
+        echo "API_TLS_KEY=${TLS_KEY}"
+        echo "SESSION_TLS_CERT=${TLS_CERT}"
+        echo "SESSION_TLS_KEY=${TLS_KEY}"
+    fi
     [ "${#CLI_MAP[@]}"     -gt 0 ] && echo "AGENT_CLIS=$(IFS=,; echo "${CLI_MAP[*]}")"
     [ "${#PROFILE_MAP[@]}" -gt 0 ] && echo "AGENT_PROFILES=$(IFS=,; echo "${PROFILE_MAP[*]}")"
     if [ "${#ENDPOINT_MAP[@]}" -gt 0 ]; then
