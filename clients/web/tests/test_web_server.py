@@ -145,6 +145,12 @@ def test_demo_mode_responses():
                     break
             assert any(l.startswith("id: ") for l in lines)
             assert any(l.startswith(": keepalive") for l in lines)
+
+        req = urllib.request.Request(f"http://127.0.0.1:{web_port}/api/agents/sme-2/messages/stream")
+        with urllib.request.urlopen(req) as resp:
+            assert "text/event-stream" in resp.headers.get("Content-Type", "")
+            lines = [resp.readline().decode() for _ in range(5)]
+            assert any(l.startswith("event: message") for l in lines)
     finally:
         web_server.shutdown()
         web_server.server_close()
