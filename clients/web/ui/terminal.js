@@ -659,6 +659,19 @@ export class TerminalPanel {
     this.init();
     if (!this.term) return;
 
+    // ⚠ Idempotent, and this is load-bearing. renderWorkspace runs on every
+    // roster poll and calls connect() again; without this guard the socket is
+    // torn down and re-subscribed every couple of seconds. Measured in a
+    // browser: the operator's first keystroke was delivered, then the frame log
+    // showed nothing but repeated subscribe frames — every character after the
+    // first was eaten by the reconnect churn. "typing works but half" was this.
+    if (!isManualRetry
+        && this.socket
+        && this.agent === agentName
+        && (this.socket.readyState === WebSocket.OPEN || this.socket.readyState === WebSocket.CONNECTING)) {
+      return;
+    }
+
     if (isManualRetry) {
       this.reconnectAttempts = 0;
       if (this.reconnectTimer) clearTimeout(this.reconnectTimer);
