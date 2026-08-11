@@ -150,3 +150,24 @@ def test_window_log_over_cap_is_not_truncated_before_partial_tail_is_consumed(tm
     assert capsys.readouterr().out == ""
     assert path.read_bytes() == partial
     assert r.values[tailer.offset_key] == 0
+
+
+def test_window_log_skips_complete_invalid_utf8_line_and_keeps_progressing(tmp_path, capsys):
+    r = LogRedis()
+    path = tmp_path / "window.jsonl"
+    path.write_bytes(b'{"event":"before"}\ninvalid:\xff\n{"event":"after"}\n')
+    tailer = WindowLogTailer(r, pod="acme", tenant="hq", path=path)
+
+    tailer.poll()
+
+    lines = capsys.readouterr().out.splitlines()
+    assert lines[0] == '{"event":"before"}'
+    error = json.loads(lines[1])
+    assert error["event"] == "window_log_decode_error"
+    assert error["reason"] == "invalid UTF-8 at byte 27"
+    assert error["bytes"] == len(b"invalid:\xff\n")
+    assert lines[2] == '{"event":"after"}'
+    assert r.values[tailer.offset_key] == path.stat().st_size
+
+    tailer.poll()
+    assert capsys.readouterr().out == ""

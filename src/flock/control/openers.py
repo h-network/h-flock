@@ -5,6 +5,7 @@ from collections.abc import Callable
 from flock.bus import prefix, purge_agent, vab
 
 _STARTABLE_VABS = {"tmux", "api"}
+_FIXED_PARTICIPANTS = {"api", "host"}
 
 
 def _target(envelope: dict) -> tuple[str, dict]:
@@ -79,6 +80,8 @@ def stop_agent(
 ) -> None:
     """Remove desired state, then any VAB-specific state or actual window."""
     agent, _ = _target(envelope)
+    if agent in _FIXED_PARTICIPANTS:
+        raise ValueError(f"cannot stop fixed participant: {agent}")
     roster_key = prefix(pod, tenant, resource="roster")
     agent_vab = vab(r, pod=pod, tenant=tenant, agent=agent)
     r.hdel(roster_key, agent)

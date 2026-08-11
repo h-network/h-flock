@@ -123,18 +123,27 @@ class ActivityTailer:
             return None
         return max(regular, key=lambda candidate: candidate[0].stat().st_mtime_ns)
 
-    def _state(self, agent: str) -> tuple[str | None, int]:
+    def _state(self, agent: str) -> dict[str, int]:
         raw = self.r.get(prefix(self.pod, self.tenant, agent, "activity.offset"))
         if not raw:
-            return None, 0
+            return {}
         try:
             state = json.loads(_text(raw))
+            offsets = state.get("offsets")
+            if isinstance(offsets, dict):
+                return {
+                    path: offset
+                    for path, offset in offsets.items()
+                    if isinstance(path, str) and isinstance(offset, int) and offset >= 0
+                }
+            # Read the original one-path shape so an upgrade does not replay the
+            # currently selected session once before writing the new map shape.
             path, offset = state["path"], state["offset"]
             if isinstance(path, str) and isinstance(offset, int) and offset >= 0:
-                return path, offset
+                return {path: offset}
         except (KeyError, TypeError, ValueError, json.JSONDecodeError):
             pass
-        return None, 0
+        return {}
 
     def _append(self, agent: str, timestamp: str, kind: str, tool: str | None) -> None:
         event = {"v": 1, "agent": agent, "ts": timestamp, "kind": kind}
@@ -148,10 +157,11 @@ class ActivityTailer:
         )
 
     def _tail(self, agent: str, path: Path, flavor: str) -> None:
-        old_path, offset = self._state(agent)
+        offsets = self._state(agent)
         path_text = str(path)
+        offset = offsets.get(path_text, 0)
         size = path.stat().st_size
-        if old_path != path_text or offset > size:
+        if offset > size:
             offset = 0
         parser = _claude_events if flavor == "claude" else _codex_events
 
@@ -177,7 +187,8 @@ class ActivityTailer:
                 committed_offset = session.tell()
             offset = committed_offset
 
-        state = json.dumps({"path": path_text, "offset": offset}, separators=(",", ":"))
+        offsets[path_text] = offset
+        state = json.dumps({"offsets": offsets}, separators=(",", ":"))
         self.r.set(prefix(self.pod, self.tenant, agent, "activity.offset"), state)
 
     def poll(self, agents=None) -> None:

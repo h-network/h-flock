@@ -117,6 +117,12 @@ class DoorsAndRouterTest(unittest.TestCase):
         self.assertEqual(vab(self.r, pod="acme", tenant="hq", agent="alice"), "tmux")
         self.assertIsNone(vab(self.r, pod="acme", tenant="hq", agent="nobody"))
 
+    def test_empty_roster_waits_instead_of_spinning(self):
+        self.r.hashes[self.roster] = {}
+        with patch("flock.router.service.time.sleep") as sleep:
+            self.assertFalse(Router(self.r, pod="acme", tenant="hq", poll_seconds=5).step())
+        sleep.assert_called_once_with(5)
+
     def test_send_route_receive_round_trip(self):
         stream_id = send(
             self.r,
