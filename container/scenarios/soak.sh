@@ -27,6 +27,26 @@ P="pod:${POD}:tenant:${TENANT}"
 dx() { docker exec "$CONTAINER" "$@"; }
 r() { dx redis-cli "$@" 2>/dev/null | tr -d '\r'; }
 
+# ⚠ REFUSE A TENANT WHOSE AGENTS RUN A CLI. Every message this script sends
+# wakes a real model and spends the operator's subscription. Measured: eight
+# hours at one message per twenty seconds is ~1,440 model turns, to observe
+# Redis stream lengths and RSS — none of which needs a model at all.
+#
+# I started exactly that run before the operator stopped it. A duration test
+# belongs on a tenant of plain shells: the bus, router, adapter, spool, presence
+# sampler and session door are all exercised identically, and the paste lands in
+# bash instead of a CLI.
+live=$(dx redis-cli --scan --pattern "$P:agent:*:launch" 2>/dev/null | tr -d '\r' | wc -l | tr -d ' ')
+if [ "${live:-0}" -gt 0 ] && [ "${FORCE:-0}" != "1" ]; then
+  echo "soak: $live agent(s) in '$TENANT' run a CLI, not a shell." >&2
+  echo "  This script sends a message every ${SEND_EVERY}s for ${HOURS}h — every one" >&2
+  echo "  of them a model turn on somebody's account. Bring up a CLI-less tenant:" >&2
+  echo "    docker exec <c> redis-cli --scan --pattern '*:launch' | xargs -r -n1 docker exec -i <c> redis-cli DEL" >&2
+  echo "    docker exec <c> bash -lc 'TMUX_TMPDIR=… tmux kill-window -t <tenant>:<agent>'   # tmuxhost rebuilds it as a shell" >&2
+  echo "  or set FORCE=1 if you genuinely mean to spend that." >&2
+  exit 2
+fi
+
 read -r AG1 AG2 <<<"$(dx redis-cli --no-raw HGETALL "$P:roster" 2>/dev/null \
   | paste - - | grep '"tmux"' | awk -F'"' '{print $2}' | sort | head -2 | tr '\n' ' ')"
 [ -n "${AG1:-}" ] || { echo "soak: no tmux agents in $P:roster" >&2; exit 2; }
