@@ -81,6 +81,10 @@ remote and no ssh key — their output is a document, not a change.
 - **`auditCodex`** (3 codex agents) — running. Briefed directly rather than
   through the claude office, so they cannot inherit its conclusions.
 
+**The consolidated list is [`AUDIT.md`](AUDIT.md)** — 50 findings, ranked by
+consequence, each with the evidence its auditor cited and a status column. Work
+it top down.
+
 ⚠ **Neither audit has been triaged.** A finding is a claim until it is checked
 against the tree, and a previous auditor on this project cited files that did
 not exist.
