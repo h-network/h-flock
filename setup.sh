@@ -142,10 +142,10 @@ if [[ "${USE_ENDPOINT:-n}" =~ ^[Yy] ]]; then
     read -rp "  Model id [${SERVED%% *}]: " LOCAL_MODEL
     LOCAL_MODEL="${LOCAL_MODEL:-${SERVED%% *}}"
 
-    # ⚠ ASK, THEN VERIFY — and probe with a REAL model id. claude speaks only
-    # the Anthropic Messages API; ollama is OpenAI-shaped and has no
-    # /v1/messages, so pointing claude at a bare one yields "issue with the
-    # selected model", which reads as a model problem and is not one.
+    # ⚠ ASK, THEN VERIFY — and probe with a REAL model id. claude talks to
+    # /v1/messages, and an endpoint that does not answer there makes it report
+    # "issue with the selected model", which reads as a model problem and is
+    # not one. So ask the endpoint rather than assuming anything about it.
     #
     # ⚠ A 404 alone does not mean the route is missing: vLLM answers an unknown
     # model with 404 and {"type":"error","error":{"type":"NotFoundError"}}.
@@ -159,8 +159,9 @@ if [[ "${USE_ENDPOINT:-n}" =~ ^[Yy] ]]; then
             echo "  ✓ /v1/messages answered — claude can use this endpoint"
         elif [ -z "$PROBE" ]; then
             echo "  ⚠ ${LOCAL_URL}/v1/messages returned nothing."
-            echo "    claude speaks only the Anthropic Messages API. ollama does not serve it."
-            echo "    Put a translating proxy in front, or point codex/agy here instead."
+            echo "    claude talks to that path, so it will not work against this"
+            echo "    endpoint as it stands. Point codex or agy here instead, or put"
+            echo "    something in front of it that answers /v1/messages."
         else
             echo "  ⚠ /v1/messages answered, but not with a message:"
             echo "    $(echo "$PROBE" | head -c 160)"

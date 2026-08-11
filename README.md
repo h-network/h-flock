@@ -180,9 +180,14 @@ to a colleague who replied.
 ⚠ **The endpoint name is per agent; the address is tenant configuration.** An
 agent cannot read or change which model it is pointed at.
 
-⚠ **claude speaks only the Anthropic Messages API.** A bare ollama is
-OpenAI-shaped and needs a translating proxy in front — `setup.sh` probes and
-tells you rather than letting you find out as a model error.
+⚠ **claude talks to `/v1/messages`.** `setup.sh` probes exactly that, with a
+model id the endpoint says it serves, and prints what came back — so a mismatch
+shows up during install rather than as "issue with the selected model" later.
+
+⚠ **vLLM is tested; ollama is not.** An agent on vLLM has been run end to end
+here — tools, multi-step work, messaging a colleague who replied. Nobody has
+pointed claude at ollama, so this says nothing about whether it works. The probe
+will tell you.
 
 ## 🧑‍💻 What an agent sees
 
