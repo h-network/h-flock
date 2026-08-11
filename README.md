@@ -14,7 +14,7 @@
 ![tmux](https://img.shields.io/badge/tmux-agent_windows-1BB91F?style=flat-square&logo=tmux&logoColor=white)
 ![FastAPI](https://img.shields.io/badge/FastAPI-two_doors-009688?style=flat-square&logo=fastapi&logoColor=white)
 ![Agents](https://img.shields.io/badge/agents-claude_codex_agy-8B5CF6?style=flat-square)
-![Tests](https://img.shields.io/badge/tests-299_passing-22C55E?style=flat-square)
+![Tests](https://img.shields.io/badge/tests-303_passing-22C55E?style=flat-square)
 
 **A message bus for AI agents that live in terminals — and for the apps that talk to them. Agents address each other by name over a Redis bus; a phone app, a web front end or a Telegram bot enrols as a participant and gets replies the same way. One self-contained container.**
 
@@ -23,7 +23,7 @@ directory and one command — `office` — for everything it can do. Everything 
 is a switch: envelopes are forwarded by name, and nothing in the middle reads a
 payload.
 
-[Quick start](#-quick-start) · [How it works](#️-how-it-works) · [What an agent sees](#-what-an-agent-sees) · [Build an app](#-build-an-app) · [Architecture](docs/HLD.md) · [API reference](docs/API.md)
+[Quick start](#-quick-start) · [How it works](#️-how-it-works) · [Built by agents](#-built-by-an-office-of-agents) · [Build an app](#-build-an-app) · [Architecture](docs/HLD.md) · [API reference](docs/API.md)
 
 </div>
 
@@ -38,34 +38,32 @@ payload.
 - **🏢 One container = one tenant.** Redis, the router, a tmux server with one
   window per agent, and two doors to the outside. Bring it up twice and it
   converges.
-- **💬 Agents message each other by name.** `office send -a frontend …` rides a Redis
-  list and is pasted into frontend's window tagged with the sender. A message to a
-  busy agent **waits in its input box** rather than being lost.
-- **📱 Apps are participants, not spectators.** A Telegram bot, a web front end or
-  a macOS app enrols as a client, gets its own address and mailbox, and an agent
-  replies to it with the same command it uses for a colleague. **No terminal
-  scraping anywhere in the loop.**
-- **🗂️ A jira board per agent.** `office add / list / take / done / cancel / hold`
-  — tickets across `todo → doing → hold → done`, **pull-based**, so an agent takes
-  work when it is ready and nothing is ever pushed at it.
-- **👻 Adapters are not daemons.** The router writes an ingress and kicks a
-  short-lived adapter that delivers one envelope and exits. An office of idle
-  agents costs nothing — there are no processes between deliveries.
-- **📡 It says what it is doing.** Every agent has an **activity feed** — `input`,
-  `output`, `tool: Bash` — read from the CLI's own session file, never from the
-  screen. **Presence** on top of it: `working`, `idle`, `unknown` when an agent's
-  CLI writes nothing we can read, and `blocked` when a delivery went unconsumed.
-  An app renders that as a typing indicator; nothing has to parse a terminal to
-  get it.
-- **🖥️ Live terminals over WebSocket.** Stream any agent's pane and send
-  keystrokes back, `read-only` enforced server-side. For *watching*; answers come
-  as messages.
-- **🔑 Accounts, not frameworks.** A profile is the email you log in with. Several
-  agents share one config dir, so only the extras cost a browser flow.
-- **📓 Everything logged.** Four records across an envelope's life to the
-  container log; the board's own history to `tasks.jsonl`.
-- **🔒 Isolated.** Redis is internal, agents never encounter a queue or a token,
-  and the container — not anything inside it — is the boundary.
+- **📱 Apps are participants, not spectators.** A Telegram bot or a web console
+  enrols as a client, gets its own address and mailbox, and an agent replies to it
+  with the same command it uses for a colleague. **No terminal scraping anywhere
+  in the loop.**
+
+Boards, presence and activity, live terminals, accounts, adapters that are not
+daemons, and what gets logged: [`docs/HLD.md`](docs/HLD.md) has all of it, and
+[the kinds table](docs/HLD.md) says which capabilities exist.
+
+## 🏗️ Built by an office of agents
+
+This repository is written by a team of AI agents — one per lane, each in its own
+terminal — with a human lead reviewing and merging. **Not by h-flock itself:** the
+office runs on h-flock's predecessor tooling, and dogfooding is
+[still ahead](docs/TODO.md).
+
+```
+$ git rev-list --count HEAD
+684
+$ git log --merges --format=%s | grep -oE "origin/[a-z-]+/" | sort | uniq -c
+     29 origin/api/      21 origin/bus/      20 origin/tmux/
+```
+
+Each lane branches from `main`, pushes, and the lead merges — the same workflow
+the product exists to support. ⚠ **Numbers move with every commit; re-run the
+commands rather than trusting these.**
 
 ## ⚙️ How it works
 
@@ -256,44 +254,6 @@ Two working clients live in [`clients/`](clients/) — a **Telegram bot** and a
 this source. They exist as much to test the reference as to be useful: between
 them they found eight things it did not say.
 
-## 🚪 The two doors
-
-Separate processes, separate ports, so publishing is one decision per door and
-neither depends on the other.
-
-| | | |
-|---|---|---|
-| **api** | `:8080` | envelopes in, messages and state out — REST, bearer token |
-| **session** | `:8081` | terminal output and keystrokes — WebSocket |
-
-`POST /agents/{agent}/envelopes` carries any `kind`; the api does not validate it
-and could not — which kinds are openable is a fact about adapters, discovered at
-the far edge. An unknown kind returns `202` and then dead-letters with a reason —
-**at a tmux agent.** An app client's mailbox takes every kind, since deciding
-which are interesting is the client's job, not the bus's.
-
-⚠ Both can execute code in an agent's window — the api through the `Command`
-kind, the session through keystrokes. Neither is the safe one, and the token is
-not optional.
-
-## ✉️ Kinds
-
-Capabilities are `kind`s, opened at the edge. Adding one is adding an opener.
-
-| kind | opened by | does |
-|---|---|---|
-| `Message` | `tmux` | `[message from …] <text>` into the window |
-| `Command` | `tmux` | pasted bare — **it executes** |
-| `AddTicket` | `tmux` | writes a ticket to that agent's board — and pastes nothing |
-| `StartAgent` | `control` | enrol: roster row, home, window, CLI — or a client, with no window |
-| `StopAgent` | `control` | reverses all of it |
-| `PauseAgent` | `control` | stops the CLI while preserving the agent |
-| `ResumeAgent` | `control` | resumes the CLI and drains its inbox |
-
-`office hire networking` is a `StartAgent` envelope addressed to `host`. The router
-forwarded a kind it has never heard of, to a name like any other. Anything
-addressed to an app client lands in that client's mailbox whatever its kind.
-
 ## 📁 Layout
 
 ```
@@ -402,7 +362,7 @@ went the way it did rather than only what it was.
 | [`LLD-bus-and-router.md`](docs/LLD-bus-and-router.md) | addressing, the envelope, the two doors, the invariants |
 | [`LLD-adapter-tmux.md`](docs/LLD-adapter-tmux.md) | how text actually gets into a terminal, and why each rule is load-bearing |
 | [`LLD-tmux-host.md`](docs/LLD-tmux-host.md) | the server, windows, geometry, reconciliation |
-| [`LLD-api.md`](docs/LLD-api.md) · [`LLD-session.md`](docs/LLD-session.md) | the two doors |
+| [`LLD-api.md`](docs/LLD-api.md) · [`LLD-session.md`](docs/LLD-session.md) | the two doors — `:8080` envelopes and state, `:8081` terminal bytes |
 | [`LLD-container.md`](docs/LLD-container.md) | one container is one tenant |
 | [`CONTRACTS.md`](docs/CONTRACTS.md) | what more than one module depends on |
 | [`LLD-watchdog.md`](docs/LLD-watchdog.md) | what it watches, and why it tells a human and never an agent |
