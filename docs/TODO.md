@@ -20,11 +20,12 @@ development happens in this repository; the framework is the product.
 TLS 1.3 on both doors and passes the plumbing check 25/25. Two things only that
 run could find: the healthcheck probed plain HTTP at an HTTPS door, so a working
 TLS tenant sat unhealthy forever; and both checker scripts had the scheme baked
-in as a constant. ⚠ **Still open:** `sim-blocked`'s four hires fail against a TLS
-tenant while the identical `StartAgent` returns 202 and creates the window by
-hand, and the same script passes 19/19 on a plaintext tenant. That is a fault in
-the simulator or in how it is run, not a reproduced product fault — but it is
-not explained, and it should be before the simulator is trusted on a TLS tenant.
+in as a constant. The later `sim-blocked` diagnosis found a second simulator
+fault: its window polls suppressed tmux stderr and forced a failed `docker exec`
+pipeline to succeed with empty output. That made both "ready" and "gone" fail
+while erasing the evidence needed to distinguish an absent window from a broken
+observation. The polls now use exact formatted window names and stop with a
+distinct error when `docker exec` or tmux fails; they do not retry harder.
 
 ⚠ **Verified by running it, 2026-08-11:** plumbing check 25/25 and the failure
 simulator 19/19 against a real tenant, after a from-scratch image build. The

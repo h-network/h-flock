@@ -39,9 +39,12 @@ STOPPED_PIDS=""
 poll_window_ready() {
     local agent="$1"
     for _ in $(seq 1 30); do
-        if [ "$(dx bash -c "TMUX_TMPDIR=/home/ubuntu/.flock/tmux tmux list-windows -t $TENANT 2>/dev/null | grep -c \" $agent\" || true")" -gt 0 ]; then
-            return 0
-        fi
+        window_present "$agent"
+        case "$?" in
+            0) return 0 ;;
+            1) ;;
+            *) return 2 ;;
+        esac
         sleep 0.5
     done
     return 1
@@ -50,12 +53,30 @@ poll_window_ready() {
 poll_window_gone() {
     local agent="$1"
     for _ in $(seq 1 30); do
-        if [ "$(dx bash -c "TMUX_TMPDIR=/home/ubuntu/.flock/tmux tmux list-windows -t $TENANT 2>/dev/null | grep -c \" $agent\" || true")" = "0" ]; then
-            return 0
-        fi
+        window_present "$agent"
+        case "$?" in
+            0) ;;
+            1) return 0 ;;
+            *) return 2 ;;
+        esac
         sleep 0.5
     done
     return 1
+}
+
+# Return 0 when the exact window name exists, 1 when it does not, and 2 when
+# the observation itself failed.  Do not turn an exec/tmux failure into "no
+# windows": that made ready and gone polls fail together while discarding the
+# only evidence that could distinguish docker exec from tmux.
+window_present() {
+    local agent="$1"
+    local windows
+    if ! windows=$(dx env TMUX_TMPDIR=/home/ubuntu/.flock/tmux \
+        tmux list-windows -t "$TENANT" -F '#{window_name}'); then
+        echo "sim-blocked: cannot list tmux windows while polling '$agent'" >&2
+        return 2
+    fi
+    printf '%s\n' "$windows" | grep -Fxq -- "$agent"
 }
 
 poll_blocked_key() {
