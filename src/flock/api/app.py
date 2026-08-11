@@ -616,8 +616,13 @@ def create_app(*, settings: Settings | None = None, redis_client: Any = None) ->
         producer = "api"
         if "as" in envelope:
             as_client = envelope["as"]
+            if not isinstance(as_client, str):
+                raise HTTPException(
+                    status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+                    detail="invalid 'as' client: must be an enrolled client with vab 'api'",
+                )
             try:
-                if not isinstance(as_client, str) or vab(client, pod=settings.pod, tenant=settings.tenant, agent=as_client) != "api":
+                if vab(client, pod=settings.pod, tenant=settings.tenant, agent=as_client) != "api":
                     raise HTTPException(
                         status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
                         detail="invalid 'as' client: must be an enrolled client with vab 'api'",

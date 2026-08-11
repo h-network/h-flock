@@ -94,7 +94,13 @@ def test_row_20_sse_midflight_error_emits_sse_error_event():
 
 def test_row_22_malformed_as_client_returns_422():
     r = MagicMock()
-    r.hget.return_value = None  # not enrolled
+
+    def fake_hget(name, key):
+        if not isinstance(key, (str, bytes)):
+            raise redis.exceptions.DataError("Invalid input of type: 'dict'")
+        return None
+
+    r.hget.side_effect = fake_hget
     app = create_app(
         settings=Settings(pod="test", tenant="office", api_token="secret"),
         redis_client=r,
@@ -103,10 +109,17 @@ def test_row_22_malformed_as_client_returns_422():
     post_route = all_routes.get("/agents/{agent}/envelopes")
     assert post_route is not None
 
+    # Invalid segment string
     with pytest.raises(HTTPException) as exc_info:
         post_route.endpoint("architect", {"as": "invalid:segment:name"})
     assert exc_info.value.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
 
+    # Non-string dict payload (would raise DataError in redis-py if passed to hget)
     with pytest.raises(HTTPException) as exc_info2:
-        post_route.endpoint("architect", {"as": 12345})
+        post_route.endpoint("architect", {"as": {"dict": "payload"}})
     assert exc_info2.value.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
+
+    # Non-string list payload
+    with pytest.raises(HTTPException) as exc_info3:
+        post_route.endpoint("architect", {"as": ["list", "payload"]})
+    assert exc_info3.value.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
