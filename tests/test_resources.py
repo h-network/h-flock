@@ -164,7 +164,7 @@ def test_retire_working_agent_then_rehire_same_name_reads_idle_and_keeps_data():
         pod="acme",
         tenant="hq",
         envelope={"payload": {"agent": agent, "cli": "claude"}},
-        create_window=lambda name, cli: None,
+        replace_window=lambda name: None,
     )
     PresenceSampler(r, pod="acme", tenant="hq").poll(
         {agent}, now=datetime(2026, 8, 9, 12, 1, 0, tzinfo=timezone.utc)

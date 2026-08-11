@@ -2,6 +2,7 @@
 
 from .ops import (
     AmbientTmuxError,
+    TmuxCommandError,
     create_window,
     ensure_agy_project_trusted,
     ensure_claude_project_trusted,
@@ -18,6 +19,7 @@ from .ops import (
 
 __all__ = [
     "AmbientTmuxError",
+    "TmuxCommandError",
     "require_isolated_tmux",
     "create_window",
     "kill_window",

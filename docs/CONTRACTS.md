@@ -130,6 +130,8 @@ def run_tmux(*args: str, socket: str | None = None,
              input_data: str | None = None) -> tuple[int, str, str]
 
 def list_windows(session_name: str, socket: str | None = None) -> set[str]
+    # empty set means the command succeeded and the session has no windows;
+    # a non-zero tmux result raises TmuxCommandError
 
 def create_window(session_name: str, agent_name: str,
                   command: list[str] | None = None,
@@ -176,10 +178,13 @@ def paste_text(session_name: str, agent_name: str, text: str,
                stream_id: str = "", socket: str | None = None) -> None
     # load-buffer → paste-buffer -p → delay → Enter → delete-buffer
     # the sequence in LLD-adapter-tmux §4, in one place
+    # any non-zero tmux result raises TmuxCommandError; normal return means the
+    # complete paste sequence succeeded
 ```
 
-`StartAgent` passes `command=["env", f"AGENT_NAME={agent}", cli]` to run a real
-CLI instead of the default shell.
+`StartAgent` writes desired state and leaves creation to tmuxhost, the sole
+window-creation implementation. tmuxhost passes the resolved environment and
+`startAgent <cli>` command to `create_window`.
 
 ### A delivery routine per VAB
 
@@ -428,7 +433,9 @@ that one difference is the whole security boundary.
 
 ### `StartAgent` and `StopAgent` are the whole operation — for a tmux agent
 
-`StartAgent` enrols the agent, creates its window, and starts the CLI in it.
+`StartAgent` enrols the agent; tmuxhost reconciliation creates its window and
+starts the CLI in it. The roster is visible first, so clients show the hire as
+pending until the window appears.
 `StopAgent` reverses all three. They are not enrolment alone.
 
 ⚠ **For `vab: "api"` there is only the first step.** A client enrolment writes a
@@ -446,7 +453,7 @@ restate it.
   StartAgent            StopAgent
     HSET roster networking tmux    HDEL roster networking
     SET  …:networking:launch cli   DEL  …:networking:launch
-    create the window        kill the window
+    tmuxhost reconciles      kill the window
 ```
 
 **Roster first, tmux second, in both directions.** The roster is desired state,
@@ -458,10 +465,10 @@ the `HDEL`, and the host finds a roster row with no window and **recreates it**.
 The agent you just killed comes back, one poll later, looking like the host
 working correctly.
 
-The opener does the tmux work itself rather than waiting for a reconcile, so the
-window appears immediately. That is safe because reconcile is idempotent — it
-finds an agent that already has a window and does nothing. The host stays the
-repair mechanism for anything an opener did not finish.
+tmuxhost is the only creator. A repeated `StartAgent` with changed CLI, profile,
+or endpoint removes the stale window after publishing the new desired state;
+tmuxhost then rebuilds it through the same path used at boot. An unchanged hire
+is idempotent and leaves the running window alone.
 
 ⚠ **`launch` is a separate key, not a roster value.** `LLD-bus-and-router` §3.2
 is explicit that nothing beyond the VAB lives in the roster — *"what is started
