@@ -730,7 +730,7 @@ import time
 import urllib.request
 
 HOST = "http://localhost:8080"
-TOKEN = "7af3ad5eb2cac57e9ca97a953908ef09"
+TOKEN = "<REDACTED-TOKEN>"
 HEADERS = {
     "Authorization": f"Bearer {TOKEN}",
     "Content-Type": "application/json",

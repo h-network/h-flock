@@ -37,12 +37,12 @@ Module invariants under real tenant conditions (`api-lab` on ports 8110 / 8111),
 
 ### Finding 1 (Rank 1): Token Leakage via Uvicorn Internal WebSocket Protocol Logger
 - **Observation:** Connecting to `ws://HOST:8111/session?token=<API_TOKEN>` causes Uvicorn's internal WebSocket protocol implementation (`websockets_impl` / `wsproto_impl`) to log the full request URL with query parameters to container stdout logs:
-  `INFO: 127.0.0.1:52310 - "WebSocket /session?token=7af3ad5eb2cac57e9ca97a953908ef09" [accepted]`
+  `INFO: 127.0.0.1:52310 - "WebSocket /session?token=<REDACTED-TOKEN>" [accepted]`
 - **Impact:** Even with `access_log=False` passed to `uvicorn.run()`, Uvicorn's WebSocket protocol handler emits its own handshake info log, printing administrative API tokens into container stdout logs whenever URL token authentication is used.
 - **Reproduction Steps:**
   1. Start `api-lab` tenant container.
-  2. Connect to `ws://localhost:8111/session?token=7af3ad5eb2cac57e9ca97a953908ef09`.
-  3. Execute `docker logs api-lab-tenant-1 2>&1 | grep "7af3ad5eb2cac57e9ca97a953908ef09"`.
+  2. Connect to `ws://localhost:8111/session?token=<REDACTED-TOKEN>`.
+  3. Execute `docker logs api-lab-tenant-1 2>&1 | grep "<REDACTED-TOKEN>"`.
   4. Observe `INFO: ... - "WebSocket /session?token=..." [accepted]` output in logs.
 - **Remediation Note:** Per Build 42 spec, no code changes are made in this build. Finding recorded for wave remediation.
 
@@ -98,7 +98,7 @@ Successfully connected to session socket!
 Received frame: {"agent":"architect","data":"\u001b[2J\u001b[H\u001b[38;5;174m ▐\u001b[48;5;16m▛███▜\u001b[49m▌\u001...
 
 [3] Verification: Checking container logs for API token leakage...
-Occurrences of token '7af3ad5eb2cac57e9ca97a953908ef09' in docker logs for api-lab-tenant-1: 1
+Occurrences of token '<REDACTED-TOKEN>' in docker logs for api-lab-tenant-1: 1
 
 === Scenario Complete ===
 ```
