@@ -346,7 +346,15 @@ dx redis-cli SET "pod:$POD:tenant:$TENANT:agent:sim-nologin-claude:profile" "sim
 dx bash -c "rm -rf /home/ubuntu/.claude-simnologinclaude" 2>/dev/null || true
 # Skip theme onboarding without supplying a credential. StartAgent merges the
 # project trust entry into this file, leaving login as the first visible gate.
-dx bash -c "mkdir -p /home/ubuntu/.claude-simnologinclaude && printf '%s' '{\"hasCompletedOnboarding\":true}' > /home/ubuntu/.claude-simnologinclaude/.claude.json && chown -R ubuntu:ubuntu /home/ubuntu/.claude-simnologinclaude" 2>/dev/null
+# ⚠ Copy the stock settings.json in, exactly as entrypoint.sh seed_profile_dir
+# does for a real profile. Without it the account lacks
+# skipDangerousModePermissionPrompt and claude stops at the bypass-permissions
+# gate instead of the login prompt this case is about.
+#
+# ⚠ This fixture used to work by accident. The hire path wrote trust into the
+# DEFAULT account rather than the profile's — audit row 23 — so claude never got
+# far enough to ask. Fixing the product exposed the fixture.
+dx bash -c "mkdir -p /home/ubuntu/.claude-simnologinclaude && printf '%s' '{\"hasCompletedOnboarding\":true}' > /home/ubuntu/.claude-simnologinclaude/.claude.json && cp /home/ubuntu/.claude/settings.json /home/ubuntu/.claude-simnologinclaude/settings.json 2>/dev/null; chown -R ubuntu:ubuntu /home/ubuntu/.claude-simnologinclaude" 2>/dev/null
 
 cu -X POST -H 'Content-Type: application/json' -d '{"kind":"StartAgent","payload":{"agent":"sim-nologin-claude","cli":"claude"}}' "$A/agents/host/envelopes" >/dev/null
 poll_window_ready "sim-nologin-claude"
