@@ -29,6 +29,11 @@ def _fields(raw: dict) -> dict[str, str]:
     return {_text(key): _text(value) for key, value in raw.items()}
 
 
+def _elapsed(now: datetime, then: datetime) -> int | float:
+    seconds = max(0.0, (now - then).total_seconds())
+    return int(seconds) if seconds.is_integer() else seconds
+
+
 class DeliveryVerifier:
     """Confirm aged paste markers against later CLI input activity."""
 
@@ -80,17 +85,14 @@ class DeliveryVerifier:
                 continue
 
             if not self._has_activity_history(agent):
-                waited = self.verify_after_seconds
-                if float(waited).is_integer():
-                    waited = int(waited)
-                for entry_id, marker, _ in eligible:
+                for entry_id, marker, marker_time in eligible:
                     log_record(
                         "router",
                         "delivery_unjudged",
                         stream_id=marker.get("stream_id"),
                         recipient=agent,
                         reason="agent has no activity history; first delivery is not judged",
-                        waited=waited,
+                        waited=_elapsed(now, marker_time),
                     )
                     self.r.xdel(pending_key, entry_id)
                 continue
@@ -109,9 +111,6 @@ class DeliveryVerifier:
                                 "stream_id": marker.get("stream_id", ""),
                             },
                         )
-                    waited = self.verify_after_seconds
-                    if float(waited).is_integer():
-                        waited = int(waited)
                     log_record(
                         "router",
                         "delivery_unverified",
@@ -122,6 +121,6 @@ class DeliveryVerifier:
                             "not retried because verification cannot distinguish "
                             "loss from a landed paste"
                         ),
-                        waited=waited,
+                        waited=_elapsed(now, marker_time),
                     )
                 self.r.xdel(pending_key, entry_id)

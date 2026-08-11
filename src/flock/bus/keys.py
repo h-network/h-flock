@@ -45,10 +45,7 @@ def _validate_resource(value: str | None) -> str:
 
 
 def _validate_agent(value: str | None) -> str:
-    value = _validate(value)
-    if value == "all":
-        raise KeyError(value)
-    return value
+    return _validate(value)
 
 
 def prefix(
