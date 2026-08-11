@@ -633,6 +633,15 @@ def create_app(*, settings: Settings | None = None, redis_client: Any = None) ->
                     detail="invalid 'as' client: must be an enrolled client with vab 'api'",
                 ) from exc
             producer = as_client
+        try:
+            payload_str = json.dumps(envelope)
+        except (TypeError, ValueError):
+            payload_str = ""
+        if len(payload_str.encode("utf-8")) > 1_048_576:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+                detail="envelope payload exceeds maximum size limit of 1MB",
+            )
         if "text" in envelope and set(envelope) <= {"text", "as"}:
             kind = "Message"
             payload = {"text": envelope["text"]}
@@ -772,7 +781,7 @@ def create_app(*, settings: Settings | None = None, redis_client: Any = None) ->
         limit: int = Query(default=100, ge=1, le=1000),
     ) -> dict[str, Any]:
         alerts_key = prefix(settings.pod, settings.tenant, resource="alerts")
-        alerts = _read_stream_entries(client, alerts_key, after=after, limit=limit, preferred_field="event")
+        alerts = _read_stream_entries(client, alerts_key, after=after, limit=limit, preferred_field="alert")
         next_cursor = alerts[-1]["cursor"] if alerts else after
         return {
             "alerts": alerts,
@@ -785,6 +794,6 @@ def create_app(*, settings: Settings | None = None, redis_client: Any = None) ->
         after: str | None = None,
     ) -> StreamingResponse:
         alerts_key = prefix(settings.pod, settings.tenant, resource="alerts")
-        return _stream_response(request, client, alerts_key, "alert", after, "event")
+        return _stream_response(request, client, alerts_key, "alert", after, "alert")
 
     return app

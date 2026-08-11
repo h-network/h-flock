@@ -69,7 +69,7 @@ which agents it wants; it can change that without reconnecting.
 
 ```json
   → {"subscribe": ["backend", "frontend"]}
-  ← {"agent": "backend", "data": "<bytes>"}
+  ← {"agent": "backend", "data": "<text>"}
 ```
 
 A dashboard showing every window opens one connection rather than one per agent,
@@ -77,6 +77,10 @@ and an app showing a single terminal is the same code with a list of one. The
 alternative — a connection per agent — pushes N sockets onto the app to save us
 a filter we have to write anyway, since one control-mode client already receives
 everything.
+
+**Wire Format & Bytes Encoding:**
+- **Terminal Output (`server -> client`):** `{"agent": "<name>", "data": "<text>"}` where `data` is UTF-8 string content containing ANSI control sequences (e.g. `\x1b[2J\x1b[H` screen repaint snapshots or live stdout). Non-ASCII terminal bytes from tmux `%output` are decoded using `utf-8` (`errors="replace"`).
+- **Keystrokes (`client -> server`):** `{"agent": "<name>", "data": "<keystrokes>"}` where `data` is raw UTF-8 string keystroke input. The server encodes this string to UTF-8 bytes and forwards it to tmux via `send-keys -H <hex_bytes>`.
 
 **A subscriber gets a snapshot first, then the stream.** `capture-pane` (without `-S -`) captures the visible screen (not the full scrollback history), prefixed with clear-and-home (`\x1b[2J\x1b[H`), followed by the screen lines and cursor position restoration (`\x1b[{row};{col}H` queried via `display-message -p -t <pane> "#{cursor_y} #{cursor_x}"`), so row 1 of the client matches row 1 of the pane and live updates stay aligned without offset.
 
@@ -108,6 +112,13 @@ control-mode client is privileged by construction.
 
 **The same bearer token as the api.** Both are doors into one tenant and a second
 scheme would be a second thing to get wrong. Checked once, on connect.
+
+**Browser WebSocket Authentication:** Standard browser JavaScript `WebSocket` constructor does not permit setting custom `Authorization: Bearer` headers. Authentication supports both `Authorization: Bearer <API_TOKEN>` headers and `?token=<API_TOKEN>` query parameters (`ws://HOST:8081/session?token=<API_TOKEN>`). Browser applications should pass `?token=<API_TOKEN>` or proxy terminal connections server-side.
+
+**WebSocket Close Codes:**
+- `1000`: Normal closure when the client or server ends the socket connection cleanly.
+- `4401`: Unauthorized (token missing or invalid). The server accepts the socket and closes with `code=4401, reason="unauthorized"` so client receives close frame.
+- `1011`: Internal error (control mode client disconnect or unhandled internal exception).
 
 ⚠ There are now two write paths into a window — `Command` over the bus, and
 keystrokes over this socket — and only the first produces envelope log records.
