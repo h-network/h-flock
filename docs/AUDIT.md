@@ -30,7 +30,7 @@ say so on the row and close it, rather than "fixing" something that was decided.
 | 2 | `REDIS_PASSWORD` reaches **every agent window** via an exported `REDIS_URL`, never unset — the one thing `API_TOKEN` is unset at line 27 to prevent | `container/entrypoint.sh:108-114`, `:232` | claude | ✅ |
 | 3 | `StopAgent` destroys an api client's **unread mailbox** — `inbox` is classified as identity state, while the docs promise queues are retained | `bus/resources.py:13` | claude | — |
 | 4 | Retiring `host` deletes the tenant's control endpoint, and the empty roster then turns the router into a Redis-hammering spin loop — **one chain** | `bus/keys.py:8`, `control/openers.py:16`, `router/service.py:38-40` | claude | — |
-| 5 | Two codex agents without profiles share one session directory, so the router **attributes one agent's activity to the other** | `router/activity.py:86`, `tmux/ops.py:236-240` | claude | — |
+| 5 | ~~Two codex agents without profiles share one session directory, so the router **attributes one agent's activity to the other**~~ **FIXED** — rollouts are now accepted only when the session's first `cwd` is `/workdir/<agent>` | `router/activity.py:104-120` | claude | ✅ fixed |
 | 6 | A Redis interruption can lose an envelope silently: destructive `BLPOP` happens before `popped` is emitted | `router/service.py:45`, `:48`, `:52-67` | codex | — |
 | 7 | The session door never recovers from a broken tmux stream, though the LLD says it does | `session/app.py:135`, `session/control.py:252-253` | claude | — |
 | 8 | One oversized `%output` line kills the reader permanently | `session/control.py:220`, `:71-76` | claude | — |
@@ -41,7 +41,7 @@ say so on the row and close it, rather than "fixing" something that was decided.
 | 13 | The pane→agent map assumes one pane per window and nothing enforces it; duplicate window names silently merge two terminals | `session/control.py:128-139`, `:185-203` | **both** | — |
 | 14 | The activity tailer restarts from byte 0 when the newest session file changes, replaying a whole file into a capped stream | `router/activity.py` | claude | — |
 | 15 | One undecodable byte in the window-log spool makes the tailer re-emit forever, never advancing or truncating, with no log record | `router/windowlog.py` | claude | — |
-| 16 | An adapter that cannot get the busy tag spins forever; the docs only promise it waits | `adapter/runner.py:161-168`, `bus/resources.py:45` | claude | — |
+| 16 | ~~An adapter that cannot get the busy tag spins forever~~ **REJECTED — deliberate.** Non-expiry and non-takeover are stated choices (`LLD-bus-and-router.md:546-568`, `CONTRACTS.md:316-330`), with `HGETALL delivering` and ingress depth exposed for diagnosis | `adapter/runner.py:163-168` | claude | ✅ closed |
 
 ## 2. A failure that reads as success
 
