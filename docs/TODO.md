@@ -14,6 +14,9 @@ development happens in this repository; the framework is the product.
 | **local model: long-context behaviour unknown** | every test was a short turn against a 65k window. Nothing says what a local agent does when it fills |
 | **security: what is left after build 36** | ⚠ **The boundaries are done** — TLS on both doors with a refusal to serve a non-loopback bind without it, `producer` stamped from its egress queue, and a tenant that will not start with a widened Redis bind and no password. What remains is **CORS and per-client tokens** on the api door. ⚠ **Nothing here isolates agents from each other**, deliberately: h-flock is a development office, agents are colleagues who were hired. HMAC envelopes, a brokered `office`, one OS user per window — that is a service executing work for callers it does not trust, a different product |
 | **the console cannot reach TLS doors** ⚠ *found by testing TLS, not by reading* | `clients/web/server.py` proxies for the browser, and its own client is plaintext-only: the WebSocket proxy opens a bare `socket.create_connection` (so terminals break against **any** cert, valid or not), and the REST proxy uses the default verifying context with no CA or insecure option. ⚠ **A supported configuration that breaks the shipped demo is a defect, not a missing feature** — but `clients/` is closed to development, so this is recorded rather than fixed. Roughly 30 lines in one file: ssl-wrap the socket, pass a context, add the option. Until then TLS belongs in a reverse proxy in front of loopback-published doors (`LLD-container` §3) |
+| **`setup.sh` cannot choose a CLI without multiple accounts** | The "Default CLI (claude/codex/agy)" prompt lives **inside** the multi-account branch, so a single-account install silently gets claude whatever you wanted. Measured while standing up a codex office: three agents came up on claude, and the only way through was `AGENT_CLIS=` written into `container/.env` by hand |
+| **seeded credentials do not survive `--force-recreate`** | They live in the container filesystem by design — never baked, never a volume — so recreating the container deletes them. ⚠ **And nothing notices:** `seed-home check` reports "logged in" because it tests the *host's* staging copy, so a tenant whose agents are all sitting at a login prompt reports healthy and authenticated. Measured: `auth.json` absent inside, three codex agents stuck on a sign-in screen, doorbell delivered into the void |
+| **`office swap <agent> --cli <x>`** ⚠ *operator's idea, and mostly already built* | The CLI is a Redis value (`agent:<name>:launch`) and `tmuxhost` rebuilds a missing window from it, so replacing the process while keeping the name, board, queues and workdir needs no new machinery. ⚠ **Not stop-then-start:** `StopAgent` destroys an api client's unread mailbox (audit F6). Open questions: drain or discard the ingress, what presence reads during the gap, and what happens to a ticket already in `doing`. Costs the agent's memory, which is acceptable |
 | **an alert you can clear** ⚠ *asked for by the operator* | Alerts are an append-only stream with no acknowledgement. Clearing must be keyed by **cursor** — one instance — so it can never become "mute this kind". Spec: `BUILD-38-durable` §1 |
 | **credential alerts never clear** | Measured: `status=absent` raised at `01:00:42Z`, login completed at `01:07Z`, nothing ever retracted it, so the console correctly rendered a fact that had been false for an hour. ⚠ **It was only ever tested firing.** `BUILD-38-durable` §2 |
 | **the permission mode lives only in argv** | A hired agent starts as `claude --dangerously-skip-permissions …` (verified at +4s/+8s/+12s) and was later seen as bare `claude` carrying `CLAUDE_CODE_RELAUNCH_*`: the CLI re-executed itself and the flag went with it, leaving the agent asking for permission. ⚠ **The trigger is unknown** — a forced resize does not reproduce it. `BUILD-38-durable` §3 |
@@ -62,6 +65,25 @@ defects a night of live running turned up.
 an item and nobody told this file — the correction arrived in a later audit
 rather than with the work. **A build that closes an item marks it in the same
 commit.** Do not leave it for a sweep.
+
+## The independent audits
+
+Two offices of three agents each, same snapshot (`4bc702b`), same brief, no
+remote and no ssh key — their output is a document, not a change.
+
+- **`auditClaude`** (3 claude agents) — done: 2,094 lines across three documents,
+  exported to the branch of that name and to `~/audit-export/docs/`. ⚠ **Two
+  findings spot-checked and confirmed already:** `host.py:201` calls `.append()`
+  on the `set` that `ops.py:56` returns, so the `__init__` placeholder path
+  raises; and `entrypoint.sh:112` exports `REDIS_URL` with the password inline
+  and never unsets it, so the Redis password reaches every agent window — the
+  one thing `API_TOKEN` is explicitly unset at line 27 to prevent.
+- **`auditCodex`** (3 codex agents) — running. Briefed directly rather than
+  through the claude office, so they cannot inherit its conclusions.
+
+⚠ **Neither audit has been triaged.** A finding is a claim until it is checked
+against the tree, and a previous auditor on this project cited files that did
+not exist.
 
 ## Everything below is closed
 
