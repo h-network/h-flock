@@ -1,6 +1,8 @@
 import json
 from datetime import datetime, timezone
 
+import pytest
+
 from flock.bus import prefix
 from flock.watchdog import service
 from flock.watchdog.service import Watchdog
@@ -170,6 +172,24 @@ def test_unknown_activity_is_named_as_unchecked(monkeypatch):
     assert alert["unchecked"] == ["activity"]
 
 
+def test_missing_window_is_reported_for_otherwise_stalled_agent(monkeypatch):
+    r = WatchRedis()
+    _stalled_agent(r)
+    monkeypatch.setattr(
+        service,
+        "run_tmux",
+        lambda *args, socket=None: (0, "architect\t1786283999", ""),
+    )
+
+    _watchdog(r).poll(now=NOW)
+
+    alert = json.loads(r.streams[prefix("acme", "hq", resource="alerts")][0][1]["alert"])
+    assert alert["kind"] == "stalled"
+    assert alert["agent"] == "sme-2"
+    assert alert["no_output_s"] is None
+    assert alert["window_missing"] is True
+
+
 def test_blocked_alert_reads_router_verdict_without_scraping(monkeypatch):
     r = WatchRedis()
     r.hashes[_key("sme-2", "blocked")] = {
@@ -262,6 +282,76 @@ def test_profile_codex_is_unknown_even_without_an_auth_file(tmp_path, capsys):
         for alert in alerts
     )
     capsys.readouterr()
+
+
+def test_endpoint_agent_needs_no_vendor_credential_and_clears_stale_status(tmp_path):
+    r = WatchRedis()
+    r.values[_key("architect", "launch")] = "claude"
+    r.values[_key("architect", "endpoint")] = "local-vllm"
+    alerted_key = prefix("acme", "hq", resource="credential.alerted")
+    r.hashes[alerted_key] = {"default:claude": "absent"}
+
+    Watchdog(r, pod="acme", tenant="hq", session_name="hq", home_root=tmp_path).check_credentials(now=NOW)
+
+    assert prefix("acme", "hq", resource="alerts") not in r.streams
+    assert r.hashes[alerted_key] == {}
+
+
+def test_stall_failure_does_not_disable_blocked_check(monkeypatch, capsys):
+    r = WatchRedis()
+    r.hashes[_key("sme-2", "blocked")] = {
+        "since": "2026-08-09T13:53:00Z",
+        "stream_id": "delivery-1",
+    }
+    watchdog = _watchdog(r)
+    monkeypatch.setattr(watchdog, "_window_activity", lambda: {})
+    monkeypatch.setattr(watchdog, "_check_stalls", lambda *args: (_ for _ in ()).throw(RuntimeError("bad board")))
+
+    watchdog.poll(now=NOW)
+
+    output = [json.loads(line) for line in capsys.readouterr().out.splitlines()]
+    assert output[0] == {
+        "module": "watchdog",
+        "event": "error",
+        "job": "stalls",
+        "reason": "RuntimeError: bad board",
+    }
+    assert any(record.get("kind") == "blocked" for record in output)
+
+
+def test_observation_failure_does_not_disable_due_credential_check(monkeypatch, capsys):
+    calls = []
+
+    class FailingWatchdog:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        def poll(self):
+            calls.append("poll")
+            raise RuntimeError("bad observations")
+
+        def check_credentials(self):
+            calls.append("credentials")
+
+        _error = staticmethod(Watchdog._error)
+
+    monkeypatch.delenv("WATCHDOG_ENABLED", raising=False)
+    monkeypatch.setenv("WATCHDOG_INTERVAL", "0")
+    monkeypatch.setenv("REDIS_URL", "redis://unused")
+    monkeypatch.setenv("POD", "acme")
+    monkeypatch.setenv("TENANT", "hq")
+    monkeypatch.setattr(service, "Watchdog", FailingWatchdog)
+    monkeypatch.setattr(service.redis.Redis, "from_url", lambda url: object())
+    monkeypatch.setattr(service.time, "monotonic", lambda: 0)
+    monkeypatch.setattr(service.time, "sleep", lambda interval: (_ for _ in ()).throw(StopIteration))
+
+    with pytest.raises(StopIteration):
+        service.main()
+
+    assert calls == ["poll", "credentials"]
+    error = json.loads(capsys.readouterr().out)
+    assert error["job"] == "observations"
+    assert error["reason"] == "RuntimeError: bad observations"
 
 
 def test_disabled_main_exits_without_connecting(monkeypatch):

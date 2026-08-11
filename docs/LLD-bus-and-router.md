@@ -358,6 +358,13 @@ again. The fixed `api` and `host` participants cannot be stopped through
 `StopAgent`; removing either would remove a tenant door rather than retire a
 dynamic participant.
 
+Retention includes both directions of envelope data. A retired participant's
+ingress waits to be consumed after re-enrolment, and its egress waits to be
+routed after the name returns to the roster. The latter may deliver an envelope
+authored before retirement under the re-hired identity; this is the same
+name-continuity decision as retaining unread client inbox entries and board work,
+not a queue-drain omission. Retirement removes identity state, not queued data.
+
 ### 3.3 Queues
 
 Direction is relative to the **participant**, as it is on a network device:

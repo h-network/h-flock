@@ -108,6 +108,21 @@ class Watchdog:
         )
         print(raw, flush=True)
 
+    @staticmethod
+    def _error(job: str, exc: Exception) -> None:
+        print(
+            json.dumps(
+                {
+                    "module": "watchdog",
+                    "event": "error",
+                    "job": job,
+                    "reason": f"{type(exc).__name__}: {exc}",
+                },
+                separators=(",", ":"),
+            ),
+            flush=True,
+        )
+
     def _ticket(self, agent: str) -> dict | None:
         raw = self.r.lindex(prefix(self.pod, self.tenant, agent, "tasks.doing"), 0)
         try:
@@ -170,10 +185,13 @@ class Watchdog:
 
             window_activity = windows.get(agent)
             if window_activity is None:
-                continue
-            no_output = max(0, int(now_s - window_activity))
-            if no_output < self.silence_seconds:
-                continue
+                no_output = None
+                window_missing = True
+            else:
+                no_output = max(0, int(now_s - window_activity))
+                window_missing = False
+                if no_output < self.silence_seconds:
+                    continue
 
             ticket_id = ticket.get("id")
             if not isinstance(ticket_id, str) or not ticket_id:
@@ -192,6 +210,8 @@ class Watchdog:
                 "no_output_s": no_output,
                 "unchecked": unchecked,
             }
+            if window_missing:
+                record["window_missing"] = True
             blocked = self._blocked(agent, now)
             if blocked is not None:
                 record["blocked"] = blocked
@@ -201,14 +221,29 @@ class Watchdog:
     def poll(self, *, now: datetime | None = None) -> None:
         now = (now or datetime.now(timezone.utc)).astimezone(timezone.utc)
         agents = self._agents()
-        windows = self._window_activity()
-        self._check_stalls(agents, windows, now)
-        self._check_blocked(agents, now)
+        try:
+            windows = self._window_activity()
+        except Exception as exc:
+            self._error("window_activity", exc)
+            windows = {}
+        try:
+            self._check_stalls(agents, windows, now)
+        except Exception as exc:
+            self._error("stalls", exc)
+        try:
+            self._check_blocked(agents, now)
+        except Exception as exc:
+            self._error("blocked", exc)
 
     def _credential_accounts(self) -> list[tuple[str, str, Path]]:
         """Return each CLI account used by an enrolled terminal agent once."""
         result = set()
         for agent in self._agents():
+            endpoint = _text(self.r.get(prefix(self.pod, self.tenant, agent, "endpoint")))
+            if endpoint:
+                # Local endpoint agents talk to the configured model server and
+                # intentionally use no vendor account credential.
+                continue
             cli = _text(self.r.get(prefix(self.pod, self.tenant, agent, "launch")))
             if cli not in {"agy", "claude", "codex"}:
                 continue
@@ -306,9 +341,12 @@ def main() -> None:
     while True:
         try:
             watchdog.poll()
-            if time.monotonic() >= next_credentials:
+        except Exception as exc:
+            watchdog._error("observations", exc)
+        if time.monotonic() >= next_credentials:
+            try:
                 watchdog.check_credentials()
                 next_credentials = time.monotonic() + 3600
-        except Exception as exc:
-            print(json.dumps({"module": "watchdog", "event": "error", "reason": type(exc).__name__}), flush=True)
+            except Exception as exc:
+                watchdog._error("credentials", exc)
         time.sleep(interval)

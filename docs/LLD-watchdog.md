@@ -31,8 +31,10 @@ Each ordinary pass:
 4. reports retained `blocked` verdicts.
 
 Credential accounts are checked at most once an hour within the same process.
-An exception aborts only the current pass, writes a lifecycle error to stdout,
-and leaves the process running for the next pass.
+The window lookup, stall check, blocked check and credential check have separate
+failure boundaries. One failing job writes a lifecycle error to stdout with the
+job name and both exception class and message; independent jobs still run in the
+same pass, and the process continues.
 
 ## 2. Stall rule: three signals together
 
@@ -56,6 +58,12 @@ The conjunction covers those ordinary cases. In particular, a long tool call
 may have old presence while its continuing terminal output suppresses the
 alert. A `working` presence likewise suppresses an alert even when the ticket is
 old and the window is quiet.
+
+A missing window is not treated as a reason to suppress an otherwise qualifying
+stall. It is a stronger factual observation than silence: the alert carries
+`"window_missing": true` and `"no_output_s": null`. It still requires an old
+ticket and presence that is not `working`; a missing idle window with no work is
+not an alert.
 
 Some CLIs do not expose activity. Missing or `unknown` presence does not make up
 a false value: the watchdog may alert when the board and window conditions hold,
@@ -157,9 +165,13 @@ Alert records are facts, not diagnoses. Their common fields are `v`, `ts` and
 ## 5. Credential warnings
 
 Once an hour, the watchdog walks the `tmux` roster and reads each enrolled
-agent's `launch` and `profile` keys. It checks each distinct CLI account in use
-once; an unused profile directory is not evidence of a running account and is
-ignored.
+agent's `endpoint`, `launch` and `profile` keys. An agent with an endpoint name
+is skipped because it talks directly to the tenant's configured model server and
+uses no vendor account credential. For the remaining agents, the watchdog checks
+each distinct CLI account in use once; an unused profile directory is not
+evidence of a running account and is ignored. If an account ceases to require a
+credential because every user moved to endpoints, its stale
+`credential.alerted` field is cleared.
 
 | CLI | source | interpretation |
 |---|---|---|
@@ -213,7 +225,8 @@ the tenant name; `TMUX_SOCKET` selects an explicit tmux socket when present.
 1. The watchdog is observation, never part of routing or custody.
 2. It reports and never repairs.
 3. A fully checked stall needs old work, no current model activity, and a quiet
-   window together; unavailable activity is disclosed in `unchecked`.
+   window together; unavailable activity is disclosed in `unchecked`, while a
+   known-missing window is reported explicitly.
 4. The router is the sole writer of `blocked`; the watchdog never derives or
    clears that state.
 5. `blocked` is a limited delivery-verification verdict, not a diagnosis.
