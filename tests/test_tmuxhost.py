@@ -98,6 +98,29 @@ def test_tmuxhost_filters_non_tmux_vab(mock_run_tmux):
 
 
 @patch("flock.tmux.ops.run_tmux")
+def test_tmuxhost_replaces_last_stale_window_with_placeholder(mock_run_tmux):
+    """An empty tmux roster must still retire the last real agent window."""
+    mock_run_tmux.side_effect = [
+        (0, "", ""),  # has-session
+        (0, "", ""),  # exit-empty
+        (0, "", ""),  # default-size
+        (0, "", ""),  # history-limit
+        (0, "retired", ""),  # list-windows 1
+        (0, "retired", ""),  # list-windows 2
+        (0, "retired", ""),  # create_window idempotence check
+        (0, "", ""),  # create placeholder
+        (0, "", ""),  # kill retired
+    ]
+
+    host = TmuxHost(pod="acme", tenant="hq", redis_url="redis://127.0.0.1:6379/0", session_name="hq")
+    host.reconcile_once(MockRedis([]))
+
+    calls = [" ".join(call.args) for call in mock_run_tmux.call_args_list]
+    assert any("new-window" in call and "__init__" in call for call in calls)
+    assert any("kill-window" in call and "hq:retired" in call for call in calls)
+
+
+@patch("flock.tmux.ops.run_tmux")
 def test_tmuxhost_reconciles_office_tools_and_agent_guide_env(mock_run_tmux):
     mock_run_tmux.side_effect = [
         (0, "", ""),  # has-session

@@ -198,7 +198,7 @@ class TmuxHost:
                     self.session_name, placeholder, command=["bash", "-il"], socket=self.socket
                 )
                 if ret == 0:
-                    existing_windows.append(placeholder)
+                    existing_windows.add(placeholder)
                 else:
                     log_record("tmuxhost", "error", recipient=placeholder,
                                reason=f"placeholder window failed, keeping stale window: {stderr}")
