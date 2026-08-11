@@ -120,6 +120,8 @@ scheme would be a second thing to get wrong. Checked once, on connect.
 - `4401`: Unauthorized (token missing or invalid). The server accepts the socket and closes with `code=4401, reason="unauthorized"` so client receives close frame.
 - `1011`: Internal error (control mode client disconnect or unhandled internal exception).
 
+**Browser WebSocket Authentication & Log Safety:** Standard browser `WebSocket` constructors cannot set custom `Authorization` headers. The session door supports both `Authorization: Bearer <API_TOKEN>` headers and `?token=<API_TOKEN>` query parameters. To prevent API tokens in query strings from landing in tenant stdout logs, `uvicorn.run` is invoked with `access_log=False`. Connection logging is handled via structured `_connection_log` JSON records on close which exclude credentials. Server-side proxying (as implemented in `clients/web/server.py`) is the recommended architecture for browser clients.
+
 ⚠ There are now two write paths into a window — `Command` over the bus, and
 keystrokes over this socket — and only the first produces envelope log records.
 This module logs **one record per connection**, not per keystroke: who connected,

@@ -16,6 +16,7 @@ def main() -> None:
         create_app(settings=settings),
         host=settings.session_bind,
         port=settings.session_port,
+        access_log=False,
         **kwargs,
     )
 

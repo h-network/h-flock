@@ -663,8 +663,21 @@ Port `:8081` provides WebSocket terminal access for rendering live terminal wind
 
 - **URL:** `ws://HOST:8081/session` or `ws://HOST:8081/session?token=<API_TOKEN>`
 - **Authentication:**
-  - **Browser JavaScript Clients:** Must use query parameter authentication `ws://HOST:8081/session?token=<API_TOKEN>` because the browser `WebSocket` API does not permit setting custom `Authorization` headers. Alternatively, browser applications can proxy terminal connections server-side (as `clients/web/` does).
-  - **Non-Browser / Standalone Clients:** May pass either `Authorization: Bearer <API_TOKEN>` header or `?token=<API_TOKEN>` query parameter.
+  - **Browser JavaScript Clients:** browsers cannot set an `Authorization`
+    header on a `WebSocket`, so query parameter authentication
+    `ws://HOST:8081/session?token=<API_TOKEN>` is supported. ⚠ **Read the
+    security cost below before using it.**
+  - **Non-Browser / Standalone Clients:** may pass either an
+    `Authorization: Bearer <API_TOKEN>` header or `?token=<API_TOKEN>`.
+- **⚠ The cost of a token in a URL:**
+  - query parameters land in browser history, `Referer` headers, network
+    intermediaries and web server logs — and this token grants execution in any
+    agent's window through the `Command` kind
+  - the session door therefore runs with `access_log=False`, so
+    `GET /session?token=…` is never written into the tenant's own stdout. Its
+    structured connection records carry no token
+  - **recommended instead:** a server-side proxy, as `clients/web/server.py`
+    does. The token stays on the server and never reaches a URL
 - **Wire Format & Encoding:**
   - **Output Events (`server -> client`):** `{"agent": "<name>", "data": "<text>"}` where `data` is UTF-8 string content containing ANSI control sequences (e.g. `\x1b[2J\x1b[H` screen repaint snapshots or live stdout).
   - **Keystroke Events (`client -> server`):** `{"agent": "<name>", "data": "<keystrokes>"}` where `data` is raw UTF-8 string keystroke input. The server encodes this string to UTF-8 bytes and forwards it to tmux via `send-keys -H`.
@@ -672,6 +685,7 @@ Port `:8081` provides WebSocket terminal access for rendering live terminal wind
   - `1000 Normal Closure`: Socket closed normally.
   - `4401 Unauthorized`: Token missing or invalid.
   - `1011 Internal Error`: Control stream or internal session failure.
+- **Important Note for Application Developers:** Terminal streaming is strictly for rendering terminal UI panes. Applications **must not scrape terminal text** to extract answers or data. All structured application communication must use the REST API (`:8080`) and inbox mailboxes.
 
 ---
 
