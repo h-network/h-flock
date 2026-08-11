@@ -152,16 +152,22 @@ if [[ "${USE_ENDPOINT:-n}" =~ ^[Yy] ]]; then
     # Probing with a made-up id therefore condemns a working endpoint — measured.
     # Use a served id and read the body.
     if [ -n "$LOCAL_URL" ] && [ -n "$LOCAL_MODEL" ]; then
-        PROBE="$(curl -s --max-time 8 -H 'Content-Type: application/json' -X POST \
+        # ⚠ 90s, not 8. A local model that has to load answers in tens of
+        # seconds the first time and under one second afterwards — measured on
+        # ollama: the same endpoint gave nothing at 8s while cold and 0.5s once
+        # warm. A short timeout turns a cold start into a verdict about the
+        # endpoint, which is how the previous probe condemned a working vLLM.
+        PROBE="$(curl -s --max-time 90 -H 'Content-Type: application/json' -X POST \
                  -d "{\"model\":\"${LOCAL_MODEL}\",\"max_tokens\":1,\"messages\":[{\"role\":\"user\",\"content\":\"hi\"}]}" \
                  "${LOCAL_URL}/v1/messages" 2>/dev/null || true)"
         if echo "$PROBE" | grep -q '"type"[[:space:]]*:[[:space:]]*"message"'; then
             echo "  ✓ /v1/messages answered — claude can use this endpoint"
         elif [ -z "$PROBE" ]; then
-            echo "  ⚠ ${LOCAL_URL}/v1/messages returned nothing."
-            echo "    claude talks to that path, so it will not work against this"
-            echo "    endpoint as it stands. Point codex or agy here instead, or put"
-            echo "    something in front of it that answers /v1/messages."
+            echo "  ⚠ ${LOCAL_URL}/v1/messages did not answer within 90s."
+            echo "    That is 'no answer', not 'not served' — a model still loading"
+            echo "    looks the same from here. Try again once it is warm; if it stays"
+            echo "    silent, claude talks to that path and will not work against this"
+            echo "    endpoint as it stands. codex and agy speak the OpenAI shape."
         else
             echo "  ⚠ /v1/messages answered, but not with a message:"
             echo "    $(echo "$PROBE" | head -c 160)"
