@@ -17,15 +17,20 @@ development happens in this repository; the framework is the product.
 | **ollama — parked** | the installer asks, falls back to `/api/tags`, and warns when `/v1/messages` is missing, but none of it has been run. ⚠ ollama does not serve the Anthropic Messages API, so claude needs a translating proxy in front |
 
 ⚠ **TLS run end to end, 2026-08-11:** a tenant with a real certificate serves
-TLS 1.3 on both doors and passes the plumbing check 25/25. Two things only that
-run could find: the healthcheck probed plain HTTP at an HTTPS door, so a working
-TLS tenant sat unhealthy forever; and both checker scripts had the scheme baked
-in as a constant. The later `sim-blocked` diagnosis found a second simulator
-fault: its window polls suppressed tmux stderr and forced a failed `docker exec`
-pipeline to succeed with empty output. That made both "ready" and "gone" fail
-while erasing the evidence needed to distinguish an absent window from a broken
-observation. The polls now use exact formatted window names and stop with a
-distinct error when `docker exec` or tmux fails; they do not retry harder.
+TLS 1.3 on both doors and passes the plumbing check 25/25, and the failure
+simulator 19/19. Two defects only that run could find: the healthcheck probed
+plain HTTP at an HTTPS door, so a working TLS tenant sat unhealthy forever; and
+both checker scripts had the scheme baked in as a constant.
+
+⚠ **The "TLS breaks sim-blocked" item is closed, and it was never about TLS.**
+`sim-blocked.sh` sourced `container/.env` over an exported `TENANT`, so running
+it against any tenant other than the one in that file polled the wrong tmux
+session. The ready poll saw no window and failed; the gone poll saw no window
+and passed — which is exactly the flaky, paired signature that made it look
+environmental. `tmux` answered `can't find session: hq` on every call, into a
+stream nothing was reading. **The same bug was fixed in `plumbing-check.sh` days
+earlier and missed here**, and the lesson is that one: a fix to a shared pattern
+is not done until every copy of the pattern has it.
 
 ⚠ **Verified by running it, 2026-08-11:** plumbing check 25/25 and the failure
 simulator 19/19 against a real tenant, after a from-scratch image build. The
