@@ -79,6 +79,28 @@ class ActivityTailer:
     def _cli(self, agent: str) -> str | None:
         return _text(self.r.get(prefix(self.pod, self.tenant, agent, "launch")))
 
+    @staticmethod
+    def _codex_session_belongs_to(path: Path, agent: str) -> bool:
+        """Use Codex's own session metadata to assign a shared rollout.
+
+        CODEX_HOME is an account directory, so agents on the default account or
+        the same named profile legitimately share its sessions directory.  A
+        rollout without a matching workspace is therefore unknown, not safe to
+        attribute to whichever agent happens to inspect it first.
+        """
+        try:
+            with path.open("rb") as session:
+                raw = session.readline()
+            record = json.loads(raw)
+        except (OSError, UnicodeDecodeError, json.JSONDecodeError):
+            return False
+        payload = record.get("payload") if isinstance(record, dict) else None
+        return (
+            record.get("type") == "session_meta"
+            and isinstance(payload, dict)
+            and payload.get("cwd") == f"/workdir/{agent}"
+        )
+
     def _newest(self, agent: str) -> tuple[Path, str] | None:
         profile = self._profile(agent)
         suffix = f"-{profile}" if profile else ""
@@ -92,7 +114,11 @@ class ActivityTailer:
             candidates.extend((path, "claude") for path in claude.glob("*.jsonl"))
         if cli in (None, "codex"):
             candidates.extend((path, "codex") for path in codex.glob("**/rollout-*.jsonl"))
-        regular = [(path, flavor) for path, flavor in candidates if path.is_file()]
+        regular = [
+            (path, flavor)
+            for path, flavor in candidates
+            if path.is_file() and (flavor != "codex" or self._codex_session_belongs_to(path, agent))
+        ]
         if not regular:
             return None
         return max(regular, key=lambda candidate: candidate[0].stat().st_mtime_ns)

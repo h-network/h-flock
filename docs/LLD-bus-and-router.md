@@ -388,6 +388,12 @@ second daemon and none of these jobs sits in an envelope's data path. Every
    `tool`, with a tool's **name only**. Arguments, paths and content have no
    field in the event. The Stream is approximately capped at 1,000 entries.
    CLIs without a supported session format produce no feed.
+
+   ⚠ **A Codex session belongs to the workspace in its own `session_meta`, not
+   to its directory.** `CODEX_HOME` is an account directory: agents using the
+   default account or the same named profile share it. The tailer accepts a
+   rollout for an agent only when its recorded `cwd` is `/workdir/<agent>`; a
+   rollout with absent or different metadata is unknown and is not attributed.
 2. **Sample presence.** The newest activity timestamp becomes a per-agent
    `presence` hash with `state` (`working`, `idle`, or `unknown`), `since`, and
    `last_activity`. `PRESENCE_WORKING_SECONDS`, default 30, is the working

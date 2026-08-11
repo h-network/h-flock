@@ -119,6 +119,7 @@ def test_codex_profile_session_reduces_messages_and_tool_calls(tmp_path):
     _write_lines(
         session,
         [
+            {"type": "session_meta", "payload": {"cwd": "/workdir/sme-2"}},
             {"type": "event_msg", "timestamp": "one", "payload": {"type": "user_message", "message": "secret"}},
             {"type": "event_msg", "timestamp": "two", "payload": {"type": "agent_message", "message": "secret"}},
             {
@@ -135,6 +136,36 @@ def test_codex_profile_session_reduces_messages_and_tool_calls(tmp_path):
     assert _events(r)[-1]["tool"] == "exec_command"
     assert "secret" not in json.dumps(r.streams)
     assert "private args" not in json.dumps(r.streams)
+
+
+def test_codex_shared_account_attributes_each_session_by_workspace(tmp_path):
+    r = ActivityRedis(agents=("frontend", "backend"))
+    shared = tmp_path / ".codex" / "sessions" / "2026" / "08"
+    _write_lines(
+        shared / "rollout-frontend.jsonl",
+        [
+            {"type": "session_meta", "payload": {"cwd": "/workdir/frontend"}},
+            {"type": "event_msg", "timestamp": "front", "payload": {"type": "user_message"}},
+        ],
+    )
+    _write_lines(
+        shared / "rollout-backend.jsonl",
+        [
+            {"type": "session_meta", "payload": {"cwd": "/workdir/backend"}},
+            {"type": "event_msg", "timestamp": "back", "payload": {"type": "agent_message"}},
+        ],
+    )
+    r.values[prefix("acme", "hq", "frontend", "launch")] = "codex"
+    r.values[prefix("acme", "hq", "backend", "launch")] = "codex"
+
+    ActivityTailer(r, pod="acme", tenant="hq", home_root=tmp_path).poll()
+
+    assert _events(r, "frontend") == [
+        {"v": 1, "agent": "frontend", "ts": "front", "kind": "input"}
+    ]
+    assert _events(r, "backend") == [
+        {"v": 1, "agent": "backend", "ts": "back", "kind": "output"}
+    ]
 
 
 def test_agy_agent_has_empty_stream_even_when_an_old_claude_session_exists(tmp_path):
