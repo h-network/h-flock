@@ -293,6 +293,12 @@ path. It reads the board, presence, window activity and the credential files.
 window is silent.** Any one alone fires identically for a long build and a wedge,
 which is how a lead learns to ignore alerts and then ignores a real one.
 
+⚠ **A missing window counts as silent.** Requiring evidence of silence meant an
+agent whose window had gone was never reported at all — the strongest possible
+signal read as no signal, because there was nothing left to observe. The alert
+now carries `window_missing: true` with a null `no_output_s`. An agent that
+cannot be observed is not an agent that is fine.
+
 ```
   <prefix>:alerts   →   GET /alerts, /alerts/stream, and the log
 ```
