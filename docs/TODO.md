@@ -363,7 +363,7 @@ leaves one source of truth instead of two that drift.
 ## ~~Log records from agent tools never reach the log~~ — SHIPPED in build 20
 
 `office` writes to a file the router tails into stdout, so `sent` reaches the
-log. **A delivered envelope leaves five records, not four.**
+log. **A delivered unicast envelope leaves five records, not four.** ⚠ A broadcast leaves three plus two per recipient.
 
 The original entry: ⚠ **`office` runs in an agent's window, so its log records go
 to that pane** —
