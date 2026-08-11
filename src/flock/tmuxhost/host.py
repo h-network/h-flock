@@ -84,6 +84,7 @@ class TmuxHost:
         cli: str | None = None,
         profile: str | None = None,
         lead: str | None = None,
+        endpoint: dict | None = None,
     ) -> None:
         ret, stdout, stderr = tmux_ops.run_tmux("has-session", "-t", self.session_name, socket=self.socket)
         if ret != 0:
@@ -101,7 +102,12 @@ class TmuxHost:
             if initial_window != "__init__":
                 write_agent_guide(cwd, initial_window, self.tenant, lead=lead, profile=profile)
                 cmd_args = ["startAgent", cli] if cli else ["bash", "-il"]
-                cmd.extend(window_env(initial_window, tenant=self.tenant, cwd=cwd, profile=profile) + cmd_args)
+                cmd.extend(
+                    window_env(
+                        initial_window, tenant=self.tenant, cwd=cwd, profile=profile, endpoint=endpoint
+                    )
+                    + cmd_args
+                )
 
             code, out, err = tmux_ops.run_tmux(*cmd, socket=self.socket)
             if code != 0:
@@ -166,8 +172,15 @@ class TmuxHost:
         first_agent = sorted(list(roster_agents))[0] if roster_agents else "__init__"
         first_cli = self.get_agent_cli(r, first_agent) if first_agent != "__init__" else None
         first_profile = self.get_agent_profile(r, first_agent) if first_agent != "__init__" else None
+        first_endpoint = self.get_agent_endpoint(r, first_agent) if first_agent != "__init__" else None
 
-        self.ensure_server_and_session(initial_window=first_agent, cli=first_cli, profile=first_profile, lead=lead)
+        self.ensure_server_and_session(
+            initial_window=first_agent,
+            cli=first_cli,
+            profile=first_profile,
+            lead=lead,
+            endpoint=first_endpoint,
+        )
 
         existing_windows = self.get_windows()
 

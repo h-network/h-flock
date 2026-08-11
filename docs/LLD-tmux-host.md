@@ -252,11 +252,12 @@ screenshot and in a terminal panel.
 variables win over what we set, which is the quietest way for a local endpoint to
 look broken.
 
-⚠ **Both creation paths must resolve the endpoint.** `tmuxhost` reconciliation
-and `StartAgent` each build windows, and `create_window` is idempotent by name —
-so whatever builds the window first is what the agent keeps, and a later
-reconcile will **not** correct it. Measured: an agent hired onto a local endpoint
-came up on the vendor's because only `tmuxhost` knew about endpoints.
+⚠ **There is one creation owner.** `StartAgent` publishes profile, endpoint and
+launch desired state; `tmuxhost` resolves it and builds the window. The former
+second creator drifted independently three times: it omitted the lead, seeded
+trust into the wrong profile, and once ignored the endpoint. Re-hiring with
+changed configuration removes the stale window so this canonical path rebuilds
+it; unchanged hires leave it alone.
 
 ⚠ **A retired agent's window is never the one holding the session open.** tmux
 exits when a session has no windows, so reconciliation keeps at least one — but

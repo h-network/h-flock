@@ -7,11 +7,12 @@ from flock.tmuxhost.host import TmuxHost, generate_agents_md, write_agent_guide,
 
 
 class MockRedis:
-    def __init__(self, roster_agents, vab_map=None, launch_map=None, profile_map=None):
+    def __init__(self, roster_agents, vab_map=None, launch_map=None, profile_map=None, endpoint_map=None):
         self.roster_agents = set(roster_agents)
         self.vab_map = vab_map or {a: "tmux" for a in roster_agents}
         self.launch_map = launch_map or {}
         self.profile_map = profile_map or {}
+        self.endpoint_map = endpoint_map or {}
 
     def get(self, key):
         for agent, cli in self.launch_map.items():
@@ -20,6 +21,9 @@ class MockRedis:
         for agent, prof in self.profile_map.items():
             if f":agent:{agent}:profile" in key:
                 return prof.encode("utf-8") if isinstance(prof, str) else prof
+        for agent, endpoint in self.endpoint_map.items():
+            if f":agent:{agent}:endpoint" in key:
+                return endpoint.encode("utf-8") if isinstance(endpoint, str) else endpoint
         return None
 
     def hkeys(self, key):
@@ -76,6 +80,35 @@ def test_tmuxhost_ensure_session_with_roster_agent(mock_run_tmux):
 
     calls = [c[0] for c in mock_run_tmux.call_args_list]
     assert any("new-session" in c for c in calls)
+
+
+@patch("flock.tmux.ops.run_tmux")
+def test_tmuxhost_initial_session_resolves_agent_endpoint(mock_run_tmux, monkeypatch):
+    mock_run_tmux.side_effect = [
+        (1, "", "no server running"),
+        (0, "", ""),
+        (0, "", ""),
+        (0, "", ""),
+        (0, "", ""),
+        (0, "alice", ""),
+        (0, "alice", ""),
+    ]
+    monkeypatch.setenv("ENDPOINT_GPU_URL", "http://model.test:8000")
+    monkeypatch.setenv("ENDPOINT_GPU_MODEL", "served-model")
+    r = MockRedis(
+        ["alice"],
+        launch_map={"alice": "claude"},
+        endpoint_map={"alice": "gpu"},
+    )
+
+    TmuxHost(
+        pod="acme", tenant="hq", redis_url="redis://127.0.0.1:6379/0", session_name="hq"
+    ).reconcile_once(r)
+
+    new_session = next(call.args for call in mock_run_tmux.call_args_list if "new-session" in call.args)
+    command = " ".join(new_session)
+    assert "ANTHROPIC_BASE_URL=http://model.test:8000" in command
+    assert "ANTHROPIC_DEFAULT_OPUS_MODEL=served-model" in command
 
 
 @patch("flock.tmux.ops.run_tmux")

@@ -20,6 +20,16 @@ class AmbientTmuxError(RuntimeError):
     """Refused to drive a tmux server we were not explicitly pointed at."""
 
 
+class TmuxCommandError(RuntimeError):
+    """A tmux command failed, distinct from a valid empty result."""
+
+    def __init__(self, command: str, code: int, stderr: str):
+        self.command = command
+        self.code = code
+        self.stderr = stderr
+        super().__init__(f"{command} failed ({code}): {stderr or 'no error output'}")
+
+
 def require_isolated_tmux(socket: str | None = None) -> None:
     """Refuse to touch whatever tmux server happens to be ambient.
 
@@ -54,9 +64,9 @@ def run_tmux(*args: str, socket: str | None = None, input_data: str | None = Non
 
 
 def list_windows(session_name: str, socket: str | None = None) -> Set[str]:
-    ret, stdout, _ = run_tmux("list-windows", "-t", session_name, "-F", "#{window_name}", socket=socket)
+    ret, stdout, stderr = run_tmux("list-windows", "-t", session_name, "-F", "#{window_name}", socket=socket)
     if ret != 0:
-        return set()
+        raise TmuxCommandError("list-windows", ret, stderr)
     return {w for w in stdout.splitlines() if w}
 
 
@@ -343,11 +353,8 @@ def create_window(
     # `rehire` and made the agent unaddressable. Re-writing the guide above is
     # deliberate and harmless — it refreshes the lead sentence — but a second
     # window is not.
-    try:
-        if agent_name in list_windows(session_name, socket=socket):
-            return 0, "", ""
-    except Exception:
-        pass
+    if agent_name in list_windows(session_name, socket=socket):
+        return 0, "", ""
 
     if not command:
         command = window_env(agent_name, cwd=cwd) + ["bash", "-il"]
@@ -371,8 +378,23 @@ def paste_text(
     target = f"{session_name}:{agent_name}"
     buf_name = f"flock_{stream_id[:8]}" if stream_id else f"flock_{os.urandom(4).hex()}"
 
-    run_tmux("load-buffer", "-b", buf_name, "-", socket=socket, input_data=text)
-    run_tmux("paste-buffer", "-b", buf_name, "-p", "-d", "-t", target, socket=socket)
-    time.sleep(ENTER_DELAY)
-    run_tmux("send-keys", "-t", target, "Enter", socket=socket)
-    run_tmux("delete-buffer", "-b", buf_name, socket=socket)
+    def checked(command: str, result: tuple[int, str, str]) -> None:
+        code, _, stderr = result
+        if code != 0:
+            raise TmuxCommandError(command, code, stderr)
+
+    try:
+        checked(
+            "load-buffer",
+            run_tmux("load-buffer", "-b", buf_name, "-", socket=socket, input_data=text),
+        )
+        checked(
+            "paste-buffer",
+            run_tmux("paste-buffer", "-b", buf_name, "-p", "-d", "-t", target, socket=socket),
+        )
+        time.sleep(ENTER_DELAY)
+        checked("send-keys", run_tmux("send-keys", "-t", target, "Enter", socket=socket))
+    except Exception:
+        run_tmux("delete-buffer", "-b", buf_name, socket=socket)
+        raise
+    checked("delete-buffer", run_tmux("delete-buffer", "-b", buf_name, socket=socket))

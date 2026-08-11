@@ -9,7 +9,7 @@ from flock.control import runner
 
 
 class RecordingRedis:
-    def __init__(self, events, ingress_depth=0, roster_vab="tmux"):
+    def __init__(self, events, ingress_depth=0, roster_vab=None):
         self.events = events
         self.ingress_depth = ingress_depth
         self.roster_vab = roster_vab
@@ -39,7 +39,7 @@ class RecordingRedis:
         return self.ingress_depth
 
 
-def test_start_agent_orders_launch_roster_then_window():
+def test_start_agent_publishes_desired_state_without_creating_window():
     events = []
     r = RecordingRedis(events)
     start_agent(
@@ -47,12 +47,12 @@ def test_start_agent_orders_launch_roster_then_window():
         pod="acme",
         tenant="hq",
         envelope={"payload": {"agent": "dave", "cli": "codex"}},
-        create_window=lambda agent, cli: events.append(("create_window", agent, cli)),
+        replace_window=lambda agent: events.append(("replace_window", agent)),
     )
     assert events == [
+        ("hget", prefix("acme", "hq", resource="roster"), "dave"),
         ("set", prefix("acme", "hq", "dave", "launch"), "codex"),
         ("hset", prefix("acme", "hq", resource="roster"), "dave", "tmux"),
-        ("create_window", "dave", "codex"),
     ]
 
 
@@ -63,12 +63,12 @@ def test_start_agent_defaults_cli_to_claude():
         pod="acme",
         tenant="hq",
         envelope={"payload": {"agent": "dave"}},
-        create_window=lambda agent, cli: events.append(("create_window", agent, cli)),
+        replace_window=lambda agent: events.append(("replace_window", agent)),
     )
     assert events == [
+        ("hget", prefix("acme", "hq", resource="roster"), "dave"),
         ("set", prefix("acme", "hq", "dave", "launch"), "claude"),
         ("hset", prefix("acme", "hq", resource="roster"), "dave", "tmux"),
-        ("create_window", "dave", "claude"),
     ]
 
 
@@ -79,13 +79,13 @@ def test_start_agent_writes_profile_before_roster_visibility():
         pod="acme",
         tenant="hq",
         envelope={"payload": {"agent": "dave", "cli": "codex", "profile": "client-b"}},
-        create_window=lambda agent, cli: events.append(("create_window", agent, cli)),
+        replace_window=lambda agent: events.append(("replace_window", agent)),
     )
     assert events == [
+        ("hget", prefix("acme", "hq", resource="roster"), "dave"),
         ("set", prefix("acme", "hq", "dave", "profile"), "client-b"),
         ("set", prefix("acme", "hq", "dave", "launch"), "codex"),
         ("hset", prefix("acme", "hq", resource="roster"), "dave", "tmux"),
-        ("create_window", "dave", "codex"),
     ]
 
 
@@ -100,7 +100,7 @@ def test_start_agent_without_profile_writes_no_profile_key(profile):
         pod="acme",
         tenant="hq",
         envelope={"payload": payload},
-        create_window=lambda agent, cli: events.append(("create_window", agent, cli)),
+        replace_window=lambda agent: events.append(("replace_window", agent)),
     )
     assert not any(":profile" in str(part) for event in events for part in event)
 
@@ -112,7 +112,7 @@ def test_start_api_client_only_writes_roster_row():
         pod="acme",
         tenant="hq",
         envelope={"payload": {"agent": "telegram", "vab": "api"}},
-        create_window=lambda agent, cli: events.append(("create_window", agent, cli)),
+        replace_window=lambda agent: events.append(("replace_window", agent)),
     )
     assert events == [
         ("hset", prefix("acme", "hq", resource="roster"), "telegram", "api"),
@@ -121,7 +121,7 @@ def test_start_api_client_only_writes_roster_row():
 
 def test_stop_agent_orders_roster_launch_then_window():
     events = []
-    r = RecordingRedis(events)
+    r = RecordingRedis(events, roster_vab="tmux")
     stop_agent(
         r,
         pod="acme",
@@ -196,7 +196,7 @@ def test_start_agent_rejects_invalid_payload_before_mutation(payload):
             pod="acme",
             tenant="hq",
             envelope={"payload": payload},
-            create_window=lambda agent, cli: events.append(("create_window", agent, cli)),
+            replace_window=lambda agent: events.append(("replace_window", agent)),
         )
     assert events == []
 
@@ -252,23 +252,7 @@ def test_resume_agent_deletes_marker_then_resumes_without_touching_roster():
 @pytest.mark.parametrize(
     ("kind", "expected_tmux"),
     [
-        (
-            "StartAgent",
-            (
-                "create",
-                "hq",
-                "dave",
-                [
-                    "env",
-                    "AGENT_NAME=dave",
-                    "OFFICE_TOOLS=office",
-                    "AGENT_GUIDE=/workdir/dave/AGENTS.md",
-                    "startAgent",
-                    "claude",
-                ],
-                "/tmp/tmux.sock",
-            ),
-        ),
+        ("StartAgent", None),
         ("StopAgent", ("kill", "hq", "dave", "/tmp/tmux.sock")),
         ("PauseAgent", ("keys", "send-keys", "-t", "hq:dave", "C-c", "/tmp/tmux.sock")),
         (
@@ -287,18 +271,13 @@ def test_resume_agent_deletes_marker_then_resumes_without_touching_roster():
 )
 def test_deliver_one_dispatches_control_kinds(monkeypatch, kind, expected_tmux):
     events = []
-    from flock.tmux.ops import window_env
     fake_tmux = types.ModuleType("flock.tmux")
-    fake_tmux.create_window = lambda session, agent, command=None, socket=None: (
-        events.append(("create", session, agent, command, socket)) or (0, "", "")
-    )
     fake_tmux.kill_window = lambda session, agent, socket=None: (
         events.append(("kill", session, agent, socket)) or (0, "", "")
     )
     fake_tmux.run_tmux = lambda *args, socket=None, **kwargs: (
         events.append(("keys", *args, socket)) or (0, "", "")
     )
-    fake_tmux.window_env = window_env
     monkeypatch.setitem(sys.modules, "flock.tmux", fake_tmux)
 
     def fake_receive(r, **kwargs):
@@ -313,75 +292,67 @@ def test_deliver_one_dispatches_control_kinds(monkeypatch, kind, expected_tmux):
         session_name="hq",
         socket="/tmp/tmux.sock",
     )
-    assert expected_tmux in events
+    if expected_tmux is None:
+        assert not any(event[0] in ("kill", "keys") for event in events)
+    else:
+        assert expected_tmux in events
 
 
-def test_tmux_failure_raises_after_desired_state_is_written(monkeypatch):
+def test_changed_existing_hire_retires_stale_window_after_desired_state(monkeypatch):
     events = []
-    from flock.tmux.ops import window_env
     fake_tmux = types.ModuleType("flock.tmux")
-    fake_tmux.create_window = lambda *args, **kwargs: (1, "", "no server")
-    fake_tmux.kill_window = lambda *args, **kwargs: (0, "", "")
-    fake_tmux.run_tmux = lambda *args, **kwargs: (0, "", "")
-    fake_tmux.window_env = window_env
-    monkeypatch.setitem(sys.modules, "flock.tmux", fake_tmux)
-
-    def fake_receive(r, **kwargs):
-        kwargs["openers"]["StartAgent"]({"payload": {"agent": "dave"}})
-
-    monkeypatch.setattr(runner, "receive", fake_receive)
-    with pytest.raises(RuntimeError, match="create-window failed"):
-        deliver_one(
-            RecordingRedis(events),
-            pod="acme",
-            tenant="hq",
-            agent="host",
-            session_name="hq",
-        )
-    # ⚠ The create path resolves everything tmuxhost resolves — profile AND
-    # endpoint — because create_window is idempotent by name, so whatever this
-    # builds is what the agent keeps. A later reconcile will not correct it.
-    assert events == [
-        ("set", prefix("acme", "hq", "dave", "launch"), "claude"),
-        ("hset", prefix("acme", "hq", resource="roster"), "dave", "tmux"),
-        ("get", prefix("acme", "hq", "dave", "profile")),
-        ("get", prefix("acme", "hq", "dave", "endpoint")),
-    ]
-
-
-def test_deliver_one_hired_agent_with_profile(monkeypatch):
-    events = []
-    from flock.tmux.ops import window_env
-    fake_tmux = types.ModuleType("flock.tmux")
-    fake_tmux.create_window = lambda session, agent, command=None, socket=None: (
-        events.append(("create", session, agent, command, socket)) or (0, "", "")
+    fake_tmux.kill_window = lambda session, agent, socket=None: (
+        events.append(("kill", session, agent, socket)) or (0, "", "")
     )
-    fake_tmux.kill_window = lambda session, agent, socket=None: (0, "", "")
-    fake_tmux.run_tmux = lambda *args, socket=None, **kwargs: (0, "", "")
-    fake_tmux.window_env = window_env
+    fake_tmux.run_tmux = lambda *args, **kwargs: (0, "", "")
     monkeypatch.setitem(sys.modules, "flock.tmux", fake_tmux)
 
-    class ProfileRedis(RecordingRedis):
+    class ExistingRedis(RecordingRedis):
+        def __init__(self):
+            super().__init__(events, roster_vab="tmux")
+
         def get(self, key):
-            if "profile" in key:
-                return b"work"
+            self.events.append(("get", key))
+            if key.endswith(":launch"):
+                return b"claude"
             return None
 
     def fake_receive(r, **kwargs):
-        kwargs["openers"]["StartAgent"]({"payload": {"agent": "iris", "cli": "claude"}})
+        kwargs["openers"]["StartAgent"]({"payload": {"agent": "dave", "cli": "codex"}})
+
+    monkeypatch.setattr(runner, "receive", fake_receive)
+    deliver_one(ExistingRedis(), pod="acme", tenant="hq", agent="host", session_name="hq")
+
+    assert events[-3:] == [
+        ("set", prefix("acme", "hq", "dave", "launch"), "codex"),
+        ("hset", prefix("acme", "hq", resource="roster"), "dave", "tmux"),
+        ("kill", "hq", "dave", None),
+    ]
+
+
+def test_fresh_hire_with_profile_and_endpoint_leaves_creation_to_tmuxhost(monkeypatch):
+    events = []
+    fake_tmux = types.ModuleType("flock.tmux")
+    fake_tmux.kill_window = lambda session, agent, socket=None: (
+        events.append(("kill", session, agent, socket)) or (0, "", "")
+    )
+    fake_tmux.run_tmux = lambda *args, socket=None, **kwargs: (0, "", "")
+    monkeypatch.setitem(sys.modules, "flock.tmux", fake_tmux)
+
+    def fake_receive(r, **kwargs):
+        kwargs["openers"]["StartAgent"]({
+            "payload": {"agent": "iris", "cli": "claude", "profile": "work", "endpoint": "gpu"}
+        })
 
     monkeypatch.setattr(runner, "receive", fake_receive)
     deliver_one(
-        ProfileRedis(events),
+        RecordingRedis(events),
         pod="acme",
         tenant="hq",
         agent="host",
         session_name="hq",
         socket="/tmp/tmux.sock",
     )
-    create_event = [e for e in events if e[0] == "create"][0]
-    cmd = create_event[3]
-    assert "CLAUDE_CONFIG_DIR=/home/ubuntu/.claude-work" in cmd
-    assert "CODEX_HOME=/home/ubuntu/.codex-work" in cmd
-    assert "OFFICE_TOOLS=office" in cmd
-    assert "AGENT_GUIDE=/workdir/iris/AGENTS.md" in cmd
+    assert ("set", prefix("acme", "hq", "iris", "profile"), "work") in events
+    assert ("set", prefix("acme", "hq", "iris", "endpoint"), "gpu") in events
+    assert not any(event[0] == "kill" for event in events)

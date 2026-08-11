@@ -337,13 +337,12 @@ whichever module starts it, not to membership.
 
 Lifecycle branches on VAB. For `tmux`, desired state comes before actual state
 in both directions: `StartAgent` writes the optional profile, optional endpoint
-name and launch key **before the roster row becomes visible**, then creates the
-window. Both the control path and tmux-host resolve the endpoint name against
-the tenant's `ENDPOINT_<NAME>_*` environment before calling the name-idempotent
-window creator. The roster
-row is tmux-host's reconciliation trigger; publishing it first races the host
-into creating a window with the wrong CLI or account, and the name-idempotent
-create cannot correct that window. `StopAgent` reads the VAB, removes the roster
+name and launch key **before the roster row becomes visible**. That row is
+tmuxhost's reconciliation trigger, and tmuxhost is the sole window creator — so
+boot and hire cannot drift on lead, account, or endpoint resolution. Re-hiring
+an existing name with changed configuration removes its stale window only after
+the new desired state is visible; the host recreates it canonically. `StopAgent`
+reads the VAB, removes the roster
 row, purges all classified identity state, and only then kills the window.
 Queues and board columns are retained data, so re-hiring the same name gets a
 clean identity and its old work. That ordering makes a crash recoverable through

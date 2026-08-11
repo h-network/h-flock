@@ -24,9 +24,9 @@ def start_agent(
     pod: str,
     tenant: str,
     envelope: dict,
-    create_window: Callable[[str, str], object],
+    replace_window: Callable[[str], object],
 ) -> None:
-    """Enrol a tmux agent or API client, creating only the state its VAB needs."""
+    """Publish desired state; tmuxhost is the one implementation that creates windows."""
     agent, payload = _target(envelope)
     agent_vab = payload.get("vab", "tmux")
     if agent_vab not in _STARTABLE_VABS:
@@ -43,31 +43,49 @@ def start_agent(
 
     profile = payload.get("profile")
     if profile:
-        # A profile becomes part of a config-directory path. Validate it before
-        # any state mutation, then persist it before roster visibility: tmuxhost
-        # may reconcile as soon as the row appears and must see the right account.
-        profile_key = prefix(pod, tenant, agent=agent, resource="profile")
         prefix("check", "check", agent=profile, resource="profile")
-        r.set(profile_key, profile)
     elif profile not in (None, ""):
         raise ValueError("StartAgent payload.profile must be a segment string")
 
     endpoint = payload.get("endpoint")
     if endpoint:
+        prefix("check", "check", agent=endpoint, resource="endpoint")
+    elif endpoint not in (None, ""):
+        raise ValueError("StartAgent payload.endpoint must be a segment string")
+
+    existing_vab = vab(r, pod=pod, tenant=tenant, agent=agent)
+    old_launch = r.get(prefix(pod, tenant, agent=agent, resource="launch")) if existing_vab == "tmux" else None
+    old_launch = old_launch.decode() if isinstance(old_launch, bytes) else old_launch
+
+    config_changed = existing_vab == "tmux" and old_launch != cli
+    if profile:
+        # A profile becomes part of a config-directory path. Validate it before
+        # any state mutation, then persist it before roster visibility: tmuxhost
+        # may reconcile as soon as the row appears and must see the right account.
+        profile_key = prefix(pod, tenant, agent=agent, resource="profile")
+        old_profile = r.get(profile_key) if existing_vab == "tmux" else None
+        old_profile = old_profile.decode() if isinstance(old_profile, bytes) else old_profile
+        config_changed = config_changed or (existing_vab == "tmux" and old_profile != profile)
+        r.set(profile_key, profile)
+
+    if endpoint:
         # Same ordering rule as profile: published before roster visibility, or
         # tmuxhost builds the window against the vendor's endpoint instead.
         endpoint_key = prefix(pod, tenant, agent=agent, resource="endpoint")
-        prefix("check", "check", agent=endpoint, resource="endpoint")
+        old_endpoint = r.get(endpoint_key) if existing_vab == "tmux" else None
+        old_endpoint = old_endpoint.decode() if isinstance(old_endpoint, bytes) else old_endpoint
+        config_changed = config_changed or (existing_vab == "tmux" and old_endpoint != endpoint)
         r.set(endpoint_key, endpoint)
-    elif endpoint not in (None, ""):
-        raise ValueError("StartAgent payload.endpoint must be a segment string")
 
     launch_key = prefix(pod, tenant, agent=agent, resource="launch")
     # Publish all launch state before roster membership: tmuxhost reconciles on
     # that row and an early window cannot be corrected by name-idempotent create.
     r.set(launch_key, cli)
     r.hset(roster_key, agent, agent_vab)
-    create_window(agent, cli)
+    if config_changed:
+        # Remove only stale actual state. tmuxhost observes the roster row and
+        # recreates the window through its canonical lead/profile/endpoint path.
+        replace_window(agent)
 
 
 def stop_agent(
