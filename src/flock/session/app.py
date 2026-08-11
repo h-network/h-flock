@@ -165,7 +165,7 @@ def create_app(
                     return
 
         forward_task = asyncio.create_task(forward_output())
-        receive_task = asyncio.create_task(websocket.receive_json())
+        receive_task = asyncio.create_task(websocket.receive_text())
         try:
             while True:
                 done, _ = await asyncio.wait(
@@ -174,8 +174,13 @@ def create_app(
                 if forward_task in done:
                     await forward_task
                     return
-                message = receive_task.result()
-                receive_task = asyncio.create_task(websocket.receive_json())
+                raw_text = receive_task.result()
+                receive_task = asyncio.create_task(websocket.receive_text())
+                try:
+                    message = json.loads(raw_text)
+                except (json.JSONDecodeError, TypeError, ValueError):
+                    await websocket.send_json({"error": "invalid json"})
+                    continue
                 if not isinstance(message, dict):
                     await websocket.send_json({"error": "message must be an object"})
                     continue

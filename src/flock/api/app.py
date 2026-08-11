@@ -443,7 +443,7 @@ def _read_stream_entries(
         raw_entries = client.xrange(key, min=min_id, max="+", count=limit)
     except Exception as exc:
         if isinstance(exc, redis.exceptions.RedisError):
-            raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)) from exc
+            raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(exc)) from exc
         return []
 
     entries = []
@@ -487,10 +487,16 @@ def _stream_response(
         while True:
             if await request.is_disconnected():
                 break
-            entries = await asyncio.to_thread(
-                _read_stream_entries,
-                client, key, cursor, 100, preferred_field
-            )
+            try:
+                entries = await asyncio.to_thread(
+                    _read_stream_entries,
+                    client, key, cursor, 100, preferred_field
+                )
+            except Exception as exc:
+                err_detail = exc.detail if isinstance(exc, HTTPException) else str(exc)
+                err_payload = json.dumps({"error": err_detail})
+                yield f"event: error\ndata: {err_payload}\n\n"
+                break
             if entries:
                 for entry in entries:
                     cid = entry["cursor"]
@@ -610,11 +616,17 @@ def create_app(*, settings: Settings | None = None, redis_client: Any = None) ->
         producer = "api"
         if "as" in envelope:
             as_client = envelope["as"]
-            if vab(client, pod=settings.pod, tenant=settings.tenant, agent=as_client) != "api":
+            try:
+                if not isinstance(as_client, str) or vab(client, pod=settings.pod, tenant=settings.tenant, agent=as_client) != "api":
+                    raise HTTPException(
+                        status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+                        detail="invalid 'as' client: must be an enrolled client with vab 'api'",
+                    )
+            except (KeyError, TypeError) as exc:
                 raise HTTPException(
                     status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
                     detail="invalid 'as' client: must be an enrolled client with vab 'api'",
-                )
+                ) from exc
             producer = as_client
         if "text" in envelope and set(envelope) <= {"text", "as"}:
             kind = "Message"

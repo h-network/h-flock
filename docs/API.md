@@ -674,8 +674,12 @@ Port `:8081` provides WebSocket terminal access for rendering live terminal wind
 | `202 Accepted` | Accepted | Envelope accepted for asynchronous routing | Poll/stream mailbox for reply |
 | `401 Unauthorized` | Unauthorized | Missing or invalid Bearer token | Check `Authorization: Bearer <TOKEN>` header |
 | `404 Not Found` | Not Found | Unknown route, invalid agent segment name, or reading `/messages` for a non-`api` agent | Verify agent name and roster enrolment |
-| `422 Unprocessable Content` | Validation Error | Invalid `"as"` client name (not enrolled or `vab != "api"`), or malformed payload | Correct request payload |
-| `5xx` | Server error | The tenant is failing or restarting — not a fault in your request | **Retry with backoff.** The same request will succeed once it recovers |
+| `422 Unprocessable Content` | Validation Error | Invalid `"as"` client name (not enrolled or `vab != "api"`), or malformed request payload | Correct request payload; do not retry identical request |
+| `5xx` | Server Error | Redis database or internal backend failure — not a fault in your request payload | **Retry with backoff.** The same request will succeed once the server/database recovers |
+
+**Streaming & Socket Error Handling:**
+- **SSE Streams (Mid-Flight):** Because HTTP headers (`200 OK`) are sent when an SSE connection opens, a mid-flight infrastructure error cannot alter the HTTP status code. Mid-flight failures emit an SSE `event: error` frame containing `{"error": "<reason>"}` before closing the stream.
+- **WebSocket Door:** Malformed JSON input or invalid client frames emit a JSON error frame `{"error": "<reason>"}` back over the socket. The WebSocket connection remains active for subsequent valid messages.
 
 **No reply is not an error.** There is no status code for it, because nothing
 failed. If you have sent a message and your mailbox stays empty, the envelope was
