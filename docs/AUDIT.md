@@ -61,15 +61,15 @@ say so on the row and close it, rather than "fixing" something that was decided.
 | 23 | A hired agent's guide names no lead, and its trust is seeded into the wrong account | `tmux/ops.py:311-319`, `control/runner.py:70-76` | claude | — |
 | 24 | Hiring an existing name cannot apply changed launch configuration | `control/openers.py:43-69`, `tmux/ops.py:337-348` | codex | — |
 | 25 | A third window-creation path still ignores `endpoint` | `tmuxhost/host.py:167-170`, `control/runner.py:56-68` | claude | — |
-| 26 | A departed agent's egress is never drained, so re-hiring the name delivers it | `router/service.py` | claude | — |
+| 26 | A departed agent's egress is never drained, so re-hiring the name delivers it | `router/service.py` | claude | ✅ ****REJECTED — deliberate.** `egress` is classified as data, so a re-enrolled name resumes its ingress, egress, inbox and board. Name continuity is the decision; nothing is drained. Recorded in `LLD-bus-and-router`**
 
 ## 4. The watchdog
 
 | # | finding | evidence | source | status |
 |---|---|---|---|---|
-| 27 | The credential check has no idea what an endpoint agent is — a local-model agent needs no vendor login and is reported as missing one | `watchdog/service.py:208-228` | claude | — |
-| 28 | A stalled agent whose window is gone is never reported | `watchdog/service.py:171-173`, `:90-91` | claude | — |
-| 29 | One failing maintenance job silently disables the other four, and the log record names only the exception class | `watchdog/service.py` | claude | — |
+| 27 | The credential check has no idea what an endpoint agent is — a local-model agent needs no vendor login and is reported as missing one | `watchdog/service.py:208-228` | claude | ✅ **fixed — endpoint agents are excluded from vendor credential checks, and stale `credential.alerted` clears. ⚠ Live: this office runs agents on vLLM and ollama**
+| 28 | A stalled agent whose window is gone is never reported | `watchdog/service.py:171-173`, `:90-91` | claude | ✅ **fixed — a missing window now reports `window_missing: true` instead of being read as no signal. `HLD` corrected: an agent that cannot be observed is not an agent that is fine**
+| 29 | One failing maintenance job silently disables the other four, and the log record names only the exception class | `watchdog/service.py` | claude | ✅ **fixed — window lookup, stalls, blocked verdicts and credentials have independent failure boundaries, and the record carries `type: message`**
 
 ## 5. Documented claims that are false
 
