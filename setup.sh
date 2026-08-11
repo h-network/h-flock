@@ -62,8 +62,15 @@ case "$USE_PROFILES" in
 esac
 
 DEF_CLI=claude
-declare -A AGENT_CLI_OF AGENT_PROFILE
-for a in "${AGENTS[@]}"; do AGENT_CLI_OF["$a"]=claude; AGENT_PROFILE["$a"]=default; done
+# ⚠ No associative arrays. macOS ships bash 3.2 and `declare -A` is a syntax
+# error there — measured on a stock MacBook, where this installer died on its
+# first prompt. Agent names are already slugged to [a-z0-9-], so one shell
+# variable per key is a safe encoding.
+_mk() { printf 'M_%s_%s' "$1" "$(printf '%s' "$2" | tr -c 'A-Za-z0-9' '_')"; }
+mset() { eval "$(_mk "$1" "$2")=\$3"; }
+mget() { eval "printf '%s' \"\${$(_mk "$1" "$2"):-}\""; }
+
+for a in "${AGENTS[@]}"; do mset CLI "$a" claude; mset PROF "$a" default; done
 
 if [ "${#PROFILES[@]}" -gt 0 ]; then
     # Defaults plus exceptions, not a question per agent: eleven agents times
@@ -73,33 +80,32 @@ if [ "${#PROFILES[@]}" -gt 0 ]; then
     DEF_PROFILE="$(slug "${DEF_PROFILE:-${PROFILES[0]}}")"
     read -rp "  Default CLI (claude/codex/agy) [claude]: " DEF_CLI
     DEF_CLI="$(slug "${DEF_CLI:-claude}")"
-    for a in "${AGENTS[@]}"; do AGENT_CLI_OF["$a"]="$DEF_CLI"; AGENT_PROFILE["$a"]="$DEF_PROFILE"; done
+    for a in "${AGENTS[@]}"; do mset CLI "$a" "$DEF_CLI"; mset PROF "$a" "$DEF_PROFILE"; done
 
     echo "  Agents: ${AGENTS[*]}"
     read -rp "  Any agents differing from that? (space-separated, blank for none): " EXC
     for want in ${EXC//,/ }; do
         want="$(slug "$want")"
         printf '%s\n' "${AGENTS[@]}" | grep -qx "$want" || { echo "  (skipping '$want' — not an agent)"; continue; }
-        read -rp "    $want — CLI [$DEF_CLI]: " C; AGENT_CLI_OF["$want"]="$(slug "${C:-$DEF_CLI}")"
+        read -rp "    $want — CLI [$DEF_CLI]: " C; mset CLI "$want" "$(slug "${C:-$DEF_CLI}")"
         read -rp "    $want — account [$DEF_PROFILE]: " P; P="$(slug "${P:-$DEF_PROFILE}")"
-        if printf '%s\n' "${PROFILES[@]}" | grep -qx "$P"; then AGENT_PROFILE["$want"]="$P"
-        else echo "    (no account '$P' — keeping ${AGENT_PROFILE[$want]})"; fi
+        if printf '%s\n' "${PROFILES[@]}" | grep -qx "$P"; then mset PROF "$want" "$P"
+        else echo "    (no account '$P' — keeping $(mget PROF "$want"))"; fi
     done
 fi
 
 # ⚠ agy keeps its state in ~/.gemini/antigravity-cli and exposes no equivalent of
 # CLAUDE_CONFIG_DIR / CODEX_HOME, so it cannot be pointed at a second account.
 for a in "${AGENTS[@]}"; do
-    if [ "${AGENT_CLI_OF[$a]}" = "agy" ] && [ "${AGENT_PROFILE[$a]}" != "default" ]; then
-        echo "  warning: $a runs agy, which supports only one account — ignoring account '${AGENT_PROFILE[$a]}'" >&2
-        AGENT_PROFILE["$a"]=default
+    if [ "$(mget CLI "$a")" = "agy" ] && [ "$(mget PROF "$a")" != "default" ]; then
+        echo "  warning: $a runs agy, which supports only one account — ignoring account '$(mget PROF "$a")'" >&2
+        mset PROF "$a" default
     fi
 done
 
 # A local model endpoint. An agent pointed at one uses NO account credential —
 # claude talks to the server directly — so it needs no login and the watchdog's
 # credential check does not apply to it.
-declare -A AGENT_ENDPOINT_OF
 ENDPOINT_MAP=(); LOCAL_URL=""; LOCAL_MODEL=""; LOCAL_TOKEN="local"
 read -rp "Point any agent at a local model endpoint? [y/N]: " USE_ENDPOINT
 if [[ "${USE_ENDPOINT:-n}" =~ ^[Yy] ]]; then
@@ -164,7 +170,7 @@ if [[ "${USE_ENDPOINT:-n}" =~ ^[Yy] ]]; then
     read -rp "  Which agents use it? (space-separated, blank for none): " EPS
     for want in $EPS; do
         for a in "${AGENTS[@]}"; do
-            [ "$a" = "$(slug "$want")" ] && AGENT_ENDPOINT_OF["$a"]="$EP_NAME"
+            [ "$a" = "$(slug "$want")" ] && mset EP "$a" "$EP_NAME"
         done
     done
 fi
@@ -226,18 +232,19 @@ fi
 
 # Only exceptions travel, so the env stays small and readable.
 for a in "${AGENTS[@]}"; do
-    [ -n "${AGENT_ENDPOINT_OF[$a]:-}" ] && ENDPOINT_MAP+=("${a}=${AGENT_ENDPOINT_OF[$a]}")
+    [ -n "$(mget EP "$a")" ] && ENDPOINT_MAP+=("${a}=$(mget EP "$a")")
 done
 for a in "${AGENTS[@]}"; do
-    [ "${AGENT_PROFILE[$a]}" != "default" ] && PROFILE_MAP+=("${a}=${AGENT_PROFILE[$a]}")
-    [ "${AGENT_CLI_OF[$a]}"  != "claude"  ] && CLI_MAP+=("${a}=${AGENT_CLI_OF[$a]}")
+    [ "$(mget PROF "$a")" != "default" ] && PROFILE_MAP+=("${a}=$(mget PROF "$a")")
+    [ "$(mget CLI "$a")"  != "claude"  ] && CLI_MAP+=("${a}=$(mget CLI "$a")")
 done
 
 echo
 printf '  %-16s %-8s %-10s %s\n' AGENT CLI ACCOUNT MODEL
 for a in "${AGENTS[@]}"; do
-    printf '  %-16s %-8s %-10s %s\n' "$a" "${AGENT_CLI_OF[$a]}" "${AGENT_PROFILE[$a]}" \
-        "${AGENT_ENDPOINT_OF[$a]:+$LOCAL_MODEL (local)}"
+    ep="$(mget EP "$a")"
+    printf '  %-16s %-8s %-10s %s\n' "$a" "$(mget CLI "$a")" "$(mget PROF "$a")" \
+        "${ep:+$LOCAL_MODEL (local)}"
 done
 echo
 

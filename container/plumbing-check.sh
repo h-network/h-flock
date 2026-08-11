@@ -42,6 +42,7 @@ read -r AG1 AG2 <<<"$(docker exec $C redis-cli --no-raw HGETALL $ROSTER \
   | paste - - | grep '"tmux"' | awk -F'"' '{print $2}' | sort | head -2 | tr '\n' ' ')"
 [ -n "${AG1:-}" ] && [ -n "${AG2:-}" ] || { echo "plumbing-check: need two tmux agents in the roster" >&2; exit 2; }
 echo "using agents: $AG1 (sender) and $AG2 (recipient)"
+
 H="Authorization: Bearer $T"
 dx() { docker exec "$C" "$@"; }
 cu() { dx curl -sk -H "$H" "$@"; }
@@ -50,6 +51,29 @@ cu() { dx curl -sk -H "$H" "$@"; }
 # silently found nothing, every call went to http against an HTTPS listener, and
 # fourteen checks failed with empty output that looked like a broken door.
 if [ -n "$(dx printenv API_TLS_CERT 2>/dev/null)" ]; then A="https://127.0.0.1:8080"; else A="http://127.0.0.1:8080"; fi
+
+# ⚠ Placed after dx(), like the probe above. Written above it first, where it
+# silently measured nothing and let the run proceed — the same ordering mistake
+# this file already carries a comment about.
+# ⚠ Refuse a tenant whose windows run real agents, unless told twice.
+#
+# This check enrols a client called `telegram`, sends a message as it, and
+# pastes text into panes. In a CLI-less tenant those land in a shell and the
+# worst case is "command not found". In a live one they land as *prompts to a
+# working agent*, which then acts on them — and the fixture client is removed in
+# teardown, so the agent chases a route that no longer resolves.
+#
+# Measured twice, the second time on an operator's own laptop: alice spent her
+# turn retesting `office send -a telegram` and reporting that it would not
+# resolve, because of a message this script had invented.
+live=$(dx redis-cli --scan --pattern "pod:$POD:tenant:$TENANT:agent:*:launch" 2>/dev/null | tr -d '\r' | wc -l | tr -d ' ')
+if [ "${live:-0}" -gt 0 ] && [ "${FORCE:-0}" != "1" ]; then
+  echo "plumbing-check: $live agent(s) in tenant '$TENANT' run a CLI, not a shell." >&2
+  echo "  This check pastes fixtures into panes and enrols a fake 'telegram' client," >&2
+  echo "  which a live agent will read as real work. Bring the tenant up with a" >&2
+  echo "  CLI-less roster, or re-run with FORCE=1 if this tenant is disposable." >&2
+  exit 2
+fi
 pass=0; fail=0
 ck() { if [ "$2" = "$3" ]; then echo "  ok    $1"; pass=$((pass+1)); else echo "  FAIL  $1 : expected [$3] got [$2]"; fail=$((fail+1)); fi; }
 ckc() { if echo "$2" | grep -q "$3"; then echo "  ok    $1"; pass=$((pass+1)); else echo "  FAIL  $1 : [$2] lacks [$3]"; fail=$((fail+1)); fi; }
