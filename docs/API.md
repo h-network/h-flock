@@ -660,8 +660,14 @@ between CLI versions without notice, and there is no contract on its shape.
 
 Port `:8081` provides WebSocket terminal access for rendering live terminal windows in a user interface.
 
-- **URL:** `ws://HOST:8081/session`
-- **Purpose:** Streaming raw terminal output (`%output`) and sending keystroke input (`send-keys`).
+- **URL:** `ws://HOST:8081/session` or `ws://HOST:8081/session?token=<API_TOKEN>`
+- **Authentication:**
+  - **Browser JavaScript Clients:** Supports query parameter authentication `ws://HOST:8081/session?token=<API_TOKEN>` because browser `WebSocket` constructors cannot send custom `Authorization` headers.
+  - **Non-Browser / Standalone Clients:** May pass either `Authorization: Bearer <API_TOKEN>` header or `?token=<API_TOKEN>` query parameter.
+- **Security Warning on URL Query Parameter Tokens:**
+  - ⚠ **Security Cost:** URL query parameters can land in browser history, `Referer` headers, network intermediaries, and web server logs. Because the API token grants administrative execution capability across the office, embedding tokens in URLs should be avoided when possible.
+  - ⚠ **Log Disabling:** The session door runs with `access_log=False` so `GET /session?token=...` request lines are never written into tenant stdout logs. Connection events are logged via structured JSON records without token values.
+  - ⚠ **Recommended Architecture:** Use a server-side proxy (as implemented in `clients/web/server.py`). The proxy keeps the API token server-side and proxies terminal WebSocket connections to `:8081`, eliminating URL token exposure.
 - **Important Note for Application Developers:** Terminal streaming is strictly for rendering terminal UI panes. Applications **must not scrape terminal text** to extract answers or data. All structured application communication must use the REST API (`:8080`) and inbox mailboxes.
 
 ---
