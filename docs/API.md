@@ -673,9 +673,13 @@ Port `:8081` provides WebSocket terminal access for rendering live terminal wind
   - query parameters land in browser history, `Referer` headers, network
     intermediaries and web server logs — and this token grants execution in any
     agent's window through the `Command` kind
-  - the session door therefore runs with `access_log=False`, so
-    `GET /session?token=…` is never written into the tenant's own stdout. Its
-    structured connection records carry no token
+  - ⚠ **the token DOES currently reach the tenant's stdout.** The door runs
+    `access_log=False`, which silences uvicorn's *access* logger — but the
+    WebSocket handshake line is emitted by a different one
+    (`websockets_impl.py`: `'%s - "WebSocket %s" [accepted]'` with the query
+    string included), and it was measured on a running tenant. **Treat any
+    tenant log as containing the token if a browser has connected this way.**
+    Being fixed by minting a short-lived ticket instead — see `docs/TODO.md`
   - **recommended instead:** a server-side proxy, as `clients/web/server.py`
     does. The token stays on the server and never reaches a URL
 - **Wire Format & Encoding:**
@@ -730,7 +734,7 @@ import time
 import urllib.request
 
 HOST = "http://localhost:8080"
-TOKEN = "<REDACTED-TOKEN>"
+TOKEN = "<YOUR_API_TOKEN>"
 HEADERS = {
     "Authorization": f"Bearer {TOKEN}",
     "Content-Type": "application/json",

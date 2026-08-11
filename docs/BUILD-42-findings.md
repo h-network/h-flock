@@ -74,16 +74,17 @@ INFO: 127.0.0.1:52310 - "WebSocket /session?token=<REDACTED-TOKEN>" [accepted]
 That token grants `Command` execution in any agent's window, and it is now in
 the tenant's stdout — the same stream an operator reads and ships.
 
-⚠ **`tmux`'s cross-read sharpened this, and it was right.** `api`'s results
-document committed the tenant's **real API token** into the repository — the
-reporter reproduced the defect into the report. **Then I copied that token into
-this file while writing it up.** All occurrences are now `<REDACTED-TOKEN>`; the
-tenant it belonged to is torn down, so the value is dead.
+⚠ **`tmux`'s cross-read flagged that the token appeared in `api`'s results**, and
+following it up produced a smaller and more interesting answer than it first
+looked. The value is the **example token from `docs/API.md`**, committed there
+when the API reference was written — `api` reused the documented sample rather
+than pasting a live secret, and no real credential was exposed.
 
-That is three independent people handling a token-leak finding and two of them
-leaking the token. ⚠ **A finding about a secret must not carry the secret** —
-neither in raw output, nor in a quotation of it. The cross-reading rule is what
-caught it, one lane reading another's work.
+⚠ **I got this wrong first**, and recorded it here as a live token leak before
+checking `git log -S`. Two lessons, both cheap: **a realistic-looking example
+secret in documentation will be reused as a real one and then reported as a
+leak** — `docs/API.md` now uses `<YOUR_API_TOKEN>` — and **a claim about a secret
+deserves the same "check it against the tree" rule as any other finding.**
 
 **Fix:** stop the token appearing in a URL at all. A short-lived ticket minted
 by the api door and exchanged on the socket keeps browsers working without ever
