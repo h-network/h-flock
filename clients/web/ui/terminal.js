@@ -825,6 +825,10 @@ export class TerminalWorkspace {
   constructor() {
     this.sessions = {}; // agentName -> { panel, agentName, containerId }
     this.openTabs = []; // list of open agent names
+    // ⚠ Every agent this workspace has ever been told about. A tab the operator
+    // closed must stay closed, so "should this get a tab?" cannot be answered by
+    // looking at openTabs alone — only by knowing whether the agent is new.
+    this.knownAgents = new Set();
     this.activeAgent = null;
     this.mountElement = null;
   }
@@ -849,9 +853,30 @@ export class TerminalWorkspace {
     this.mountElement = mountElement;
     if (!mountElement) return;
 
-    if (availableAgents.length > 0 && this.openTabs.length === 0) {
+    // ⚠ Reconcile with the roster on every render, not just the first one.
+    // Seeding only when openTabs was empty meant a hire never reached an
+    // existing workspace: the agents panel gained the new name and the
+    // terminals view kept the old set until a reload. Reported from a live
+    // office.
+    if (availableAgents.length > 0 && this.openTabs.length === 0 && this.knownAgents.size === 0) {
       this.openTabs = [...availableAgents];
       this.activeAgent = availableAgents[0];
+    } else {
+      for (const name of availableAgents) {
+        if (!this.knownAgents.has(name) && !this.openTabs.includes(name)) this.openTabs.push(name);
+      }
+    }
+    for (const name of availableAgents) this.knownAgents.add(name);
+
+    // A retired agent's tab is a tab onto nothing; drop it and its session.
+    if (availableAgents.length > 0) {
+      const present = new Set(availableAgents);
+      for (const gone of this.openTabs.filter((a) => !present.has(a))) {
+        this.closeAgentTab(gone);
+        this.knownAgents.delete(gone);
+      }
+      if (this.activeAgent && !present.has(this.activeAgent)) this.activeAgent = this.openTabs[0] || null;
+      if (!this.activeAgent && this.openTabs.length > 0) this.activeAgent = this.openTabs[0];
     }
 
     let workspaceEl = mountElement.querySelector(".terminals-workspace");
