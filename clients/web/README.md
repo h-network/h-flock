@@ -243,3 +243,26 @@ WebSocket proxy opens a bare socket and the REST proxy verifies with the default
 context. **Against TLS doors, terminals fail even with a valid certificate.**
 Run the doors published on loopback with TLS terminated in front, or see
 `docs/TODO.md`.
+
+## Checking it
+
+Two checkers, both needing a real tenant and a browser:
+
+```bash
+python3 clients/web/visual-check.py --url http://127.0.0.1:8099
+python3 clients/web/flow-check.py --console http://HOST:8098 --secret S \
+    --container h-flock-<tenant>-tenant-1 --tenant <name> [--ssh user@host]
+```
+
+`visual-check` measures layout: overflow, layout shift, console errors, failed
+requests. `flow-check` drives the console as an operator — hire an agent and
+watch the terminals view, close a tab and confirm it stays closed, retire an
+agent, send a message and reload the page.
+
+⚠ **Every flow in `flow-check` is a defect someone hit in use.** The tests in
+`tests/` are static: they assert files exist and that no token reaches browser
+assets, and they passed while the terminals view ignored a hire and the chat
+lost everything on refresh. **A reported bug becomes a failing flow first, and a
+fix second** — so a red result on the day of a report is correct.
+
+⚠ Neither proves it *looks* right. That still needs a person.

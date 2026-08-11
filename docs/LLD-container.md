@@ -90,6 +90,24 @@ Outside a container nobody has judged anything, the variable is unset, and the
 door's own bind check is the right one. **The rule generalises:** a check
 belongs where the decision is made, not where its consequence lands.
 
+### 3.2 Certificates arrive before the doors start
+
+TLS certificates follow the credential rule — **never baked into the image,
+never a volume** — so they arrive by `docker cp`. The doors start at boot, so
+copying into a *running* tenant is too late: `setup.sh` does
+`compose create` → `docker cp` → `compose start`.
+
+⚠ **Two different paths, and conflating them is the classic bug here.** Where
+the certificate sits on the operator's machine and where the door looks for it
+inside the container are different strings; `container/.env` must carry the
+second (`/home/ubuntu/tlscerts/tls.crt`). Writing the host path into it produced
+an installer that reported success and a tenant that crash-looped on
+`FileNotFoundError`.
+
+⚠ **`docker cp` preserves mode and host uid.** A `mktemp -d` staging directory
+is `0700`, so the door could only traverse it when the operator happened to be
+uid 1000. Stage `0755`.
+
 Two processes are reachable from outside, on separate ports:
 
 | | Carries | Publish it when |

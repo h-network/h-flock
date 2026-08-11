@@ -106,8 +106,28 @@ you plug in something new without touching it.
 #     Agent #2 name [sme-2]: backend        # rename them — the name is the job
 #     Agent #3 name [sme-3]: frontend
 #   Use more than one account in this tenant? [y/N]: n
+#   Point any agent at a local model endpoint? [y/N]: n
+#   Reach the console from another machine? [Y/n]: y
+#     Path to a TLS certificate (blank for more choices):
+#     Generate a self-signed certificate? [y/N]: n     # plain HTTP, recorded as a choice
 # → builds the image, brings the tenant up, prints how to reach it
 ```
+
+⚠ **Agent #1 is the lead, whatever it is called.** The name is a job title, not
+a role: the first name in the roster becomes the lead and every agent's guide
+says so. `architect` is only the default suggestion.
+
+**Runs on Linux and macOS**, including Apple Silicon natively — the base image
+publishes `arm64`. Verified on a stock MacBook with Docker Desktop: install,
+plumbing check 25/25 and failure simulator 19/19. ⚠ macOS ships **bash 3.2**, so
+`setup.sh` avoids bash 4 syntax; if Docker Desktop is not on your `PATH` in a
+non-interactive shell, add
+`/Applications/Docker.app/Contents/Resources/bin`.
+
+⚠ **Choosing TLS makes `setup.sh` deliver the certificate before the doors
+start** — it creates the container, `docker cp`s the certificate in, then starts
+it. Certificates are never baked into the image and never a volume, the same
+rule as credentials.
 
 Then:
 

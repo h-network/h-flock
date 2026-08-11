@@ -14,7 +14,18 @@ development happens in this repository; the framework is the product.
 | **local model: long-context behaviour unknown** | every test was a short turn against a 65k window. Nothing says what a local agent does when it fills |
 | **security: what is left after build 36** | ⚠ **The boundaries are done** — TLS on both doors with a refusal to serve a non-loopback bind without it, `producer` stamped from its egress queue, and a tenant that will not start with a widened Redis bind and no password. What remains is **CORS and per-client tokens** on the api door. ⚠ **Nothing here isolates agents from each other**, deliberately: h-flock is a development office, agents are colleagues who were hired. HMAC envelopes, a brokered `office`, one OS user per window — that is a service executing work for callers it does not trust, a different product |
 | **the console cannot reach TLS doors** ⚠ *found by testing TLS, not by reading* | `clients/web/server.py` proxies for the browser, and its own client is plaintext-only: the WebSocket proxy opens a bare `socket.create_connection` (so terminals break against **any** cert, valid or not), and the REST proxy uses the default verifying context with no CA or insecure option. ⚠ **A supported configuration that breaks the shipped demo is a defect, not a missing feature** — but `clients/` is closed to development, so this is recorded rather than fixed. Roughly 30 lines in one file: ssl-wrap the socket, pass a context, add the option. Until then TLS belongs in a reverse proxy in front of loopback-published doors (`LLD-container` §3) |
+| **an alert you can clear** ⚠ *asked for by the operator* | Alerts are an append-only stream with no acknowledgement. Clearing must be keyed by **cursor** — one instance — so it can never become "mute this kind". Spec: `BUILD-38-durable` §1 |
+| **credential alerts never clear** | Measured: `status=absent` raised at `01:00:42Z`, login completed at `01:07Z`, nothing ever retracted it, so the console correctly rendered a fact that had been false for an hour. ⚠ **It was only ever tested firing.** `BUILD-38-durable` §2 |
+| **the permission mode lives only in argv** | A hired agent starts as `claude --dangerously-skip-permissions …` (verified at +4s/+8s/+12s) and was later seen as bare `claude` carrying `CLAUDE_CODE_RELAUNCH_*`: the CLI re-executed itself and the flag went with it, leaving the agent asking for permission. ⚠ **The trigger is unknown** — a forced resize does not reproduce it. `BUILD-38-durable` §3 |
+| **console conversation needs `--audit-log`** | Outbound messages are rebuilt from the audit log, so without that flag every refresh looks like data loss. Agent replies survive; yours do not. `BUILD-38-durable` §4, and a failing flow in `clients/web/flow-check.py` |
+| **no acceptance seat** | Everything above was found by an operator, not by a lane or by me. Lanes have no Docker and cannot run what they build; the architect writes the specs and then checks his own work. ⚠ **`flow-check.py` is the floor, not the answer** — a script catches regressions, it does not notice an agent quietly asking for permission |
 | **ollama — parked** | the installer asks, falls back to `/api/tags`, and warns when `/v1/messages` is missing, but none of it has been run. ⚠ ollama does not serve the Anthropic Messages API, so claude needs a translating proxy in front |
+
+⚠ **macOS, 2026-08-11:** installs and runs on a stock MacBook (Apple Silicon,
+Docker Desktop) — plumbing check 25/25, simulator 19/19. `setup.sh` used
+`declare -A`, which is a syntax error on the bash 3.2 macOS ships, so it died on
+its first prompt; the maps are now bash-3 compatible. LibreSSL 3.3.6 accepts
+`-addext`, so the self-signed path works there too.
 
 ⚠ **TLS run end to end, 2026-08-11:** a tenant with a real certificate serves
 TLS 1.3 on both doors and passes the plumbing check 25/25, and the failure
@@ -39,7 +50,7 @@ an exposure — `LLD-container` §3.1), and two defects in the check itself: it
 hardcoded session `hq`, and sourcing `container/.env` overwrote an exported
 `POD`/`TENANT`, so its documented override checked the wrong tenant.
 
-**Recently closed:** port security on `producer` and TLS on both doors (build 36 — each forced on the lab, not reasoned about), the stranded window (a `__init__` placeholder holds the
+**Recently closed:** the installer's TLS answer (build 37 — create, copy, start; host path is not the container path), macOS support, the terminals view ignoring a hire, port security on `producer` and TLS on both doors (build 36 — each forced on the lab, not reasoned about), the stranded window (a `__init__` placeholder holds the
 session open now), silent trust and guide failures (recorded, still never
 raising), the console audit scope (renamed to Operator Action Log), the terminal view (the console has a full workspace), the
 five doc drifts (audit 06), AddTicket delivery without a window (build 35),

@@ -56,7 +56,7 @@ trap shutdown EXIT INT TERM
 # design (Dockerfile) — what decides whether plaintext leaves this machine is the
 # port mapping, which the door process cannot see. So the judgement is made here,
 # once, from the published host compose passes in, and the doors are told the
-# answer via FLOCK_ALLOW_PLAINTEXT (BUILD-36 §2).
+# answer via FLOCK_ALLOW_PLAINTEXT (LLD-container §3.1).
 #
 # Unset means not published at all — a bare `docker run` with no -p — which is
 # why the default is loopback rather than 0.0.0.0.
@@ -89,7 +89,7 @@ export FLOCK_ALLOW_PLAINTEXT=1
 redis_bind="${REDIS_BIND:-127.0.0.1}"
 redis_password="${REDIS_PASSWORD:-}"
 
-# Refuse a non-loopback bind without a password (BUILD-36 §3).
+# Refuse a non-loopback bind without a password (LLD-container §3).
 is_loopback=$(python3 -c '
 import ipaddress, sys
 host = sys.argv[1]
