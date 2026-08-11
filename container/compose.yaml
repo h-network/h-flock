@@ -49,6 +49,14 @@ services:
       # the doors bind 0.0.0.0 inside the container and cannot see this mapping.
       # A door published beyond loopback without TLS stops the tenant starting
       # unless ALLOW_PLAINTEXT_PUBLISH=1 says that is intended (`LLD-container` §3.1).
+      # ⚠ The doors ALWAYS bind 8080/8081 inside the container; API_PORT and
+      # SESSION_PORT choose the HOST side of the mapping only. env_file passes
+      # the whole .env in, so without these two overrides a tenant published on
+      # any other port binds that port internally, the ":8080" mapping points at
+      # nothing, and the tenant comes up unhealthy with a working door nobody
+      # can reach. Measured while running a second tenant beside the first.
+      API_PORT: "8080"
+      SESSION_PORT: "8081"
       API_HOST: "${API_HOST:-0.0.0.0}"
       SESSION_HOST: "${SESSION_HOST:-0.0.0.0}"
       ALLOW_PLAINTEXT_PUBLISH: "${ALLOW_PLAINTEXT_PUBLISH:-0}"
