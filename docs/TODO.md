@@ -51,7 +51,8 @@ simulator 19/19 against a real tenant, after a from-scratch image build. The
 same run found that build 36's TLS guard refused every container (a bind is not
 an exposure — `LLD-container` §3.1), and two defects in the check itself: it
 hardcoded session `hq`, and sourcing `container/.env` overwrote an exported
-`POD`/`TENANT`, so its documented override checked the wrong tenant.
+`POD`/`TENANT`, so its documented override checked the wrong tenant — **fixed;
+`plumbing-check.sh:29-36` preserves them now**.
 
 **Recently closed:** the installer's TLS answer (build 37 — create, copy, start; host path is not the container path), macOS support, the terminals view ignoring a hire, port security on `producer` and TLS on both doors (build 36 — each forced on the lab, not reasoned about), the stranded window (a `__init__` placeholder holds the
 session open now), silent trust and guide failures (recorded, still never
