@@ -134,7 +134,10 @@ an emptied session is destroyed and does not come back (§2). Creating first
 means the session always holds at least one window and the destructive half is
 never the last thing standing.
 
-⚠ **Last window retention (`len(existing_windows) > 1`):** The cleanup loop in `reconcile_once` explicitly checks `if len(existing_windows) > 1:` before killing any non-roster window. This deliberate guard keeps the session alive so tmux does not destroy it. As a consequence, if a retired agent's window is the only remaining window in the session, it persists until a new agent window is created or the session is reset.
+⚠ **The last stale agent window is replaced, not retained.** Cleanup still
+refuses to empty the session, but when every existing window is stale it first
+creates `__init__`, then retires the stale windows. The placeholder preserves
+the session without leaving a departed agent present-but-unaddressable.
 
 Nothing announces a roster change, so this module polls for it like the others.
 Having no queue to block on, it polls on a loop of its own, every
@@ -153,7 +156,11 @@ with `AGENT_GUIDE=/workdir/<agent>/AGENTS.md` and `OFFICE_TOOLS=office` in the e
 and pre-approves project trust across all three CLIs in a **profile-aware** manner (`.claude-<profile>.json`, `.codex-<profile>/config.toml`, `.gemini/.../settings.json`). Blind to profiles, a profiled agent sits at a workspace trust prompt while presence reads `idle`.
 - Claude trust (`ensure_claude_project_trusted`) writes both `hasTrustDialogAccepted: true` and `hasCompletedProjectOnboarding: true` to `.claude.json` (or `.claude-<profile>/.claude.json`).
 - Agy trust (`ensure_agy_project_trusted`) explicitly sets `enableTelemetry: False` in `settings.json` in addition to appending `cwd` to `trustedWorkspaces`.
-- ⚠ **Silent error handling:** `write_agent_guide` and all three `ensure_*_project_trusted` routines wrap operations in bare `try...except: pass`. Failures (such as filesystem permissions or JSON parse errors) are silent and unlogged, which is how the profile-blind trust bug remained hidden.
+- ⚠ **Guide and trust errors are visible but non-fatal:** `write_agent_guide`
+  and all three `ensure_*_project_trusted` routines catch failures so window
+  creation can continue, and emit a `tmux` `error` record naming the directory.
+  They used to swallow these failures, which is how the profile-blind trust bug
+  remained hidden.
 When a CLI is configured, window creation routes through `startAgent <cli>` so permission and auto-approval flags apply.
 
 ⚠ **OAuth Refresh Token Rotation (RTR) & Profile Credential Sharing (Build 32):**

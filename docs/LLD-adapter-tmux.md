@@ -186,10 +186,12 @@ silent: the Enter is swallowed, the message sits unsubmitted, and the agent look
 **Newlines inside the brackets are content.** Without them a multi-line message
 submits its first line early and arrives split in two.
 
-**Verify, optionally.** After Enter, check the bottom rows of the pane and press
-it again if the text is still sitting there. It is a heuristic — it assumes a
-bottom-anchored input box — and a false positive costs one extra Enter that an
-empty prompt ignores.
+**Verification never reads the pane and never retries.** Before the paste, the
+adapter writes the `pending.verify` marker described in §3. The router later
+compares it with the CLI's own session-file `input` events and reports verified,
+unverified, or unjudged. A rendered pane is not a data source (HLD invariant 7),
+and an unverified delivery is evidence for an operator rather than permission to
+paste the same command again.
 
 ## 5. Is it safe to deliver?
 
