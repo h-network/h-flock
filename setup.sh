@@ -173,20 +173,54 @@ fi
 # The console and the api carry a bearer token. Published beyond loopback with
 # no TLS it crosses the network in clear text, so the tenant refuses to start
 # unless that is an answered question rather than a default nobody saw.
-TLS_CERT=""; TLS_KEY=""; ALLOW_PLAINTEXT=0; DOOR_HOST="0.0.0.0"
+TLS_CERT_HOST=""; TLS_KEY_HOST=""; TLS_CERT_CONTAINER=""; TLS_KEY_CONTAINER=""
+TLS_STAGE=""; ALLOW_PLAINTEXT=0; DOOR_HOST="0.0.0.0"
 echo
 read -rp "Reach the console from another machine? [Y/n]: " REMOTE
 if [ "${REMOTE:-y}" = "n" ] || [ "${REMOTE:-y}" = "N" ]; then
     DOOR_HOST="127.0.0.1"   # published to this host only; plaintext never leaves it
 else
-    read -rp "  Path to a TLS certificate (blank for plain HTTP): " TLS_CERT
-    if [ -n "$TLS_CERT" ]; then
-        read -rp "  Path to its key: " TLS_KEY
+    read -rp "  Path to a TLS certificate (blank for more choices): " TLS_CERT_HOST
+    if [ -n "$TLS_CERT_HOST" ]; then
+        [ -f "$TLS_CERT_HOST" ] || { echo "  error: TLS certificate not found: $TLS_CERT_HOST" >&2; exit 2; }
+        read -rp "  Path to its key: " TLS_KEY_HOST
+        [ -n "$TLS_KEY_HOST" ] || { echo "  error: a TLS certificate requires its key" >&2; exit 2; }
+        [ -f "$TLS_KEY_HOST" ] || { echo "  error: TLS key not found: $TLS_KEY_HOST" >&2; exit 2; }
     else
-        echo "  ⚠ Plain HTTP: the api token and everything typed into a terminal"
-        echo "    cross the network unencrypted. Fine on a trusted LAN, not on one"
-        echo "    you share. Recorded as ALLOW_PLAINTEXT_PUBLISH=1 in container/.env."
-        ALLOW_PLAINTEXT=1
+        read -rp "  Generate a self-signed certificate? [y/N]: " SELF_SIGNED
+        if [[ "${SELF_SIGNED:-n}" =~ ^[Yy] ]]; then
+            command -v openssl >/dev/null 2>&1 || { echo "  error: openssl is required to generate a certificate" >&2; exit 2; }
+            echo "  ⚠ Self-signed TLS encrypts traffic, but clients that verify certificates"
+            echo "    will reject it unless they are explicitly configured to trust it."
+            TLS_STAGE="$(mktemp -d)"
+            trap 'rm -rf "$TLS_STAGE"' EXIT
+            TLS_CERT_HOST="$TLS_STAGE/tls.crt"
+            TLS_KEY_HOST="$TLS_STAGE/tls.key"
+            openssl req -x509 -newkey rsa:2048 -sha256 -nodes -days 365 \
+                -subj "/CN=${TENANT}" -addext "subjectAltName=DNS:${TENANT},IP:127.0.0.1" \
+                -keyout "$TLS_KEY_HOST" -out "$TLS_CERT_HOST" >/dev/null 2>&1 \
+                || { echo "  error: could not generate the self-signed certificate" >&2; exit 2; }
+            chmod 0644 "$TLS_CERT_HOST" "$TLS_KEY_HOST"
+        else
+            echo "  ⚠ Plain HTTP: the api token and everything typed into a terminal"
+            echo "    cross the network unencrypted. Fine on a trusted LAN, not on one"
+            echo "    you share. Recorded as ALLOW_PLAINTEXT_PUBLISH=1 in container/.env."
+            ALLOW_PLAINTEXT=1
+        fi
+    fi
+fi
+
+if [ -n "$TLS_CERT_HOST" ]; then
+    TLS_CERT_CONTAINER="/home/ubuntu/tlscerts/tls.crt"
+    TLS_KEY_CONTAINER="/home/ubuntu/tlscerts/tls.key"
+    if [ -z "$TLS_STAGE" ]; then
+        TLS_STAGE="$(mktemp -d)"
+        trap 'rm -rf "$TLS_STAGE"' EXIT
+        install -m 0644 "$TLS_CERT_HOST" "$TLS_STAGE/tls.crt"
+        # The container is the security boundary; every agent inside it is a
+        # colleague with code execution. docker cp makes files root-owned, so
+        # the door's ubuntu process needs the staged key to be readable.
+        install -m 0644 "$TLS_KEY_HOST" "$TLS_STAGE/tls.key"
     fi
 fi
 
@@ -226,11 +260,11 @@ TOKEN="$(grep -s '^API_TOKEN=' container/.env | cut -d= -f2)"
     echo "API_HOST=${DOOR_HOST}"
     echo "SESSION_HOST=${DOOR_HOST}"
     [ "$ALLOW_PLAINTEXT" = "1" ] && echo "ALLOW_PLAINTEXT_PUBLISH=1"
-    if [ -n "$TLS_CERT" ]; then
-        echo "API_TLS_CERT=${TLS_CERT}"
-        echo "API_TLS_KEY=${TLS_KEY}"
-        echo "SESSION_TLS_CERT=${TLS_CERT}"
-        echo "SESSION_TLS_KEY=${TLS_KEY}"
+    if [ -n "$TLS_CERT_CONTAINER" ]; then
+        echo "API_TLS_CERT=${TLS_CERT_CONTAINER}"
+        echo "API_TLS_KEY=${TLS_KEY_CONTAINER}"
+        echo "SESSION_TLS_CERT=${TLS_CERT_CONTAINER}"
+        echo "SESSION_TLS_KEY=${TLS_KEY_CONTAINER}"
     fi
     [ "${#CLI_MAP[@]}"     -gt 0 ] && echo "AGENT_CLIS=$(IFS=,; echo "${CLI_MAP[*]}")"
     [ "${#PROFILE_MAP[@]}" -gt 0 ] && echo "AGENT_PROFILES=$(IFS=,; echo "${PROFILE_MAP[*]}")"
@@ -246,10 +280,20 @@ TOKEN="$(grep -s '^API_TOKEN=' container/.env | cut -d= -f2)"
 chmod 600 container/.env
 echo "wrote container/.env"
 
-echo "Building and starting tenant '${TENANT}'..."
-docker compose -p "h-flock-${TENANT}" --env-file container/.env -f container/compose.yaml up -d --build || exit 1
-
 CONTAINER="h-flock-${TENANT}-tenant-1"
+COMPOSE=(docker compose -p "h-flock-${TENANT}" --env-file container/.env -f container/compose.yaml)
+
+if [ -n "$TLS_CERT_CONTAINER" ]; then
+    echo "Building and creating tenant '${TENANT}'..."
+    "${COMPOSE[@]}" create --build || exit 1
+    echo "Copying TLS certificate into the stopped tenant..."
+    docker cp "$TLS_STAGE" "$CONTAINER:/home/ubuntu/tlscerts" || exit 1
+    "${COMPOSE[@]}" start || exit 1
+else
+    echo "Building and starting tenant '${TENANT}'..."
+    "${COMPOSE[@]}" up -d --build || exit 1
+fi
+
 for _ in $(seq 1 60); do
     docker exec "$CONTAINER" redis-cli ping >/dev/null 2>&1 && break
     sleep 1
@@ -278,12 +322,32 @@ if [ -d container/home ]; then
     done
 fi
 
+HEALTH=""
+for _ in $(seq 1 90); do
+    HEALTH="$(docker inspect --format '{{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}' "$CONTAINER" 2>/dev/null || true)"
+    [ "$HEALTH" = "healthy" ] && break
+    [ "$HEALTH" = "unhealthy" ] && break
+    sleep 1
+done
+if [ "$HEALTH" != "healthy" ]; then
+    echo "error: tenant '${TENANT}' did not become healthy (status: ${HEALTH:-unknown})" >&2
+    docker logs --tail 40 "$CONTAINER" >&2 || true
+    exit 1
+fi
+
 echo
-echo "Tenant '${TENANT}' up."
-SCHEME=http; [ -n "$TLS_CERT" ] && SCHEME=https
+echo "Tenant '${TENANT}' is healthy."
+SCHEME=http; SESSION_SCHEME=ws
+if [ -n "$TLS_CERT_CONTAINER" ]; then SCHEME=https; SESSION_SCHEME=wss; fi
 echo "  api      ${SCHEME}://127.0.0.1:8080   token in container/.env"
-echo "  session  ws://127.0.0.1:8081/session"
+echo "  session  ${SESSION_SCHEME}://127.0.0.1:8081/session"
 echo "  attach   docker exec -it -e TMUX_TMPDIR=/home/ubuntu/.flock/tmux $CONTAINER tmux attach -t ${TENANT}"
+if [ -n "$TLS_CERT_CONTAINER" ]; then
+    echo
+    echo "  ⚠ The shipped browser console cannot reach TLS tenant doors."
+    echo "    Use a TLS-capable app, or publish the doors on loopback behind a TLS proxy."
+    echo "    See clients/web/README.md."
+fi
 echo
 echo "Accounts still needing a login:"
 ./container/seed-home.sh check "$CONTAINER"
