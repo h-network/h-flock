@@ -50,8 +50,8 @@ say so on the row and close it, rather than "fixing" something that was decided.
 
 | # | finding | evidence | source | status |
 |---|---|---|---|---|
-| 17 | `paste_text` discards every tmux return code, so a failed paste is reported as a successful open — and `LLD-adapter-tmux` sells that as the design's justification | `tmux/ops.py:364-378`, `adapter/openers.py:68-82` | **both** | — |
-| 18 | `list_windows` cannot distinguish "tmux failed" from "no windows" | `tmux/ops.py:56-60` | claude | — |
+| 17 | `paste_text` discards every tmux return code, so a failed paste is reported as a successful open — and `LLD-adapter-tmux` sells that as the design's justification | `tmux/ops.py:364-378`, `adapter/openers.py:68-82` | **both** | ✅ **fixed — `paste_text` raises `TmuxCommandError` and cleans the buffer; a failed paste is no longer a successful open**
+| 18 | `list_windows` cannot distinguish "tmux failed" from "no windows" | `tmux/ops.py:56-60` | claude | ✅ **fixed — a non-zero tmux raises; a genuinely empty session still returns an empty set**
 | 19 | Malformed WebSocket input kills the connection instead of producing an error frame | `session/app.py:168`, `:220` | claude | ✅ **fixed — a bad frame gets `{"error": …}` and the connection survives**
 | 20 | An SSE stream that fails mid-flight cannot return its status code | `api/app.py:446`, `:490-492` | claude | ✅ **fixed — a mid-flight SSE failure emits an `event: error` frame before closing**
 | 21 | A Redis failure during a stream read is reported as `422`, and `API.md` tells clients not to retry `422` | `api/app.py:444-447`, `docs/API.md:677` | claude | ✅ **fixed — infrastructure failure is `500`, not `422`; clients are told to retry**
@@ -59,11 +59,17 @@ say so on the row and close it, rather than "fixing" something that was decided.
 
 ## 3. The hire path is second class
 
+✅ **Closed by deleting the second implementation.** Rows 23–25 were one defect
+three times: `StartAgent` created windows synchronously while `tmuxhost` created
+them from the roster, and the two drifted every time either changed. The
+synchronous creator is gone — `StartAgent` publishes desired state and
+`tmuxhost` is the only thing that builds a window.
+
 | # | finding | evidence | source | status |
 |---|---|---|---|---|
-| 23 | A hired agent's guide names no lead, and its trust is seeded into the wrong account | `tmux/ops.py:311-319`, `control/runner.py:70-76` | claude | — |
-| 24 | Hiring an existing name cannot apply changed launch configuration | `control/openers.py:43-69`, `tmux/ops.py:337-348` | codex | — |
-| 25 | A third window-creation path still ignores `endpoint` | `tmuxhost/host.py:167-170`, `control/runner.py:56-68` | claude | — |
+| 23 | A hired agent's guide names no lead, and its trust is seeded into the wrong account | `tmux/ops.py:311-319`, `control/runner.py:70-76` | claude | ✅ **fixed by deletion — trust now goes to the profile's own account. ⚠ **The simulator's case 4 had been passing because of this bug****
+| 24 | Hiring an existing name cannot apply changed launch configuration | `control/openers.py:43-69`, `tmux/ops.py:337-348` | codex | ✅ **fixed by deletion — `StartAgent` publishes desired state, kills a stale window, and `tmuxhost` recreates it**
+| 25 | A third window-creation path still ignores `endpoint` | `tmuxhost/host.py:167-170`, `control/runner.py:56-68` | claude | ✅ **fixed by deletion — one window-creation path remains, so there is nothing left to drift**
 | 26 | A departed agent's egress is never drained, so re-hiring the name delivers it | `router/service.py` | claude | ✅ ****REJECTED — deliberate.** `egress` is classified as data, so a re-enrolled name resumes its ingress, egress, inbox and board. Name continuity is the decision; nothing is drained. Recorded in `LLD-bus-and-router`**
 
 ## 4. The watchdog
