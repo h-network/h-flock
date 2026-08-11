@@ -52,6 +52,7 @@ cd "$_here" || exit 2
 PROJECT="h-flock-${TENANT}"
 CONTAINER="${PROJECT}-tenant-1"
 FAILED=0
+SKIPPED=""
 step() { echo; echo "══ $* ══"; }
 fail() { echo "  ✗ $*" >&2; FAILED=$((FAILED+1)); }
 
@@ -120,14 +121,24 @@ if [ "$CONSOLE" = "1" ]; then
     # ⚠ Not a pass. Say what was not checked, so nobody reads silence as green.
     echo "  ⚠ playwright is not installed here — console FLOWS WERE NOT CHECKED."
     echo "    The console answering 200 says nothing about whether it works."
+    SKIPPED="${SKIPPED} console-flows"
   fi
 fi
 
 step "result"
 if [ "$FAILED" = "0" ]; then
-  echo "  accepted: install, health, plumbing, simulator${CONSOLE:+, console}"
+  echo "  passed: install, health, plumbing, simulator${CONSOLE:+, console reachable}"
 else
   echo "  NOT accepted: $FAILED step(s) failed"
+fi
+# ⚠ Never let a skip read as a pass. The first version of this script printed
+# "accepted: … console" on a host with no browser, having checked only that the
+# port answered — the same defect it exists to catch elsewhere.
+if [ -n "$SKIPPED" ]; then
+  echo "  ⚠ NOT CHECKED:${SKIPPED}"
+  echo "    This run is incomplete. Run flow-check where playwright is installed:"
+  echo "    python3 clients/web/flow-check.py --console http://<host>:${CONSOLE_PORT} --secret <secret> \\"
+  echo "        --container ${CONTAINER} --tenant ${TENANT} --ssh <user@host>"
 fi
 echo "  ⚠ This is the operator's path, not the whole product. It does not run for"
 echo "    hours, does not inject failures, and cannot tell you whether anything"
