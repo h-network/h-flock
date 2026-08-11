@@ -155,6 +155,7 @@ The same channel carries the one setting more than one module has to agree on:
 | `AGENT_PROFILES` | agent account profile assignments (`agent=profile,...`) |
 | `TMUX_TMPDIR` | where the tenant's tmux socket lives. `/home/ubuntu/.flock/tmux` |
 | `REDIS_BIND`, `REDIS_PASSWORD` | Redis bind host (`127.0.0.1`) and password. Non-loopback bind requires `REDIS_PASSWORD` |
+| `REDIS_READY_SECONDS` | maximum Redis startup wait. Default 30; expiry stops the tenant rather than hanging boot |
 
 `TMUX_TMPDIR` is inherited rather than passed per invocation, which is the whole
 reason `LLD-tmux-host` §4 chose it. It is listed here because anything attaching

@@ -109,7 +109,7 @@ if [ -n "$redis_password" ]; then
   redis_cmd+=(--requirepass "$redis_password")
   export REDISCLI_AUTH="$redis_password"
   if [ -z "${REDIS_URL:-}" ]; then
-    export REDIS_URL="redis://:${redis_password}@127.0.0.1:6379/0"
+    export REDIS_URL="$(python3 -c 'from flock.bus.connection import local_redis_url; import sys; print(local_redis_url(sys.argv[1]))' "$redis_password")"
   fi
 fi
 
@@ -125,7 +125,14 @@ rcli() {
 }
 
 start redis "${redis_cmd[@]}"
-until [ "$(rcli ping 2>/dev/null)" = "PONG" ]; do sleep 0.2; done
+redis_deadline=$((SECONDS + ${REDIS_READY_SECONDS:-30}))
+until [ "$(rcli ping 2>/dev/null)" = "PONG" ]; do
+  if [ "$SECONDS" -ge "$redis_deadline" ]; then
+    echo "entrypoint: timed out waiting for Redis readiness" >&2
+    exit 1
+  fi
+  sleep 0.2
+done
 
 # ── seed the roster ───────────────────────────────────────────────────────────
 # Boot configuration, not the write path LLD-bus-and-router §7 defers. The roster
