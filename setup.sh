@@ -286,6 +286,12 @@ COMPOSE=(docker compose -p "h-flock-${TENANT}" --env-file container/.env -f cont
 if [ -n "$TLS_CERT_CONTAINER" ]; then
     echo "Building and creating tenant '${TENANT}'..."
     "${COMPOSE[@]}" create --build || exit 1
+    # ⚠ mktemp -d makes the directory 0700, and docker cp preserves both the
+    # mode and the host uid. On this lab the operator is uid 1000, which is
+    # `ubuntu` inside the container, so the door could traverse it — by luck.
+    # Any other host uid leaves a 0700 directory the door cannot enter, and the
+    # tenant fails with a permission error rather than a missing file.
+    chmod 0755 "$TLS_STAGE"
     echo "Copying TLS certificate into the stopped tenant..."
     docker cp "$TLS_STAGE" "$CONTAINER:/home/ubuntu/tlscerts" || exit 1
     "${COMPOSE[@]}" start || exit 1
