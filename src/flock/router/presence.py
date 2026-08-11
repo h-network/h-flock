@@ -53,7 +53,11 @@ class PresenceSampler:
         if not self._tailable(agent):
             return None
         key = prefix(self.pod, self.tenant, agent, "activity")
-        for _, fields in self.r.xrevrange(key, max="+", min="-", count=1000):
+        # Activity is written by our own tailer, but scan a small newest-first
+        # batch so one malformed observation does not erase otherwise known
+        # presence. The Stream itself can hold roughly 1,000 entries; fetching
+        # all of them every pass to obtain one timestamp is unnecessary.
+        for _, fields in self.r.xrevrange(key, max="+", min="-", count=10):
             raw = fields.get(b"event", fields.get("event"))
             try:
                 event = json.loads(_text(raw))

@@ -74,6 +74,8 @@ class KeysTest(unittest.TestCase):
         with self.assertRaises(KeyError):
             prefix("acme", "hq", agent="all")
         with self.assertRaises(KeyError):
+            prefix("acme", "hq", resource="all")
+        with self.assertRaises(KeyError):
             prefix("acme", "hq", resource="tasks..todo")
 
 

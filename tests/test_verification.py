@@ -83,7 +83,7 @@ def test_missing_later_input_is_surfaced_and_not_retried(capsys):
     assert record["event"] == "delivery_unverified"
     assert record["stream_id"] == "not-confirmed"
     assert record["recipient"] == "sme-2"
-    assert record["waited"] == 10
+    assert record["waited"] == 20
     assert record["reason"] == (
         "not confirmed by a later input activity event; "
         "not retried because verification cannot distinguish loss from a landed paste"
@@ -124,7 +124,7 @@ def test_first_delivery_without_activity_history_is_dropped_unjudged(capsys):
         "stream_id": "first",
         "recipient": "sme-2",
         "reason": "agent has no activity history; first delivery is not judged",
-        "waited": 10,
+        "waited": 20,
     }
     assert r.streams[_key("pending.verify")] == []
     assert _key("blocked") not in r.hashes

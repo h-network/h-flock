@@ -10,11 +10,13 @@ class PresenceRedis:
         self.streams = {}
         self.hashes = {}
         self.values = {}
+        self.reverse_counts = []
 
     def get(self, key):
         return self.values.get(key)
 
     def xrevrange(self, key, max="+", min="-", count=None):
+        self.reverse_counts.append(count)
         return list(reversed(self.streams.get(key, [])))[:count]
 
     def hgetall(self, key):
@@ -93,6 +95,7 @@ def test_malformed_latest_activity_falls_back_to_last_valid_event():
     ]
     PresenceSampler(r, pod="acme", tenant="hq").poll({"sme-2"}, now=NOW)
     assert _presence(r, "sme-2")["state"] == "working"
+    assert r.reverse_counts == [10]
 
 
 def test_agy_is_unknown_even_when_an_old_activity_stream_exists():

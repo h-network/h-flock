@@ -417,7 +417,10 @@ second daemon and none of these jobs sits in an envelope's data path. Every
 2. **Sample presence.** The newest activity timestamp becomes a per-agent
    `presence` hash with `state` (`working`, `idle`, or `unknown`), `since`, and
    `last_activity`. `PRESENCE_WORKING_SECONDS`, default 30, is the working
-   horizon; `since` is preserved while the state does not change.
+   horizon; `since` is preserved while the state does not change. One reverse
+   Stream read fetches at most the newest ten events for each agent, enough to
+   step past a malformed newest observation without pulling the whole
+   approximately-capped activity history to obtain one timestamp.
 3. **Judge delivery evidence.** Before pasting a `Message`, the tmux adapter
    appends a marker to `<prefix>:pending.verify` when the agent's launch CLI is
    in the explicit `{claude, codex}` allowlist. The marker is written **before**
@@ -450,7 +453,10 @@ second daemon and none of these jobs sits in an envelope's data path. Every
    marker. Otherwise the router logs `delivery_unverified` and retains that
    first verdict in `<prefix>:blocked` as `{since, stream_id}`. A later verified
    delivery deletes the hash; another unverified delivery does not reset
-   `since`. Either way the pending marker is deleted after judgment.
+   `since`. Either way the pending marker is deleted after judgment. The
+   `waited` log field is the elapsed time from that marker's timestamp to the
+   judgment, not the configured minimum; scheduler delay may make it larger
+   than `VERIFY_AFTER_SECONDS`.
 
    ⚠ **`blocked` means an unverified delivery and no verified delivery since.**
    It does not mean the CLI is stuck. Credential-free Claude and Codex were both
@@ -659,14 +665,16 @@ it has to be a name rather than a pattern: §3.1 excludes glob metacharacters so
 that a prefix is safe in a `SCAN MATCH`, which rules out `*`. A reserved name is
 what is left, and reserving it costs one entry in a list that already exists.
 
-**The router does not rewrite the envelope.** Each copy keeps
-`recipient: "all"`, so a receiver can tell it was addressed to the room rather
-than to it. The router has no other case where it modifies what it forwards, and
-this is not worth being the first.
+**Broadcast does not rewrite its recipient.** Each copy keeps `recipient:
+"all"`, so a receiver can tell it was addressed to the room rather than to it.
+The separate port-stamping rule below may rewrite a mismatched `producer`
+before either unicast or broadcast forwarding; no other field is changed.
 
-The fan-out is one pop and *n* pushes, pipelined, not atomic — nothing at this
-layer promises delivery, so a partial fan-out is the same fire-and-forget as a
-partial anything. Two log records still, not *n*: the outcome is a single
+The fan-out is one pop and *n* pushes in a transactional Redis pipeline. The
+pushes therefore execute atomically: every selected ingress receives its copy
+or none does. This is stronger than the transport's fire-and-forget promise and
+costs no extra protocol; callers must still not infer acknowledgement or retry
+from it. Two router log records still, not *n*: the outcome is a single
 `forwarded` carrying `count`. One pop, one outcome, as §4 requires.
 
 A broadcast into a tenant of one is *n* = 0 — a successful broadcast to nobody,
@@ -683,8 +691,15 @@ delivery-guarantee change and is deliberately not introduced here. Once
 therefore visible as "popped, no outcome". The transport remains at-most-once,
 with no retry.
 
-`send` and `receive` log at their own ends too, so every delivered envelope
-leaves **five transport records** across its life:
+Router and door connections deliberately use redis-py's zero command-retry
+default. Retrying a failed destructive `BLPOP` is unsafe: the server may have
+removed and returned an envelope even when the client never received the
+reply, so replaying the command could remove a second envelope. A later loop
+iteration may reconnect for later work, but the failed pop itself is never
+reissued automatically.
+
+`send` and `receive` log at their own ends too, so a delivered **unicast**
+envelope leaves five transport records across its life:
 
 ```
   sent        the producer's own end            (flock.bus.doors)
@@ -707,6 +722,18 @@ paired components plus `send` is 1+2+2. It read as true only because `sent` was
 written into an agent's pane and never reached the log, so four was what anyone
 counting actually saw. The claim was corrected when the record it was missing
 started arriving.
+
+A broadcast instead leaves the three shared records `sent`, `popped` and
+`forwarded`, then one `received`/`opened` pair per receiving participant. Those
+pairs retain the envelope address `recipient: "all"`; they are not
+per-recipient delivery records and cannot be distinguished from each other by
+recipient field alone. The `forwarded.count` field is the fan-out cardinality.
+
+The `popped` record is emitted only after the destructive `BLPOP`, structural
+parse and producer stamp. It therefore carries the corrected producer when the
+claim differed from the egress queue. A malformed envelope has no trustworthy
+structural fields, so its `popped` record contains none and is followed by
+`dead_lettered`.
 
 **The router does not read payloads.** It forwards on `recipient`, and derives
 the sender from the queue the envelope was popped from. Nothing else in the
