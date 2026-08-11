@@ -223,13 +223,21 @@ unset AGENT_CLIS AGENT_PROFILES AGENT_ENDPOINTS
 # better answer. Peers reach a window as AGENT_PEERS, derived from the roster.
 unset AGENTS
 
+# Redis credentials belong to infrastructure processes, not agent windows.
+# Keep the URL in a shell variable for explicit process handoff, then remove
+# every credential-bearing variable before tmuxhost creates the tmux server.
+# tmuxhost consumes REDIS_URL from its own environment before its first tmux
+# call, so the server cannot inherit it either.
+redis_url="${REDIS_URL:-redis://127.0.0.1:6379/0}"
+unset REDIS_PASSWORD REDISCLI_AUTH REDIS_URL
+
 # ── tmux host ─────────────────────────────────────────────────────────────────
 # The tmux server inherits this and passes it to every agent window. tmuxhost
 # itself has no AGENT_NAME, so FLOCK_LOG_FILE_AGENT_ONLY keeps its already-
 # central lifecycle records out of the file and prevents duplicates.
 export FLOCK_LOG_FILE=/home/ubuntu/.flock/window.log.jsonl
 export FLOCK_LOG_FILE_AGENT_ONLY=1
-start tmuxhost python3 -m flock.tmuxhost
+start tmuxhost env REDIS_URL="$redis_url" python3 -m flock.tmuxhost
 
 # Windows lead routes. LLD-bus-and-router §3.2 names the one roster case that is
 # not harmless: the router routing to an agent whose window does not exist yet,
@@ -253,9 +261,9 @@ echo "{\"module\":\"container\",\"event\":\"windows_ready\",\"count\":${#agents[
 unset FLOCK_LOG_FILE FLOCK_LOG_FILE_AGENT_ONLY
 
 # ── the rest ──────────────────────────────────────────────────────────────────
-start router  env REDIS_URL="${REDIS_URL:-redis://127.0.0.1:6379/0}" python3 -m flock.router
+start router  env REDIS_URL="$redis_url" python3 -m flock.router
 if [ "${WATCHDOG_ENABLED:-1}" != "0" ]; then
-  start watchdog env REDIS_URL="${REDIS_URL:-redis://127.0.0.1:6379/0}" python3 -m flock.watchdog
+  start watchdog env REDIS_URL="$redis_url" python3 -m flock.watchdog
 fi
 # No adapter here. It is not a service — the router kicks `flock.adapter <agent>`
 # per delivery and it exits (LLD-adapter-tmux §2). Starting one at boot would be
