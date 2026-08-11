@@ -13,3 +13,7 @@ container/.env
 container/home/*
 !container/home/README.md
 shots/
+
+# The console's default audit log — operator actions and conversation history,
+# not source. See clients/web/server.py.
+clients/web/console-audit.jsonl

@@ -1254,6 +1254,14 @@ def main() -> None:
     tls_key = args.tls_key or (str(cfg.get("tls_key")) if cfg.get("tls_key") else None)
     log_format = args.log_format if args.log_format != "text" else str(cfg.get("log_format", "text"))
     audit_log = args.audit_log or (str(cfg.get("audit_log")) if cfg.get("audit_log") else None)
+    if not audit_log:
+        # ⚠ Default it on. The audit log is not only an audit log — it is the
+        # ONLY record of what the operator sent, and the conversation view
+        # replays it to rebuild their side after a reload. Left off, the console
+        # silently loses every message you typed the moment you refresh, and it
+        # looks exactly like data loss rather than an unset flag. Reported by an
+        # operator who lost a conversation that way. Pass --audit-log to move it.
+        audit_log = str(Path(__file__).resolve().parent / "console-audit.jsonl")
 
     demo_mode = args.demo if args.demo is not None else bool(cfg.get("demo", bool(os.environ.get("HFLOCK_DEMO"))))
     token = token or ("demo-secret" if demo_mode else None)
