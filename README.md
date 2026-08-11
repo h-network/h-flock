@@ -184,10 +184,13 @@ agent cannot read or change which model it is pointed at.
 model id the endpoint says it serves, and prints what came back — so a mismatch
 shows up during install rather than as "issue with the selected model" later.
 
-⚠ **vLLM is tested; ollama is not.** An agent on vLLM has been run end to end
-here — tools, multi-step work, messaging a colleague who replied. Nobody has
-pointed claude at ollama, so this says nothing about whether it works. The probe
-will tell you.
+⚠ **vLLM and ollama are both tested**, each run end to end here: a tool call, a
+multi-step turn, and `office send` to a colleague that arrived in their terminal.
+ollama serves `/v1/messages` directly — no proxy, no translation.
+
+⚠ **Give a cold model time.** The same ollama endpoint answered in 15.7s on the
+first call and 0.5s once warm, so an installer probe that gives up early reports
+a working endpoint as silent. `setup.sh` waits 90s.
 
 ## 🧑‍💻 What an agent sees
 
