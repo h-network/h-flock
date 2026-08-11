@@ -1,5 +1,8 @@
 # Audit — the consolidated list
 
+> ✅ **All 50 rows are closed.** 46 fixed, 4 closed as deliberate or documented.
+> Verified on a fresh tenant: 339 tests, plumbing 25/25, simulator 19/19.
+
 Every finding from both independent audits of **`4bc702b`**, merged and ranked.
 The raw documents are on the `auditClaude` and `auditCodex` branches; the
 comparison of the two offices is in `AUDIT-2026-08-11-comparison.md`.
@@ -84,32 +87,32 @@ that is missing, because it is acted on.
 
 | # | finding | evidence | source | status |
 |---|---|---|---|---|
-| 30 | The broadcast fan-out **is** atomic — `pipeline()` defaults to `transaction=True` — while the LLD says "pipelined, not atomic" | `router/service.py:78`, `LLD-bus-and-router.md:637` | codex | ✅ |
-| 31 | `CONTRACTS` §3 says nothing writes a log file. Something does, and the router depends on it. The rest of §3 is stale too | `bus/logging.py:75-85`, `router/windowlog.py:25-45` | **both** | — |
-| 32 | The five-record claim does not hold for `recipient: "all"` — per-recipient deliveries are indistinguishable in the log | `bus/doors.py:53` | claude | — |
-| 33 | `API.md` tells browser developers to open the WebSocket with a Bearer header. Browsers cannot send one | `docs/API.md:625-642`, `session/app.py:88-96` | **both** | — |
-| 34 | The WebSocket close-code vocabulary is undocumented and `4401` never reaches a client | `session/app.py:180-219` | claude | — |
-| 35 | `/alerts` names a field the watchdog never writes; only a fallback saves it | `api/app.py:751`, `watchdog/service.py:103-107` | claude | — |
-| 36 | `LLD-adapter-tmux` §4 documents a pane read that does not exist and would break invariant 7 | `LLD-adapter-tmux.md:189-192` | claude | — |
-| 37 | `LLD-tmux-host` describes two bugs that were already removed | `tmuxhost/host.py:185-208`, `tmux/ops.py:136-142` | codex | — |
-| 38 | "The router does not rewrite the envelope" is absolute in one place and contradicted by a documented exception elsewhere | `LLD-bus-and-router.md:632-635`, `:743-747` | codex | — |
-| 39 | `popped` is not emitted "before doing anything" and carries the corrected producer | `router/service.py:52-67` | **both** | — |
-| 40 | The wire encoding of terminal bytes is documented only in a comment in the reference client | `session/control.py:197`, `LLD-session.md:176` | claude | — |
-| 41 | An example response omits the `vab` field that is implemented and advertised | `api/app.py:584-598`, `docs/API.md:220-223` | codex | — |
-| 42 | `CONTRACTS` §9 omits several variables the container sets and modules read | `docs/CONTRACTS.md` | claude | — |
-| 43 | Two smaller doc claims that are false today | `LLD-tmux-host.md:156`, `docs/TODO.md:54` | claude | — |
+| 30 | The broadcast fan-out **is** atomic — `pipeline()` defaults to `transaction=True` — while the LLD says "pipelined, not atomic" | `router/service.py:78`, `LLD-bus-and-router.md:637` | codex | ✅ **fixed as documentation — atomic fan-out **kept** as the stronger property; the LLD now says transactional pipeline**
+| 31 | `CONTRACTS` §3 says nothing writes a log file. Something does, and the router depends on it. The rest of §3 is stale too | `bus/logging.py:75-85`, `router/windowlog.py:25-45` | **both** | ✅ **fixed — `CONTRACTS` §3 corrected; the window-log spool exists and the router depends on it**
+| 32 | The five-record claim does not hold for `recipient: "all"` — per-recipient deliveries are indistinguishable in the log | `bus/doors.py:53` | claude | ✅ **fixed — the five-record claim is now scoped to unicast; a broadcast leaves 3 + 2 per recipient**
+| 33 | `API.md` tells browser developers to open the WebSocket with a Bearer header. Browsers cannot send one | `docs/API.md:625-642`, `session/app.py:88-96` | **both** | ✅ **fixed — browsers may pass `?token=`, with `access_log=False` so it never reaches the tenant log, the cost stated, and the server-side proxy recommended**
+| 34 | The WebSocket close-code vocabulary is undocumented and `4401` never reaches a client | `session/app.py:180-219` | claude | ✅ **fixed — close codes documented (1000 / 4401 / 1011)**
+| 35 | `/alerts` names a field the watchdog never writes; only a fallback saves it | `api/app.py:751`, `watchdog/service.py:103-107` | claude | ✅ **fixed — `/alerts` reads the field the watchdog actually writes, not a fallback**
+| 36 | `LLD-adapter-tmux` §4 documents a pane read that does not exist and would break invariant 7 | `LLD-adapter-tmux.md:189-192` | claude | ✅ **fixed — the pane read that does not exist is gone; the LLD describes file-only verification**
+| 37 | `LLD-tmux-host` describes two bugs that were already removed | `tmuxhost/host.py:185-208`, `tmux/ops.py:136-142` | codex | ✅ **fixed — the two removed bugs no longer described as present**
+| 38 | "The router does not rewrite the envelope" is absolute in one place and contradicted by a documented exception elsewhere | `LLD-bus-and-router.md:632-635`, `:743-747` | codex | ✅ **fixed — the no-rewrite claim now names port stamping as the exception**
+| 39 | `popped` is not emitted "before doing anything" and carries the corrected producer | `router/service.py:52-67` | **both** | ✅ **fixed — `popped` follows pop, parse and stamping, and the LLD says so**
+| 40 | The wire encoding of terminal bytes is documented only in a comment in the reference client | `session/control.py:197`, `LLD-session.md:176` | claude | ✅ **fixed — the wire encoding is in `API.md` and `LLD-session`, not only a client comment**
+| 41 | An example response omits the `vab` field that is implemented and advertised | `api/app.py:584-598`, `docs/API.md:220-223` | codex | ✅ **fixed — the example carries `vab`**
+| 42 | `CONTRACTS` §9 omits several variables the container sets and modules read | `docs/CONTRACTS.md` | claude | ✅ **fixed — `CONTRACTS` §9 lists the variables the container sets**
+| 43 | Two smaller doc claims that are false today | `LLD-tmux-host.md:156`, `docs/TODO.md:54` | claude | ✅ **fixed — both claims corrected; the `TODO` line was flagged, not edited, and I corrected it**
 
 ## 6. Fragility, cost and hygiene
 
 | # | finding | evidence | source | status |
 |---|---|---|---|---|
-| 44 | `Redis.from_url` yields **zero** connection retries — load-bearing, undocumented, and the obvious "improvement" would break at-most-once | `bus/` | claude | — |
-| 45 | Nothing bounds the size of anything a client can send or ask for | `api/app.py:600-639`, `bus/doors.py:28` | claude | — |
-| 46 | The Redis readiness wait has no deadline | `container/entrypoint.sh:128` | claude | — |
-| 47 | A configured Redis password is not URL-encoded, so reserved characters produce a broken `REDIS_URL` | `container/entrypoint.sh:107-113` | codex | — |
-| 48 | Presence pulls up to 1000 stream entries per agent per pass to read one timestamp | `bus/` | claude | — |
-| 49 | `waited` reports the configured threshold, not how long the router actually waited | `router/service.py` | claude | — |
-| 50 | Dead code that hides an intent | — | claude | — |
+| 44 | `Redis.from_url` yields **zero** connection retries — load-bearing, undocumented, and the obvious "improvement" would break at-most-once | `bus/` | claude | ✅ **documented, not changed — zero retries is what makes at-most-once true: retrying a destructive `BLPOP` whose reply was lost would remove a second envelope**
+| 45 | Nothing bounds the size of anything a client can send or ask for | `api/app.py:600-639`, `bus/doors.py:28` | claude | ✅ **fixed — 1 MiB payload limit, stated in `API.md` §7 and rejected with the agreed vocabulary**
+| 46 | The Redis readiness wait has no deadline | `container/entrypoint.sh:128` | claude | ✅ **fixed — `REDIS_READY_SECONDS` (default 30) bounds the wait, then it exits**
+| 47 | A configured Redis password is not URL-encoded, so reserved characters produce a broken `REDIS_URL` | `container/entrypoint.sh:107-113` | codex | ✅ **fixed — the password is percent-encoded into the infrastructure URL**
+| 48 | Presence pulls up to 1000 stream entries per agent per pass to read one timestamp | `bus/` | claude | ✅ **fixed — presence reads 10 entries, not 1000**
+| 49 | `waited` reports the configured threshold, not how long the router actually waited | `router/service.py` | claude | ✅ **fixed — `waited` reports measured elapsed time, including scheduler delay**
+| 50 | Dead code that hides an intent | — | claude | ✅ **fixed by deletion — the unreachable branch is gone and a test pins that `all` is rejected as both agent and resource**
 
 ---
 
