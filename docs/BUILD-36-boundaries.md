@@ -72,6 +72,14 @@ and continue — a warning in a log is how this ships by accident.
   WebSocket until the cert is trusted, and that failure looks like a broken
   terminal rather than a certificate problem. Put it in the README
 
+  ⚠ **This turned out to be the wrong warning**, and it shipped into the README
+  as written. The console is a *proxy* — the browser never sees a door's
+  certificate, so there is nothing for it to accept. The real cost is that the
+  console's own client is plaintext-only and cannot reach a TLS door at all.
+  **A caveat written from how a thing probably works is a guess in the voice of
+  documentation**; nobody opened the console against a TLS tenant until after
+  the build closed.
+
 ## 2a. ⚠ §2 was wrong, and only a test run showed it
 
 The refusal above was keyed on the **bind**. Both doors bind `0.0.0.0` inside the

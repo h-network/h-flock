@@ -14,7 +14,7 @@
 ![tmux](https://img.shields.io/badge/tmux-agent_windows-1BB91F?style=flat-square&logo=tmux&logoColor=white)
 ![FastAPI](https://img.shields.io/badge/FastAPI-two_doors-009688?style=flat-square&logo=fastapi&logoColor=white)
 ![Agents](https://img.shields.io/badge/agents-claude_codex_agy-8B5CF6?style=flat-square)
-![Tests](https://img.shields.io/badge/tests-122_passing-22C55E?style=flat-square)
+![Tests](https://img.shields.io/badge/tests-299_passing-22C55E?style=flat-square)
 
 **A message bus for AI agents that live in terminals — and for the apps that talk to them. Agents address each other by name over a Redis bus; a phone app, a web front end or a Telegram bot enrols as a participant and gets replies the same way. One self-contained container.**
 
@@ -349,7 +349,20 @@ scheme — with certs configured it probes `https`, because probing plain HTTP g
 `Empty reply from server` forever and a correctly serving TLS tenant never
 became healthy.
 
-⚠ **Self-signed TLS certificates:** A browser will refuse the session WebSocket connection until the certificate is explicitly trusted by the browser, which manifests as a disconnected terminal view rather than a clear certificate prompt. Operators using self-signed certificates must open the HTTPS API door (`https://<host>:8080/restdoc`) in the browser and accept the certificate before opening the session WebSocket.
+⚠ **The browser console does not work against TLS doors.** It is a *proxy*: the
+browser talks only to the console server, which talks to the doors server-side —
+so the certificate question is entirely server-side, and there is nothing to
+accept in the browser. Two things in `clients/web/server.py` block it:
+
+- the WebSocket proxy opens a **plain socket** to the session door, so terminals
+  fail even against a certificate that is perfectly valid
+- the REST proxy verifies with the default context and takes no CA or insecure
+  option, so a self-signed certificate fails outright
+
+**So pick one:** publish both doors to `127.0.0.1` and terminate TLS in a
+reverse proxy in front (what `LLD-container` §3 says, and what leaves the
+console working over loopback), or serve TLS from the doors and use an app that
+speaks it. See [`docs/TODO.md`](docs/TODO.md).
 
 Not built: per-client tokens, CORS. See [`docs/TODO.md`](docs/TODO.md), which says why for each.
 

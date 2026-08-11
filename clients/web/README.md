@@ -234,3 +234,12 @@ independent reruns. Screenshots were inspected: the idle office overview,
 retained last-activity column and severity-grouped alert history rendered as
 specified. Rendering is verified; a screenshot alone does not establish frame
 rate, so performance claims remain limited to the explicit data and DOM caps.
+
+## ⚠ TLS
+
+This server is a proxy — the browser never talks to the doors directly, so a
+certificate is never presented to it. Its own client is plaintext-only: the
+WebSocket proxy opens a bare socket and the REST proxy verifies with the default
+context. **Against TLS doors, terminals fail even with a valid certificate.**
+Run the doors published on loopback with TLS terminated in front, or see
+`docs/TODO.md`.
