@@ -73,3 +73,22 @@ Built strictly against [`docs/API.md`](../../docs/API.md). The following gaps an
 
 5. **Activity Feed Event Kinds & Schema**:
    Section 5 notes that `tool` events carry a `tool` string (e.g. `"tool": "Bash"`), but does not explicitly enumerate all valid values for `kind` or state whether `tool` is null/absent for non-tool event kinds (`input`, `output`).
+
+## TLS
+
+`--api-url https://<host>:8080` reaches a door serving TLS. Certificates are
+verified by default:
+
+```bash
+--ca-cert /path/to/ca.pem     # verify against this CA        (FLOCK_CA_CERT)
+--insecure                    # skip verification entirely    (FLOCK_INSECURE=1)
+```
+
+⚠ **`--insecure` is for the self-signed certificate `setup.sh` generates.** It
+keeps the traffic encrypted but stops authenticating the door, so it says
+nothing about who answered. Prefer `--ca-cert` wherever the certificate has an
+issuer worth checking.
+
+⚠ **Neither option touches the Telegram Bot API.** `api.telegram.org` is a
+public host with a real certificate and stays verified — the context is handed
+to the h-flock client only.

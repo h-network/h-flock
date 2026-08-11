@@ -10,6 +10,7 @@ import json
 import logging
 import os
 import pathlib
+import ssl
 import sys
 import time
 import urllib.error
@@ -23,10 +24,16 @@ logger = logging.getLogger("flock_telegram")
 class FlockClient:
     """Thin REST client for h-flock API based on API.md."""
 
-    def __init__(self, base_url: str, token: str, app_name: str = "telegram"):
+    def __init__(self, base_url: str, token: str, app_name: str = "telegram",
+                 ssl_context: "ssl.SSLContext | None" = None):
         self.base_url = base_url.rstrip("/")
         self.token = token
         self.app_name = app_name
+        # ⚠ This context reaches the h-flock door and nothing else. The Telegram
+        # Bot API is a public host with a real certificate — weakening
+        # verification there would be a different decision entirely, so
+        # TelegramClient does not take one.
+        self.ssl_context = ssl_context
 
     def _headers(self) -> dict[str, str]:
         return {
@@ -39,7 +46,8 @@ class FlockClient:
         body = json.dumps(data).encode("utf-8") if data is not None else None
         req = urllib.request.Request(url, data=body, headers=self._headers(), method=method)
         try:
-            with urllib.request.urlopen(req, timeout=10) as resp:
+            # context is ignored for http:// urls, so this needs no branch
+            with urllib.request.urlopen(req, timeout=10, context=self.ssl_context) as resp:
                 resp_body = resp.read().decode("utf-8")
                 parsed = json.loads(resp_body) if resp_body else {}
                 return resp.status, parsed
@@ -435,9 +443,35 @@ class DryRunTelegramClient:
         return []
 
 
+def _door_ssl_context(api_url: str, ca_cert: str, insecure: bool) -> "ssl.SSLContext | None":
+    """The context for talking to the h-flock door, or None for plain HTTP.
+
+    ⚠ `--insecure` is for a door with a self-signed certificate, which is what
+    `setup.sh` generates. It disables verification entirely, so it says nothing
+    about who answered — use `--ca-cert` wherever the certificate has an issuer
+    worth checking.
+    """
+    if not api_url.lower().startswith("https://"):
+        if ca_cert or insecure:
+            logger.warning("--ca-cert/--insecure ignored: %s is not https", api_url)
+        return None
+    if insecure:
+        logger.warning("TLS verification disabled for %s — traffic is encrypted, "
+                       "but the door is not authenticated", api_url)
+        context = ssl.create_default_context()
+        context.check_hostname = False
+        context.verify_mode = ssl.CERT_NONE
+        return context
+    return ssl.create_default_context(cafile=ca_cert or None)
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="h-flock Telegram bot client")
     parser.add_argument("--api-url", default=os.getenv("FLOCK_API_URL", "http://localhost:8080"), help="h-flock API base URL")
+    parser.add_argument("--ca-cert", default=os.getenv("FLOCK_CA_CERT", ""),
+                        help="verify the door's TLS certificate against this CA bundle")
+    parser.add_argument("--insecure", action="store_true", default=os.getenv("FLOCK_INSECURE") == "1",
+                        help="skip TLS verification (self-signed door certificate)")
     parser.add_argument("--api-token", default=os.getenv("FLOCK_API_TOKEN", os.getenv("API_TOKEN", "")), help="h-flock API Bearer token")
     parser.add_argument("--bot-token", default=os.getenv("TELEGRAM_BOT_TOKEN", ""), help="Telegram Bot API token")
     parser.add_argument("--cursor-file", default=os.getenv("CURSOR_FILE", "cursor.json"), help="File path to store message cursor")
@@ -457,7 +491,9 @@ def main() -> None:
         logger.error("Error: API token required (--api-token or FLOCK_API_TOKEN env var)")
         sys.exit(1)
 
-    flock = FlockClient(base_url=args.api_url, token=args.api_token, app_name="telegram")
+    ssl_context = _door_ssl_context(args.api_url, args.ca_cert, args.insecure)
+    flock = FlockClient(base_url=args.api_url, token=args.api_token, app_name="telegram",
+                        ssl_context=ssl_context)
     cursor_store = CursorStore(filepath=args.cursor_file)
 
     is_dry_run = args.dry_run or not bool(args.bot_token)

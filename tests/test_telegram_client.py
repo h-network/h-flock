@@ -1,9 +1,12 @@
 """Unit tests for the Telegram bot client (clients/telegram/bot.py)."""
 
+import inspect
 import json
+import ssl
 import tempfile
 from pathlib import Path
 
+from clients.telegram import bot
 from clients.telegram.bot import CursorStore, FlockClient, TelegramBot
 
 
@@ -150,3 +153,25 @@ def test_handle_user_prompt_success():
         assert len(telegram.sent_messages) == 2
         assert "architect is working" in telegram.sent_messages[0]["text"]
         assert "architect: Auth check passed" in telegram.sent_messages[1]["text"]
+
+
+def test_door_context_none_for_plain_http():
+    assert bot._door_ssl_context("http://localhost:8080", "", False) is None
+
+
+def test_door_context_insecure_skips_verification():
+    ctx = bot._door_ssl_context("https://host:8080", "", True)
+    assert ctx.verify_mode == ssl.CERT_NONE
+    assert ctx.check_hostname is False
+
+
+def test_door_context_verifies_by_default():
+    ctx = bot._door_ssl_context("https://host:8080", "", False)
+    assert ctx.verify_mode == ssl.CERT_REQUIRED
+    assert ctx.check_hostname is True
+
+
+def test_telegram_api_client_takes_no_context():
+    """⚠ --insecure is about the h-flock door. api.telegram.org is a public host
+    with a real certificate, and must keep being verified."""
+    assert "ssl_context" not in inspect.signature(bot.TelegramClient.__init__).parameters
