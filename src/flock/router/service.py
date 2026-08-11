@@ -37,6 +37,9 @@ class Router:
     def step(self, timeout: float | None = None) -> bool:
         agents = sorted(self._agents())
         if not agents:
+            delay = self.poll_seconds if timeout is None else timeout
+            if delay > 0:
+                time.sleep(delay)
             return False
         self._offset %= len(agents)
         agents = agents[self._offset :] + agents[: self._offset]

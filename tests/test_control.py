@@ -139,7 +139,7 @@ def test_stop_agent_orders_roster_launch_then_window():
     assert "profile" in AGENT_STATE_RESOURCES
 
 
-def test_stop_api_client_removes_roster_and_mailbox_without_tmux():
+def test_stop_api_client_removes_roster_but_retains_mailbox_without_tmux():
     events = []
     stop_agent(
         RecordingRedis(events, roster_vab="api"),
@@ -154,6 +154,23 @@ def test_stop_api_client_removes_roster_and_mailbox_without_tmux():
         ("delete", *(prefix("acme", "hq", "telegram", resource) for resource in sorted(AGENT_STATE_RESOURCES))),
         ("hdel", prefix("acme", "hq", resource="delivering"), "telegram"),
     ]
+    deleted_keys = next(event[1:] for event in events if event[0] == "delete")
+    assert prefix("acme", "hq", "telegram", "inbox") not in deleted_keys
+    assert "inbox" not in AGENT_STATE_RESOURCES
+
+
+@pytest.mark.parametrize("agent", ["api", "host"])
+def test_stop_agent_rejects_fixed_participant_before_mutation(agent):
+    events = []
+    with pytest.raises(ValueError, match=f"cannot stop fixed participant: {agent}"):
+        stop_agent(
+            RecordingRedis(events),
+            pod="acme",
+            tenant="hq",
+            envelope={"payload": {"agent": agent}},
+            kill_window=lambda target: events.append(("kill_window", target)),
+        )
+    assert events == []
 
 
 @pytest.mark.parametrize(

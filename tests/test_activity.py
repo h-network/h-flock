@@ -76,7 +76,7 @@ def test_claude_tailer_reads_only_new_bytes_and_never_emits_content(tmp_path):
         assert secret not in serialized
 
     offset_key = prefix("acme", "hq", "sme-2", "activity.offset")
-    assert json.loads(r.values[offset_key])["offset"] == session.stat().st_size
+    assert json.loads(r.values[offset_key])["offsets"][str(session)] == session.stat().st_size
     tailer.poll()
     assert len(_events(r)) == 3
 
@@ -109,7 +109,50 @@ def test_newest_session_starts_at_zero_instead_of_reusing_old_offset(tmp_path):
 
     assert [event["kind"] for event in _events(r)] == ["input", "output"]
     state = json.loads(r.values[prefix("acme", "hq", "sme-2", "activity.offset")])
-    assert state == {"path": str(new), "offset": new.stat().st_size}
+    assert state == {
+        "offsets": {
+            str(old): old.stat().st_size,
+            str(new): new.stat().st_size,
+        }
+    }
+
+
+def test_switching_back_to_prior_session_resumes_its_saved_offset(tmp_path):
+    r = ActivityRedis()
+    directory = tmp_path / ".claude" / "projects" / "-workdir-sme-2"
+    old = directory / "old.jsonl"
+    new = directory / "new.jsonl"
+    _write_lines(old, [{"type": "user", "timestamp": "old-first"}])
+    tailer = ActivityTailer(r, pod="acme", tenant="hq", home_root=tmp_path)
+    tailer.poll()
+
+    _write_lines(new, [{"type": "assistant", "timestamp": "new", "message": {"content": "answer"}}])
+    tailer.poll()
+
+    with old.open("a") as output:
+        output.write(json.dumps({"type": "user", "timestamp": "old-second"}) + "\n")
+    old.touch()
+    tailer.poll()
+
+    assert [event["ts"] for event in _events(r)] == ["old-first", "new", "old-second"]
+
+
+def test_activity_offset_migrates_original_single_path_shape(tmp_path):
+    r = ActivityRedis()
+    session = tmp_path / ".claude" / "projects" / "-workdir-sme-2" / "one.jsonl"
+    first = json.dumps({"type": "user", "timestamp": "already-read"}) + "\n"
+    second = json.dumps({"type": "user", "timestamp": "new"}) + "\n"
+    session.parent.mkdir(parents=True, exist_ok=True)
+    session.write_text(first + second)
+    r.values[prefix("acme", "hq", "sme-2", "activity.offset")] = json.dumps(
+        {"path": str(session), "offset": len(first.encode())}
+    )
+
+    ActivityTailer(r, pod="acme", tenant="hq", home_root=tmp_path).poll()
+
+    assert [event["ts"] for event in _events(r)] == ["new"]
+    state = json.loads(r.values[prefix("acme", "hq", "sme-2", "activity.offset")])
+    assert state == {"offsets": {str(session): session.stat().st_size}}
 
 
 def test_codex_profile_session_reduces_messages_and_tool_calls(tmp_path):

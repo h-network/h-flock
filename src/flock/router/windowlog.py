@@ -35,7 +35,21 @@ class WindowLogTailer:
                 while raw := source.readline():
                     if not raw.endswith(b"\n"):
                         break
-                    print(raw.decode("utf-8").rstrip("\n"), flush=True)
+                    try:
+                        line = raw.decode("utf-8").rstrip("\n")
+                    except UnicodeDecodeError as exc:
+                        # A complete poisoned line must not pin the tenant offset
+                        # forever. Record and skip exactly that line; later valid
+                        # records and size-based truncation can then progress.
+                        log_record(
+                            "router",
+                            "window_log_decode_error",
+                            reason=f"invalid UTF-8 at byte {committed + exc.start}",
+                            byte_count=len(raw),
+                        )
+                        committed = source.tell()
+                        continue
+                    print(line, flush=True)
                     committed = source.tell()
             self.r.set(self.offset_key, committed)
             current_size = self.path.stat().st_size
@@ -43,7 +57,7 @@ class WindowLogTailer:
                 self.path.write_bytes(b"")
                 self.r.set(self.offset_key, 0)
                 log_record("router", "window_log_truncated", byte_count=current_size)
-        except (OSError, UnicodeDecodeError, TypeError, ValueError):
+        except (OSError, TypeError, ValueError):
             # A missing/rotating file is an absent observation, never a router
             # failure. The next existing pass tries again from the same offset.
             return

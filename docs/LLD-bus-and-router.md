@@ -317,6 +317,8 @@ thing that just wrote to that participant.
 
 `ROSTER_POLL_SECONDS`, from the environment (`LLD-container` §4), defaults to 5
 and bounds the router's blocking pop and the tmux host's reconciliation loop.
+With an empty roster there is no queue to block on, so the router sleeps for the
+same interval rather than spinning against repeated roster reads.
 The router's maintenance cadence is separately configurable as
 `ACTIVITY_POLL_SECONDS`, default 2; it shortens the router's block when its next
 pass is due. These are distinct controls because roster convergence and
@@ -350,7 +352,11 @@ delivery can reach the roster row before its window exists and dead-letter;
 reversing the desired-state-before-roster order would instead allow a window to
 be built from incomplete state. For `api`, enrolment writes only the roster row
 — no launch key, home, window or CLI — and stopping performs the same identity
-purge without touching tmux.
+purge without touching tmux. Its retained inbox is data, not identity state, so
+unread entries survive retirement and are available if the client is enrolled
+again. The fixed `api` and `host` participants cannot be stopped through
+`StopAgent`; removing either would remove a tenant door rather than retire a
+dynamic participant.
 
 ### 3.3 Queues
 
@@ -387,7 +393,13 @@ second daemon and none of these jobs sits in an envelope's data path. Every
    appends privacy-reduced events to `<prefix>:activity`: `input`, `output`, or
    `tool`, with a tool's **name only**. Arguments, paths and content have no
    field in the event. The Stream is approximately capped at 1,000 entries.
-   CLIs without a supported session format produce no feed.
+   CLIs without a supported session format produce no feed. When a different
+   session file becomes newest, its offset starts at zero deliberately: offsets
+   belong to paths, and skipping to the previous file's byte count would discard
+   the beginning of the new session. `activity.offset` retains a map of consumed
+   offsets by path, so if modification times later make a previously tailed file
+   newest again it resumes there instead of replaying the whole file. The reader
+   accepts the original single-path state shape and rewrites it as the map.
 2. **Sample presence.** The newest activity timestamp becomes a per-agent
    `presence` hash with `state` (`working`, `idle`, or `unknown`), `since`, and
    `last_activity`. `PRESENCE_WORKING_SECONDS`, default 30, is the working
@@ -453,7 +465,11 @@ second daemon and none of these jobs sits in an envelope's data path. Every
    a tenant byte offset so `sent` joins the central envelope log. If the spool
    exceeds `WINDOW_LOG_MAX_BYTES` (default 8 MiB), it is truncated only after
    the offset has reached the current end. A partial tail is left intact, so a
-   record cannot be dropped between passes.
+   record cannot be dropped between passes. A complete line containing invalid
+   UTF-8 emits `window_log_decode_error` with its byte position and length, is
+   skipped, and advances the offset; one poisoned line therefore cannot replay
+   earlier records forever or prevent later truncation. An incomplete final line
+   still waits for completion.
 
    `office` runs inside the agent's pane, so it sets `FLOCK_LOG_QUIET=1` only
    for the duration of its command. `log_record` still appends the record to the
@@ -643,13 +659,15 @@ A broadcast into a tenant of one is *n* = 0 — a successful broadcast to nobody
 not a dead-letter. There was no unresolvable recipient; there was simply no one
 else there.
 
-**Nothing disappears silently.** The router writes **two** records per envelope,
-not one: at **pop**, before doing anything, and again at the outcome. A crash in
-between then leaves a "popped, no outcome" line carrying the `stream_id`,
-which is detectable. This is deliberately cheaper than a reserve/ack/heartbeat
-reliability layer — it does not recover a lost envelope, it only guarantees the
-loss is visible. That trade is the decision; revisit it if losses turn out to be
-common rather than theoretical.
+**Loss after `popped` is visible; one earlier window is not.** `BLPOP` is
+destructive, and Redis returns the removed value before the router can emit its
+first record. If the process or connection fails between those two operations,
+the envelope can disappear without a `stream_id` record. Closing that window
+requires a reserve/ack journal or a different queue primitive, which would be a
+delivery-guarantee change and is deliberately not introduced here. Once
+`popped` is emitted, the router writes a second outcome record; a later crash is
+therefore visible as "popped, no outcome". The transport remains at-most-once,
+with no retry.
 
 `send` and `receive` log at their own ends too, so every delivered envelope
 leaves **five transport records** across its life:
