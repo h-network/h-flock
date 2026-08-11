@@ -88,12 +88,18 @@ def _now() -> str:
 def _authorized(websocket: WebSocket, token: str) -> bool:
     authorization = websocket.headers.get("authorization", "")
     scheme, separator, credential = authorization.partition(" ")
-    return bool(
+    if (
         separator
         and scheme.lower() == "bearer"
         and credential
         and hmac.compare_digest(credential, token)
-    )
+    ):
+        return True
+    query_params = getattr(websocket, "query_params", {})
+    query_token = query_params.get("token") if hasattr(query_params, "get") else None
+    if query_token and hmac.compare_digest(query_token, token):
+        return True
+    return False
 
 
 def _connection_log(
