@@ -13,9 +13,16 @@
 set -uo pipefail
 
 _here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# ⚠ Hold anything already exported — sourcing .env would overwrite it. This is
+# the whole "TLS tenant" mystery: run against any tenant that is not the one in
+# container/.env, TENANT silently reverted to that file's value, every window
+# poll asked the wrong session, and tmux answered "can't find session: hq" into
+# a stream nobody was reading. The same bug was fixed in plumbing-check.sh and
+# missed here, which is why the failure looked like it was about TLS.
+_pod="${POD:-}"; _tenant="${TENANT:-}"
 [ -f "$_here/.env" ] && . "$_here/.env"
-POD="${POD:-acme}"
-TENANT="${TENANT:-hq}"
+POD="${_pod:-${POD:-acme}}"
+TENANT="${_tenant:-${TENANT:-hq}}"
 C="${CONTAINER:-h-flock-${TENANT}-tenant-1}"
 ROSTER="pod:$POD:tenant:$TENANT:roster"
 T=$(docker exec "$C" printenv API_TOKEN 2>/dev/null || true)
