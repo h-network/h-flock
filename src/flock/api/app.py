@@ -487,8 +487,9 @@ def _stream_response(
         while True:
             if await request.is_disconnected():
                 break
-            entries = _read_stream_entries(
-                client, key, after=cursor, limit=100, preferred_field=preferred_field
+            entries = await asyncio.to_thread(
+                _read_stream_entries,
+                client, key, cursor, 100, preferred_field
             )
             if entries:
                 for entry in entries:
@@ -730,15 +731,21 @@ def create_app(*, settings: Settings | None = None, redis_client: Any = None) ->
     @app.get("/board")
     def all_boards() -> dict[str, list[dict[str, Any]]]:
         agents = sorted(_decode(agent) for agent in members(client, pod=settings.pod, tenant=settings.tenant))
+        valid_agents = []
         pipeline = client.pipeline(transaction=False)
         for agent in agents:
-            for key in board_keys(agent):
+            try:
+                keys = board_keys(agent)
+            except HTTPException:
+                continue
+            valid_agents.append(agent)
+            for key in keys:
                 pipeline.lrange(key, 0, -1)
-        boards = pipeline.execute()
+        boards = pipeline.execute() if valid_agents else []
         return {
             "agents": [
                 board_response(agent, boards[index : index + 4])
-                for index, agent in zip(range(0, len(boards), 4), agents)
+                for index, agent in zip(range(0, len(boards), 4), valid_agents)
             ]
         }
 

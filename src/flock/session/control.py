@@ -39,7 +39,9 @@ class ControlModeError(RuntimeError):
 
 @dataclass(eq=False)
 class Subscriber:
-    queue: asyncio.Queue[dict[str, str]] = field(default_factory=asyncio.Queue)
+    queue: asyncio.Queue[dict[str, str]] = field(
+        default_factory=lambda: asyncio.Queue(maxsize=1000)
+    )
     agents: set[str] = field(default_factory=set)
     buffering: dict[str, list[str]] = field(default_factory=dict)
 
@@ -60,7 +62,20 @@ class ControlModeClient:
         self._refresh_task: asyncio.Task[None] | None = None
         self.broken_reason: str | None = None
 
+    async def ensure_connected(self) -> None:
+        if not self.broken_reason:
+            return
+        async with self._command_lock:
+            if not self.broken_reason:
+                return
+            await self.start()
+
     async def start(self) -> None:
+        if self.process and self.process.returncode is None:
+            await self.stop()
+        self.broken_reason = None
+        self._ready = asyncio.Event()
+        self._pending.clear()
         require_isolated_tmux(self.socket)
         command = ["tmux"]
         if self.socket:
@@ -73,6 +88,7 @@ class ControlModeClient:
             stdin=asyncio.subprocess.PIPE,
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
+            limit=16 * 1024 * 1024,
         )
         self._reader_task = asyncio.create_task(self._read_control_stream())
         self._stderr_task = asyncio.create_task(self._drain_stderr())
@@ -104,6 +120,7 @@ class ControlModeClient:
         )
 
     async def command(self, *args: str) -> list[str]:
+        await self.ensure_connected()
         process = self.process
         if self.broken_reason:
             raise ControlModeError(self.broken_reason)
@@ -130,14 +147,18 @@ class ControlModeClient:
             "list-panes", "-s", "-t", self.session_name, "-F", "#{pane_id}\t#{window_name}"
         )
         pane_to_agent: dict[str, str] = {}
+        agent_to_pane: dict[str, str] = {}
         for line in lines:
             pane, separator, agent = line.partition("\t")
             if separator and pane.startswith("%") and agent:
                 pane_to_agent[pane] = agent
+                if agent not in agent_to_pane:
+                    agent_to_pane[agent] = pane
         self.pane_to_agent = pane_to_agent
-        self.agent_to_pane = {agent: pane for pane, agent in pane_to_agent.items()}
+        self.agent_to_pane = agent_to_pane
 
     async def update_subscription(self, subscriber: Subscriber, agents: set[str]) -> list[str]:
+        await self.ensure_connected()
         if agents - self.agent_to_pane.keys():
             await self.refresh_panes()
         unknown = sorted(agents - self.agent_to_pane.keys())
@@ -171,9 +192,23 @@ class ControlModeClient:
             except (IndexError, ValueError):
                 row, col = 1, 1
             payload = "\x1b[2J\x1b[H" + "\n".join(snapshot) + f"\x1b[{row};{col}H"
-            subscriber.queue.put_nowait({"agent": agent, "data": payload})
+            try:
+                subscriber.queue.put_nowait({"agent": agent, "data": payload})
+            except asyncio.QueueFull:
+                try:
+                    subscriber.queue.get_nowait()
+                except asyncio.QueueEmpty:
+                    pass
+                subscriber.queue.put_nowait({"agent": agent, "data": payload})
             for data in subscriber.buffering.pop(agent, []):
-                subscriber.queue.put_nowait({"agent": agent, "data": data})
+                try:
+                    subscriber.queue.put_nowait({"agent": agent, "data": data})
+                except asyncio.QueueFull:
+                    try:
+                        subscriber.queue.get_nowait()
+                    except asyncio.QueueEmpty:
+                        pass
+                    subscriber.queue.put_nowait({"agent": agent, "data": data})
         return []
 
     def unsubscribe(self, subscriber: Subscriber) -> None:
@@ -183,6 +218,7 @@ class ControlModeClient:
         subscriber.buffering.clear()
 
     async def send_keys(self, agent: str, data: str) -> None:
+        await self.ensure_connected()
         pane = self.agent_to_pane.get(agent)
         if pane is None:
             raise ControlModeError(f"unknown agent: {agent}")
@@ -194,13 +230,20 @@ class ControlModeClient:
         agent = self.pane_to_agent.get(pane)
         if agent is None:
             return
-        text = _unescape_control(data).decode("latin-1")
+        text = _unescape_control(data).decode("utf-8", errors="replace")
         for subscriber in tuple(self._subscribers.get(agent, ())):
             buffer = subscriber.buffering.get(agent)
             if buffer is not None:
                 buffer.append(text)
             else:
-                subscriber.queue.put_nowait({"agent": agent, "data": text})
+                try:
+                    subscriber.queue.put_nowait({"agent": agent, "data": text})
+                except asyncio.QueueFull:
+                    try:
+                        subscriber.queue.get_nowait()
+                    except asyncio.QueueEmpty:
+                        pass
+                    subscriber.queue.put_nowait({"agent": agent, "data": text})
 
     def _schedule_refresh(self) -> None:
         if self._refresh_task is None or self._refresh_task.done():
