@@ -49,10 +49,10 @@ say so on the row and close it, rather than "fixing" something that was decided.
 |---|---|---|---|---|
 | 17 | `paste_text` discards every tmux return code, so a failed paste is reported as a successful open — and `LLD-adapter-tmux` sells that as the design's justification | `tmux/ops.py:364-378`, `adapter/openers.py:68-82` | **both** | — |
 | 18 | `list_windows` cannot distinguish "tmux failed" from "no windows" | `tmux/ops.py:56-60` | claude | — |
-| 19 | Malformed WebSocket input kills the connection instead of producing an error frame | `session/app.py:168`, `:220` | claude | — |
-| 20 | An SSE stream that fails mid-flight cannot return its status code | `api/app.py:446`, `:490-492` | claude | — |
-| 21 | A Redis failure during a stream read is reported as `422`, and `API.md` tells clients not to retry `422` | `api/app.py:444-447`, `docs/API.md:677` | claude | — |
-| 22 | Malformed `as` values can produce 5xx despite the documented 422 contract | `api/app.py:600-617`, `bus/roster.py:15-19` | codex | — |
+| 19 | Malformed WebSocket input kills the connection instead of producing an error frame | `session/app.py:168`, `:220` | claude | ✅ **fixed — a bad frame gets `{"error": …}` and the connection survives**
+| 20 | An SSE stream that fails mid-flight cannot return its status code | `api/app.py:446`, `:490-492` | claude | ✅ **fixed — a mid-flight SSE failure emits an `event: error` frame before closing**
+| 21 | A Redis failure during a stream read is reported as `422`, and `API.md` tells clients not to retry `422` | `api/app.py:444-447`, `docs/API.md:677` | claude | ✅ **fixed — infrastructure failure is `500`, not `422`; clients are told to retry**
+| 22 | Malformed `as` values can produce 5xx despite the documented 422 contract | `api/app.py:600-617`, `bus/roster.py:15-19` | codex | ✅ **fixed — non-string `as` rejected before it reaches Redis. ⚠ **The first test passed against unfixed code**: its fake returned `None` where redis-py raises `DataError`**
 
 ## 3. The hire path is second class
 
@@ -72,6 +72,12 @@ say so on the row and close it, rather than "fixing" something that was decided.
 | 29 | One failing maintenance job silently disables the other four, and the log record names only the exception class | `watchdog/service.py` | claude | — |
 
 ## 5. Documented claims that are false
+
+**The error vocabulary is now stated in `API.md` §7** — client fault is `422`/`404`
+and must not be retried, infrastructure fault is `500`/`503` and must be, an SSE
+stream that fails mid-flight emits an error event because its headers are already
+sent, and a malformed WebSocket frame gets an error frame rather than a closed
+socket.
 
 ⚠ **These cost the most trust per byte.** A doc that is wrong is worse than one
 that is missing, because it is acted on.
