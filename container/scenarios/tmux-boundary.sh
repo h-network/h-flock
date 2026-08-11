@@ -28,5 +28,6 @@ echo "action=reader-reads-writer-marker pane-output:"
 "${TMUX[@]}" send-keys -t "${TENANT}:${READER}" \
   "cat /workdir/$WRITER/.boundary-probe" Enter
 sleep 1
-"${TMUX[@]}" capture-pane -p -t "${TENANT}:${READER}" | tail -12
+"${TMUX[@]}" capture-pane -p -S -100 -t "${TENANT}:${READER}" \
+  | sed '/^[[:space:]]*$/d' | tail -12
 docker exec "$C" rm -f "/workdir/$WRITER/.boundary-probe"
