@@ -3,7 +3,8 @@
 > **Status: built and running.**
 >
 > The deployment unit. What the other modules run inside, and how a tenant is
-> brought up. It contains no logic of its own.
+> brought up. It owns deployment plumbing and startup validation, but no
+> envelope-routing or delivery logic.
 
 ## 1. One container is one tenant
 
@@ -168,10 +169,11 @@ docker exec -it -e TMUX_TMPDIR=/home/ubuntu/.flock/tmux <container> tmux attach 
 ⚠ It is **not** `/run/…`. The container runs as `ubuntu`, and `/run` belongs to
 root — a socket there cannot be created by the user the agents run as.
 
-`ROSTER_POLL_SECONDS` is here rather than in any module because the router, the
-tmux adapter and the tmux host must use one value (`LLD-bus-and-router` §3.2).
-Set in one place and inherited, they agree by construction; configured per
-module, they agree until someone edits one of them.
+`ROSTER_POLL_SECONDS` is here rather than in either polling module because the
+router and tmux host must use one value (`LLD-bus-and-router` §3.2). Set in one
+place and inherited, they agree by construction; configured per module, they
+agree until someone edits one of them. The adapter is invoked per delivery and
+does not poll the roster.
 
 ## 5. Starting up
 
@@ -188,9 +190,10 @@ Order matters only where a dependency is real:
                    tenant behind them is up
 ```
 
-**Bringing the container up twice must be safe.** Reconciliation converges
-rather than duplicating, so a restart re-attaches to what is already correct
-instead of rebuilding it.
+**Bringing the container up twice must be safe.** A second `compose up` against
+an already-running container is a no-op, and every reconciliation pass converges
+rather than duplicating. A container restart is different: Redis persistence is
+disabled and tmux is restarted, so boot configuration reconstructs the office.
 
 Enrolling an external application client (`StartAgent` with `vab: "api"`) adds a roster row only, creating no window or CLI process.
 
@@ -225,8 +228,10 @@ cross-tenant routing and already deferred.
 
 ## 8. What this is not
 
-Not a module. It runs them and holds nothing of its own — no logic, no state,
-no decisions that belong to anything inside it.
+Not a domain module. It runs them and holds no application state of its own.
+Startup ordering, exposure validation, and credential handoff are deployment
+decisions owned here; routing and delivery decisions belong to the modules
+inside it.
 
 Not a general image. It is built to hold exactly one tenant, and the assumption
 that there is exactly one is relied upon throughout.
