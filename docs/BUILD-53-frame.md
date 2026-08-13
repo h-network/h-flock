@@ -97,6 +97,11 @@ gate.**
 
 ## 5. Done when
 
+⚠ **Every gate below must be shown able to FAIL** — see
+[`BUILD-CONVENTION`](BUILD-CONVENTION.md) §1. For this build the cheapest proof
+is: point the switch at the L3 header on purpose and show a test go red. A gate
+that has never failed is not known to work.
+
 - all of §2, with the switch demonstrably never reading L3
 - `frame-bench.sh` exists and its output is in the report
 - `python3 -m pytest -q` green (350 on `main` at the time of writing)
