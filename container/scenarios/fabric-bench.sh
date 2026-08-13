@@ -75,7 +75,7 @@ echo "== draining =="
 # up, and report how long that took — that number is the fabric's, not the
 # sender's.
 EXPECT=$(( STATIONS * ROUNDS ))
-for _ in $(seq 1 240); do
+for _ in $(seq 1 $(( EXPECT / 2 + 120 ))); do
   NOW=$(docker logs "$CONTAINER" 2>&1 | grep -c '"event":"opened"')
   [ $(( NOW - BEFORE_OPENED )) -ge "$EXPECT" ] && break
   sleep 1
