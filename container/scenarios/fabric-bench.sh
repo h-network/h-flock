@@ -47,7 +47,9 @@ BEFORE_MEM=$(dx redis-cli INFO memory | awk -F: '/^used_memory:/{printf "%d", $2
 echo
 echo "== sending =="
 START=$(date +%s%N)
-dx python3 - <<PY
+# ⚠ `-i` is load-bearing: without it docker exec attaches no stdin, python reads
+# an empty program, and the run reports zero sends with no error anywhere.
+docker exec -i "$CONTAINER" python3 - <<PY
 import os, sys, time, json
 sys.path.insert(0, "/app/src")
 import redis
