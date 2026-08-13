@@ -75,3 +75,26 @@ The trial added `src/flock/fabric/{packet,service,switch}.py` and compatibility
 seams in `bus/doors.py` and `router/service.py`. It was anchored at `e0efde4`
 and never merged; by deletion `main` had moved 24 commits past it, so it
 predates builds 47, 48, 50 and 51.
+
+---
+
+# Decision — NATS: no transport swap
+
+**Date:** 2026-08-13. **Status:** settled. **Spike:** build 43, branch
+`natsflock`, now deleted.
+
+**No transport swap.** A successful negative spike, recorded in
+[`BUILD-43-natsflock-result.md`](BUILD-43-natsflock-result.md) with the task in
+[`BUILD-43-natsflock.md`](BUILD-43-natsflock.md). Both were lifted here from the
+branch before deletion, for the same reason as h-vab above: **the only trace of
+why we said no would otherwise have been a branch nobody reads.**
+
+## Recovery
+
+| branch | last commit |
+|---|---|
+| `natsflock` | `709e0fc` "Probe NATS transport invariants" |
+| `bus/natsflock-transport-probe` | `709e0fc` (same head) |
+
+Both carried the same two commits — `7abbd13` (the spike task) and `709e0fc`
+(the probe) — and touched 8 files under `src/`.
