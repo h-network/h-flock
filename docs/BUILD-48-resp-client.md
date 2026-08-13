@@ -43,7 +43,14 @@ it. **Deleting the dependency beats optimising how it loads.**
 ```
 rpush  lrange  get  xadd  hgetall  hget  hdel  blpop
 lrem   lpop    llen hsetnx hkeys   hexists delete
+set    hset
 ```
+
+⚠ **`set` and `hset` were missing from my first list.** I enumerated by grepping
+`r.<method>(` across `flock/bus`, `flock/adapter` and `flock/office`, which
+misses the **control openers** — the same one-shot adapter handles `launch`,
+`profile`, `endpoint`, `pause` and roster writes. Found by building it, not by
+reading it. Grep the openers too, or better, let the tests find it.
 
 Reply types needed: simple string, integer, bulk string (including nil `$-1`),
 array (including nil), error. That is all of RESP2.
@@ -89,8 +96,17 @@ inconsistent between pushes. `tmux` has been told; coordinate before touching
 
 ## 7. Done when
 
-- `office peers` and a real `flock.adapter` delivery both measure **under
-  200 ms** on the same container, in the same run, before and after
+- ⚠ **A RATIO, not a threshold.** `office peers` and a real `flock.adapter`
+  delivery both measurably faster, before and after **on the same container, by
+  the same method, in the same run** — host-wall against inside-container is not
+  a comparison.
+
+  ⚠ **This gate originally read "under 200 ms" and that was wrong.** §1 of this
+  same document says trust the ratios and not the absolutes, on a box where
+  `import asyncio` takes 290 ms and figures swing ±50% between runs — and then
+  §7 set an absolute derived from my estimate rather than from any requirement.
+  `bus` held the build open against it rather than quietly passing it, which is
+  the right call and the reason this now reads as it does.
 - `python3 -m pytest -q` green (340 on `main` at the time of writing)
 - `container/accept.sh` green — 25/25 plumbing, 19/19 sim-blocked
 - `container/scenarios/fabric-bench.sh` at `STATIONS=100 ROUNDS=20`: **2,000 of
