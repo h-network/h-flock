@@ -80,7 +80,11 @@ def log_record(
         # PYTHONUNBUFFERED; another process can land its record between them and
         # turn two valid JSON objects into one unparsable line. Records stay
         # below PIPE_BUF, so this single write is atomic against peer writers.
+        # Flush separately after the complete-record write: it emits no second
+        # record bytes, and keeps timely observation when PYTHONUNBUFFERED is
+        # absent instead of making Dockerfile configuration part of this API.
         sys.stdout.write(line + "\n")
+        sys.stdout.flush()
     try:
         agent_only = os.environ.get("FLOCK_LOG_FILE_AGENT_ONLY")
         if path and (not agent_only or os.environ.get("AGENT_NAME")):

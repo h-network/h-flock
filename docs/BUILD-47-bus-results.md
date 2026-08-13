@@ -9,7 +9,9 @@ Implementation commit: `d87f262` on `bus/build-47-torn-records`.
 `sys.stdout.write` call. The code states why: with unbuffered stdout, `print`
 writes the value and newline separately, allowing another container process to
 place its record between them. The record-sized write remains below
-`PIPE_BUF`, so peer writers cannot interleave it.
+`PIPE_BUF`, so peer writers cannot interleave it. A separate `flush()` follows
+the complete write; it writes no record bytes and makes observation timely even
+when `PYTHONUNBUFFERED` is absent.
 
 A regression test records stdout method calls and requires exactly one call
 whose value ends in a newline. `CONTRACTS` §3 now says the five custody records
@@ -54,6 +56,11 @@ line or `}{` merged-record marker.
 strict_json_lines=9165 parse_failures=0 merged_markers=0 total_lines=9516
 custody={'sent': 225, 'popped': 2230, 'forwarded': 2229, 'received': 2229, 'opened': 2229, 'dead_lettered': 1}
 ```
+
+⚠ The first run retained only that aggregate before its disposable container
+was removed. It did **not** retain the dead-letter record, so its stream id and
+reason cannot be recovered and it cannot honestly be attributed to teardown.
+The repeat below captures every dead letter before removing the tenant.
 
 The direct benchmark sender's 2,000 `sent` records went to the attached
 `docker exec` stdout rather than container logs; the container counts therefore
