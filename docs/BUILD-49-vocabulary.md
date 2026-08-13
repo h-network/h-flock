@@ -54,10 +54,20 @@ print a summary count per rename so the diff can be checked without reading it.
 - **A — prose.** `router` → `switch` in `docs/`. Free, reversible, do first.
 - **B — identifiers.** `router` → `switch` in code; module `flock/router` →
   `flock/switch`; the two adapter names. The suite catches breakage.
-- **C — Redis keys and env vars.** `vab` → `port_type`, `endpoint` →
-  `provider`, `ENDPOINT_*` → `PROVIDER_*`. ⚠ **A running tenant breaks without
-  dual-read.** Write the migration or state plainly that it needs a fresh
-  tenant — do not leave it implied.
+- **C — Redis keys and env vars.** `endpoint` → `provider`, `ENDPOINT_*` →
+  `PROVIDER_*`. ⚠ **A running tenant breaks without dual-read.** Write the
+  migration or state plainly that it needs a fresh tenant — do not leave it
+  implied.
+
+  ⚠ **`vab` → `port_type` was listed here and that was my error. It is tier D.**
+  `vab` is a **wire field**: it is the `StartAgent` payload key and a
+  `GET /agents/{agent}` response field, which `BUILD-45` §4 defines as tier D.
+  Tiering it C meant the server and `API.md` were renamed while **nine client
+  files were not**, and the failure is silent rather than loud —
+  `control/openers.py` reads `payload.get("port_type", "tmux")`, so a client
+  still sending `"vab": "api"` does not error, it **enrols as a tmux
+  participant** and gets a window instead of a mailbox. The web client's own
+  tests pass because `clients/web/server.py` mocks the old response shape.
 - **D — wire.** `producer`/`recipient` → `source`/`destination` in the envelope,
   the API response shapes, `API.md`, and both clients. **Envelope v2.**
 
