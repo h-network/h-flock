@@ -38,12 +38,17 @@ def receive(
     agent: str,
     openers: dict[str, Callable[[dict], None]],
     timeout: int,
+    blocking: bool = True,
     module: str = "adapter",
 ) -> None:
-    item = r.blpop(prefix(pod, tenant, agent, "ingress"), timeout=timeout)
-    if item is None:
+    ingress_key = prefix(pod, tenant, agent, "ingress")
+    if blocking:
+        item = r.blpop(ingress_key, timeout=timeout)
+        raw = None if item is None else item[1]
+    else:
+        raw = r.lpop(ingress_key)
+    if raw is None:
         return
-    raw = item[1]
     try:
         envelope = parse(raw)
     except EnvelopeError as exc:

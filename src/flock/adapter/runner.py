@@ -36,7 +36,16 @@ def deliver_api(
         r.xadd(inbox_key, {"envelope": raw_env}, maxlen=1000, approximate=True)
 
     openers = _CatchAllDict(lambda _kind: handle_api_inbox)
-    receive(r, pod=pod, tenant=tenant, agent=agent, openers=openers, timeout=timeout, module="adapter")
+    receive(
+        r,
+        pod=pod,
+        tenant=tenant,
+        agent=agent,
+        openers=openers,
+        timeout=timeout,
+        blocking=False,
+        module="adapter",
+    )
 
 
 def deliver_unroutable(
@@ -48,10 +57,9 @@ def deliver_unroutable(
     timeout: int = 1,
 ) -> None:
     ingress_key = prefix(pod, tenant, agent, "ingress")
-    item = r.blpop(ingress_key, timeout=timeout)
-    if item is None:
+    raw = r.lpop(ingress_key)
+    if raw is None:
         return
-    raw = item[1]
     dead_key = prefix(pod, tenant, agent, "dead")
     try:
         envelope = parse(raw)
@@ -142,7 +150,16 @@ def deliver_one(
         "Command": handle_command,
         "AddTicket": handle_add_ticket,
     }
-    receive(r, pod=pod, tenant=tenant, agent=agent, openers=openers, timeout=1, module="adapter")
+    receive(
+        r,
+        pod=pod,
+        tenant=tenant,
+        agent=agent,
+        openers=openers,
+        timeout=1,
+        blocking=False,
+        module="adapter",
+    )
 
 
 def run_adapter(
