@@ -149,11 +149,17 @@ whole network.
 
 ## 7. What is still open
 
-1. the name for the roster value (`tmux`/`api`/`control`)
-2. `endpoint` — it currently means the model an agent talks to
-3. which viewpoint `ingress`/`egress` take in adapter names — the participant's
-   or the switch's; they are opposite
+1. ✅ **decided** — roster value is `port_type`
+2. ✅ **decided** — `endpoint` → `provider`
+3. ✅ **decided** — `egress_adapter`/`ingress_adapter`, **participant-relative**
 4. ✅ **decided** — tags in a companion key; the switch reads a derived FIB, not
    the roster (§3.1)
-5. default posture: allow-all or deny-all
-6. envelope v2: `source`/`destination`, and the qualified address form
+5. ⚠ **open** — default posture: allow-all or deny-all
+6. ⚠ **open, and the one that gates everything** — envelope v2:
+   `source`/`destination` **and the qualified address form**
+
+⚠ **1–3 were listed open here after being decided, exactly as `GLOSSARY`'s table
+was.** Renames 1–3 are executed and parked on `rename/vocabulary`; only 5 and 6
+are live questions. **6 is the gate**: `rename/vocabulary` is parked until "the
+new frame works", and the frame's first requirement is qualified addressing —
+which changes the same envelope fields the rename does.
