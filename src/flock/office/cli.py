@@ -10,9 +10,7 @@ from collections.abc import Sequence
 from datetime import datetime, timezone
 from pathlib import Path
 
-import redis
-
-from flock.bus import is_member, log_record, members, prefix, record_task_event, send, vab
+from flock.bus import is_member, log_record, members, prefix, record_task_event, resp as redis, send, vab
 
 # ⚠ A tenant with a Redis password exports REDIS_URL carrying it. Without one
 # this is unchanged, and an agent window still has no REDIS_URL to find.

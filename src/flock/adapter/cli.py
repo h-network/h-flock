@@ -2,9 +2,8 @@ import os
 import sys
 import json
 import argparse
-import redis
-
 from flock.bus import send, SEGMENT_REGEX, RESERVED
+from flock.bus import resp as redis
 
 
 def main() -> None:

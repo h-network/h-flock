@@ -2,9 +2,8 @@ import json
 import os
 import time
 from datetime import datetime, timezone
-import redis
-
 from flock.bus import EnvelopeError, emit, log_record, parse, prefix, receive
+from flock.bus import resp as redis
 from .openers import add_ticket_opener, command_opener, message_opener
 
 
@@ -24,7 +23,7 @@ class _CatchAllDict(dict):
 
 
 def deliver_api(
-    r: redis.Redis,
+    r,
     pod: str,
     tenant: str,
     agent: str,
@@ -41,7 +40,7 @@ def deliver_api(
 
 
 def deliver_unroutable(
-    r: redis.Redis,
+    r,
     pod: str,
     tenant: str,
     agent: str,
@@ -67,7 +66,7 @@ def deliver_unroutable(
 
 
 def deliver_one(
-    r: redis.Redis,
+    r,
     pod: str,
     tenant: str,
     agent: str,
