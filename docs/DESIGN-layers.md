@@ -71,12 +71,47 @@ import      [hq, ops]         ← RTs it accepts from
 have to be edited whenever anyone is hired; tags are one row per participant and
 give group addressing for free.
 
-**Open:** whether tags live in the roster hash or a companion key per
-participant — the latter keeps hot forwarding data separate from policy data,
-which is closer to how a switch stores it. And the default posture: no tags
-means allow-all (nothing breaks) or deny-all (secure, breaks every tenant). A
-switchport defaults to permit; a firewall defaults to deny. **This is a
-switchport.**
+✅ **Decided: tags live in a companion key, not the roster hash** — see §3.1,
+which is the general form of the same rule.
+
+**Open:** the default posture: no tags means allow-all (nothing breaks) or
+deny-all (secure, breaks every tenant). A switchport defaults to permit; a
+firewall defaults to deny. **This is a switchport.**
+
+## 3.1 The forwarding table is DERIVED from the roster, never the roster
+
+⚠ **The roster is the control plane.** It carries what a participant *is* —
+attachment, `export[]`, `import[]`, provider, launch. The switch needs one
+question answered — *where does this destination's ingress live* — and must
+read a table that holds only that.
+
+This is **RIB versus FIB**, and the sharpest form of it is the **MPLS label
+FIB**: the lookup key is an opaque local index, not the destination address, so
+a forwarding decision is one exact-match hit with no address structure to parse
+and no attributes alongside it.
+
+| | roster — RIB | forwarding table — FIB |
+|---|---|---|
+| holds | everything about a participant | precomputed key → ingress queue |
+| read by | hire, presence, policy, console | the switch, per envelope |
+| lives in | Redis | the switch's memory |
+| changes on | enrol / retire | invalidate on the same events |
+
+**Measured, and both are the same mistake in different places:**
+
+- the trial fetches the whole roster per packet — `members()` is `HGETALL`
+  against `main`'s single-field `HEXISTS`: **957 µs vs 498 µs at 100 stations,
+  5,623 µs vs 1,646 µs at 1,000**
+- even held in memory, its lookup rebuilds `{f"{domain}/{station}" …}` on every
+  call, so the table is **O(N) where a FIB is O(1)** — 5 µs at 10 stations,
+  293 µs at 1,000
+
+⚠ **The payoff today is not speed.** At ~390 ms of serialized work per envelope
+(`subprocess.Popen` per delivery, `router/service.py:31`), a 1 ms lookup is
+0.3% either way. The reason to separate the tables is that **the hot path must
+not carry policy** — the moment `import`/`export` land in the roster row, a
+switch that reads the roster is reading policy per frame, which is the design
+error the split exists to prevent.
 
 ## 4. RD, and why qualified addressing is a prerequisite
 
@@ -118,6 +153,7 @@ whole network.
 2. `endpoint` — it currently means the model an agent talks to
 3. which viewpoint `ingress`/`egress` take in adapter names — the participant's
    or the switch's; they are opposite
-4. tags in the roster hash or a companion key
+4. ✅ **decided** — tags in a companion key; the switch reads a derived FIB, not
+   the roster (§3.1)
 5. default posture: allow-all or deny-all
 6. envelope v2: `source`/`destination`, and the qualified address form
