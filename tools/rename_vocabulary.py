@@ -381,7 +381,7 @@ def run_tier_d() -> dict[str, int]:
         ('["adapter", "router", "router", "adapter", "adapter"]', '["port", "switch", "switch", "port", "port"]'),
         ('["adapter", "switch", "switch", "adapter", "adapter"]', '["port", "switch", "switch", "port", "port"]'),
         ('"module": "adapter"', '"module": "port"'),
-        ("'module': 'adapter'", "'module': 'port"'),
+        ("'module': 'adapter'", "'module': 'port'"),
         ('"module":"adapter"', '"module":"port"'),
         ("'module':'adapter'", "'module':'port'"),
         ('module="adapter"', 'module="port"'),
