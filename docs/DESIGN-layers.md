@@ -304,3 +304,10 @@ was.** Renames 1–3 are executed and parked on `rename/vocabulary`; only 5 and 
 are live questions. **6 is the gate**: `rename/vocabulary` is parked until "the
 new frame works", and the frame's first requirement is qualified addressing —
 which changes the same envelope fields the rename does.
+
+⚠ **A consequence discovered by build 53:** the frame is a **hard v2** — flat v1
+is rejected. That is free today *only because Redis runs with no persistence*,
+so a container restart leaves no envelopes to break. **If persistence is ever
+enabled, every wire change becomes an upgrade hazard** and needs a dual-read
+window. The persistence decision and the wire-versioning decision are the same
+decision, and they were not previously connected.
