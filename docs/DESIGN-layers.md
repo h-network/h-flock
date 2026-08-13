@@ -112,6 +112,70 @@ it is on send.
 | `adapter/runner.py` — kicked delivery | the port's **deliver** half |
 | `agent:<name>:egress` / `:ingress` | **unchanged** — participant-relative |
 
+### 2.5 The port assembles the frame, and filters BEFORE it assembles
+
+⚠ **The port encapsulates. Nothing is stripped on the way out.** An earlier draft
+of this document had the port "stripping the qualification" before handing the
+envelope to the switch — that was wrong, and it created a problem that does not
+exist. The qualification never needs removing, because **the switch was never
+reading that header.**
+
+```
+telegram / web / an agent
+        │  payload
+        ▼
+      PORT ── policy lookup (export tags vs import tags) ── denied → error AT THE SENDER
+        │
+        ├─ assembles:
+        │     L2   source, destination (local)        ← the switch reads ONLY this
+        │     L3   pod:tenant:agent, qualified        ← the router reads this
+        │     L4   (reserved, later)
+        │     payload
+        ▼
+      SWITCH ── two headers and a table (§3.1). Nothing else, now or later.
+```
+
+**This is why the asymmetry is not "the port does more work".** It is that the
+two components hold *different kinds* of check, sorted by where each can afford
+to live:
+
+| | port | switch |
+|---|---|---|
+| policy | **long** — tag sets, intersections, per-destination rules | none |
+| read-set | whatever it needs | **fixed and tiny**: two headers |
+| runs | per send, **parallel**, in the sender's process | per envelope, **shared and serialized** |
+
+⚠ **The L3 header rides along untouched** through the switch and is read only by
+something that operates at L3 — the router. That is what makes the router a pure
+addition: nothing about the switch changes when it arrives, because the switch
+never looked at that header.
+
+**Filter before assembly.** Every input to the decision exists before a single
+header does:
+
+| filter input | source |
+|---|---|
+| source | the port's own identity — it **is** the port |
+| destination | the caller's argument |
+| my export tags, its import tags | policy tables |
+
+Nothing in the frame is an input to the decision, so assembling first is pure
+waste on the deny path — and the deny path is the one that should be cheap and
+loud. It also gives a better error: *"you may not send to `acme:sales:bob`"* is a
+statement about intent, where assembling first leaves you explaining why a frame
+you already built is being discarded.
+
+⚠ **A refusal must still emit a record** — source, destination, reason. That
+needs no frame. Without it a denied send is invisible to the custody log, which
+is the only observer this system has.
+
+⚠ **The caveat, to know rather than design for:** filter-before-assembly holds
+only while no policy depends on something the assembled frame alone knows. Today
+none does — `kind` is supplied by the caller. If an L4 header ever carries a
+value *derived* during assembly, that rule specifically would have to move after.
+
+**Order: resolve → filter → assemble → hand to the switch.**
+
 ## 3. The VAB table
 
 One table, two readers. It carries forwarding *and* membership, because with
@@ -230,7 +294,10 @@ whole network.
    container nothing can be, so a deny-default there buys nothing and breaks
    every tenant.
 6. ⚠ **open, and the one that gates everything** — envelope v2:
-   `source`/`destination` **and the qualified address form**
+   `source`/`destination`, **the qualified address form, and the L2/L3 split**
+   (§2.5). The envelope stops being flat and becomes a frame with headers.
+   ⚠ The switch reads **L2 only**, so it does not change now and does not change
+   when the router arrives.
 
 ⚠ **1–3 were listed open here after being decided, exactly as `GLOSSARY`'s table
 was.** Renames 1–3 are executed and parked on `rename/vocabulary`; only 5 and 6
