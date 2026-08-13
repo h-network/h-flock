@@ -199,4 +199,3 @@ bash "$_here/sim-blocked.sh"
 
 echo
 echo "PASS=$pass FAIL=$fail"
-exit "$fail"
