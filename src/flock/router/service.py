@@ -8,7 +8,8 @@ import time
 
 import redis
 
-from flock.bus import EnvelopeError, emit, is_member, members, parse, prefix
+from flock.bus import EnvelopeError, emit, is_member, log_record, members, prefix
+from flock.bus.envelope import parse_for_switch
 from .activity import ActivityTailer
 from .presence import PresenceSampler
 from .retention import RetentionTrimmer
@@ -32,7 +33,7 @@ class Router:
         try:
             subprocess.Popen(["flock.adapter", agent])
         except OSError as exc:
-            emit("router", "error", {"recipient": agent}, reason=f"adapter kick failed: {exc}")
+            log_record("router", "error", recipient=agent, reason=f"adapter kick failed: {exc}")
 
     def step(self, timeout: float | None = None) -> bool:
         agents = sorted(self._agents())
@@ -53,19 +54,21 @@ class Router:
             source_key = source_key.decode()
         sender = source_key.split(":")[-2]
         try:
-            envelope = parse(raw)
+            envelope = parse_for_switch(raw)
         except EnvelopeError as exc:
             dead = prefix(self.pod, self.tenant, sender, "dead")
             self.r.rpush(dead, raw)
             emit("router", "popped", {}, str(exc))
             emit("router", "dead_lettered", {}, str(exc))
             return True
-        claimed_producer = envelope["producer"]
+        # The forwarding decision reads L2 and the roster only. L3 rides through
+        # untouched for a future router; this local switch never parses it.
+        claimed_producer = envelope["l2"]["source"]
         if claimed_producer != sender:
             # The popped queue is the ingress port and therefore the attribution
             # source of truth. Correct rather than reject: rejecting a mismatch
             # would let a raw queue writer destroy another participant's traffic.
-            envelope["producer"] = sender
+            envelope["l2"]["source"] = sender
             raw = json.dumps(envelope, separators=(",", ":"))
         emit("router", "popped", envelope)
         if claimed_producer != sender:
@@ -75,7 +78,7 @@ class Router:
                 envelope,
                 reason=f"claimed producer {claimed_producer!r} stamped from egress sender {sender!r}",
             )
-        recipient = envelope["recipient"]
+        recipient = envelope["l2"]["destination"]
         if recipient == "all":
             recipients = sorted(self._agents() - {sender})
             pipe = self.r.pipeline()

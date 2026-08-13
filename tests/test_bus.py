@@ -5,6 +5,7 @@ from contextlib import redirect_stdout
 from unittest.mock import patch
 
 from flock.bus import EnvelopeError, build, emit, is_member, members, parse, prefix, receive, send, vab
+from flock.bus.envelope import parse_for_switch
 from flock.router.service import Router
 
 
@@ -94,6 +95,25 @@ class EnvelopeTest(unittest.TestCase):
         cid = "a" * 32
         self.assertEqual(build("Reply", "bob", "alice", {}, cid)["correlation_id"], cid)
 
+    def test_bare_and_qualified_local_destinations_have_identical_l2(self):
+        bare = build("Message", "alice", "bob", {}, pod="acme", tenant="hq")
+        qualified = build(
+            "Message", "alice", "acme:hq:bob", {}, pod="acme", tenant="hq"
+        )
+        self.assertEqual(bare["l2"], qualified["l2"])
+        self.assertEqual(qualified["l3"]["destination"], "acme:hq:bob")
+
+    def test_flat_v1_is_not_accepted_on_v2_wire(self):
+        with self.assertRaisesRegex(EnvelopeError, "unsupported frame version"):
+            parse(json.dumps({"v": 1, "producer": "alice", "recipient": "bob"}))
+
+    def test_switch_parser_does_not_validate_or_read_l3(self):
+        frame = build("Message", "alice", "bob", {})
+        frame["l3"] = "opaque-to-the-switch"
+        self.assertEqual(parse_for_switch(json.dumps(frame))["l2"]["destination"], "bob")
+        with self.assertRaisesRegex(EnvelopeError, "l3 must be an object"):
+            parse(json.dumps(frame))
+
     def test_parse_rejects_malformed(self):
         with self.assertRaises(EnvelopeError):
             parse("not-json")
@@ -151,6 +171,74 @@ class DoorsAndRouterTest(unittest.TestCase):
         )
         self.assertEqual(opened[0]["stream_id"], stream_id)
 
+    def test_non_local_destination_fails_at_sender_and_is_recorded(self):
+        output = io.StringIO()
+        with redirect_stdout(output), self.assertRaisesRegex(
+            EnvelopeError, "no route to non-local destination"
+        ):
+            send(
+                self.r,
+                pod="acme",
+                tenant="hq",
+                producer="alice",
+                recipient="acme:sales:bob",
+                payload={},
+            )
+        self.assertNotIn(prefix("acme", "hq", "alice", "egress"), self.r.lists)
+        record = json.loads(output.getvalue())
+        self.assertEqual(record["event"], "send_refused")
+        self.assertEqual(record["producer"], "alice")
+        self.assertEqual(record["recipient"], "acme:sales:bob")
+
+    def test_router_forwards_on_l2_without_reading_l3_destination(self):
+        frame = build(
+            "Message", "alice", "bob", {}, pod="acme", tenant="hq"
+        )
+        # If the local router consults L3, this contradictory address sends the
+        # frame to carol. L3 is deliberately opaque at this layer.
+        frame["l3"]["destination"] = "acme:hq:carol"
+        self.r.rpush(prefix("acme", "hq", "alice", "egress"), json.dumps(frame))
+
+        self.assertTrue(Router(self.r, pod="acme", tenant="hq").step())
+
+        self.assertIn(prefix("acme", "hq", "bob", "ingress"), self.r.lists)
+        self.assertNotIn(prefix("acme", "hq", "carol", "ingress"), self.r.lists)
+
+    def test_bare_and_qualified_local_sends_have_same_l2_and_five_records(self):
+        observed = []
+        for destination in ("bob", "acme:hq:bob"):
+            r = FakeRedis()
+            r.hashes[self.roster] = {"alice": "tmux", "bob": "tmux"}
+            opened = []
+            output = io.StringIO()
+            with redirect_stdout(output):
+                send(
+                    r,
+                    pod="acme",
+                    tenant="hq",
+                    producer="alice",
+                    recipient=destination,
+                    payload={"text": "same local delivery"},
+                )
+                self.assertTrue(Router(r, pod="acme", tenant="hq").step())
+                receive(
+                    r,
+                    pod="acme",
+                    tenant="hq",
+                    agent="bob",
+                    openers={"Message": opened.append},
+                    timeout=1,
+                )
+            records = [json.loads(line) for line in output.getvalue().splitlines()]
+            self.assertEqual(
+                [record["event"] for record in records],
+                ["sent", "popped", "forwarded", "received", "opened"],
+            )
+            self.assertEqual(len({record["stream_id"] for record in records}), 1)
+            observed.append(opened[0]["l2"])
+
+        self.assertEqual(observed[0], observed[1])
+
     def test_kicked_receive_returns_immediately_when_ingress_is_empty(self):
         class EmptyIngressRedis(FakeRedis):
             def blpop(self, keys, timeout=0):
@@ -181,7 +269,7 @@ class DoorsAndRouterTest(unittest.TestCase):
         raw = self.r.lists[prefix("acme", "hq", "sme-2", "ingress")][0]
         envelope = json.loads(raw)
         self.assertEqual(envelope["stream_id"], stream_id)
-        self.assertEqual(envelope["recipient"], "sme-2")
+        self.assertEqual(envelope["l2"]["destination"], "sme-2")
 
     def test_unknown_recipient_dead_letters_under_sender(self):
         send(
@@ -205,7 +293,7 @@ class DoorsAndRouterTest(unittest.TestCase):
             self.assertTrue(Router(self.r, pod="acme", tenant="hq").step())
 
         raw = self.r.lists[prefix("acme", "hq", "bob", "ingress")][0]
-        self.assertEqual(json.loads(raw)["producer"], "alice")
+        self.assertEqual(json.loads(raw)["l2"]["source"], "alice")
         records = [json.loads(line) for line in output.getvalue().splitlines()]
         self.assertEqual(
             [record["event"] for record in records],
@@ -245,7 +333,7 @@ class DoorsAndRouterTest(unittest.TestCase):
         self.assertNotIn(prefix("acme", "hq", "alice", "ingress"), self.r.lists)
         for agent in ("bob", "carol"):
             raw = self.r.lists[prefix("acme", "hq", agent, "ingress")][0]
-            self.assertEqual(json.loads(raw)["producer"], "alice")
+            self.assertEqual(json.loads(raw)["l2"]["source"], "alice")
 
     def test_unknown_kind_dead_letters_under_receiver(self):
         envelope = build("Mystery", "alice", "bob", {})
@@ -307,7 +395,7 @@ class DoorsAndRouterTest(unittest.TestCase):
         self.assertNotIn(prefix("acme", "hq", "alice", "ingress"), self.r.lists)
         for agent in ("api", "bob", "carol"):
             raw = self.r.lists[prefix("acme", "hq", agent, "ingress")][0]
-            self.assertEqual(json.loads(raw)["recipient"], "all")
+            self.assertEqual(json.loads(raw)["l2"]["destination"], "all")
         self.assertEqual(
             sorted(call.args[0][1] for call in self.popen.call_args_list),
             ["api", "bob", "carol"],

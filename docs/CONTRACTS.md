@@ -67,14 +67,19 @@ def prefix(pod: str, tenant: str, agent: str | None = None,
 
 # flock.bus.envelope
 def build(kind: str, producer: str, recipient: str, payload: dict,
-          correlation_id: str | None = None) -> dict
-    # mints stream_id; mints correlation_id when not given (propagate-or-mint)
-def parse(raw: str) -> dict          # raises EnvelopeError on malformed input
+          correlation_id: str | None = None, *, pod="default",
+          tenant="default") -> dict
+    # returns a v2 frame with L2 source/destination and qualified L3 addresses;
+    # mints stream_id and mints correlation_id when not given (propagate-or-mint)
+def parse(raw: str) -> dict          # validates the full frame at the adapter
+def parse_for_switch(raw: str) -> dict
+    # validates common and L2 fields only; never reads L3
 
 # flock.bus.doors
 def send(r, *, pod, tenant, producer, recipient, payload,
          kind="Message", correlation_id=None) -> str
-    # builds, writes the egress NAMED BY `producer`, logs. Returns stream_id.
+    # resolves recipient locally, builds, writes the egress named by producer,
+    # and logs. A non-local qualified recipient is logged and raises before write.
     # ⚠ Not "its own" — the caller supplies `producer`, and the same value
     # picks the queue. They agree by construction, not by verification.
 class DeadLetter(Exception)             # opener rejection; reason is str(exc)
@@ -92,6 +97,10 @@ def vab(r, *, pod, tenant, agent) -> str | None   # HGET   — adapter side only
     # teardown they owe (build 12). ⚠ The router still never reads a value —
     # that is invariant 8, and it is about the router, not about this function.
 ```
+
+The Redis wire is **hard v2**: flat v1 envelopes are rejected rather than
+upgraded. HTTP send request bodies are adapter input and keep their existing
+shape; mailbox consumers receive the layered frame and must read L2/L3.
 
 ⚠ **The router calls `members` and `is_member`, never `vab`.** Reading the value
 is what would tell it how an agent is hosted, which invariant 8 forbids. That is

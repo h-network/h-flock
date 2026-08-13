@@ -124,13 +124,13 @@ curl -H "Authorization: Bearer $API_TOKEN" \
   "agent": "telegram",
   "messages": [
     {
-      "v": 1,
+      "v": 2,
       "kind": "Message",
       "stream_id": "edd534563cdd46209f0f63924c5e0497",
       "correlation_id": "4ba8e30ce8354109901d7b09c3a01bb4",
       "ts": "2026-08-08T23:31:26.623Z",
-      "producer": "backend",
-      "recipient": "telegram",
+      "l2": {"source": "backend", "destination": "telegram"},
+      "l3": {"source": "acme:hq:backend", "destination": "acme:hq:telegram"},
       "payload": {
         "text": "hello from backend"
       },
@@ -207,7 +207,7 @@ X-Accel-Buffering: no
 ```text
 id: 1786231898811-0
 event: message
-data: {"v": 1, "kind": "Message", "stream_id": "71d1dec5203c434c91df2af82e693637", "correlation_id": "da93ce7c8ce84ba6a26e9f338a989ee5", "ts": "2026-08-08T23:31:38.290Z", "producer": "frontend", "recipient": "telegram", "payload": {"text": "hello from frontend"}, "cursor": "1786231898811-0"}
+data: {"v": 2, "kind": "Message", "stream_id": "71d1dec5203c434c91df2af82e693637", "correlation_id": "da93ce7c8ce84ba6a26e9f338a989ee5", "ts": "2026-08-08T23:31:38.290Z", "l2": {"source": "frontend", "destination": "telegram"}, "l3": {"source": "acme:hq:frontend", "destination": "acme:hq:telegram"}, "payload": {"text": "hello from frontend"}, "cursor": "1786231898811-0"}
 
 ```
 
@@ -775,7 +775,7 @@ for _ in range(5):
     messages = body.get("messages", [])
     if messages:
         for msg in messages:
-            print("Received reply from", msg["producer"], ":", msg["payload"])
+            print("Received reply from", msg["l2"]["source"], ":", msg["payload"])
             cursor = msg["cursor"]
         break
     time.sleep(1)

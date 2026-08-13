@@ -127,12 +127,15 @@ def test_handle_user_prompt_success():
     ]
     flock.messages_queue = [
         {
-            "v": 1,
+            "v": 2,
             "kind": "Message",
             "stream_id": "s1",
             "ts": "2026-08-09T15:00:02Z",
-            "producer": "architect",
-            "recipient": "telegram",
+            "l2": {"source": "architect", "destination": "telegram"},
+            "l3": {
+                "source": "acme:hq:architect",
+                "destination": "acme:hq:telegram",
+            },
             "payload": {"text": "Auth check passed. 12 tests green."},
             "cursor": "3000-0",
         }

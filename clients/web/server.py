@@ -436,9 +436,10 @@ class OfficeHandler(SimpleHTTPRequestHandler):
                     if resp.status == 200:
                         data = json.loads(resp.read().decode())
                         for msg in data.get("messages", []):
-                            if msg.get("producer") == agent_name:
+                            if msg.get("l2", {}).get("source") == agent_name:
                                 msg["direction"] = "inbound"
-                                msg["recipient"] = client_name
+                                msg["producer"] = msg["l2"]["source"]
+                                msg["recipient"] = msg["l2"].get("destination", client_name)
                                 inbound.append(msg)
             except Exception:
                 pass
@@ -447,7 +448,8 @@ class OfficeHandler(SimpleHTTPRequestHandler):
         seen = set()
         for msg in (outbound + inbound):
             text = msg.get("payload", {}).get("text") if isinstance(msg.get("payload"), dict) else str(msg.get("payload"))
-            key = f"{msg.get('ts')}:{msg.get('producer')}:{text}"
+            producer = msg.get("l2", {}).get("source", msg.get("producer"))
+            key = f"{msg.get('ts')}:{producer}:{text}"
             if key not in seen:
                 seen.add(key)
                 combined.append(msg)

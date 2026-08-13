@@ -62,7 +62,7 @@ def message_opener(
     socket: str | None = None,
 ) -> None:
     stream_id = envelope.get("stream_id", "")
-    producer = envelope.get("producer", "unknown")
+    producer = envelope.get("l2", {}).get("source", "unknown")
     payload = envelope.get("payload", {})
 
     windows = list_windows(session_name, socket=socket)
@@ -92,7 +92,7 @@ def command_opener(
     socket: str | None = None,
 ) -> None:
     stream_id = envelope.get("stream_id", "")
-    producer = envelope.get("producer", "unknown")
+    producer = envelope.get("l2", {}).get("source", "unknown")
     payload = envelope.get("payload", {})
 
     windows = list_windows(session_name, socket=socket)
@@ -122,7 +122,7 @@ def add_ticket_opener(
     socket: str | None = None,
 ) -> None:
     corr_id = envelope.get("correlation_id")
-    producer = envelope.get("producer", "unknown")
+    producer = envelope.get("l2", {}).get("source", "unknown")
     payload = envelope.get("payload", {})
 
     if isinstance(payload, dict) and "v" in payload and "id" in payload:

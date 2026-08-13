@@ -914,8 +914,8 @@ def test_conversation_audit_prompts_and_client_mailbox_replies(tmp_path):
                 self.send_error(404, "No mailbox stream for tmux agent")
             elif self.path.startswith("/agents/web/messages"):
                 body = json.dumps({"messages": [
-                    {"ts": "2026-08-10T10:01:00Z", "producer": "architect", "recipient": "web", "payload": {"text": "Agent reply to web"}},
-                    {"ts": "2026-08-10T10:02:00Z", "producer": "telegram", "recipient": "web", "payload": {"text": "Unverified telegram prompt"}}
+                    {"ts": "2026-08-10T10:01:00Z", "l2": {"source": "architect", "destination": "web"}, "payload": {"text": "Agent reply to web"}},
+                    {"ts": "2026-08-10T10:02:00Z", "l2": {"source": "telegram", "destination": "web"}, "payload": {"text": "Unverified telegram prompt"}}
                 ]}).encode()
                 self.send_response(200)
                 self.send_header("Content-Type", "application/json")

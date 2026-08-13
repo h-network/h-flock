@@ -118,7 +118,7 @@ dx bash -lc "cd /workdir/$AG1 && AGENT_NAME=$AG1 office send -a telegram reply-f
 sleep 3
 M="$(cu "$A/agents/telegram/messages")"
 ckc "in the mailbox"   "$M" "reply-from-$AG1-99"
-ckc "producer is $AG1" "$M" "\"producer\": *\"$AG1\""
+ckc "L2 source is $AG1" "$M" "\"source\": *\"$AG1\""
 ckc "cursor present"    "$M" '"cursor"'
 
 echo "== 7. cursor resume =="
@@ -172,7 +172,7 @@ echo "== 10. dead-letter =="
 # `office send` errors with "unknown recipient agent" — so neither can reach the
 # router's dead-letter path. This is a test of the ROUTER, so the envelope is
 # placed where the router pops from. Nothing in the product may do this.
-DEAD_ENV="{\"v\":1,\"kind\":\"Message\",\"stream_id\":\"plumbingdead1\",\"correlation_id\":\"plumbingdead1\",\"ts\":\"2026-01-01T00:00:00.000Z\",\"producer\":\"$AG1\",\"recipient\":\"ghost\",\"payload\":{\"text\":\"nobody home\"}}"
+DEAD_ENV="{\"v\":2,\"kind\":\"Message\",\"stream_id\":\"plumbingdead1\",\"correlation_id\":\"plumbingdead1\",\"ts\":\"2026-01-01T00:00:00.000Z\",\"l2\":{\"source\":\"$AG1\",\"destination\":\"ghost\"},\"l3\":{\"source\":\"$POD:$TENANT:$AG1\",\"destination\":\"$POD:$TENANT:ghost\"},\"payload\":{\"text\":\"nobody home\"}}"
 dx redis-cli DEL "pod:$POD:tenant:$TENANT:agent:$AG1:dead" >/dev/null
 dx redis-cli RPUSH "pod:$POD:tenant:$TENANT:agent:$AG1:egress" "$DEAD_ENV" >/dev/null
 for _ in $(seq 1 20); do

@@ -740,23 +740,26 @@ claim differed from the egress queue. A malformed envelope has no trustworthy
 structural fields, so its `popped` record contains none and is followed by
 `dead_lettered`.
 
-**The router does not read payloads.** It forwards on `recipient`, and derives
+**The router does not read payloads or L3.** It forwards on L2 `destination`, and derives
 the sender from the queue the envelope was popped from. Nothing else in the
 envelope affects where it goes. The moment routing depends on payload contents
 it stops being a switch and becomes a middlebox, and every change to what a
 message means becomes a change to the router.
 
-## 5. The envelope
+## 5. The frame
 
 ```json
 {
-  "v": 1,
+  "v": 2,
   "kind": "Message",
   "stream_id": "<hex>",
   "correlation_id": "<hex>",
   "ts": "2026-08-07T18:00:00.000Z",
-  "producer": "<participant>",
-  "recipient": "<participant>",
+  "l2": {"source": "<participant>", "destination": "<participant>"},
+  "l3": {
+    "source": "<pod>:<tenant>:<participant>",
+    "destination": "<pod>:<tenant>:<participant>"
+  },
   "payload": { }
 }
 ```
@@ -766,16 +769,14 @@ inside `payload`, and validating it is the consumer's job, never the bus's.
 Unknown top-level fields are ignored, so a newer producer cannot break an older
 router.
 
-`recipient` is a **participant name, not a queue name**. A producer writes
-`"recipient": "frontend"`; it never constructs `…:frontend:ingress` and never names a
-tenant. Resolving the name to a queue is the router's only real decision, and
-keeping it there is what stops topology knowledge spreading into every agent. An
-unresolvable name is a dead-letter, not a crash.
+L2 `destination` is a **participant name, not a queue name**. The adapter accepts
+either a bare recipient or a qualified `pod:tenant:participant` address. It
+resolves either local form to the same bare L2 destination and preserves the
+qualified address in L3. A non-local qualified address fails and is logged at
+the sender; routing between tenants is not implemented.
 
-A bare name means "in my tenant", which is the only case the running router
-handles. Qualified names for reaching another tenant or pod arrive with the
-gateway (§7) — until then, an unqualified name that does not resolve inside the
-sender's own tenant is dead-lettered.
+A bare name means "in my tenant". The local router reads L2 only; qualification
+rides through untouched in L3 for a future inter-tenant router.
 
 `kind` is **opaque to the router**. Routing is `recipient` and nothing else. A
 router that branches on `kind` has to change every time a new kind is added,
@@ -790,10 +791,10 @@ An envelope whose kind has no opener is **dead-lettered and logged**, not
 dropped. The `api` VAB deliberately registers a catch-all opener, so every kind
 is mailbox data there; tmux and control still dead-letter kinds they cannot open.
 
-Both `producer` and `recipient` are header fields, so reading them is not
-reading the payload — §6.4 holds.
+L2 `source` and `destination` are header fields, so reading them is not reading
+the payload — §6.4 holds.
 
-`producer` is **port-stamped attribution**. `send` initially writes the caller's
+L2 `source` is **port-stamped attribution**. `send` initially writes the caller's
 claim, but before any forwarding the router compares it with the participant
 name in the popped egress key and overwrites a mismatch. It does not reject the
 envelope: rejection would let any process able to write that queue destroy its
@@ -804,7 +805,7 @@ colleagues inside one development office, using one reachable Redis.
 ## 6. Invariants
 
 1. **`prefix()` on every Redis key.** No flat Redis keys, anywhere, ever.
-2. **`producer` is stamped from the popped egress queue before forwarding.** The
+2. **L2 `source` is stamped from the popped egress queue before forwarding.** The
    router uses that queue-derived sender for dead-letter placement and broadcast
    exclusion, overwrites a mismatched claim, and logs `producer_stamped` only
    when the value changes. This guarantees queue attribution, not the identity
@@ -814,7 +815,7 @@ colleagues inside one development office, using one reachable Redis.
    Redis ACL: `send(producer=...)` accepts any valid participant name. The router
    remains load-bearing because supported sends name a recipient rather than
    writing its ingress directly.
-4. **The router never reads the payload.** It forwards on `recipient` and
+4. **The router never reads the payload or L3.** It forwards on L2 `destination` and
    derives the sender from the queue key. Nothing else in an envelope affects
    where it goes. Reading a payload to route makes it a middlebox, and every
    change to what a message means becomes a change to the router.
