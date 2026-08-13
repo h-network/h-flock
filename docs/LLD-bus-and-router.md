@@ -101,14 +101,16 @@ sender:
   nothing for anyone addressing it, because nobody was addressing a queue.
 - **gone.** An unresolvable name dead-letters in one place with a reason, rather
   than each sender discovering it separately.
-- **many tenants on one Redis.** One router watches only the validated prefixes
-  for its configured tenant. The present shared Redis credential is not a
-  security boundary between direct callers; tenant isolation here is routing
-  scope, not authorization.
+- **tenant-scoped keys.** One router watches only the validated prefixes for its
+  configured tenant. The running deployment puts one tenant and one Redis in a
+  container; the prefix keeps the addressing scope explicit, but is not an
+  authorization boundary between direct callers inside that container.
 
 ⚠ Note what this is *not* justified by, because the tempting argument is the
 weak one: it is **not** about hiding topology from producers. In this build every
-terminal agent has `REDIS_URL` and `redis-cli`, and one read the whole roster
+terminal agent has `redis-cli` and can reach loopback Redis using its known
+default address, even though credential-bearing Redis environment variables are
+deliberately removed before its window is created. One read the whole roster
 within minutes of starting. Topology is a command away. The router earns its
 place by being the single component that has to change when the answer to
 "where is that recipient" changes — not by keeping the answer secret.
@@ -191,10 +193,12 @@ a marker segment that would lengthen every key to solve the same problem.
 `all` is reserved too, for the same reason one level up: it is the broadcast
 recipient (§4), so an agent by that name would be unaddressable.
 
-Putting the agent in the address rather than in the queue name is what makes
-per-agent isolation structural: a credential can be scoped to
+Putting the agent in the address rather than in the queue name makes a future
+per-agent ACL scope expressible: a credential could be scoped to
 `~pod:acme:tenant:hq:agent:backend:*` and reach that agent's keys and nothing
-else. Scoping at the tenant level could not express that.
+else. No such isolation is enforced in the running development office; agents
+share one OS user and can reach the tenant's loopback Redis. Scoping at the
+tenant level could not express a narrower policy later.
 
 **Resources are a dotted suffix, not a level.** A resource is not an address —
 nothing routes to it — so it does not get a tag. Dots group related resources
@@ -226,9 +230,10 @@ as an index. No glob metacharacters, so a prefix is safe to drop into a Redis
 separated by dots; each sub-segment is validated, may not be a reserved word,
 and is subject to the same all-digit rejection.
 
-**Every key goes through `prefix()`.** There is no API that yields a flat key.
-This is what makes many tenants on one Redis safe, and it is the invariant that
-must survive every change.
+**Every Redis key goes through `prefix()`.** There is no API that yields a flat
+Redis key. This prevents tenant-scope collisions and makes the scope of every
+state access checkable, even though the running deployment gives each tenant
+its own container and Redis. The invariant must survive every change.
 
 ### 3.2 Participants
 
@@ -798,7 +803,7 @@ colleagues inside one development office, using one reachable Redis.
 
 ## 6. Invariants
 
-1. **`prefix()` on every key.** No flat keys, anywhere, ever.
+1. **`prefix()` on every Redis key.** No flat Redis keys, anywhere, ever.
 2. **`producer` is stamped from the popped egress queue before forwarding.** The
    router uses that queue-derived sender for dead-letter placement and broadcast
    exclusion, overwrites a mismatched claim, and logs `producer_stamped` only
