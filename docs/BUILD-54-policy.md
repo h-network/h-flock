@@ -52,3 +52,10 @@ says neither is a security control inside the container, so a backstop buys
 defence against a buggy port and nothing else — at a permanent cost in the one
 component that cannot be parallelised. **My inclination is no backstop**, but it
 is a real trade and it is not mine to settle alone.
+
+## 5. ⚠ Gates must be shown to fail
+
+See [`BUILD-CONVENTION`](BUILD-CONVENTION.md) §1. Specifically: seed a
+participant whose export tags do NOT meet the destination's import tags, and
+prove the send is refused **and that the refusal emits a record**. A policy
+engine that has only ever permitted is not known to deny.

@@ -195,7 +195,11 @@ ck "hired env == booted env" "$(penv envprobe)" "$(penv $AG1)"
 cu -X POST -H 'Content-Type: application/json' -d '{"kind":"StopAgent","payload":{"agent":"envprobe"}}' $A/agents/host/envelopes >/dev/null
 
 echo "== 12. failure simulator =="
-bash "$_here/sim-blocked.sh"
+if ! bash "$_here/sim-blocked.sh"; then
+    echo "  FAIL  failure simulator reported failures"
+    fail=$((fail+1))
+fi
 
 echo
 echo "PASS=$pass FAIL=$fail"
+exit "$fail"
