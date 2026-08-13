@@ -2,6 +2,7 @@
 
 import json
 import os
+import sys
 from datetime import datetime, timezone
 
 _ENVELOPE_EVENTS = {
@@ -74,7 +75,16 @@ def log_record(
     # (HLD §5), so nothing is lost. Daemons do not set this and keep printing.
     path = os.environ.get("FLOCK_LOG_FILE")
     if os.environ.get("FLOCK_LOG_QUIET") != "1":
-        print(line, flush=True)
+        # One syscall-sized write, newline included. Container daemons share
+        # stdout, and print() writes the text and newline separately under
+        # PYTHONUNBUFFERED; another process can land its record between them and
+        # turn two valid JSON objects into one unparsable line. Records stay
+        # below PIPE_BUF, so this single write is atomic against peer writers.
+        # Flush separately after the complete-record write: it emits no second
+        # record bytes, and keeps timely observation when PYTHONUNBUFFERED is
+        # absent instead of making Dockerfile configuration part of this API.
+        sys.stdout.write(line + "\n")
+        sys.stdout.flush()
     try:
         agent_only = os.environ.get("FLOCK_LOG_FILE_AGENT_ONLY")
         if path and (not agent_only or os.environ.get("AGENT_NAME")):
