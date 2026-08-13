@@ -190,6 +190,20 @@ class DoorsAndRouterTest(unittest.TestCase):
         self.assertEqual(record["producer"], "alice")
         self.assertEqual(record["recipient"], "acme:sales:bob")
 
+    def test_router_forwards_on_l2_without_reading_l3_destination(self):
+        frame = build(
+            "Message", "alice", "bob", {}, pod="acme", tenant="hq"
+        )
+        # If the local router consults L3, this contradictory address sends the
+        # frame to carol. L3 is deliberately opaque at this layer.
+        frame["l3"]["destination"] = "acme:hq:carol"
+        self.r.rpush(prefix("acme", "hq", "alice", "egress"), json.dumps(frame))
+
+        self.assertTrue(Router(self.r, pod="acme", tenant="hq").step())
+
+        self.assertIn(prefix("acme", "hq", "bob", "ingress"), self.r.lists)
+        self.assertNotIn(prefix("acme", "hq", "carol", "ingress"), self.r.lists)
+
     def test_kicked_receive_returns_immediately_when_ingress_is_empty(self):
         class EmptyIngressRedis(FakeRedis):
             def blpop(self, keys, timeout=0):
