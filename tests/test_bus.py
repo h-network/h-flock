@@ -204,6 +204,41 @@ class DoorsAndRouterTest(unittest.TestCase):
         self.assertIn(prefix("acme", "hq", "bob", "ingress"), self.r.lists)
         self.assertNotIn(prefix("acme", "hq", "carol", "ingress"), self.r.lists)
 
+    def test_bare_and_qualified_local_sends_have_same_l2_and_five_records(self):
+        observed = []
+        for destination in ("bob", "acme:hq:bob"):
+            r = FakeRedis()
+            r.hashes[self.roster] = {"alice": "tmux", "bob": "tmux"}
+            opened = []
+            output = io.StringIO()
+            with redirect_stdout(output):
+                send(
+                    r,
+                    pod="acme",
+                    tenant="hq",
+                    producer="alice",
+                    recipient=destination,
+                    payload={"text": "same local delivery"},
+                )
+                self.assertTrue(Router(r, pod="acme", tenant="hq").step())
+                receive(
+                    r,
+                    pod="acme",
+                    tenant="hq",
+                    agent="bob",
+                    openers={"Message": opened.append},
+                    timeout=1,
+                )
+            records = [json.loads(line) for line in output.getvalue().splitlines()]
+            self.assertEqual(
+                [record["event"] for record in records],
+                ["sent", "popped", "forwarded", "received", "opened"],
+            )
+            self.assertEqual(len({record["stream_id"] for record in records}), 1)
+            observed.append(opened[0]["l2"])
+
+        self.assertEqual(observed[0], observed[1])
+
     def test_kicked_receive_returns_immediately_when_ingress_is_empty(self):
         class EmptyIngressRedis(FakeRedis):
             def blpop(self, keys, timeout=0):
