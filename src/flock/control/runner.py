@@ -105,5 +105,6 @@ def deliver_one(
             "ResumeAgent": handle_resume,
         },
         timeout=1,
+        blocking=False,
         module="adapter",
     )

@@ -79,8 +79,9 @@ def send(r, *, pod, tenant, producer, recipient, payload,
     # picks the queue. They agree by construction, not by verification.
 class DeadLetter(Exception)             # opener rejection; reason is str(exc)
 def receive(r, *, pod, tenant, agent, openers: dict[str, callable],
-            timeout: int) -> None
-    # BLPOP this agent's ingress, validate, dispatch on kind, log.
+            timeout: int, blocking: bool = True) -> None
+    # BLPOP this agent's ingress when blocking; LPOP for a kicked one-shot.
+    # Then validate, dispatch on kind, and log.
     # unknown kind -> dead-letter under THIS agent's prefix
 
 # flock.bus.roster

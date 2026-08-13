@@ -35,6 +35,10 @@ class MockRedis:
             return (key, val)
         return None
 
+    def lpop(self, key):
+        values = self.lists.get(key, [])
+        return values.pop(0) if values else None
+
     def hset(self, key, field, value):
         if key not in self.hashes:
             self.hashes[key] = {}

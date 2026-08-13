@@ -25,6 +25,10 @@ class FakeRedis:
                 return key, values.pop(0)
         return None
 
+    def lpop(self, key):
+        values = self.lists.get(key, [])
+        return values.pop(0) if values else None
+
     def hkeys(self, key):
         return self.hashes.get(key, {}).keys()
 
@@ -146,6 +150,21 @@ class DoorsAndRouterTest(unittest.TestCase):
             timeout=1,
         )
         self.assertEqual(opened[0]["stream_id"], stream_id)
+
+    def test_kicked_receive_returns_immediately_when_ingress_is_empty(self):
+        class EmptyIngressRedis(FakeRedis):
+            def blpop(self, keys, timeout=0):
+                raise AssertionError("kicked receive must not wait in BLPOP")
+
+        receive(
+            EmptyIngressRedis(),
+            pod="acme",
+            tenant="hq",
+            agent="bob",
+            openers={},
+            timeout=60,
+            blocking=False,
+        )
 
     def test_hyphenated_agent_routes_without_name_rewriting(self):
         self.r.hashes[self.roster]["sme-2"] = "tmux"
