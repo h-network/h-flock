@@ -195,9 +195,18 @@ The fixed lifecycle participant (`vab: control`), the tmux window reconciler
 | 3 | `producer`/`recipient` → `source`/`destination` | ✅ **decided** — envelope v2 |
 | 6 | the gateway fork | ✅ **resolved by 2** — a routing branch inside a *switch* is a category error, so the router is a separate component reached by name |
 | 7 | RD in the envelope | ✅ **required, not optional** — inter-pod addressing is impossible with a bare name (`DESIGN-layers` §4) |
-| 1 | name for the roster value (`tmux`/`api`/`control`) | ⚠ **open** — `VAB` has moved to the address concept, so this needs its own word |
-| 4 | `endpoint` → ? | ⚠ **open** |
-| 5 | adapter names — and **from whose viewpoint** | ⚠ **open**: `ingress`/`egress` are opposite depending on whether you stand at the participant or at the switch |
+| 1 | roster value (`tmux`/`api`/`control`) → `port_type` | ✅ **decided** — the HLD's switch table already called it a port property |
+| 4 | `endpoint` → `provider` | ✅ **decided** — frees `endpoint` for its networking meaning |
+| 5 | adapter names — and from whose viewpoint | ✅ **decided** — `egress_adapter`/`ingress_adapter`, **participant-relative**; the switch-relative alternative was considered and rejected |
+
+⚠ **This table said "open" for 1, 4 and 5 while the entries above said decided.**
+A document contradicting itself is the exact defect build 44 was written to
+catch, and it sat here for a week in the one document whose job is to settle
+what words mean.
+
+**All five are now decided, and none are executed** — see
+[`BUILD-49-vocabulary.md`](BUILD-49-vocabulary.md), which is parked on
+`rename/vocabulary` until the new frame works.
 
 **The layer design these serve is in [`DESIGN-layers.md`](DESIGN-layers.md)** —
 switch and router, the three-and-two lookup split, RT as a set intersection, and
