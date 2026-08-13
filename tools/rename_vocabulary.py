@@ -35,8 +35,30 @@ def check_dirty_tree(force: bool = False) -> None:
         sys.exit(1)
 
 
+# Exclude documentation files whose subject IS the vocabulary definition itself.
+# These files define the vocabulary mapping (e.g. old-name -> new-name tables)
+# and must read correctly in both worlds by keeping both words on purpose.
+EXCLUDED_VOCABULARY_DOCS = {
+    "GLOSSARY.md",
+    "DESIGN-layers.md",
+    "DECISION-h-vab.md",
+    "BUILD-45-naming-inventory.md",
+    "BUILD-49-vocabulary.md",
+    "BUILD-52-port.md",
+}
+
+
+def is_excluded_vocab_doc(file_path: Path) -> bool:
+    name = file_path.name
+    if name in EXCLUDED_VOCABULARY_DOCS:
+        return True
+    if any(name.startswith(p) for p in ("BUILD-45", "BUILD-49", "BUILD-52")):
+        return True
+    return False
+
+
 def replace_in_file(file_path: Path, patterns: list[tuple[str | re.Pattern, str]]) -> int:
-    if not file_path.exists() or file_path.is_symlink():
+    if not file_path.exists() or file_path.is_symlink() or is_excluded_vocab_doc(file_path):
         return 0
     try:
         content = file_path.read_text(encoding="utf-8")
@@ -64,14 +86,16 @@ def get_target_files(directories: list[Path], extensions: set[str]) -> list[Path
     files = []
     for d in directories:
         if d.is_file():
-            if d.suffix in extensions or d.name in {"pyproject.toml", "setup.sh", "README.md"}:
+            if (d.suffix in extensions or d.name in {"pyproject.toml", "setup.sh", "README.md"}) and not is_excluded_vocab_doc(d):
                 files.append(d)
         elif d.is_dir():
             for ext in extensions:
-                files.extend(d.rglob(f"*{ext}"))
+                for f in d.rglob(f"*{ext}"):
+                    if not is_excluded_vocab_doc(f):
+                        files.append(f)
             for name in ["setup.sh", "pyproject.toml"]:
                 f = d / name
-                if f.exists():
+                if f.exists() and not is_excluded_vocab_doc(f):
                     files.append(f)
     return sorted(list(set(files)))
 
@@ -97,7 +121,10 @@ def run_tier_a() -> dict[str, int]:
         old_adapter_doc.rename(new_port_doc)
         counts["file_renames"] += 1
 
-    doc_files = list((REPO_ROOT / "docs").rglob("*.md")) + [REPO_ROOT / "README.md"]
+    doc_files = [
+        f for f in list((REPO_ROOT / "docs").rglob("*.md")) + [REPO_ROOT / "README.md"]
+        if not is_excluded_vocab_doc(f)
+    ]
     patterns = [
         ("LLD-bus-and-router.md", "LLD-bus-and-switch.md"),
         ("LLD-bus-and-router", "LLD-bus-and-switch"),
@@ -231,6 +258,11 @@ def run_tier_b() -> dict[str, int]:
         ("flock.adapter", "flock.port"),
         ("flock/adapter", "flock/port"),
         ("run_adapter", "run_port"),
+        ("adapter kick failed", "port kick failed"),
+        ("corresponding adapter process", "corresponding port process"),
+        ("adapters and openers", "ports and openers"),
+        ("one-shot adapter", "one-shot port"),
+        ("reap kicked adapters", "reap kicked ports"),
         ("hasattr(runner,", "hasattr(deliver,"),
         ("Path(runner.__file__)", "Path(deliver.__file__)"),
         ("test_adapter", "test_port"),
