@@ -379,6 +379,12 @@ Post an envelope to a specific agent, or to `"all"` for broadcast messages.
 
 Lifecycle commands are sent as envelopes addressed to the `host` agent: `POST /agents/host/envelopes`.
 
+Lifecycle payloads have a fixed vocabulary. `StartAgent` accepts `agent`,
+`vab`, `cli`, `profile`, and `endpoint`; `StopAgent`, `PauseAgent`, and
+`ResumeAgent` accept only `agent`. An omitted optional key keeps its documented
+default, but any unknown key is refused with HTTP 422 and named in the error.
+This makes misspellings loud instead of silently selecting a default.
+
 #### Enrol Application Client (`StartAgent` with `vab: api`)
 
 ⚠ **Enrolling a name that already exists is safe.** It re-registers and changes
