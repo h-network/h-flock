@@ -67,3 +67,32 @@ The direct benchmark sender's 2,000 `sent` records went to the attached
 must not be read as a complete five-record audit for those packets. They are
 the shared multi-process stream under test for torn lines, and all 9,165 JSON
 records on that stream parsed individually.
+
+## Follow-up repeat with dead-letter capture
+
+The first run's single aggregate dead letter cannot be called teardown
+behavior: its record was not retained, so neither its stream id nor reason is
+verifiable. The exact 100 × 20 shape was repeated on commit `884f8f5`, with
+every dead-letter JSON object extracted before teardown. There were none.
+
+```text
+fabric-bench: 100 stations x 20 rounds on h-flock-bus-lab-tenant-1
+  roster now holds 104 participants
+  submitted 2000 packets in 9.5s  =  210/s at the sender
+  expected 2000, delivered 2000
+  end to end: 773.1s  =  3 delivered/s
+  redis memory: 1482 KiB -> 2349 KiB
+  retired 100 stations
+DEAD_LETTERS
+```
+
+Strict parse of the complete shared container stream from the repeat:
+
+```text
+strict_json_lines=9012 parse_failures=0 merged_markers=0 total_lines=9314
+custody={'sent': 200, 'popped': 2200, 'forwarded': 2200, 'received': 2200, 'opened': 2200, 'dead_lettered': 0}
+```
+
+The repeat does not retroactively identify the first record. It establishes
+that a dead letter is not inherent in this load shape and supplies the missing
+strict evidence without inventing a stream id or reason.
