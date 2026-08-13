@@ -77,7 +77,9 @@ code path that could dispatch on VAB even if someone wanted it to.
 | `flock.session` | WebSocket terminals — `:8081` | |
 
 `flock.bus` and `flock.tmux` are the only shared libraries. Nothing else imports
-anything else, which is what lets a lane own a module outright.
+anything else, which is what lets a lane own a module outright. ⚠ **One named
+exception:** the adapter lazily imports `flock.control` to open control kinds —
+recorded in `CONTRACTS` §5 rather than left as a rule everybody quietly breaks.
 
 ## 4. Why adapters are kicked, not running
 
@@ -89,9 +91,11 @@ spawns `flock.adapter <agent>` fire-and-forget. The adapter delivers **one
 envelope** and exits.
 
 ⚠ **The alternative moves the backlog into RAM.** A long-running consumer per
-agent, popping eagerly, drains a durable queue into process memory: delivery
+agent, popping eagerly, drains the Redis backlog into process memory: delivery
 takes hundreds of milliseconds, arrivals are not rate-limited, and nothing is
-inspectable when it goes wrong. Keeping the backlog in Redis is the point.
+inspectable when it goes wrong. Keeping the backlog in Redis is the point. ⚠ **Durable across adapter
+lifetimes, not across a tenant restart** — Redis runs without persistence by
+design (`LLD-container` §7), so a restart empties it.
 
 Consequences worth knowing: an office of idle agents costs nothing, because there
 are no processes between deliveries; and a **busy tag** in Redis serialises
@@ -334,8 +338,10 @@ promises otherwise.
 
 ## 10. One container is one tenant
 
-Redis, the router, the tmux server, both doors, and one window per agent — in one
-image that converges when brought up twice. Redis is internal and unpublished.
+Redis, the router, the tmux server, both doors, and one window per **`vab: tmux`**
+agent — in one image that converges when brought up twice. ⚠ **`api` clients and
+`host` have no window**, which is the point of the VAB. Redis is internal and
+unpublished.
 
 ⚠ **The container is the boundary, and nothing inside it is.** Agents run with
 `sudo` deliberately. Tools and a clean environment remove the *reason* to go
