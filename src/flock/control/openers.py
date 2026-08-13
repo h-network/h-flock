@@ -6,10 +6,15 @@ from flock.bus import prefix, purge_agent, vab
 
 _STARTABLE_VABS = {"tmux", "api"}
 _FIXED_PARTICIPANTS = {"api", "host"}
+_START_AGENT_KEYS = frozenset({"agent", "vab", "cli", "profile", "endpoint"})
+_TARGET_ONLY_KEYS = frozenset({"agent"})
 
 
-def _target(envelope: dict) -> tuple[str, dict]:
+def _target(envelope: dict, allowed_keys: frozenset[str]) -> tuple[str, dict]:
     payload = envelope["payload"]
+    unknown_keys = sorted(set(payload) - allowed_keys)
+    if unknown_keys:
+        raise ValueError(f"unknown payload key {unknown_keys[0]!r}")
     agent = payload.get("agent")
     if not isinstance(agent, str):
         raise ValueError("control payload.agent must be a string")
@@ -27,7 +32,7 @@ def start_agent(
     replace_window: Callable[[str], object],
 ) -> None:
     """Publish desired state; tmuxhost is the one implementation that creates windows."""
-    agent, payload = _target(envelope)
+    agent, payload = _target(envelope, _START_AGENT_KEYS)
     agent_vab = payload.get("vab", "tmux")
     if agent_vab not in _STARTABLE_VABS:
         raise ValueError("StartAgent payload.vab must be 'tmux' or 'api'")
@@ -97,7 +102,7 @@ def stop_agent(
     kill_window: Callable[[str], object],
 ) -> None:
     """Remove desired state, then any VAB-specific state or actual window."""
-    agent, _ = _target(envelope)
+    agent, _ = _target(envelope, _TARGET_ONLY_KEYS)
     if agent in _FIXED_PARTICIPANTS:
         raise ValueError(f"cannot stop fixed participant: {agent}")
     roster_key = prefix(pod, tenant, resource="roster")
@@ -117,7 +122,7 @@ def pause_agent(
     interrupt_window: Callable[[str], object],
 ) -> None:
     """Mark an agent paused, then interrupt its CLI without changing membership."""
-    agent, _ = _target(envelope)
+    agent, _ = _target(envelope, _TARGET_ONLY_KEYS)
     r.set(prefix(pod, tenant, agent=agent, resource="paused"), 1)
     interrupt_window(agent)
 
@@ -132,7 +137,7 @@ def resume_agent(
     kick_agent: Callable[[str], object],
 ) -> None:
     """Clear pause, resume the CLI, then kick once per queued ingress envelope."""
-    agent, _ = _target(envelope)
+    agent, _ = _target(envelope, _TARGET_ONLY_KEYS)
     r.delete(prefix(pod, tenant, agent=agent, resource="paused"))
     resume_window(agent)
     depth = r.llen(prefix(pod, tenant, agent=agent, resource="ingress"))

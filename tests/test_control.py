@@ -119,6 +119,43 @@ def test_start_api_client_only_writes_roster_row():
     ]
 
 
+def test_start_agent_rejects_unknown_payload_key_before_defaulting_vab():
+    events = []
+    with pytest.raises(ValueError, match="unknown payload key 'port_typ'"):
+        start_agent(
+            RecordingRedis(events),
+            pod="acme",
+            tenant="hq",
+            envelope={"payload": {"agent": "dave", "port_typ": "api"}},
+            replace_window=lambda agent: events.append(("replace_window", agent)),
+        )
+    assert events == []
+
+
+@pytest.mark.parametrize(
+    ("opener", "callback_name"),
+    [
+        (stop_agent, "kill_window"),
+        (pause_agent, "interrupt_window"),
+        (resume_agent, "resume_window"),
+    ],
+)
+def test_target_only_lifecycle_openers_reject_unknown_payload_key(opener, callback_name):
+    events = []
+    kwargs = {
+        "r": RecordingRedis(events),
+        "pod": "acme",
+        "tenant": "hq",
+        "envelope": {"payload": {"agent": "dave", "force": True}},
+        callback_name: lambda agent: events.append((callback_name, agent)),
+    }
+    if opener is resume_agent:
+        kwargs["kick_agent"] = lambda agent: events.append(("kick_agent", agent))
+    with pytest.raises(ValueError, match="unknown payload key 'force'"):
+        opener(**kwargs)
+    assert events == []
+
+
 def test_stop_agent_orders_roster_launch_then_window():
     events = []
     r = RecordingRedis(events, roster_vab="tmux")
