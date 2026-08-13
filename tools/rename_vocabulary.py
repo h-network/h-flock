@@ -45,6 +45,13 @@ EXCLUDED_VOCABULARY_DOCS = {
     "BUILD-45-naming-inventory.md",
     "BUILD-49-vocabulary.md",
     "BUILD-52-port.md",
+    # ⚠ Discussed the rename within an hour of being written, and the name list
+    # did not know. BUILD-CONVENTION cites `vab = port_type` as an example, and
+    # BUILD-53 instructs lanes to use main's vocabulary — renaming either
+    # inverts its meaning. A name list needs maintaining; consider an in-file
+    # marker so a document can exclude itself.
+    "BUILD-CONVENTION.md",
+    "BUILD-53-frame.md",
 }
 
 
