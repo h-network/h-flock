@@ -131,10 +131,15 @@ Five log records mark the path — `sent`, `popped`, `forwarded`, `received`,
 an agent's own command reaches the log via a file the router tails, because
 `office` runs in a window and its stdout is a pane.
 
-⚠ **Nothing writes another agent's keys.** Not a queue, not a board, not a
+⚠ **No *agent* writes another agent's keys.** Not a queue, not a board, not a
 mailbox — it sends an envelope and the far edge writes its own. Build 12
 generalised this from queues to every per-agent key, and it is what keeps "who
 did this" answerable.
+
+⚠ **The router does, and that is its job** (`router/service.py:83`, `:93` push
+into a recipient's ingress), as does an adapter writing the board of the agent it
+is delivering for. The rule constrains *participants*, not the switch — an
+earlier wording said "nothing", which the code contradicts.
 
 ## 6. Kinds — the capability list
 
