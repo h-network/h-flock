@@ -173,12 +173,16 @@ The fixed lifecycle participant (`vab: control`), the tmux window reconciler
 
 ## Open decisions
 
-| # | decision | cost |
+| # | decision | status |
 |---|---|---|
-| 1 | name for the roster value now called `vab` | wire + keys + docs |
-| 2 | `router` → `switch`? | 38 code, 374 prose |
-| 3 | `producer`/`recipient` → `source`/`destination`? | envelope v2 |
-| 4 | `endpoint` → ? | keys + env |
-| 5 | the two adapters — inbound and outbound names | internal only |
-| 6 | the gateway fork: participant or router branch | design, not naming |
-| 7 | put the RD in the envelope — qualified recipients? | envelope v2 |
+| 2 | `router` → `switch` | ✅ **decided** — it switches within a tenant |
+| 3 | `producer`/`recipient` → `source`/`destination` | ✅ **decided** — envelope v2 |
+| 6 | the gateway fork | ✅ **resolved by 2** — a routing branch inside a *switch* is a category error, so the router is a separate component reached by name |
+| 7 | RD in the envelope | ✅ **required, not optional** — inter-pod addressing is impossible with a bare name (`DESIGN-layers` §4) |
+| 1 | name for the roster value (`tmux`/`api`/`control`) | ⚠ **open** — `VAB` has moved to the address concept, so this needs its own word |
+| 4 | `endpoint` → ? | ⚠ **open** |
+| 5 | adapter names — and **from whose viewpoint** | ⚠ **open**: `ingress`/`egress` are opposite depending on whether you stand at the participant or at the switch |
+
+**The layer design these serve is in [`DESIGN-layers.md`](DESIGN-layers.md)** —
+switch and router, the three-and-two lookup split, RT as a set intersection, and
+why qualified addressing is a precondition rather than a feature.
