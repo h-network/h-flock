@@ -45,7 +45,7 @@ restarted and deployed without disturbing the others.
 |---|---|---|
 | `GET` | `/health` | liveness |
 | `GET` | `/agents` | enrolled agents, from the roster |
-| `GET` | `/agents/{agent}` | queue depths, presence state (`working`, `idle`, `unknown`), and VAB status (`vab`) |
+| `GET` | `/agents/{agent}` | queue depths, presence state (`working`, `idle`, `unknown`, `blocked`), and VAB status (`vab`) |
 | `POST` | `/agents/{agent}/envelopes` | put an envelope on the bus, of any kind (optional `as`) |
 | `GET` | `/agents/{agent}/messages` | get stored inbox messages for an api client (`?after=<cursor>&limit=100`) |
 | `GET` | `/agents/{agent}/messages/stream` | live SSE stream of inbox messages (`?after=<cursor>`) |
@@ -85,6 +85,8 @@ could not be reached over HTTP at all.
 A POST request can specify `"as": "<client>"` to declare its producer identity.
 `as` is validated against the roster — it must name an enrolled agent with VAB `api`.
 When omitted, `producer` defaults to `"api"`.
+
+⚠ **Payload size limit:** Envelopes submitted to `POST /agents/{agent}/envelopes` are bounded at **1 MB (1,048,576 bytes)**. Envelopes exceeding 1 MB are rejected immediately with HTTP `422 Unprocessable Content`.
 
 ⚠ **The api must not know what kinds exist.** It builds an envelope and writes
 its own egress; which kinds are openable is a fact about adapters, discovered at
