@@ -31,11 +31,27 @@ Requiring it breaks hiring.
 sane default — from "you said something I do not understand", which never
 should.
 
-| payload | today | after |
+⚠ **This build bases on `main`, where the key is still `vab`.** An earlier
+version of this table showed `{"vab":"api"}` returning 422, which would break
+every currently valid caller — `clients/web/server.py:1206`,
+`clients/telegram/bot.py:69` and the container scenarios all send it. `tmux`
+caught that before implementing it. **Enforce the allow-list in `main`'s
+vocabulary:**
+
+| payload | today | after this build |
 |---|---|---|
 | `{"agent":"x"}` | tmux | tmux — **unchanged** |
-| `{"agent":"x","vab":"api"}` | **silently tmux** | **422, unknown key `vab`** |
-| `{"agent":"x","port_type":"api"}` *(post-rename)* | — | api |
+| `{"agent":"x","vab":"api"}` | api | api — **unchanged, it is valid on `main`** |
+| `{"agent":"x","typo":"api"}` | **silently tmux** | **422, unknown key `typo`** |
+
+⚠ **The post-rename behaviour then falls out for free.** When
+`rename/vocabulary` lands, the codemod rewrites the allow-list to `port_type`
+and `provider`, at which point a client still sending `vab` hits the unknown-key
+path and gets its 422 — with no second change and no compatibility window.
+
+⚠ **That coupling is now load-bearing:** this build adds fresh occurrences of
+`vab` and `endpoint` to `main` inside the allow-list, so the next regeneration
+of `rename/vocabulary` must pick them up. Verify it does rather than assume it.
 
 ## 3. Scope
 
