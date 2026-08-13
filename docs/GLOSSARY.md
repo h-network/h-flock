@@ -90,14 +90,15 @@ lifecycle endpoint. Defined in `LLD-bus-and-router` §1 and under-used since:
 **A participant that runs a CLI.** Scopes correctly to a future `oneoff` or
 other attachment types.
 
-### the roster value — `tmux` / `api` / `control` ⚠ *needs a name*
+### ✅ `port_type` — the roster value: `tmux` / `api` / `control`
 **How a participant is attached, and therefore how delivery happens.** A window,
 a mailbox, or an opener.
 
 - **networking:** the port type — a property of the port, not of the frame.
-- **currently called:** `vab`, which belongs to the address model above.
-- **candidates from the inventories:** `attachment_type` (bus), `port_type`
-  (bus, api), `driver` (api). ⚠ **Decision outstanding.**
+- **decided:** `port_type`. The HLD's own switch table already calls it *"port
+  config — a property of the port, not of the frame"*, so the docs were using
+  the word informally before it was chosen.
+- **was called:** `vab`, which belongs to the address model above.
 
 ### `roster`
 **`name → attachment` for a tenant.** The MAC table: membership and port type,
@@ -132,11 +133,21 @@ far edge reads it.
 ### `opener`
 **The thing that knows how to deliver one `kind`** at the far edge.
 
-### `adapter` ⚠ *one word, two things*
-- `adapter/cli.py` — the `office` command putting an envelope **on** the bus
-- `adapter/runner.py` — taking one **off** it and delivering
+### ✅ `egress_adapter` / `ingress_adapter` — was `adapter` for both
+- **`egress_adapter`** — `adapter/cli.py`, the `office` command putting an
+  envelope **on** the bus, writing the participant's egress
+- **`ingress_adapter`** — `adapter/runner.py`, taking one **off** and delivering
 
-Opposite sides of the switch, one name. **Decision outstanding.**
+⚠ **`ingress` and `egress` are relative to the PARTICIPANT**, as a host's rx and
+tx — not to the switch. The switch has no queues of its own: it reads a
+participant's egress and writes a participant's ingress.
+
+⚠ **This choice was deliberate and the alternative was rejected.** Naming them
+from the switch's side is what networking does for *device ports* — but these
+queues hang off participants, and hosts name their own queues. Flipping the
+viewpoint would invert the meaning of `agent:<name>:egress` without breaking
+anything mechanically, so every existing log line and document would quietly
+read backwards.
 
 ### `door`
 **An HTTP surface the outside world reaches**: the api door (`:8080`) and the
@@ -151,12 +162,17 @@ sender↔recipient, **source↔destination** — the model says the third.
 
 ## Elsewhere
 
-### `endpoint` ⚠ *collides*
+### ✅ `provider` — was `endpoint`
 Currently **the model an agent talks to** — `agent:<name>:endpoint`,
 `ENDPOINT_*`, vLLM or ollama. In the network model an endpoint is an addressable
 termination, which is the opposite end of the meaning.
 
-- **candidates:** `model_endpoint` (bus), `provider`, `uplink` (tmux).
+- **decided:** `provider`. It names which inference service an agent's CLI
+  talks to, with its credentials and model ids — `agent:<name>:provider` holds
+  the *name*, `PROVIDER_<NAME>_URL` holds the address, deliberately split so an
+  agent cannot read or change the URL. Producing `ANTHROPIC_BASE_URL`,
+  `ANTHROPIC_AUTH_TOKEN` and the three tier model variables in the window.
+- **frees `endpoint`** for its networking meaning, which is why it collided.
 
 ### `launch`
 The Redis key holding **which CLI a participant runs**. `cli` or `runtime` says
