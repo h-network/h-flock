@@ -81,10 +81,13 @@ def test_prefix_invalid():
 
 def test_envelope_build_and_parse():
     env = build_envelope(kind="Message", producer="alice", recipient="bob", payload={"text": "hello"})
-    assert env["v"] == 1
+    assert env["v"] == 2
+    assert env["l2"] == {"source": "alice", "destination": "bob"}
+    assert env["l3"] == {
+        "source": "default:default:alice",
+        "destination": "default:default:bob",
+    }
     assert env["kind"] == "Message"
-    assert env["producer"] == "alice"
-    assert env["recipient"] == "bob"
     assert env["payload"] == {"text": "hello"}
     assert "stream_id" in env
     assert "correlation_id" in env
@@ -120,7 +123,7 @@ def test_send_and_receive(capsys):
 
     receive(r, pod="acme", tenant="hq", agent="bob", openers={"Message": mock_opener}, timeout=1)
     assert len(opened) == 1
-    assert opened[0]["producer"] == "alice"
+    assert opened[0]["l2"]["source"] == "alice"
 
 
 def test_opener_dead_letter_is_terminal_and_never_opened(capsys):

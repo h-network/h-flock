@@ -5,7 +5,7 @@ from collections.abc import Callable
 
 from .envelope import EnvelopeError, build, parse
 from .keys import prefix
-from .logging import emit
+from .logging import emit, log_record
 
 
 class DeadLetter(Exception):
@@ -24,7 +24,19 @@ def send(
     correlation_id: str | None = None,
     module: str = "bus",
 ) -> str:
-    envelope = build(kind, producer, recipient, payload, correlation_id)
+    try:
+        envelope = build(
+            kind, producer, recipient, payload, correlation_id, pod=pod, tenant=tenant
+        )
+    except EnvelopeError as exc:
+        log_record(
+            module,
+            "send_refused",
+            producer=producer,
+            recipient=recipient,
+            reason=str(exc),
+        )
+        raise
     r.rpush(prefix(pod, tenant, producer, "egress"), json.dumps(envelope, separators=(",", ":")))
     emit(module, "sent", envelope)
     return envelope["stream_id"]

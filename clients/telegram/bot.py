@@ -353,7 +353,7 @@ class TelegramBot:
                 replies = []
                 for m in msgs:
                     self.cursor = m.get("cursor", self.cursor)
-                    if m.get("producer") == self.target_agent:
+                    if m.get("l2", {}).get("source") == self.target_agent:
                         replies.append(m.get("payload", {}).get("text", str(m.get("payload"))))
                 if msgs:
                     self.cursor_store.save(self.cursor)

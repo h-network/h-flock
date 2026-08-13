@@ -2,7 +2,7 @@ import os
 import sys
 import json
 import argparse
-from flock.bus import send, SEGMENT_REGEX, RESERVED
+from flock.bus import send
 from flock.bus import resp as redis
 
 
@@ -44,12 +44,6 @@ def main() -> None:
         text_content = " ".join(text_words)
         kind = args.kind
         payload = {"text": text_content}
-
-    # Validate recipient segment
-    if recipient != "all":
-        if not SEGMENT_REGEX.match(recipient) or recipient in RESERVED:
-            sys.stderr.write(f"Error: Invalid recipient name {recipient!r}.\n")
-            sys.exit(1)
 
     try:
         r = redis.Redis.from_url(redis_url)

@@ -1,4 +1,4 @@
-"""Version-one wire envelopes."""
+"""Version-two layered wire frames."""
 
 import json
 from datetime import datetime, timezone
@@ -8,7 +8,7 @@ from .keys import prefix
 
 
 class EnvelopeError(ValueError):
-    """Raised when a wire value is not a valid envelope."""
+    """Raised when a wire value is not a valid frame."""
 
 
 def _timestamp() -> str:
@@ -16,12 +16,43 @@ def _timestamp() -> str:
     return now.isoformat(timespec="milliseconds").replace("+00:00", "Z")
 
 
-def _agent_name(value: object) -> str:
+def _segment(value: object, field: str = "agent") -> str:
     try:
         prefix("check", "check", agent=value)  # type: ignore[arg-type]
     except KeyError as exc:
-        raise EnvelopeError(f"invalid agent name: {value!r}") from exc
+        raise EnvelopeError(f"invalid {field} name: {value!r}") from exc
     return value  # type: ignore[return-value]
+
+
+def _address(value: object, field: str, *, broadcast: bool = False) -> tuple[str, str, str]:
+    if broadcast and value == "all":
+        return "", "", "all"
+    if not isinstance(value, str):
+        raise EnvelopeError(f"invalid {field} address: {value!r}")
+    parts = value.split(":")
+    if len(parts) != 3:
+        raise EnvelopeError(f"{field} must be a qualified pod:tenant:agent address")
+    pod, tenant, agent = parts
+    _segment(pod, "pod")
+    _segment(tenant, "tenant")
+    if not (broadcast and agent == "all"):
+        _segment(agent)
+    return pod, tenant, agent
+
+
+def resolve_destination(*, pod: str, tenant: str, destination: str) -> tuple[str, str]:
+    """Return qualified L3 and local L2 destinations, or reject non-local L3."""
+    _segment(pod, "pod")
+    _segment(tenant, "tenant")
+    if destination == "all":
+        return f"{pod}:{tenant}:all", "all"
+    if ":" not in destination:
+        agent = _segment(destination)
+        return f"{pod}:{tenant}:{agent}", agent
+    dst_pod, dst_tenant, agent = _address(destination, "destination")
+    if (dst_pod, dst_tenant) != (pod, tenant):
+        raise EnvelopeError(f"no route to non-local destination {destination!r}")
+    return destination, agent
 
 
 def _identifier(value: object, field: str) -> str:
@@ -36,53 +67,80 @@ def build(
     recipient: str,
     payload: dict,
     correlation_id: str | None = None,
+    *,
+    pod: str = "default",
+    tenant: str = "default",
 ) -> dict:
-    """Construct a valid v1 envelope, propagating or minting its correlation id."""
+    """Construct a valid v2 frame after resolving its destination locally."""
     if not isinstance(kind, str) or not kind:
         raise EnvelopeError("kind must be a non-empty string")
-    producer = _agent_name(producer)
-    recipient = "all" if recipient == "all" else _agent_name(recipient)
+    source = _segment(producer)
+    l3_destination, l2_destination = resolve_destination(
+        pod=pod, tenant=tenant, destination=recipient
+    )
     if not isinstance(payload, dict):
         raise EnvelopeError("payload must be an object")
     correlation_id = uuid4().hex if correlation_id is None else _identifier(correlation_id, "correlation_id")
     return {
-        "v": 1,
+        "v": 2,
         "kind": kind,
         "stream_id": uuid4().hex,
         "correlation_id": correlation_id,
         "ts": _timestamp(),
-        "producer": producer,
-        "recipient": recipient,
+        "l2": {"source": source, "destination": l2_destination},
+        "l3": {
+            "source": f"{pod}:{tenant}:{source}",
+            "destination": l3_destination,
+        },
         "payload": payload,
     }
 
 
-def parse(raw: str) -> dict:
-    """Parse and validate a v1 JSON envelope; ignore unknown outer fields."""
+def _decode(raw: str) -> dict:
     if isinstance(raw, bytes):
         try:
             raw = raw.decode("utf-8")
         except UnicodeDecodeError as exc:
-            raise EnvelopeError("envelope is not UTF-8") from exc
+            raise EnvelopeError("frame is not UTF-8") from exc
     if not isinstance(raw, str):
-        raise EnvelopeError("envelope must be text")
+        raise EnvelopeError("frame must be text")
     try:
-        envelope = json.loads(raw)
+        frame = json.loads(raw)
     except (json.JSONDecodeError, TypeError) as exc:
-        raise EnvelopeError("envelope is not valid JSON") from exc
-    if not isinstance(envelope, dict):
-        raise EnvelopeError("envelope must be an object")
-    if envelope.get("v") != 1:
-        raise EnvelopeError("unsupported envelope version")
-    if not isinstance(envelope.get("kind"), str) or not envelope["kind"]:
+        raise EnvelopeError("frame is not valid JSON") from exc
+    if not isinstance(frame, dict):
+        raise EnvelopeError("frame must be an object")
+    if frame.get("v") != 2:
+        raise EnvelopeError("unsupported frame version")
+    if not isinstance(frame.get("kind"), str) or not frame["kind"]:
         raise EnvelopeError("kind must be a non-empty string")
-    _identifier(envelope.get("stream_id"), "stream_id")
-    _identifier(envelope.get("correlation_id"), "correlation_id")
-    if not isinstance(envelope.get("ts"), str) or not envelope["ts"]:
+    _identifier(frame.get("stream_id"), "stream_id")
+    _identifier(frame.get("correlation_id"), "correlation_id")
+    if not isinstance(frame.get("ts"), str) or not frame["ts"]:
         raise EnvelopeError("ts must be a non-empty string")
-    _agent_name(envelope.get("producer"))
-    if envelope.get("recipient") != "all":
-        _agent_name(envelope.get("recipient"))
-    if not isinstance(envelope.get("payload"), dict):
+    return frame
+
+
+def parse_for_switch(raw: str) -> dict:
+    """Validate only the common and L2 fields used for local forwarding."""
+    frame = _decode(raw)
+    l2 = frame.get("l2")
+    if not isinstance(l2, dict):
+        raise EnvelopeError("l2 must be an object")
+    _segment(l2.get("source"), "L2 source")
+    if l2.get("destination") != "all":
+        _segment(l2.get("destination"), "L2 destination")
+    return frame
+
+
+def parse(raw: str) -> dict:
+    """Parse and validate every field consumed at the adapter boundary."""
+    frame = parse_for_switch(raw)
+    l3 = frame.get("l3")
+    if not isinstance(l3, dict):
+        raise EnvelopeError("l3 must be an object")
+    _address(l3.get("source"), "L3 source")
+    _address(l3.get("destination"), "L3 destination", broadcast=True)
+    if not isinstance(frame.get("payload"), dict):
         raise EnvelopeError("payload must be an object")
-    return envelope
+    return frame

@@ -373,8 +373,11 @@ def test_cli_send(mock_redis_cls, monkeypatch):
     assert egress_key in mock_r.lists
     assert len(mock_r.lists[egress_key]) == 1
     pushed = json.loads(mock_r.lists[egress_key][0])
-    assert pushed["producer"] == "alice"
-    assert pushed["recipient"] == "bob"
+    assert pushed["l2"] == {"source": "alice", "destination": "bob"}
+    assert pushed["l3"] == {
+        "source": "acme:hq:alice",
+        "destination": "acme:hq:bob",
+    }
     assert pushed["payload"] == {"text": "hello world"}
 
 
@@ -399,8 +402,8 @@ def test_run_adapter_vab_api_pops_and_writes_mailbox(mock_redis_cls):
     stream_id, fields = mock_r.streams[inbox_key][0]
     assert "envelope" in fields
     stored_env = json.loads(fields["envelope"])
-    assert stored_env["producer"] == "alice"
-    assert stored_env["recipient"] == "api"
+    assert stored_env["l2"]["source"] == "alice"
+    assert stored_env["l2"]["destination"] == "api"
     assert stored_env["payload"] == {"text": "reply"}
 
 

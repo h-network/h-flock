@@ -108,8 +108,8 @@ def emit(
         event,
         stream_id=envelope.get("stream_id"),
         correlation_id=envelope.get("correlation_id"),
-        producer=envelope.get("producer"),
-        recipient=envelope.get("recipient"),
+        producer=envelope.get("l2", {}).get("source"),
+        recipient=envelope.get("l2", {}).get("destination"),
         reason=reason,
         count=count,
     )
