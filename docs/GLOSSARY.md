@@ -108,23 +108,27 @@ nothing else.
 
 ## Moving an envelope
 
-### `switch` versus `router` ⚠ *decision outstanding*
+### ✅ `switch` — was `router`
 The forwarding component moves envelopes between participants **inside one
-tenant** by destination name. That is switching. It is currently the module
-`flock/router`, while `HLD.md:17` opens with `| L2 switch | h-flock |`.
+tenant** by destination name. That is switching, and `HLD.md:17` already opened
+with `| L2 switch | h-flock |`.
 
-⚠ **If the gateway is built, `router` will be the wrong name twice** — the L2
-component called router, and the L3 component called gateway. `bus` proposed
-`tenant switch`. 38 code occurrences, 374 in prose.
+**Executed** on `rename/vocabulary`: `flock/router` → `flock/switch`, 104 code
+and 423 prose replacements. ⚠ It reads **one** thing per envelope — destination
+→ attachment. The port does the filtering (`DESIGN-layers` §2).
 
-### `gateway` *(reserved, not built)*
-**The L3 router**: reads what the switch will not, applies policy, resolves
-qualified names, re-addresses. Reached **by name, like any participant** — as
-hosts reach a default gateway.
+### `router` — the L3 component *(reserved, not built)*
+**Reads what the switch will not**: applies RT policy, resolves qualified
+addresses, re-addresses. Reached **by name, like any participant** — as hosts
+reach a default gateway.
 
-⚠ Designed twice in the same document: `LLD-bus-and-router` §7 as a branch in
-the router, §3.2 as a participant with its own attachment type. **Only one can
-be built.**
+⚠ **The fork is resolved**: `LLD-bus-and-switch` §7 designed it as a branch
+inside the forwarding path, §3.2 as a participant. Once the L2 component is a
+*switch*, a routing branch inside it is a category error, so it is a separate
+component reached by name.
+
+⚠ **It is the first place a filter is a real security control**, because it is
+the first one crossing a container boundary — `DESIGN-layers` §2.3 and §7.5.
 
 ### `kind`
 **What the payload is.** The ethertype: the switch ignores it, an opener at the
@@ -133,21 +137,38 @@ far edge reads it.
 ### `opener`
 **The thing that knows how to deliver one `kind`** at the far edge.
 
-### ✅ `egress_adapter` / `ingress_adapter` — was `adapter` for both
-- **`egress_adapter`** — `adapter/cli.py`, the `office` command putting an
-  envelope **on** the bus, writing the participant's egress
-- **`ingress_adapter`** — `adapter/runner.py`, taking one **off** and delivering
+### ✅ `port` — was `adapter`
+**The switchport a participant is attached to.** It belongs to exactly one
+participant, it has a `port_type`, and it is where that participant meets the
+fabric. It **builds** (stamping `source` from the port, not from an argument)
+and it **filters** — it is the closest component to the source, which is where
+filtering belongs.
 
-⚠ **`ingress` and `egress` are relative to the PARTICIPANT**, as a host's rx and
-tx — not to the switch. The switch has no queues of its own: it reads a
-participant's egress and writes a participant's ingress.
+- **networking:** the access port. `port_type` is literally its type, which is
+  why that name fitted before anything was called a port.
+- **not:** a TCP port, and not a security boundary — see `DESIGN-layers` §2.3.
+  The port filters **mistakes, not adversaries**; `HLD` §10 makes the container
+  the boundary and an agent with `sudo` can bypass any of this.
+- **halves:** the port **sends** (`adapter/cli.py` today) and **delivers**
+  (`adapter/runner.py` today).
 
-⚠ **This choice was deliberate and the alternative was rejected.** Naming them
-from the switch's side is what networking does for *device ports* — but these
-queues hang off participants, and hosts name their own queues. Flipping the
-viewpoint would invert the meaning of `agent:<name>:egress` without breaking
-anything mechanically, so every existing log line and document would quietly
-read backwards.
+### ⚠ `ingress` / `egress` — the QUEUES only, never the port's halves
+`agent:<name>:egress` is what the participant sends; `agent:<name>:ingress` is
+what it receives. **Relative to the PARTICIPANT**, as a host's rx and tx. The
+switch has no queues of its own: it reads a participant's egress and writes a
+participant's ingress.
+
+⚠ **This is why the port's halves are `send` and `deliver` and not
+`ingress`/`egress`.** Networking states a *port's* ingress from the **switch's**
+side — traffic entering the fabric — while these queues are named from the
+participant's. The same component would be "the ingress filter" and
+`egress_adapter` simultaneously. Naming the halves by what they do removes the
+viewpoint question instead of answering it twice.
+
+⚠ **The queues keep the participant's viewpoint.** Flipping them would invert
+`agent:<name>:egress` without breaking anything mechanically, so every existing
+log line and document would quietly read backwards — and it is a Redis key
+change on top.
 
 ### `door`
 **An HTTP surface the outside world reaches**: the api door (`:8080`) and the
@@ -197,7 +218,7 @@ The fixed lifecycle participant (`vab: control`), the tmux window reconciler
 | 7 | RD in the envelope | ✅ **required, not optional** — inter-pod addressing is impossible with a bare name (`DESIGN-layers` §4) |
 | 1 | roster value (`tmux`/`api`/`control`) → `port_type` | ✅ **decided** — the HLD's switch table already called it a port property |
 | 4 | `endpoint` → `provider` | ✅ **decided** — frees `endpoint` for its networking meaning |
-| 5 | adapter names — and from whose viewpoint | ✅ **decided** — `egress_adapter`/`ingress_adapter`, **participant-relative**; the switch-relative alternative was considered and rejected |
+| 5 | adapter names — and from whose viewpoint | ✅ **revised** — the component is a `port`; its halves are **send** and **deliver**, so the viewpoint question does not arise. `ingress`/`egress` stay participant-relative and name **queues only** |
 
 ⚠ **This table said "open" for 1, 4 and 5 while the entries above said decided.**
 A document contradicting itself is the exact defect build 44 was written to

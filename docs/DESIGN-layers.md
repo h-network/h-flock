@@ -23,34 +23,94 @@ store — the objection that killed the alternative design in
 ⚠ **§7's "registry of enrolled tenants" was the right idea in the wrong
 component.** It belongs in the router's table.
 
-## 2. The host decides local-or-gateway; the switch only forwards
+## 2. The adapter IS the port, and the port is where filtering belongs
 
-This is how hosts and switches actually divide the work. A host consults its own
-table, finds the destination is not on-link, and addresses the frame to the
-**gateway's** address. The switch never knows a routing decision happened.
+⚠ **The component we call `adapter` is a switchport.** It belongs to exactly one
+participant, it has a type (`port_type`: `tmux` / `api` / `control`), it is where
+the participant meets the fabric, and it is the closest thing to the source. Once
+named that way, three things that were separately decided turn out to be the same
+decision.
 
-**Adapter (the host), once per send — three checks:**
+### 2.1 Why the filter is at the port and not in the switch
 
-1. is `destination` in the local VAB table? → address it directly
-2. if not → is there a default route? → **address the envelope to the router**
-3. do my export tags meet its import tags? → fail fast, with a real error at the
-   sender
+On real hardware you filter on the switchport, and it is free — TCAM, per-port
+silicon, line rate. **There is no software equivalent.** So "filter at the
+switchport" does *not* translate to "filter in the switch process". It
+translates to **filter at the port** — and in this architecture the software
+sitting on the port is the adapter. The switch process is the analogue of the
+*fabric*, not of a port.
 
-**Switch, once per envelope — two:**
+⚠ **The argument is scaling, not current load.** Measured: the forwarding
+decision is ~500 µs at 100 stations against a ~160 ms per-delivery path — about
+**0.3%**. The switch is not busy today, and any claim that it is can be
+disproved in ten minutes. The real point is that **the switch is the one
+component whose cost cannot be parallelised**, while ports are per-send and
+concurrent. A `source:destination` pair ACL is *n²* and RT tag intersection is
+per-envelope set work; both compound in exactly the wrong place.
 
-1. destination → attachment (the forwarding table it already reads)
-2. `source:destination` port ACL
+### 2.2 The division
 
-⚠ **The switch's check is the enforcement; the adapter's is advisory.** The
-adapter version exists for fast feedback and to avoid consuming the bus. A host
-that lies or skips its checks still meets the port ACL. Remove the switch-side
-check and this becomes good manners rather than a control.
+**Port, once per send — it builds and it filters:**
+
+1. **build** — stamp `source` from the port itself, not from a caller argument
+2. is `destination` local? → address it directly
+3. if not → is there a default route? → address the envelope to the **router**
+4. do my export tags meet its import tags? → fail fast, real error **at the
+   sender**
+
+**Switch, once per envelope — one thing:**
+
+1. destination → attachment, from the forwarding table (§3.1)
+
+⚠ **The switch's read-set is exactly source, destination and its table.** That
+is what the h-vab trial's switch did, and it is the same conclusion the FIB
+decision reached from a different direction.
 
 ⚠ **A wrong "local" decision is safe:** the switch finds no destination and
 dead-letters, which is what a switch does with unknown unicast.
 
-⚠ **The saving is real** even at equal lookup counts — the switch is shared, the
-adapters are per-send and parallel. Resolution belongs off the hot path.
+### 2.3 ⚠ Placement, not enforceability
+
+We inherit hardware ingress filtering's **placement** and none of its
+**enforceability**. A real switch's ASIC enforces port security even though it
+is configured per port; the host cannot bypass it. Here the port's filter runs
+**in the participant's own process**, and `HLD` §10 is explicit — *"the container
+is the boundary, and nothing inside it is"*, agents run with `sudo`. An agent can
+skip `office send` and write Redis directly.
+
+**So the port filters mistakes, not adversaries** — a wrong destination, a stale
+name, a client left behind by a rename. That is most of what actually goes
+wrong: build 49 shipped nine clients still sending `vab` and nothing caught it
+until a participant silently mis-enrolled.
+
+⚠ **An earlier version of this section said "the switch's check is the
+enforcement; the adapter's is advisory". That was wrong in both halves.** The
+port's filter is the real one, and the switch's ACL was never enforcement in a
+security sense either — both live inside the boundary. Inside a tenant, both are
+**hygiene**: defence in depth against bugs, arranged closest-to-source first,
+exactly as you would order ACLs.
+
+⚠ **The first filter in h-flock that is a genuine security control is RT
+import/export at the router**, because it is the first one crossing a container
+boundary, where the far side is a different trust domain. See §7.5.
+
+### 2.4 Naming the port's two halves
+
+⚠ **Do not name them `ingress` / `egress`.** Those words are already taken, and
+they point the other way. `GLOSSARY` decided the *queues* are
+participant-relative — `agent:<name>:egress` is what the participant sends — while
+networking states a **port's** ingress from the *switch's* side. The same
+component is then "the ingress filter" and `egress_adapter` at once.
+
+**The port has a `send` half and a `deliver` half.** No direction word, no
+viewpoint, and "the port's filter" is unambiguous because there is one filter and
+it is on send.
+
+| today | becomes |
+|---|---|
+| `adapter/cli.py` — `office send` | the port's **send** half |
+| `adapter/runner.py` — kicked delivery | the port's **deliver** half |
+| `agent:<name>:egress` / `:ingress` | **unchanged** — participant-relative |
 
 ## 3. The VAB table
 
@@ -154,7 +214,21 @@ whole network.
 3. ✅ **decided** — `egress_adapter`/`ingress_adapter`, **participant-relative**
 4. ✅ **decided** — tags in a companion key; the switch reads a derived FIB, not
    the roster (§3.1)
-5. ⚠ **open** — default posture: allow-all or deny-all
+5. ✅ **decided — the default posture is SPLIT, because the question was wrong**
+
+   Asking "allow-all or deny-all" as one global choice assumed one kind of
+   filter. There are two, and they sit on opposite sides of the only boundary
+   that actually holds (§2.3):
+
+   | where | what it is | default |
+   |---|---|---|
+   | within a tenant | switchport, **hygiene** | **permit** — no tags means reachable |
+   | at the router, between tenants or pods | firewall, **real trust boundary** | **deny** — no import tag means unreachable |
+
+   ⚠ Same mechanism, opposite defaults, and the reason is not taste: it is
+   whether the filter spans a boundary that can be enforced. Inside the
+   container nothing can be, so a deny-default there buys nothing and breaks
+   every tenant.
 6. ⚠ **open, and the one that gates everything** — envelope v2:
    `source`/`destination` **and the qualified address form**
 
