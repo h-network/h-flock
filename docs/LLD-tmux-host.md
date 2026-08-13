@@ -9,18 +9,21 @@
 
 ## 1. Purpose
 
-One tmux server, one session per tenant, one window per agent. This module
+One tmux server, one session per tenant, one window per `vab: tmux` agent. This module
 creates them, keeps them matching the roster, and configures them so that
 everything else can assume they are there.
 
-It knows nothing about the bus. It does not read queues, does not deliver, does
-not know what an envelope is. Its entire output is "there is a window named
-`backend` and something is running in it".
+It reads roster membership and per-agent launch configuration from Redis, but
+knows nothing about envelope transport: it does not read queues or deliver. Its
+entire output is "there is a window named `backend` and something is running in
+it".
 
 ## 2. Headless is the normal state
 
-The server runs detached and **nobody attaches**. That is not a degraded mode —
-it is how the office runs, and everything downstream is built for it.
+The server starts detached and **requires no human client**. The session service
+later attaches one headless control-mode client for terminal streaming; no
+operator attachment is required. That is not a degraded mode — it is how the
+office runs, and everything downstream is built for it.
 
 ```
   tmux new-session -d          create without attaching
@@ -101,8 +104,10 @@ once and nothing else has to remember.
 
 ⚠ **Socket access is total.** Anything that can reach it can `send-keys` into any
 pane, which is arbitrary code execution as that user. There is no authentication
-and no per-window scoping. The directory permissions are the boundary — keep it
-owner-only, and treat handing out the socket as handing out the machine.
+and no per-window scoping. Keep the directory owner-only to exclude other host
+users, but it is not a boundary between agents: they share the container user
+and the HLD explicitly makes the container the boundary. Treat socket access as
+control of the tenant.
 
 ⚠ **A window index is not stable — tmux renumbers on kill.** Measured: with
 windows `[1:architect, 2:sme-2, 3:sme-3]`, retiring `sme-2` left
@@ -141,8 +146,10 @@ the session without leaving a departed agent present-but-unaddressable.
 
 Nothing announces a roster change, so this module polls for it like the others.
 Having no queue to block on, it polls on a loop of its own, every
-`ROSTER_POLL_SECONDS` — the same value the router and the adapter take from the
-environment, so all three see the same membership. See `LLD-bus-and-router` §3.2
+`ROSTER_POLL_SECONDS` — the same value the router takes from the environment, so
+both roster-polling processes refresh on the same interval. The per-delivery
+adapter reads the current VAB directly and does not poll. See
+`LLD-bus-and-router` §3.2
 for why that value is shared, and for the one case where being a poll behind
 still hurts: windows should lead routes, so this module reconciling promptly is
 what keeps a new agent's first envelope from being dead-lettered.

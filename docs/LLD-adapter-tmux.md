@@ -13,13 +13,14 @@ An agent in a tmux window is a program at a terminal. It cannot pop a queue, and
 nothing can hand it an object — it reads bytes on a screen and writes bytes to a
 prompt. This adapter is what makes such a thing addressable on the bus.
 
-It implements the two doors for agents and enrolled REST clients, with two delivery routines:
+It implements the receiving edge for tmux agents and enrolled REST clients. The
+agent-side `office` command is shown for context, but it calls the shared bus
+library directly and is not part of `flock.adapter`:
 
 ```
-  ┌──────────────────────── tmux adapter ─────────────────────────┐
+  ┌──────────────────── agent and receiving edge ─────────────────┐
   │                                                               │
-  │  send      a command the agent runs inside its own window     │
-  │            builds the envelope, writes its own egress         │
+  │  send      office command → bus library → own egress          │
   │                                                               │
   │  receive   blocks on ingress, woken by Redis on arrival       │
   │            for vab=tmux: pops it, opens it, pastes into window │
@@ -28,11 +29,11 @@ It implements the two doors for agents and enrolled REST clients, with two deliv
   └───────────────────────────────────────────────────────────────┘
 ```
 
-**Send is a tool, not a loop.** The agent emits by invoking a command (`office send`,
-`office broadcast`, `office add`, etc.), the way it invokes anything else. The
-adapter's job on that side is to make the command available in the window and
-configured with the agent's own identity (`AGENT_NAME`), so it writes the right
-egress without being told.
+**Send is a tool, not a loop.** The agent emits by invoking a command (`office
+send`, `office broadcast`, `office add`, etc.), the way it invokes anything
+else. The tmux host makes that command available in the window and configures it
+with the agent's own identity (`AGENT_NAME`), so the shared bus library writes
+the right egress without being told. The adapter is not involved on this side.
 
 **Receive runs outside the window**, because the agent has no way to know an
 envelope arrived. Something else has to be waiting on its behalf and deliver it.
@@ -64,9 +65,11 @@ process memory**: delivery takes hundreds of milliseconds, arrivals are not rate
 limited, so a loop draining as fast as it can buffers unboundedly in RAM,
 invisible, lost on restart, and with nothing to inspect when it goes wrong.
 
-Triggering on arrival keeps the backlog in Redis, which is the place it
-should be. It is durable there, it is visible there, and depth per agent is a
-number anything can read.
+Triggering on arrival keeps the backlog in Redis, which is the place it should
+be. It survives adapter processes and is visible there, and depth per agent is a
+number anything can read. This deployment deliberately disables Redis
+persistence, so the backlog does not survive a tenant restart
+(`LLD-container` §7).
 
 **One delivery per agent at a time, and this is the one thing the kick does not
 give for free.** The number of adapters running for backend is the number of kicks
@@ -189,7 +192,8 @@ submits its first line early and arrives split in two.
 **Verification never reads the pane and never retries.** Before the paste, the
 adapter writes the `pending.verify` marker described in §3. The router later
 compares it with the CLI's own session-file `input` events and reports verified,
-unverified, or unjudged. A rendered pane is not a data source (HLD invariant 7),
+unverified, or unjudged. A rendered pane is not a data source (the HLD's
+*nothing in the data path reads a terminal* invariant),
 and an unverified delivery is evidence for an operator rather than permission to
 paste the same command again.
 
@@ -265,11 +269,12 @@ as PID 1, and unrelated to this choice.
 
 **Delivery gating** — see §5. Needs measurement first.
 
-**Reading the window** — capturing pane output back onto the bus is a different
-job with a different shape, and nothing needs it yet.
+**Reading the window back onto the bus** — this remains out of scope. The
+session service does read terminal output for human viewers, out of band from
+envelope delivery; it does not turn pane output into bus data.
 
-**Session endpoints** — exposing a live window over HTTP belongs to whatever
-serves that, not here.
+**Session endpoints** — implemented by the separate `flock.session` module; they
+remain outside this adapter.
 
 ## 8. What this is not
 
