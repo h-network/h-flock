@@ -62,8 +62,8 @@ def prefix(pod: str, tenant: str, agent: str | None = None,
            resource: str | None = None) -> str
     # pod:<pod>:tenant:<tenant>[:agent:<agent>][:<resource>]
     # validates every segment against ^[a-z0-9][a-z0-9-]{0,62}$
-    # rejects the reserved words pod / tenant / agent
-    # raises KeyError on anything invalid. There is no way to build a flat key.
+    # rejects the reserved words pod / tenant / agent / all and all-digit values
+    # raises KeyError on anything invalid. There is no way to build a flat Redis key.
 
 # flock.bus.envelope
 def build(kind: str, producer: str, recipient: str, payload: dict,
@@ -153,7 +153,8 @@ def write_agent_guide(cwd: str, agent_name: str, tenant: str = "default",
     # every window gets one — create_window calls this for all callers,
     # so a guide is not something a caller can forget
 
-def generate_agents_md(agent_name: str, tenant: str = "default") -> str
+def generate_agents_md(agent_name: str, tenant: str = "default",
+                       lead: str | None = None) -> str
     # the guide text itself. Names the board, because nothing else will:
     # a board is pulled, so a silent guide makes it invisible
 
@@ -213,15 +214,19 @@ stops meaning anything.
 delivered envelope's life, and that a crash shows up as "popped, no outcome".
 That only works if the records join, so the shape is a contract.
 
-**One JSON object per line, on stdout.** The container collects them; nothing
-writes a log file.
+**One JSON object per line.** Daemons write records to stdout for the container
+to collect. `office` runs inside an agent pane, so it suppresses stdout and
+appends to `/home/ubuntu/.flock/window.log.jsonl`; the router tails that spool to
+its own stdout. Board mutations also append their separate operator history to
+`TASK_RECORD` (default `/home/ubuntu/.flock/tasks.jsonl`). These files are
+transport paths for records, not competing lifecycle schemas.
 
 | Field | | |
 |---|---|---|
 | `ts` | required | RFC3339, UTC, milliseconds |
-| `module` | required | `bus` · `router` · `adapter` · `tmuxhost` · `api` |
+| `module` | required | component name, such as `bus`, `router`, `adapter`, `tmuxhost`, `api`, `session`, `watchdog`, `control`, `tmux` or `container` |
 | `event` | required | see below |
-| `stream_id` | required | the join key |
+| `stream_id` | envelope events only | the join key; absent on lifecycle records |
 | `correlation_id` | when known | |
 | `producer`, `recipient` | when known | |
 | `reason` | on a failure | why it dead-lettered |
@@ -388,7 +393,7 @@ the api validates.
 | `StartAgent` | `control` | `{"agent": "networking", "cli": "claude", "vab": "tmux"}` | enrols, creates the window, starts the CLI |
 | `StopAgent` | `control` | `{"agent": "networking"}` | reverses all three |
 | `PauseAgent` | `control` | `{"agent": "networking"}` | stops the CLI, keeps the agent and its queues |
-| `ResumeAgent` | `control` | `{"agent": "networking"}` | starts the CLI again and drains the inbox |
+| `ResumeAgent` | `control` | `{"agent": "networking"}` | starts the CLI again and kicks delivery for queued ingress |
 | `AddTicket` | `tmux` | `{"title", "description", "priority"}` | writes a ticket to that agent's `tasks.todo` — and **pastes nothing** |
 
 ⚠ **`AssignTask` is gone.** It was the old name for `AddTicket`, kept as an alias
@@ -413,8 +418,8 @@ expected for a board write.
 
 ⚠ **`vab: "api"` enrols a client, and creates no window.** A phone app, a web
 front end and a Telegram wrapper are each a roster row and a mailbox — nothing
-else. `StopAgent` on one removes the row and **purges the client's per-agent
-state**, touching no tmux.
+else. `StopAgent` on one removes the row and **purges the client's classified
+identity state**, retaining its mailbox and other data and touching no tmux.
 
 ⚠ **Clients are hidden from an agent's *view*, not from its inbox.** Precisely:
 
@@ -436,15 +441,17 @@ that one difference is the whole security boundary.
 
 ### `StartAgent` and `StopAgent` are the whole operation — for a tmux agent
 
-`StartAgent` enrols the agent; tmuxhost reconciliation creates its window and
-starts the CLI in it. The roster is visible first, so clients show the hire as
-pending until the window appears.
+`StartAgent` publishes optional profile and endpoint state plus the launch key,
+then enrols the agent; tmuxhost reconciliation creates its window and starts the
+CLI in it. Desired launch state is visible before the roster row that triggers
+reconciliation, while actual window creation still follows enrolment.
 `StopAgent` reverses all three. They are not enrolment alone.
 
-⚠ **For `vab: "api"` there is only the first step.** A client enrolment writes a
+⚠ **For `vab: "api"` there is only enrolment.** A client enrolment writes a
 roster row and stops: no launch key, no home, no window, no CLI. `StopAgent`
-removes the row and purges the per-agent state, touching no tmux. Unqualified,
-the sentence above is false for half the participants.
+removes the row and purges classified identity state, touching no tmux; retained
+data such as its inbox survives re-enrolment. Unqualified, the sentence above
+is false for half the participants.
 
 ⚠ **"the mailbox" was too narrow, and naming keys here would go stale the same
 way.** Build 22 replaced the enumeration with a classified set — `flock.bus`
@@ -454,14 +461,16 @@ restate it.
 
 ```
   StartAgent            StopAgent
-    HSET roster networking tmux    HDEL roster networking
-    SET  …:networking:launch cli   DEL  …:networking:launch
+    SET  …:networking:launch cli   HDEL roster networking
+    HSET roster networking tmux    purge classified identity state
     tmuxhost reconciles      kill the window
 ```
 
-**Roster first, tmux second, in both directions.** The roster is desired state,
-tmux is actual state, and the host converges the second toward the first — so a
-crash mid-operation gets *completed* by the next reconcile rather than undone.
+**Desired state before its reconciliation trigger on start; roster before actual
+state on stop.** Launch/profile/endpoint values are written before the roster
+row, because that row can immediately trigger tmuxhost. On stop, the roster row
+is removed before the window. The roster is desired membership and tmux is
+actual state, so the host converges the second toward the first.
 
 ⚠ Reversed on stop it does worse than fail: kill the window first, crash before
 the `HDEL`, and the host finds a roster row with no window and **recreates it**.
@@ -481,9 +490,10 @@ every reader of the MAC table parse an agent's configuration.
 
 ## 7. Seeding the roster
 
-`LLD-bus-and-router` §7 defers who *owns* the roster. Build 01 still needs one to
-exist, so the container's entrypoint writes it once at start, from the
-environment, before any module runs. It is a `HASH` of `agent → VAB`
+Roster ownership is now split deliberately: the container seeds boot members,
+and the control VAB owns runtime enrolment and retirement. The entrypoint writes
+the initial roster at start, from the environment, before any module runs. It
+is a `HASH` of `agent → VAB`
 (`LLD-bus-and-router` §3.2) — the MAC table:
 
 ```bash
@@ -495,9 +505,8 @@ HSET pod:$POD:tenant:$TENANT:roster backend tmux frontend tmux systems tmux api 
 (`LLD-container` §5).
 
 ⚠ **Corrected in build 03 — this used to say "nothing else writes the roster".**
-`StartAgent` and `StopAgent` `HSET` and `HDEL` it, which is the write path §7
-deferred, and it is no longer deferred: it is how `office hire` and `office
-letGo` work.
+`StartAgent` and `StopAgent` `HSET` and `HDEL` it; this runtime write path is how
+`office hire` and `office letGo` work.
 
 What still holds, and is the part worth keeping: **the router never writes the
 roster and never reads its values** — only `HKEYS`/`HEXISTS`, fields not values.
@@ -579,8 +588,10 @@ Response shapes, since every read is a fixed shape and a request can never name
 a key (`LLD-api` §5, §8):
 
 ```json
-GET /agents/backend           { "agent": "backend",
-                              "depths": { "ingress": 0, "egress": 0, "dead": 0 } }
+GET /agents/backend           { "agent": "backend", "vab": "tmux",
+                              "depths": { "ingress": 0, "egress": 0, "dead": 0 },
+                              "presence": { "state": "idle", "since": "…",
+                                            "last_activity": "…" } }
 
 GET /agents/backend/board     { "agent": "backend",
                               "todo": [], "doing": [], "hold": [], "done": [] }
@@ -588,7 +599,7 @@ GET /agents/backend/board     { "agent": "backend",
 GET /board                  { "agents": [ { "agent": "backend", "todo": [], … },
                                           { "agent": "frontend",   … } ] }
 
-GET /agents                 { "agents": ["backend", "frontend", "systems"] }
+GET /agents                 { "agents": ["api", "backend", "frontend", "host", "systems"] }
 ```
 
 A list rather than a map for `GET /board`, so roster order is expressible and
@@ -701,13 +712,14 @@ which is no weaker than `producer` already being forgeable.
 
 ## 9. Shared environment
 
-Set once by the container, inherited by everything (`LLD-container` §4).
+Supplied by the container, with deliberate per-process handoff where credentials
+or boot-only configuration must not reach agent windows (`LLD-container` §4).
 
 | | |
 |---|---|
-| `POD`, `TENANT` | the prefix every key is built from |
-| `AGENTS` | comma-separated `name:vab` pairs, seeds the roster |
-| `ROSTER_POLL_SECONDS` | default `5`. One value, three readers |
+| `POD`, `TENANT` | the prefix every Redis key is built from |
+| `AGENTS` | comma-separated `name:vab` pairs; boot-only roster seed, unset before tmux starts |
+| `ROSTER_POLL_SECONDS` | default `5`. Shared by the router and tmuxhost |
 | `ACTIVITY_POLL_SECONDS` | default `2`. How often the router tails CLI session files for the activity feed |
 | `VERIFY_AFTER_SECONDS` | default `10`. How long a delivery marker waits for a later `input` event before being reported unconfirmed |
 | `WATCHDOG_ENABLED` | default `1`. `0` exits the process cleanly |
@@ -719,6 +731,7 @@ Set once by the container, inherited by everything (`LLD-container` §4).
 | `BOARD_DONE_MAX` | default `500`. Newest finished tickets retained per agent |
 | `DEAD_MAX` | default `500`. Newest dead-lettered envelopes retained per agent |
 | `WINDOW_LOG_MAX_BYTES` | default `8388608` (8 MB). Consumed window-log spool size before truncation |
-| `REDIS_URL` | `redis://127.0.0.1:6379/0` — loopback, never published |
+| `REDIS_URL` | infrastructure-process handoff; loopback Redis, never inherited by agent windows or published |
 | `AGENT_NAME` | in an agent's window only |
-| `API_TOKEN`, `API_BIND` | api only. Non-loopback bind with no token must refuse to start |
+| `API_TOKEN` | handed only to both external doors; never inherited by agent windows |
+| `API_BIND`, `SESSION_BIND` | bind for each door; exposure policy is decided by the container's published-host configuration |
