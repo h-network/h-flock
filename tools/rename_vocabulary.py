@@ -378,8 +378,10 @@ def run_tier_d() -> dict[str, int]:
     ]
 
     custody_module_patterns = [
+        ('["adapter", "router", "router", "adapter", "adapter"]', '["port", "switch", "switch", "port", "port"]'),
+        ('["adapter", "switch", "switch", "adapter", "adapter"]', '["port", "switch", "switch", "port", "port"]'),
         ('"module": "adapter"', '"module": "port"'),
-        ("'module': 'adapter'", "'module': 'port'"),
+        ("'module': 'adapter'", "'module': 'port"'),
         ('"module":"adapter"', '"module":"port"'),
         ("'module':'adapter'", "'module':'port'"),
         ('module="adapter"', 'module="port"'),
@@ -390,9 +392,10 @@ def run_tier_d() -> dict[str, int]:
         ("emit('adapter'", "emit('port'"),
         ('log_record("adapter"', 'log_record("port"'),
         ("log_record('adapter'", "log_record('port'"),
-        ('record["module"] for record in joined] == ["adapter"', 'record["module"] for record in joined] == ["port"'),
         ('{"module": "adapter"', '{"module": "port"'),
         ('{"module":"adapter"', '{"module":"port"'),
+        (re.compile(r'"adapter"'), '"port"'),
+        (re.compile(r"'adapter'"), "'port'"),
     ]
 
     for fpath in target_files:
