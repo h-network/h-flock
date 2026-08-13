@@ -237,7 +237,12 @@ transport paths for records, not competing lifecycle schemas.
 ⚠ `task_id`, not `id` — a bare `id` sits beside `stream_id` and `correlation_id`
 in the same record and reads as a third identity for the same thing.
 
-Events, in the order they occur:
+The five custody records are a **set, not a sequence**. Join them by
+`stream_id`; do not reconstruct custody by sorting timestamps. `send` appends
+before it emits `sent`, so a fast router can emit `popped` before the producer
+emits `sent` even though custody is correct.
+
+Events, in custody order (not guaranteed log or timestamp order):
 
 ```
   sent          send wrote an egress                     (flock.bus.doors)

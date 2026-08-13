@@ -37,6 +37,27 @@ class LogRedis:
         self.values[key] = value
 
 
+class WriteCountingStdout(io.StringIO):
+    def __init__(self):
+        super().__init__()
+        self.writes = []
+
+    def write(self, value):
+        self.writes.append(value)
+        return super().write(value)
+
+
+def test_stdout_record_and_newline_are_one_write(monkeypatch):
+    output = WriteCountingStdout()
+    monkeypatch.setattr("sys.stdout", output)
+
+    log_record("router", "forwarded", stream_id="abc")
+
+    assert len(output.writes) == 1
+    assert output.writes[0].endswith("\n")
+    assert json.loads(output.writes[0])["event"] == "forwarded"
+
+
 def test_agent_sent_envelope_is_observed_end_to_end_in_central_log(monkeypatch, tmp_path):
     r = LogRedis()
     path = tmp_path / "window.jsonl"
