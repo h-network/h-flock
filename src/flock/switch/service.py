@@ -51,16 +51,21 @@ class Switch:
         l2 = candidate.get("l2")
         if not isinstance(l2, dict):
             l2 = {}
+        stream_id = candidate.get("stream_id")
+        correlation_id = candidate.get("correlation_id")
+        destination = l2.get("destination")
         log_record(
             "switch",
             "popped",
-            stream_id=candidate.get("stream_id"),
-            correlation_id=candidate.get("correlation_id"),
+            stream_id=stream_id if isinstance(stream_id, str) else None,
+            correlation_id=correlation_id if isinstance(correlation_id, str) else None,
             source=sender,
-            destination=l2.get("destination"),
+            destination=destination if isinstance(destination, str) else None,
         )
 
-    def _dead_letter_full(self, sender: str, destination: str, raw, envelope: dict, depth: int) -> None:
+    def _dead_letter_full(
+        self, sender: str, destination: str, raw, envelope: dict, depth: int
+    ) -> None:
         self.r.rpop(prefix(self.pod, self.tenant, destination, "ingress"))
         self.r.rpush(prefix(self.pod, self.tenant, sender, "dead"), raw)
         log_record(
