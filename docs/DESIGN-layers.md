@@ -418,8 +418,27 @@ restarts.
 > finding arriving from a second direction.
 >
 > **3. Depth cannot distinguish slow from dead.** All three said this
-> independently. A healthy agent running a long tmux command climbs for minutes.
-> Dead-lettering on climbing depth destroys legitimate work.
+> independently.
+>
+> ⚠ **PARTLY RESOLVED by build 67, and the example was wrong.** `api` argued a
+> healthy agent running a long tmux command holds a climbing queue. **It does
+> not.** `paste_text` (`tmux/ops.py:371`) pastes and sends Enter immediately with
+> no readiness check, and `message_opener` has none either — **delivery is
+> fire-and-forget into the pane.** A busy agent's queue drains at the normal
+> rate; the agent's own slowness never reaches the queue.
+>
+> **So the discriminator is PROGRESS, not depth**, which is `tmux`'s build-67
+> observation A:
+>
+> | | depth | pops/opens |
+> |---|---|---|
+> | healthy under burst | climbing | **occurring** |
+> | dead or wedged | climbing | **zero** |
+>
+> ⚠ **What remains genuinely unresolved** is how long an absence of progress must
+> last before it means dead, and that is a threshold question rather than a
+> signal question. Build 67 measured the fault shapes; it did not pick the
+> number.
 >
 > ⚠ **§8.1–8.4 below are retained as the record of the reasoning, not as a
 > buildable design.** The parts that ARE settled: the fix belongs in the port and
