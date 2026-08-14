@@ -389,7 +389,7 @@ PY
   echo "== B control: absent tag leaves no waiting ports =="
   build67_state clear && build67_state seed || { echo "BUILD67 SETUP RED: B state failed"; return 3; }
   build67_push stress-clean 10 B-control; wait_for_queues 120 || return 3
-  processes="$(dx sh -c "ps -eo args= | grep -c 'flock.port stress-clean' || true" | tr -d '\r')"
+  processes="$(dx sh -c "ps -eo args= | grep -c '[f]lock.port stress-clean' || true" | tr -d '\r')"
   echo "B_CONTROL waiting_processes=$processes"; [ "$processes" = 0 ] || return 3
 
   echo "== B injected: kill real run_port holder after HSETNX =="
@@ -402,7 +402,7 @@ PY
   dx kill -9 "$holder" >/dev/null
   build67_push stress-clean 25 B-injected
   sleep 5
-  processes="$(dx sh -c "ps -eo args= | grep -c 'flock.port stress-clean' || true" | tr -d '\r')"
+  processes="$(dx sh -c "ps -eo args= | grep -c '[f]lock.port stress-clean' || true" | tr -d '\r')"
   build67_metrics stress-clean
   echo "B_INJECTED waiting_processes=$processes kicks=25"
   [ "$processes" -ge 20 ] || { echo "B GATE RED: stale tag did not accumulate waiting ports"; return 3; }
