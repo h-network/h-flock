@@ -440,6 +440,33 @@ restarts.
 > signal question. Build 67 measured the fault shapes; it did not pick the
 > number.
 >
+> ### ⚠ Demonstrated on ourselves, 2026-08-14 — and it defeats the obvious fix
+>
+> The **office's own watchdog** flagged a lane as *"likely stuck rather than
+> slow"* after 5 minutes of silence. Its presence state independently read
+> **`wedged`**. I treated those as two signals agreeing and concluded the lane
+> was stuck.
+>
+> **It was not.** The lane was *deliberately waiting for the lab*, because I had
+> told it to wait. It was following instructions and was flagged for it.
+>
+> ⚠ **Correlating those two signals proved nothing, because they are not
+> independent.** "No progress seen" and "presence says wedged" are both functions
+> of *nothing happened*. **I mistook a second reading of the same observation for
+> a second source.**
+>
+> ⚠ **The only thing that resolved it was the participant SAYING so.** Not depth,
+> not progress, not presence, not elapsed time.
+>
+> **So for a general destination the discriminator cannot be inferred from
+> outside.** It needs either a declaration the participant makes, or an active
+> probe it must answer. Stacking more passive signals does not help — they are
+> one observation wearing different hats.
+>
+> ⚠ That is the argument **for** something Ping-shaped, and `tmux` already
+> established why the current design fails: **nothing reads the reply.** Both
+> halves are now known, which is more than we had this morning.
+>
 > ⚠ **§8.1–8.4 below are retained as the record of the reasoning, not as a
 > buildable design.** The parts that ARE settled: the fix belongs in the port and
 > the watchdog rather than the switch; ingress must be bounded at forward time
