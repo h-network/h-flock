@@ -78,22 +78,65 @@ pass=0; fail=0
 ck() { if [ "$2" = "$3" ]; then echo "  ok    $1"; pass=$((pass+1)); else echo "  FAIL  $1 : expected [$3] got [$2]"; fail=$((fail+1)); fi; }
 ckc() { if echo "$2" | grep -q "$3"; then echo "  ok    $1"; pass=$((pass+1)); else echo "  FAIL  $1 : [$2] lacks [$3]"; fail=$((fail+1)); fi; }
 
+# Fixed sleeps followed by assertions are load-dependent gates. Every converted
+# gate uses this wall-clock deadline and can be falsified by withholding only
+# its own trigger. Negative-control runs exit 97 at the expected deadline so a
+# different failure cannot masquerade as proof that the poll went red.
+GATE_DEADLINE_SECONDS="${GATE_DEADLINE_SECONDS:-15}"
+NEGATIVE_GATE="${NEGATIVE_GATE:-}"
+GATE_RUN_TAG="${GATE_RUN_TAG:-$$}"
+gate_skip() { [ "$NEGATIVE_GATE" = "$1" ]; }
+gate_timeout() {
+  local id="$1" label="$2" expected="$3" seen="$4"
+  echo "  FAIL  $label : deadline ${GATE_DEADLINE_SECONDS}s expected [$expected] got [${seen:0:200}]"
+  fail=$((fail+1))
+  if [ "$NEGATIVE_GATE" = "$id" ]; then
+    echo "NEGATIVE_CONTROL gate=$id deadline=${GATE_DEADLINE_SECONDS}s condition=absent"
+    exit 97
+  fi
+  return 1
+}
+poll_contains() {
+  local id="$1" label="$2" expected="$3"; shift 3
+  local deadline=$(( $(date +%s) + GATE_DEADLINE_SECONDS )) seen=""
+  while :; do
+    seen="$("$@" 2>&1)"
+    if grep -Fq -- "$expected" <<<"$seen"; then
+      echo "  ok    $label"; pass=$((pass+1)); return 0
+    fi
+    [ "$(date +%s)" -ge "$deadline" ] && { gate_timeout "$id" "$label" "contains $expected" "$seen"; return; }
+    sleep 0.1
+  done
+}
+poll_equals() {
+  local id="$1" label="$2" expected="$3"; shift 3
+  local deadline=$(( $(date +%s) + GATE_DEADLINE_SECONDS )) seen=""
+  while :; do
+    seen="$("$@" 2>&1)"
+    if [ "$seen" = "$expected" ]; then
+      echo "  ok    $label"; pass=$((pass+1)); return 0
+    fi
+    [ "$(date +%s)" -ge "$deadline" ] && { gate_timeout "$id" "$label" "$expected" "$seen"; return; }
+    sleep 0.1
+  done
+}
+
 echo "== 1. doors =="
 ckc "health"        "$(cu $A/health)" '"ok"'
 ckc "agents list"   "$(cu $A/agents)" "$AG1"
 ck  "no token 401"  "$(dx curl -sk -o /dev/null -w '%{http_code}' $A/agents)" "401"
 
 echo "== 2. agent -> agent message =="
-dx bash -lc "cd /workdir/$AG1 && AGENT_NAME=$AG1 office send -a $AG2 plumbing-check-42" >/dev/null 2>&1
-sleep 3
-ckc "pasted into $AG2" "$(dx bash -c "TMUX_TMPDIR=/home/ubuntu/.flock/tmux tmux capture-pane -p -t $TENANT:$AG2 2>/dev/null")" "plumbing-check-42"
+MESSAGE_MARKER="plumbing-check-42-$GATE_RUN_TAG"
+gate_skip agent-message || dx bash -lc "cd /workdir/$AG1 && AGENT_NAME=$AG1 office send -a $AG2 $MESSAGE_MARKER" >/dev/null 2>&1
+poll_contains agent-message "pasted into $AG2" "$MESSAGE_MARKER" dx bash -c "TMUX_TMPDIR=/home/ubuntu/.flock/tmux tmux capture-pane -p -t $TENANT:$AG2 2>/dev/null"
 
 echo "== 3. board =="
-dx bash -lc "cd /workdir/$AG1 && AGENT_NAME=$AG1 office add -a $AG2 -t plumb-ticket -d 'the brief'" >/dev/null 2>&1
-sleep 3
-ckc "ticket on $AG2 todo" "$(cu $A/agents/$AG2/board)" "plumb-ticket"
+TICKET_MARKER="plumb-ticket-$GATE_RUN_TAG"
+gate_skip board-ticket || dx bash -lc "cd /workdir/$AG1 && AGENT_NAME=$AG1 office add -a $AG2 -t $TICKET_MARKER -d 'the brief'" >/dev/null 2>&1
+poll_contains board-ticket "ticket on $AG2 todo" "$TICKET_MARKER" cu "$A/agents/$AG2/board"
 ckc "board has hold col" "$(cu $A/agents/$AG2/board)" '"hold"'
-ckc "$AG2 takes it"       "$(dx bash -lc "cd /workdir/$AG2 && AGENT_NAME=$AG2 office take" 2>&1)" "plumb-ticket"
+ckc "$AG2 takes it"       "$(dx bash -lc "cd /workdir/$AG2 && AGENT_NAME=$AG2 office take" 2>&1)" "$TICKET_MARKER"
 ckc "now in doing"       "$(cu $A/agents/$AG2/board)" '"doing":\['
 ckc "task record file"   "$(dx bash -lc 'cat /home/ubuntu/.flock/tasks.jsonl 2>/dev/null | tail -2')" '"event"'
 # ⚠ Finish it, or the next run finds $AG2 still holding one and `take` correctly
@@ -101,43 +144,42 @@ ckc "task record file"   "$(dx bash -lc 'cat /home/ubuntu/.flock/tasks.jsonl 2>/
 dx bash -lc "cd /workdir/$AG2 && AGENT_NAME=$AG2 office done" >/dev/null 2>&1
 
 echo "== 4. app client =="
-cu -X POST -H 'Content-Type: application/json' -d '{"kind":"StartAgent","payload":{"agent":"telegram","port_type":"api"}}' $A/agents/host/envelopes >/dev/null
-sleep 3
-ckc "client enrolled"    "$(dx redis-cli HGET $ROSTER telegram)" "api"
+gate_skip client-enrolled || cu -X POST -H 'Content-Type: application/json' -d '{"kind":"StartAgent","payload":{"agent":"telegram","port_type":"api"}}' $A/agents/host/envelopes >/dev/null
+poll_equals client-enrolled "client enrolled" "api" dx redis-cli --raw HGET "$ROSTER" telegram
 ck  "no window made"     "$(dx bash -c "TMUX_TMPDIR=/home/ubuntu/.flock/tmux tmux list-windows -t $TENANT" | grep -c telegram)" "0"
 ckc "peers hides client" "$(dx bash -lc "cd /workdir/$AG1 && AGENT_NAME=$AG1 office peers")" "$AG2"
 ck  "peers really hides" "$(dx bash -lc "cd /workdir/$AG1 && AGENT_NAME=$AG1 office peers" | grep -c telegram)" "0"
 
 echo "== 5. app -> agent, as itself =="
-cu -X POST -H 'Content-Type: application/json' -d '{"text":"hello from the app","as":"telegram"}' $A/agents/$AG1/envelopes >/dev/null
-sleep 3
-ckc "$AG1 sees client name" "$(dx bash -c "TMUX_TMPDIR=/home/ubuntu/.flock/tmux tmux capture-pane -p -t $TENANT:$AG1")" "message from telegram"
+APP_MESSAGE="hello-from-telegram-$GATE_RUN_TAG"
+gate_skip app-to-agent || cu -X POST -H 'Content-Type: application/json' -d "{\"text\":\"$APP_MESSAGE\",\"as\":\"telegram\"}" $A/agents/$AG1/envelopes >/dev/null
+poll_contains app-to-agent "$AG1 sees app message" "$APP_MESSAGE" dx bash -c "TMUX_TMPDIR=/home/ubuntu/.flock/tmux tmux capture-pane -p -t $TENANT:$AG1"
 
 echo "== 6. agent -> app, the return path =="
-dx bash -lc "cd /workdir/$AG1 && AGENT_NAME=$AG1 office send -a telegram reply-from-$AG1-99" >/dev/null 2>&1
-sleep 3
+REPLY_MARKER="reply-from-$AG1-$GATE_RUN_TAG"
+gate_skip agent-to-app || dx bash -lc "cd /workdir/$AG1 && AGENT_NAME=$AG1 office send -a telegram $REPLY_MARKER" >/dev/null 2>&1
+poll_contains agent-to-app "in the mailbox" "$REPLY_MARKER" cu "$A/agents/telegram/messages"
 M="$(cu "$A/agents/telegram/messages")"
-ckc "in the mailbox"   "$M" "reply-from-$AG1-99"
 ckc "L2 source is $AG1" "$M" "\"source\": *\"$AG1\""
 ckc "cursor present"    "$M" '"cursor"'
 
 echo "== 7. cursor resume =="
 CUR=$(echo "$M" | python3 -c "import sys,json;print(json.load(sys.stdin)['next_cursor'])")
 ck "after=cursor is empty" "$(cu "$A/agents/telegram/messages?after=$CUR" | python3 -c 'import sys,json;print(len(json.load(sys.stdin)["messages"]))')" "0"
-dx bash -lc "cd /workdir/$AG1 && AGENT_NAME=$AG1 office send -a telegram second-message-77" >/dev/null 2>&1
-sleep 3
-ckc "only the new one" "$(cu "$A/agents/telegram/messages?after=$CUR")" "second-message-77"
+SECOND_MARKER="second-message-$GATE_RUN_TAG"
+gate_skip cursor-resume || dx bash -lc "cd /workdir/$AG1 && AGENT_NAME=$AG1 office send -a telegram $SECOND_MARKER" >/dev/null 2>&1
+poll_contains cursor-resume "only the new one" "$SECOND_MARKER" cu "$A/agents/telegram/messages?after=$CUR"
 ck  "and only one"     "$(cu "$A/agents/telegram/messages?after=$CUR" | python3 -c 'import sys,json;print(len(json.load(sys.stdin)["messages"]))')" "1"
 
 echo "== 8. isolation between clients =="
-cu -X POST -H 'Content-Type: application/json' -d '{"kind":"StartAgent","payload":{"agent":"webapp","port_type":"api"}}' $A/agents/host/envelopes >/dev/null
-sleep 3
+gate_skip second-client || cu -X POST -H 'Content-Type: application/json' -d '{"kind":"StartAgent","payload":{"agent":"webapp","port_type":"api"}}' $A/agents/host/envelopes >/dev/null
+poll_equals second-client "second client enrolled" "api" dx redis-cli --raw HGET "$ROSTER" webapp
 # ⚠ Isolation is "webapp did not get telegram's message", not "webapp's mailbox
 # is empty". A raw broadcast to `all` reaches app clients too — documented
 # behaviour — so an emptiness assertion fails for a correct system the moment
 # anything broadcasts. It did.
 ck "webapp did not get telegram's mail" \
-   "$(cu $A/agents/webapp/messages?limit=1000 | grep -c "reply-from-$AG1-99" || true)" "0"
+   "$(cu $A/agents/webapp/messages?limit=1000 | grep -c "$REPLY_MARKER" || true)" "0"
 
 # ⚠ Retire the fixtures. This suite enrols telegram and webapp and pastes a
 # message into a live agent's window. Left behind, they sit in the operator's
@@ -156,9 +198,10 @@ cu -X POST -H 'Content-Type: application/json' -d '{"kind":"StartAgent","payload
 # StartAgent travels through the same asynchronous route as StopAgent. Poll both
 # halves of this lifecycle check symmetrically: a fixed wait sampled 260 ms
 # before window_created on a busy tenant and reported a healthy start as absent.
-for _ in $(seq 1 15); do
+_deadline=$(( $(date +%s) + 15 ))
+while [ "$(date +%s)" -lt "$_deadline" ]; do
     [ "$(dx bash -c "TMUX_TMPDIR=/home/ubuntu/.flock/tmux tmux list-windows -t $TENANT" | grep -c dave)" = "1" ] && break
-    sleep 1
+    sleep 0.1
 done
 ck "dave window exists" "$(dx bash -c "TMUX_TMPDIR=/home/ubuntu/.flock/tmux tmux list-windows -t $TENANT" | grep -c dave)" "1"
 cu -X POST -H 'Content-Type: application/json' -d '{"kind":"StopAgent","payload":{"agent":"dave"}}' $A/agents/host/envelopes >/dev/null
@@ -166,9 +209,10 @@ cu -X POST -H 'Content-Type: application/json' -d '{"kind":"StopAgent","payload"
 # routed, kicked, and opened, so the kill lands whenever it lands. A fixed 4s
 # passed for weeks and then failed on a busier tenant — the check was flaky, not
 # the lifecycle.
-for _ in $(seq 1 15); do
+_deadline=$(( $(date +%s) + 15 ))
+while [ "$(date +%s)" -lt "$_deadline" ]; do
     [ "$(dx bash -c "TMUX_TMPDIR=/home/ubuntu/.flock/tmux tmux list-windows -t $TENANT" | grep -c dave)" = "0" ] && break
-    sleep 1
+    sleep 0.1
 done
 ck "dave window gone"   "$(dx bash -c "TMUX_TMPDIR=/home/ubuntu/.flock/tmux tmux list-windows -t $TENANT" | grep -c dave)" "0"
 
@@ -181,9 +225,10 @@ echo "== 10. dead-letter =="
 DEAD_ENV="{\"v\":2,\"kind\":\"Message\",\"stream_id\":\"plumbingdead1\",\"correlation_id\":\"plumbingdead1\",\"ts\":\"2026-01-01T00:00:00.000Z\",\"l2\":{\"source\":\"$AG1\",\"destination\":\"ghost\"},\"l3\":{\"source\":\"$POD:$TENANT:$AG1\",\"destination\":\"$POD:$TENANT:ghost\"},\"payload\":{\"text\":\"nobody home\"}}"
 dx redis-cli DEL "pod:$POD:tenant:$TENANT:agent:$AG1:dead" >/dev/null
 dx redis-cli RPUSH "pod:$POD:tenant:$TENANT:agent:$AG1:egress" "$DEAD_ENV" >/dev/null
-for _ in $(seq 1 20); do
+_deadline=$(( $(date +%s) + 10 ))
+while [ "$(date +%s)" -lt "$_deadline" ]; do
     [ "$(dx redis-cli LLEN "pod:$POD:tenant:$TENANT:agent:$AG1:dead" | tr -d '\r')" != "0" ] && break
-    sleep 0.5
+    sleep 0.1
 done
 ckc "unroutable dead-lettered" "$(dx redis-cli KEYS "pod:$POD:tenant:$TENANT:agent:*:dead")" "dead"
 dx redis-cli DEL "pod:$POD:tenant:$TENANT:agent:$AG1:dead" >/dev/null
@@ -195,9 +240,9 @@ echo "== 11. booted and hired agents get the same environment =="
 # two at the level where they actually differ is the whole point.
 penv() { dx bash -c "tr '\0' '\n' < /proc/\$(TMUX_TMPDIR=/home/ubuntu/.flock/tmux tmux list-panes -t $TENANT:$1 -F '#{pane_pid}' | head -1)/environ" \
          | grep -E '^(OFFICE_TOOLS|AGENT_GUIDE|CLAUDE_CONFIG_DIR|CODEX_HOME)=' | sed "s|/$1|/<agent>|g" | sort; }
-cu -X POST -H 'Content-Type: application/json' -d '{"kind":"StartAgent","payload":{"agent":"envprobe"}}' $A/agents/host/envelopes >/dev/null
-sleep 6
-ck "hired env == booted env" "$(penv envprobe)" "$(penv $AG1)"
+BOOT_ENV="$(penv "$AG1")"
+gate_skip hired-environment || cu -X POST -H 'Content-Type: application/json' -d '{"kind":"StartAgent","payload":{"agent":"envprobe"}}' $A/agents/host/envelopes >/dev/null
+poll_equals hired-environment "hired env == booted env" "$BOOT_ENV" penv envprobe
 cu -X POST -H 'Content-Type: application/json' -d '{"kind":"StopAgent","payload":{"agent":"envprobe"}}' $A/agents/host/envelopes >/dev/null
 
 echo "== 12. failure simulator =="
