@@ -12,10 +12,22 @@ sample fell to a 5.96% median and 34.55% peak, versus build 67's 1084.93%
 median and 1366.48% peak.
 
 The first 100x20 fabric benchmark delivered all 2,000 frames with zero dead
-letters at 5.91/s. That result is inconclusive on cost: main-only runs on the
-same lab that day ranged from 6.00 to 6.45/s, so comparing the branch with the
-best historical run does not distinguish a regression from host variance. A
-paired main/branch run remains pending.
+letters at 5.91/s. That result was inconclusive on cost: main-only runs on the
+same lab that day ranged from 6.00 to 8.12/s, so comparing the branch with a
+historical run cannot distinguish a regression from host variance.
+
+A back-to-back pair on the rebased branch settled the comparison. Both sides
+used a fresh tenant with the same name and setup answers, a down-with-volumes
+reset between them, no samplers, and exactly one 100x20 run:
+
+| checkout | delivered | elapsed | rate |
+|---|---:|---:|---:|
+| main 6412eab | 2,000/2,000 | 383.2s | 5.22/s |
+| build 68 c70311d | 2,000/2,000 | 391.1s | 5.11/s |
+
+The branch was 2.11% below its adjacent main run, inside the 35% spread already
+measured among main-lineage runs on this host. The pair does not establish a
+throughput regression.
 
 ## Bound and horizon
 
@@ -70,7 +82,6 @@ call made that same validator observe popped before it raised EnvelopeError.
 
 ## Other verification
 
-- PYTHONPATH=src:. pytest -q: 379 passed, 5 subtests passed
+- PYTHONPATH=src:. pytest -q after rebasing onto main: 380 passed, 5 subtests passed
 - accept.sh: exit 0; PASS=26 FAIL=0; sim-blocked PASS=19 FAIL=0
 - teardown removed only h-flock-bus68; docker ps then showed only h-cli
-
