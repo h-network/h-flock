@@ -145,8 +145,15 @@ sent = {}
 with open(ledger_path) as f:
     for line in f:
         if not line.strip(): continue
-        seq, sid, dst, ts = line.rstrip().split("\t")
-        sent[seq] = (sid, dst, float(ts))
+        fields = line.rstrip().split("\t")
+        if len(fields) == 5:
+            seq, sid, source, dst, ts = fields
+        else:
+            # Evidence predating source capture remains readable, but cannot
+            # use same-source FIFO bracketing for an otherwise silent loss.
+            seq, sid, dst, ts = fields
+            source = None
+        sent[seq] = (sid, source, dst, float(ts))
 opened = collections.Counter()
 events = collections.defaultdict(list)
 log_parse_failures = 0
@@ -189,8 +196,8 @@ with open(injection_path) as f:
 coverage = 0.0
 coverage_fraction = 0.0
 if sent and windows:
-    run_start = min(value[2] for value in sent.values())
-    run_end = max(value[2] for value in sent.values())
+    run_start = min(value[3] for value in sent.values())
+    run_end = max(value[3] for value in sent.values())
     intervals = []
     merged = []
     for start, end, _, _ in windows:
@@ -207,7 +214,49 @@ if sent and windows:
     coverage_fraction = coverage / duration if duration else 0.0
 duplicates, dead_loss, stranded, attributed, unexplained = [], [], [], [], []
 event_time_failures = 0
-for seq, (sid, dst, sent_ts) in sent.items():
+def event_times(sid, wanted=None):
+    global event_time_failures
+    result = []
+    for rec in events.get(sid, []):
+        if wanted is not None and rec.get("event") != wanted:
+            continue
+        try: result.append(datetime.datetime.fromisoformat(rec["ts"].replace("Z", "+00:00")).timestamp())
+        except Exception: event_time_failures += 1
+    return result
+
+source_order = collections.defaultdict(list)
+for seq, (sid, source, _, _) in sent.items():
+    if source is not None:
+        source_order[source].append((int(seq), sid))
+for rows in source_order.values():
+    rows.sort()
+
+def switch_kill_bracket(seq, sid, source):
+    """Attribute only when FIFO neighbours prove a kill crossed this pop."""
+    if source is None or event_times(sid, "popped"):
+        return None
+    rows = source_order[source]
+    position = next((i for i, row in enumerate(rows) if row[0] == int(seq)), None)
+    if position is None:
+        return None
+    before = next(
+        (event_times(other_sid, "popped")[-1] for _, other_sid in reversed(rows[:position])
+         if event_times(other_sid, "popped")),
+        None,
+    )
+    after = next(
+        (event_times(other_sid, "popped")[0] for _, other_sid in rows[position + 1:]
+         if event_times(other_sid, "popped")),
+        None,
+    )
+    if before is None or after is None:
+        return None
+    for start, end, kind, detail in windows:
+        if kind == "switch-kill" and before <= start <= end <= after:
+            return f"{kind}:{detail}:fifo-bracket={before:.6f}..{after:.6f}"
+    return None
+
+for seq, (sid, source, dst, sent_ts) in sent.items():
     count = opened[sid]
     if count > 1:
         duplicates.append((seq, sid, count))
@@ -219,17 +268,15 @@ for seq, (sid, dst, sent_ts) in sent.items():
             stranded.append((seq, sid))
             continue
         cause = None
-        ev = events.get(sid, [])
-        event_times = []
-        for rec in ev:
-            try: event_times.append(datetime.datetime.fromisoformat(rec["ts"].replace("Z", "+00:00")).timestamp())
-            except Exception: event_time_failures += 1
+        times = event_times(sid)
         for start, end, kind, detail in windows:
-            if start - 2 <= sent_ts <= end + 2 or any(start - 1 <= t <= end + 1 for t in event_times):
+            if start - 2 <= sent_ts <= end + 2 or any(start - 1 <= t <= end + 1 for t in times):
                 cause = f"{kind}:{detail}"
                 break
+        if cause is None:
+            cause = switch_kill_bracket(seq, sid, source)
         (attributed if cause else unexplained).append((seq, sid, cause or "none"))
-print(f"RECONCILE sent={len(sent)} delivered_once={sum(opened[sid] == 1 for sid, _, _ in sent.values())} duplicates={len(duplicates)} dead={len(dead_loss)} stranded={len(stranded)} lost_attributed={len(attributed)} lost_unexplained={len(unexplained)}")
+print(f"RECONCILE sent={len(sent)} delivered_once={sum(opened[sid] == 1 for sid, _, _, _ in sent.values())} duplicates={len(duplicates)} dead={len(dead_loss)} stranded={len(stranded)} lost_attributed={len(attributed)} lost_unexplained={len(unexplained)}")
 print(f"PARSE_FAILURES docker_json={log_parse_failures} dead_json={dead_parse_failures} ingress_json={ingress_parse_failures} event_ts={event_time_failures}")
 print(f"INJECTION_COVERAGE seconds={coverage:.3f} fraction={coverage_fraction:.6f}")
 for row in duplicates[:10]: print("DUPLICATE", *row)
@@ -325,7 +372,7 @@ for rnd in range(rounds):
         seq = rnd * stations + i
         dst = f"cons-{(i + 1) % stations}"
         frame = build("Message", f"cons-{i}", dst, {"sequence": seq}, pod=pod, tenant=tenant)
-        print(f"{seq}\t{frame['stream_id']}\t{dst}\t{time.time()}", flush=True)
+        print(f"{seq}\t{frame['stream_id']}\tcons-{i}\t{dst}\t{time.time()}", flush=True)
         r.rpush(prefix(pod, tenant, f"cons-{i}", "egress"), json.dumps(frame, separators=(",", ":")))
         if delay: time.sleep(delay)
 PY
