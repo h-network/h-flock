@@ -300,10 +300,25 @@ whole network.
    when the router arrives.
 
 ⚠ **1–3 were listed open here after being decided, exactly as `GLOSSARY`'s table
-was.** Renames 1–3 are executed and parked on `rename/vocabulary`; only 5 and 6
-are live questions. **6 is the gate**: `rename/vocabulary` is parked until "the
-new frame works", and the frame's first requirement is qualified addressing —
-which changes the same envelope fields the rename does.
+was.** Renames 1–3 are executed and parked on `rename/vocabulary`.
+
+✅ **6 was the gate and it is MET.** Build 53 landed the frame — qualified
+addressing accepted, the port resolving, the switch reading L2 only. The rename
+unparks in build 56.
+
+✅ **The switch is functionally done.** Measured across the frame change: the
+forwarding decision is 795.85 µs → 791.47 µs at roster 100, unchanged, because
+it reads L2 and is invariant to headers it does not touch. L4 will cost it
+nothing either.
+
+⚠ **It is *approximately* header-independent, not truly so.**
+`parse_for_switch` decodes the whole JSON — L3 and payload included — to read
+L2. A real switch reads fixed-offset bytes and never touches the payload. At
++77 bytes that is invisible against a 1.7 ms Redis round trip, which is why the
+number did not move. **If frames grow substantially the switch starts paying for
+headers it does not read**, and the fix is framing that exposes L2 without
+parsing the rest. That, not throughput, is what would falsify "the switch is
+done".
 
 ⚠ **A consequence discovered by build 53:** the frame is a **hard v2** — flat v1
 is rejected. That is free today *only because Redis runs with no persistence*,
