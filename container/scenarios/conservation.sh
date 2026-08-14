@@ -458,14 +458,22 @@ import json, os, sys, time
 sys.path.insert(0,"/app/src"); import redis
 from flock.bus import build,prefix
 pod,tenant=sys.argv[1:3]; r=redis.Redis.from_url(os.environ.get("REDIS_URL","redis://127.0.0.1:6379/0")); key=prefix(pod,tenant,"stress-src","egress")
-for seq in range(3):
- f=build("Message","stress-src","stress-clean",{"sequence":seq,"fault":"D-injected"},pod=pod,tenant=tenant); print(f"{seq}\t{f['stream_id']}\tstress-src\tstress-clean\t{time.time()}",flush=True); r.rpush(key,json.dumps(f,separators=(",",":")))
- if seq == 0:
-  while r.llen(key): time.sleep(.01)
-  time.sleep(1)
+f=build("Message","stress-src","stress-clean",{"sequence":0,"fault":"D-injected"},pod=pod,tenant=tenant); print(f"0\t{f['stream_id']}\tstress-src\tstress-clean\t{time.time()}",flush=True); r.rpush(key,json.dumps(f,separators=(",",":")))
+while r.llen(key): time.sleep(.01)
+time.sleep(1)
 PY
-  # Stop production switch and make a controlled switch expose the exact gap.
-  dx kill -STOP "$tmux_switch"; marker="pod:$POD:tenant:$TENANT:build67:blpop-gap"; dx redis-cli DEL "$marker" >/dev/null
+  # Stop production before the target exists, then enqueue target and successor.
+  dx kill -STOP "$tmux_switch"
+  build67_redis >>"$WORK/d-injected.tsv" <<'PY'
+import json, os, sys, time
+sys.path.insert(0,"/app/src"); import redis
+from flock.bus import build,prefix
+pod,tenant=sys.argv[1:3]; r=redis.Redis.from_url(os.environ.get("REDIS_URL","redis://127.0.0.1:6379/0")); key=prefix(pod,tenant,"stress-src","egress")
+for seq in (1,2):
+ f=build("Message","stress-src","stress-clean",{"sequence":seq,"fault":"D-injected"},pod=pod,tenant=tenant); print(f"{seq}\t{f['stream_id']}\tstress-src\tstress-clean\t{time.time()}",flush=True); r.rpush(key,json.dumps(f,separators=(",",":")))
+PY
+  # Make a controlled switch expose the exact BLPOP-before-emit gap.
+  marker="pod:$POD:tenant:$TENANT:build67:blpop-gap"; dx redis-cli DEL "$marker" >/dev/null
   test_switch="$(dx sh -c "env POD='$POD' TENANT='$TENANT' REDIS_URL='$REDIS_URL' python3 -c 'import os,time,redis; from flock.switch.service import Switch; r=redis.Redis.from_url(os.environ[\"REDIS_URL\"]); real=r.blpop; r.blpop=lambda *a,**k: (lambda x:(r.set(\"$marker\",1),time.sleep(600),x)[2])(real(*a,**k)); Switch(r,pod=os.environ[\"POD\"],tenant=os.environ[\"TENANT\"]).step()' >>/proc/1/fd/1 2>&1 & echo \$!" | tr -d '\r')"
   deadline=$((SECONDS + 30)); while [ "$SECONDS" -lt "$deadline" ]; do [ "$(dx redis-cli GET "$marker" | tr -d '\r')" = 1 ] && break; sleep .05; done
   start="$(date +%s.%N)"; dx kill -9 "$test_switch"; end="$(date +%s.%N)"; test_switch=""
