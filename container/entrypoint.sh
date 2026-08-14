@@ -84,10 +84,11 @@ done
 export FLOCK_ALLOW_PLAINTEXT=1
 
 # ── redis ─────────────────────────────────────────────────────────────────────
-# Loopback only and never published. No persistence: a skeleton losing its
-# queues on a restart is acceptable (§2, §7).
+# Loopback only and never published. AOF persistence enabled for durable boards
+# and streams; ephemeral transport queues are purged at boot (BUILD-63).
 redis_bind="${REDIS_BIND:-127.0.0.1}"
 redis_password="${REDIS_PASSWORD:-}"
+redis_dir="${REDIS_DIR:-/tmp}"
 
 # Refuse a non-loopback bind without a password (LLD-container §3).
 is_loopback=$(python3 -c '
@@ -104,7 +105,7 @@ if [ "$is_loopback" = "0" ] && [ -z "$redis_password" ]; then
   exit 1
 fi
 
-redis_cmd=(redis-server --bind "$redis_bind" --port 6379 --save '' --appendonly no --dir /tmp)
+redis_cmd=(redis-server --bind "$redis_bind" --port 6379 --save '' --appendonly yes --appendfsync everysec --dir "$redis_dir")
 if [ -n "$redis_password" ]; then
   redis_cmd+=(--requirepass "$redis_password")
   export REDISCLI_AUTH="$redis_password"
@@ -133,6 +134,28 @@ until [ "$(rcli ping 2>/dev/null)" = "PONG" ]; do
   fi
   sleep 0.2
 done
+
+# ── purge ephemeral transport keys ───────────────────────────────────────────
+# Ephemeral queues (ingress, egress, dead) and locks must not survive a restart.
+# At-most-once delivery permits loss, and a stale envelope from an old wire
+# version is worse than a lost one (DESIGN-layers §7, BUILD-63). Boards and
+# streams survive via AOF; transport queues are purged here before anything
+# starts consuming.
+python3 -c '
+import os, sys, redis
+from flock.bus.resources import purge_transport
+from flock.bus.connection import local_redis_url
+
+url = os.environ.get("REDIS_URL")
+if not url:
+    pwd = os.environ.get("REDIS_PASSWORD", "")
+    url = local_redis_url(pwd) if pwd else "redis://127.0.0.1:6379/0"
+
+r = redis.from_url(url)
+count = purge_transport(r, pod=os.environ["POD"], tenant=os.environ["TENANT"])
+print(f"{{\"module\":\"container\",\"event\":\"transport_purged\",\"count\":{count}}}")
+'
+
 
 # ── seed the roster ───────────────────────────────────────────────────────────
 # Boot configuration, not the write path LLD-bus-and-switch §7 defers. The roster

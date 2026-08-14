@@ -92,10 +92,15 @@ class StatefulRedis:
         self.values[key] = value
 
     def delete(self, *keys):
+        count = 0
         for key in keys:
+            if key in self.values or key in self.hashes or key in self.streams:
+                count += 1
             self.values.pop(key, None)
             self.hashes.pop(key, None)
             self.streams.pop(key, None)
+        return count
+
 
     def hget(self, key, field):
         return self.hashes.get(key, {}).get(field)
@@ -115,6 +120,15 @@ class StatefulRedis:
 
     def xrevrange(self, key, max="+", min="-", count=None):
         return list(reversed(self.streams.get(key, [])))[:count]
+
+    def keys(self, pattern="*"):
+        import fnmatch
+        all_keys = set(self.values.keys()) | set(self.hashes.keys()) | set(self.streams.keys())
+        return [k for k in all_keys if fnmatch.fnmatch(k, pattern)]
+
+    def scan_iter(self, match="*"):
+        return iter(self.keys(match))
+
 
 
 def test_retire_working_agent_then_rehire_same_name_reads_idle_and_keeps_data():
@@ -175,3 +189,107 @@ def test_retire_working_agent_then_rehire_same_name_reads_idle_and_keeps_data():
         "since": "2026-08-09T12:01:00.000Z",
         "last_activity": "",
     }
+
+
+def test_durable_and_transport_resources_partition_agent_data():
+    from flock.bus import DURABLE_DATA_RESOURCES, TRANSPORT_QUEUE_RESOURCES
+    assert DURABLE_DATA_RESOURCES.isdisjoint(TRANSPORT_QUEUE_RESOURCES)
+    assert AGENT_DATA_RESOURCES == DURABLE_DATA_RESOURCES | TRANSPORT_QUEUE_RESOURCES
+
+
+def test_purge_transport_deletes_queues_and_delivering_retains_boards_and_streams():
+    from flock.bus import purge_transport
+    r = StatefulRedis()
+    agent = "architect"
+
+    # Durable resources
+    durable_keys = {
+        prefix("acme", "hq", agent, "tasks.todo"): "ticket-1",
+        prefix("acme", "hq", agent, "tasks.doing"): "ticket-2",
+        prefix("acme", "hq", agent, "tasks.hold"): "ticket-3",
+        prefix("acme", "hq", agent, "tasks.done"): "ticket-4",
+        prefix("acme", "hq", agent, "tags"): "tags-data",
+    }
+    for k, v in durable_keys.items():
+        r.values[k] = v
+
+    r.streams[prefix("acme", "hq", agent, "inbox")] = [("1-0", {"envelope": "msg"})]
+    r.streams[prefix("acme", "hq", agent, "activity")] = [("2-0", {"event": "tool"})]
+    r.streams[prefix("acme", "hq", resource="alerts")] = [("3-0", {"event": "alert"})]
+
+    # Ephemeral transport resources
+    ephemeral_keys = {
+        prefix("acme", "hq", agent, "ingress"): "queued-inbound",
+        prefix("acme", "hq", agent, "egress"): "queued-outbound",
+        prefix("acme", "hq", agent, "dead"): "dead-letter",
+        prefix("acme", "hq", resource="delivering"): "lock",
+    }
+    for k, v in ephemeral_keys.items():
+        r.values[k] = v
+
+    deleted_count = purge_transport(r, pod="acme", tenant="hq")
+    assert deleted_count == 4
+
+    # Ephemeral queues must be gone
+    for k in ephemeral_keys:
+        assert k not in r.values
+        assert k not in r.hashes
+
+    # Durable state must survive
+    for k, v in durable_keys.items():
+        assert r.values.get(k) == v
+    assert prefix("acme", "hq", agent, "inbox") in r.streams
+    assert prefix("acme", "hq", agent, "activity") in r.streams
+    assert prefix("acme", "hq", resource="alerts") in r.streams
+
+
+def test_stale_v1_envelope_on_unpurged_ingress_is_rejected_and_dead_lettered():
+    """Negative control: if boot purge fails, a stale v1 frame is rejected and dead-lettered."""
+    from flock.bus.doors import receive
+
+    class ListRedis:
+        def __init__(self):
+            self.lists = {}
+
+        def blpop(self, key, timeout=0):
+            items = self.lists.get(key, [])
+            if items:
+                return (key, items.pop(0))
+            return None
+
+        def lpop(self, key):
+            items = self.lists.get(key, [])
+            if items:
+                return items.pop(0)
+            return None
+
+        def rpush(self, key, value):
+            self.lists.setdefault(key, []).append(value)
+            return len(self.lists[key])
+
+    r = ListRedis()
+    agent = "architect"
+    ingress_key = prefix("acme", "hq", agent, "ingress")
+    dead_key = prefix("acme", "hq", agent, "dead")
+
+    # Stale v1 flat envelope lingering on unpurged queue
+    v1_raw = json.dumps({"v": 1, "source": "sme-2", "destination": "architect", "kind": "Message", "payload": {"text": "stale"}})
+    r.rpush(ingress_key, v1_raw)
+
+    opened = []
+    receive(
+        r,
+        pod="acme",
+        tenant="hq",
+        agent=agent,
+        openers={"Message": lambda env: opened.append(env)},
+        timeout=1,
+        blocking=False,
+    )
+
+    # Must NOT have opened stale v1 frame
+    assert len(opened) == 0
+    # Must have moved raw v1 envelope to dead letters
+    assert len(r.lists.get(dead_key, [])) == 1
+    assert r.lists[dead_key][0] == v1_raw
+

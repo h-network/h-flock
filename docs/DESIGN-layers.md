@@ -379,12 +379,16 @@ headers it does not read**, and the fix is framing that exposes L2 without
 parsing the rest. That, not throughput, is what would falsify "the switch is
 done".
 
-⚠ **A consequence discovered by build 53:** the frame is a **hard v2** — flat v1
-is rejected. That is free today *only because Redis runs with no persistence*,
-so a container restart leaves no envelopes to break. **If persistence is ever
-enabled, every wire change becomes an upgrade hazard** and needs a dual-read
-window. The persistence decision and the wire-versioning decision are the same
-decision, and they were not previously connected.
+⚠ **A consequence discovered by build 53 and resolved by build 63:** the frame
+is a **hard v2** — flat v1 is rejected. That was initially free because Redis ran
+without persistence. Build 63 resolved the coupling by separating **durable
+application state** (boards, streams) from **ephemeral transport state** (queues).
+Redis runs with AOF persistence enabled (`appendonly yes`, `appendfsync everysec`),
+and `container/entrypoint.sh` runs `purge_transport` at boot before any consumer
+starts. Transport queues (`ingress`, `egress`, `dead`) and delivery locks
+(`delivering`) are purged, while task boards and streams survive intact. This
+preserves the hard-v2 wire property without requiring dual-read windows across
+restarts.
 
 ---
 
@@ -553,3 +557,4 @@ place to look, since they are how the system already tells busy from absent.
 
 ⚠ **Both of these were asserted in §8.2 without evidence and neither has been
 tested.** Recorded as objections, not as decisions.
+

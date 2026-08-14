@@ -50,3 +50,11 @@ def test_entrypoint_redis_readiness_has_a_deadline(tmp_path):
 
     assert proc.returncode != 0
     assert "timed out waiting for Redis readiness" in proc.stderr
+
+
+def test_entrypoint_configures_redis_aof_persistence():
+    script = Path("container/entrypoint.sh").read_text()
+    assert "--appendonly yes" in script
+    assert "--appendfsync everysec" in script
+    assert "from flock.bus.resources import purge_transport" in script
+
