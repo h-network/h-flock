@@ -1,5 +1,10 @@
 # Build 57 — there is no ICMP
 
+> ⚠ **SUPERSEDED — folded into the watchdog.** `DESIGN-layers` §8.1: this is one
+> function of h-flock's ICMP, not a build of its own, and building it alone would
+> have produced a second component doing half the watchdog's job. The content
+> below stands; the ownership moved.
+>
 > ⚠ **PARKED, not filed. Do not start this.** The gap is real and recorded, but
 > building it now is feature work ahead of proof. **The framework has never been
 > shown to hold under duration, scale or injected failure** — that comes first,

@@ -459,3 +459,51 @@ of memory, with **no cap, no dead-letter, and no alert**. Build 58 injected port
 
 ⚠ **Dead-lettering is what bounds it**, and it needs no new machinery: `dead` is
 already trimmed by retention and already has a record type.
+
+### 8.1 ✅ The watchdog IS h-flock's ICMP
+
+Three things we had been treating separately are one component. **All of it sits
+outside the switch, which keeps doing its one lookup.**
+
+| ICMP | h-flock | state |
+|---|---|---|
+| **echo / probe** — is this port alive? | liveness check that refreshes the table entry | new |
+| **destination unreachable** — tell the source | `BUILD-57`, parked — **unpark into the watchdog** | designed |
+| *(no ICMP equivalent)* | acting: re-kick, dead-letter, quarantine | new |
+
+⚠ **`BUILD-57` was parked as a standalone build and that was the right call for
+the wrong reason.** It is not a feature of its own; it is one function of the
+watchdog, and building it alone would have produced a second component doing
+half this job.
+
+**The probe, concretely, needs no new mechanism.** Openers are per-kind and
+pluggable (`port/openers.py`). A **`Ping` kind with a no-op opener** traverses the
+entire real path — switch forward, kick, port spawn, pop, open — and emits the
+same custody records as any other frame. The agent never sees it: no paste, no
+mailbox entry, because the opener discards it. **The record is the reply.**
+
+⚠ **That is a true echo, not a simulation.** It exercises the path being asserted
+about rather than a proxy for it — the distinction that cost build 58 three
+attempts.
+
+### 8.2 ⚠ Age on FAILURE, not on silence
+
+MAC aging drops an entry after N seconds without traffic, and that is safe on
+Ethernet **only because unknown unicast is flooded** — the frame still arrives,
+the reply re-learns the entry, nobody notices.
+
+**We cannot flood. We dead-letter.** So aging on silence would break a
+legitimately quiet participant: an agent receiving nothing for an hour ages out,
+and the next message to it dead-letters though it was perfectly healthy.
+
+**So the closer model is NUD** — `REACHABLE → STALE → PROBE → FAILED` — driven by
+whether traffic gets through, not by elapsed quiet. A successful delivery
+refreshes; the watchdog probes when in doubt; only repeated failure ages an entry
+out.
+
+⚠ **None of this is needed yet.** The switch holds **no** in-memory table today —
+`_agents()` and `is_member()` read Redis per use — so a watchdog write is visible
+to the switch on the very next envelope, with no reload, no invalidation and no
+message between them. **This section is the answer to the invalidation question
+that arrives with the FIB (§3.1), recorded now because it is much harder to
+reconstruct mid-build.**
