@@ -55,7 +55,7 @@ layers.**
 
 The standalone model was reproduced **more strongly** on the lab, 600 samples
 per cell, cases interleaved in rotating order so Redis spikes cannot privilege
-a placement:
+a placement — `container/scenarios/policy-system-bench.py`, `interleaved_us()`:
 
 | | measured |
 |---|---|
