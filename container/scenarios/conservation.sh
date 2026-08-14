@@ -267,14 +267,16 @@ for seq, (sid, source, dst, sent_ts) in sent.items():
         if sid in ingress:
             stranded.append((seq, sid))
             continue
-        cause = None
+        # A recordless switch loss is strongest when same-source FIFO
+        # neighbours bracket the kill. Prefer that direct ordering evidence to
+        # the deliberately padded timestamp-window fallback.
+        cause = switch_kill_bracket(seq, sid, source)
         times = event_times(sid)
-        for start, end, kind, detail in windows:
-            if start - 2 <= sent_ts <= end + 2 or any(start - 1 <= t <= end + 1 for t in times):
-                cause = f"{kind}:{detail}"
-                break
         if cause is None:
-            cause = switch_kill_bracket(seq, sid, source)
+            for start, end, kind, detail in windows:
+                if start - 2 <= sent_ts <= end + 2 or any(start - 1 <= t <= end + 1 for t in times):
+                    cause = f"{kind}:{detail}"
+                    break
         (attributed if cause else unexplained).append((seq, sid, cause or "none"))
 print(f"RECONCILE sent={len(sent)} delivered_once={sum(opened[sid] == 1 for sid, _, _, _ in sent.values())} duplicates={len(duplicates)} dead={len(dead_loss)} stranded={len(stranded)} lost_attributed={len(attributed)} lost_unexplained={len(unexplained)}")
 print(f"PARSE_FAILURES docker_json={log_parse_failures} dead_json={dead_parse_failures} ingress_json={ingress_parse_failures} event_ts={event_time_failures}")
@@ -286,6 +288,235 @@ for row in unexplained[:10]: print("LOSS_UNEXPLAINED", *row)
 sys.exit(4 if (log_parse_failures or dead_parse_failures or ingress_parse_failures or event_time_failures) else (2 if duplicates else (1 if unexplained else 0)))
 PY
 }
+
+build67_redis() {
+  dx python3 - "$POD" "$TENANT" "$@"
+}
+
+build67_state() {
+  build67_redis "$1" <<'PY'
+import os, sys
+sys.path.insert(0, "/app/src")
+import redis
+from flock.bus import prefix
+pod, tenant, action = sys.argv[1:4]
+r = redis.Redis.from_url(os.environ.get("REDIS_URL", "redis://127.0.0.1:6379/0"))
+roster = prefix(pod, tenant, resource="roster")
+names = ("stress-src", "stress-paused", "stress-clean", "stress-api", "host")
+if action == "seed":
+    r.hset(roster, mapping={"stress-src": "api", "stress-paused": "api", "stress-clean": "api", "stress-api": "api", "host": "control"})
+elif action == "clear":
+    keys = []
+    for name in names:
+        keys.extend(r.scan_iter(match=f"pod:{pod}:tenant:{tenant}:agent:{name}:*"))
+    keys.append(prefix(pod, tenant, resource="delivering"))
+    if keys: r.delete(*set(keys))
+PY
+}
+
+build67_push() {
+  local destination="$1" count="$2" label="$3"
+  build67_redis "$destination" "$count" "$label" <<'PY'
+import json, os, sys, time
+sys.path.insert(0, "/app/src")
+import redis
+from flock.bus import build, prefix
+pod, tenant, destination, count, label = sys.argv[1], sys.argv[2], sys.argv[3], int(sys.argv[4]), sys.argv[5]
+r = redis.Redis.from_url(os.environ.get("REDIS_URL", "redis://127.0.0.1:6379/0"))
+key = prefix(pod, tenant, "stress-src", "egress")
+started = time.time()
+for sequence in range(count):
+    frame = build("Message", "stress-src", destination, {"sequence": sequence, "fault": label}, pod=pod, tenant=tenant)
+    r.rpush(key, json.dumps(frame, separators=(",", ":")))
+print(f"PUSH label={label} count={count} elapsed_s={time.time()-started:.6f}")
+PY
+}
+
+build67_metrics() {
+  build67_redis "$1" <<'PY'
+import os, sys
+sys.path.insert(0, "/app/src")
+import redis
+from flock.bus import prefix
+pod, tenant, destination = sys.argv[1:4]
+r = redis.Redis.from_url(os.environ.get("REDIS_URL", "redis://127.0.0.1:6379/0"))
+info = r.info("memory")
+print(f"METRIC destination={destination} ingress={r.llen(prefix(pod, tenant, destination, 'ingress'))} egress={r.llen(prefix(pod, tenant, 'stress-src', 'egress'))} used_memory={info['used_memory']} delivering={r.hget(prefix(pod, tenant, resource='delivering'), destination)!r}")
+PY
+}
+
+run_build67() {
+  local count="${BUILD67_COUNT:-500}" deadline before after elapsed processes holder marker
+  echo "build67 container=$CONTAINER work=$WORK count=$count"
+  build67_state clear && build67_state seed || { echo "BUILD67 SETUP RED: initial state failed"; return 3; }
+  tmux_switch="$(dx pgrep -f 'python3 -m flock.switch' | head -1 | tr -d '\r')"
+
+  echo "== A control: consumable destination stays clear =="
+  build67_push stress-clean 25 A-control
+  wait_for_queues 120 || { echo "A CONTROL RED: clean destination did not drain"; return 3; }
+  build67_metrics stress-clean
+  echo "A CONTROL CLEAN"
+
+  echo "== A injected: enrolled permitted paused destination accumulates =="
+  dx redis-cli SET "pod:$POD:tenant:$TENANT:agent:stress-paused:paused" 1 >/dev/null
+  before="$(build67_redis <<'PY'
+import os, sys, redis
+r=redis.Redis.from_url(os.environ.get("REDIS_URL", "redis://127.0.0.1:6379/0")); print(r.info("memory")["used_memory"])
+PY
+)"
+  : >"$WORK/a-docker-stats.tsv"
+  (
+    while true; do
+      printf '%s\t' "$(date +%s.%N)" >>"$WORK/a-docker-stats.tsv"
+      docker stats --no-stream --format '{{.CPUPerc}}\t{{.MemUsage}}' "$CONTAINER" >>"$WORK/a-docker-stats.tsv" 2>/dev/null || true
+      sleep 1
+    done
+  ) & sampler=$!
+  start="$(date +%s.%N)"; build67_push stress-paused "$count" A-injected
+  deadline=$((SECONDS + 300))
+  while [ "$SECONDS" -lt "$deadline" ]; do
+    [ "$(dx redis-cli LLEN "pod:$POD:tenant:$TENANT:agent:stress-src:egress" | tr -d '\r')" = 0 ] && break
+    sleep 1
+  done
+  end="$(date +%s.%N)"; elapsed="$(python3 -c "print(float('$end')-float('$start'))")"
+  kill "$sampler" 2>/dev/null || true; wait "$sampler" 2>/dev/null || true; sampler=""
+  after="$(build67_redis <<'PY'
+import os, sys, redis
+r=redis.Redis.from_url(os.environ.get("REDIS_URL", "redis://127.0.0.1:6379/0")); print(r.info("memory")["used_memory"])
+PY
+)"
+  build67_metrics stress-paused
+  echo "A_DOCKER_STATS timestamp cpu_percent memory_usage"
+  cat "$WORK/a-docker-stats.tsv"
+  python3 - "$count" "$before" "$after" "$elapsed" <<'PY'
+import sys
+n, before, after, elapsed = int(sys.argv[1]), *map(float, sys.argv[2:])
+growth=max(0, after-before); per=growth/n if n else 0; rate=n/elapsed if elapsed else 0
+ceiling=int((1024**3)/per) if per else 0
+seconds=ceiling/rate if rate else 0
+print(f"A_CEILING threshold_bytes={1024**3} measured_growth_bytes={growth:.0f} bytes_per_frame={per:.3f} forwarded_per_s={rate:.3f} frames={ceiling} seconds_at_measured_rate={seconds:.1f}")
+PY
+  [ "$(dx redis-cli LLEN "pod:$POD:tenant:$TENANT:agent:stress-paused:ingress" | tr -d '\r')" = "$count" ] || { echo "A GATE RED: injected queue did not retain every frame"; return 3; }
+  echo "A INJECTED DETECTED"
+
+  echo "== B control: absent tag leaves no waiting ports =="
+  build67_state clear && build67_state seed || { echo "BUILD67 SETUP RED: B state failed"; return 3; }
+  build67_push stress-clean 10 B-control; wait_for_queues 120 || return 3
+  processes="$(dx sh -c "ps -eo args= | grep -c '[f]lock.port stress-clean' || true" | tr -d '\r')"
+  echo "B_CONTROL waiting_processes=$processes"; [ "$processes" = 0 ] || return 3
+
+  echo "== B injected: kill real run_port holder after HSETNX =="
+  holder="$(dx sh -c "python3 -c 'import time; import flock.port.deliver as d; d.deliver_one=lambda *a,**k: time.sleep(600); d.run_port(\"stress-clean\", pod=\"$POD\", tenant=\"$TENANT\")' >/dev/null 2>&1 & echo \$!" | tr -d '\r')"
+  deadline=$((SECONDS + 30))
+  while [ "$SECONDS" -lt "$deadline" ]; do
+    [ -n "$(dx redis-cli HGET "pod:$POD:tenant:$TENANT:delivering" stress-clean | tr -d '\r')" ] && break
+    sleep 0.05
+  done
+  dx kill -9 "$holder" >/dev/null
+  build67_push stress-clean 25 B-injected
+  sleep 5
+  processes="$(dx sh -c "ps -eo args= | grep -c '[f]lock.port stress-clean' || true" | tr -d '\r')"
+  build67_metrics stress-clean
+  echo "B_INJECTED waiting_processes=$processes kicks=25"
+  [ "$processes" -ge 20 ] || { echo "B GATE RED: stale tag did not accumulate waiting ports"; return 3; }
+  echo "B INJECTED DETECTED"
+
+  echo "== C control: kicked api/control queues clear =="
+  dx pkill -9 -f 'flock.port stress-clean' >/dev/null 2>&1 || true
+  build67_state clear && build67_state seed || { echo "BUILD67 SETUP RED: C state failed"; return 3; }
+  build67_push stress-api 1 C-api-control; build67_push host 1 C-control-control
+  wait_for_queues 120 || { echo "C CONTROL RED: kicked participant did not clear"; return 3; }
+  echo "C CONTROL CLEAN"
+
+  echo "== C injected: un-kicked api/control frames strand and watchdog omits both =="
+  build67_redis <<'PY'
+import json, os, sys
+sys.path.insert(0, "/app/src")
+import redis
+from flock.bus import build, prefix
+from flock.watchdog.service import Watchdog
+pod, tenant=sys.argv[1:3]; r=redis.Redis.from_url(os.environ.get("REDIS_URL", "redis://127.0.0.1:6379/0"))
+for dst in ("stress-api", "host"):
+    frame=build("Message", "stress-src", dst, {"fault":"C-injected"}, pod=pod, tenant=tenant)
+    r.rpush(prefix(pod, tenant, dst, "ingress"), json.dumps(frame, separators=(",", ":")))
+w=Watchdog(r,pod=pod,tenant=tenant,session_name=tenant)
+observed=w._agents()
+print(f"C_INJECTED api_depth={r.llen(prefix(pod,tenant,'stress-api','ingress'))} control_depth={r.llen(prefix(pod,tenant,'host','ingress'))} watchdog_agents={observed}")
+assert "stress-api" not in observed and "host" not in observed
+PY
+  echo "C INJECTED DETECTED"
+
+  echo "== D control: same-source FIFO trio all produce custody =="
+  build67_state clear && build67_state seed || { echo "BUILD67 SETUP RED: D control state failed"; return 3; }
+  : >"$WORK/d-control.tsv"
+  build67_redis >"$WORK/d-control.tsv" <<'PY'
+import json, os, sys, time
+sys.path.insert(0,"/app/src"); import redis
+from flock.bus import build,prefix
+pod,tenant=sys.argv[1:3]; r=redis.Redis.from_url(os.environ.get("REDIS_URL","redis://127.0.0.1:6379/0"))
+for seq in range(3):
+ f=build("Message","stress-src","stress-clean",{"sequence":seq,"fault":"D-control"},pod=pod,tenant=tenant); print(f"{seq}\t{f['stream_id']}\tstress-src\tstress-clean\t{time.time()}",flush=True); r.rpush(prefix(pod,tenant,"stress-src","egress"),json.dumps(f,separators=(",",":")))
+PY
+  wait_for_queues 120 || return 3
+  : >"$WORK/injections.tsv"
+  reconcile "$WORK/d-control.tsv" d-control | tee "$WORK/d-control.result" || return 3
+  echo "D CONTROL CLEAN"
+
+  echo "== D injected: kill after BLPOP before first emit, FIFO bracket =="
+  build67_state clear && build67_state seed || { echo "BUILD67 SETUP RED: D injected state failed"; return 3; }
+  : >"$WORK/d-injected.tsv"; : >"$WORK/injections.tsv"
+  # Deliver the FIFO predecessor normally.
+  build67_redis >"$WORK/d-injected.tsv" <<'PY'
+import json, os, sys, time
+sys.path.insert(0,"/app/src"); import redis
+from flock.bus import build,prefix
+pod,tenant=sys.argv[1:3]; r=redis.Redis.from_url(os.environ.get("REDIS_URL","redis://127.0.0.1:6379/0")); key=prefix(pod,tenant,"stress-src","egress")
+f=build("Message","stress-src","stress-clean",{"sequence":0,"fault":"D-injected"},pod=pod,tenant=tenant); print(f"0\t{f['stream_id']}\tstress-src\tstress-clean\t{time.time()}",flush=True); r.rpush(key,json.dumps(f,separators=(",",":")))
+while r.llen(key): time.sleep(.01)
+time.sleep(1)
+PY
+  # Stop production before the target exists, then enqueue target and successor.
+  dx kill -STOP "$tmux_switch"
+  deadline=$((SECONDS + 10))
+  while [ "$SECONDS" -lt "$deadline" ]; do
+    case "$(dx sh -c "ps -o stat= -p $tmux_switch" | tr -d '\r ')" in T*) break ;; esac
+    sleep .05
+  done
+  case "$(dx sh -c "ps -o stat= -p $tmux_switch" | tr -d '\r ')" in
+    T*) ;;
+    *) echo "D SETUP RED: production switch did not stop"; return 3 ;;
+  esac
+  build67_redis >>"$WORK/d-injected.tsv" <<'PY'
+import json, os, sys, time
+sys.path.insert(0,"/app/src"); import redis
+from flock.bus import build,prefix
+pod,tenant=sys.argv[1:3]; r=redis.Redis.from_url(os.environ.get("REDIS_URL","redis://127.0.0.1:6379/0")); key=prefix(pod,tenant,"stress-src","egress")
+for seq in (1,2):
+ f=build("Message","stress-src","stress-clean",{"sequence":seq,"fault":"D-injected"},pod=pod,tenant=tenant); print(f"{seq}\t{f['stream_id']}\tstress-src\tstress-clean\t{time.time()}",flush=True); r.rpush(key,json.dumps(f,separators=(",",":")))
+PY
+  # Make a controlled switch expose the exact BLPOP-before-emit gap.
+  marker="pod:$POD:tenant:$TENANT:build67:blpop-gap"; dx redis-cli DEL "$marker" >/dev/null
+  test_switch="$(dx sh -c "env POD='$POD' TENANT='$TENANT' REDIS_URL='$REDIS_URL' python3 -c 'import os,time,redis; from flock.switch.service import Switch; r=redis.Redis.from_url(os.environ[\"REDIS_URL\"]); real=r.blpop; r.blpop=lambda *a,**k: (lambda x:(r.set(\"$marker\",1),time.sleep(600),x)[2])(real(*a,**k)); Switch(r,pod=os.environ[\"POD\"],tenant=os.environ[\"TENANT\"]).step()' >>/proc/1/fd/1 2>&1 & echo \$!" | tr -d '\r')"
+  deadline=$((SECONDS + 30)); while [ "$SECONDS" -lt "$deadline" ]; do [ "$(dx redis-cli GET "$marker" | tr -d '\r')" = 1 ] && break; sleep .05; done
+  start="$(date +%s.%N)"; dx kill -9 "$test_switch"; end="$(date +%s.%N)"; test_switch=""
+  printf '%s\t%s\tswitch-kill\tblpop-before-emit\n' "$start" "$end" >"$WORK/injections.tsv"
+  dx kill -CONT "$tmux_switch"; tmux_switch=""
+  wait_for_queues 120 || return 3
+  reconcile "$WORK/d-injected.tsv" d-injected | tee "$WORK/d-injected.result"
+  rc=${PIPESTATUS[0]}; [ "$rc" = 0 ] || { echo "D GATE RED: injected silent loss was not FIFO-attributed rc=$rc"; return 3; }
+  grep -q 'lost_attributed=1 lost_unexplained=0' "$WORK/d-injected.result" || { echo "D GATE RED: expected one attributed loss"; return 3; }
+  echo "D INJECTED DETECTED"
+
+  echo "WATCHDOG_OBSERVATION A=per-participant ingress depth and growth rate, correlated with successful kicks and absence of pop/open progress"
+  echo "WATCHDOG_OBSERVATION B=delivering owner identity/lease age plus ingress depth and count of kicks losing ownership; depth alone cannot distinguish this wedge"
+  echo "WATCHDOG_OBSERVATION C=roster-wide ingress depth for every port_type, not Watchdog._agents tmux subset"
+  echo "WATCHDOG_OBSERVATION D=durable custody sequence around each source FIFO: sent/preceding-popped/following-popped plus switch-process generation; no frame-local record exists"
+}
+
+if [ "${BUILD67:-0}" = "1" ]; then
+  run_build67
+  exit $?
+fi
 
 if [ "${RECONCILE_ONLY:-0}" = "1" ]; then
   reconcile "${LEDGER:?set LEDGER}" "${LABEL:-clean}"
