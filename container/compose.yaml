@@ -26,6 +26,7 @@ services:
       # because setup.sh always writes a .env that overrides it.
       AGENTS: "${AGENTS:-architect:tmux,sme-2:tmux,sme-3:tmux}"
       ROSTER_POLL_SECONDS: "${ROSTER_POLL_SECONDS:-5}"
+      INGRESS_MAX: "${INGRESS_MAX:-300}"
       BOARD_DONE_MAX: "${BOARD_DONE_MAX:-500}"
       DEAD_MAX: "${DEAD_MAX:-500}"
       WINDOW_LOG_MAX_BYTES: "${WINDOW_LOG_MAX_BYTES:-8388608}"

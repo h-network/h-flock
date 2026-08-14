@@ -18,15 +18,68 @@ from .windowlog import WindowLogTailer
 
 
 class Switch:
-    def __init__(self, r, *, pod: str, tenant: str, poll_seconds: int = 5):
+    def __init__(
+        self,
+        r,
+        *,
+        pod: str,
+        tenant: str,
+        poll_seconds: int = 5,
+        ingress_max: int = 300,
+    ):
+        if ingress_max < 1:
+            raise ValueError("ingress_max must be positive")
         self.r = r
         self.pod = pod
         self.tenant = tenant
         self.poll_seconds = poll_seconds
+        self.ingress_max = ingress_max
         self._offset = 0
 
     def _agents(self) -> set[str]:
         return members(self.r, pod=self.pod, tenant=self.tenant)
+
+    @staticmethod
+    def _record_popped(raw, sender: str) -> None:
+        """Record removal before validating the untrusted frame."""
+        try:
+            candidate = json.loads(raw)
+        except (json.JSONDecodeError, TypeError, UnicodeDecodeError):
+            candidate = {}
+        if not isinstance(candidate, dict):
+            candidate = {}
+        l2 = candidate.get("l2")
+        if not isinstance(l2, dict):
+            l2 = {}
+        stream_id = candidate.get("stream_id")
+        correlation_id = candidate.get("correlation_id")
+        destination = l2.get("destination")
+        log_record(
+            "switch",
+            "popped",
+            stream_id=stream_id if isinstance(stream_id, str) else None,
+            correlation_id=correlation_id if isinstance(correlation_id, str) else None,
+            source=sender,
+            destination=destination if isinstance(destination, str) else None,
+        )
+
+    def _dead_letter_full(
+        self, sender: str, destination: str, raw, envelope: dict, depth: int
+    ) -> None:
+        self.r.rpop(prefix(self.pod, self.tenant, destination, "ingress"))
+        self.r.rpush(prefix(self.pod, self.tenant, sender, "dead"), raw)
+        log_record(
+            "switch",
+            "dead_lettered",
+            stream_id=envelope.get("stream_id"),
+            correlation_id=envelope.get("correlation_id"),
+            source=envelope.get("l2", {}).get("source"),
+            destination=destination,
+            reason=(
+                f"ingress full for destination {destination!r}: "
+                f"depth {depth} exceeds INGRESS_MAX {self.ingress_max}"
+            ),
+        )
 
     @staticmethod
     def _kick(agent: str, envelope: dict) -> None:
@@ -72,12 +125,12 @@ class Switch:
         if isinstance(source_key, bytes):
             source_key = source_key.decode()
         sender = source_key.split(":")[-2]
+        self._record_popped(raw, sender)
         try:
             envelope = parse_for_switch(raw)
         except EnvelopeError as exc:
             dead = prefix(self.pod, self.tenant, sender, "dead")
             self.r.rpush(dead, raw)
-            emit("switch", "popped", {}, str(exc))
             emit("switch", "dead_lettered", {}, str(exc))
             return True
         # The forwarding decision reads L2 and the roster only. L3 rides through
@@ -89,7 +142,6 @@ class Switch:
             # would let a raw queue writer destroy another participant's traffic.
             envelope["l2"]["source"] = sender
             raw = json.dumps(envelope, separators=(",", ":"))
-        emit("switch", "popped", envelope)
         if claimed_producer != sender:
             emit(
                 "switch",
@@ -104,12 +156,18 @@ class Switch:
             for agent in recipients:
                 pipe.rpush(prefix(self.pod, self.tenant, agent, "ingress"), raw)
             try:
-                pipe.execute()
+                depths = pipe.execute()
             except Exception as exc:
                 emit("switch", "forward_failed", envelope, f"broadcast ingress write failed: {exc}")
                 raise
-            emit("switch", "forwarded", envelope, count=len(recipients))
-            for agent in recipients:
+            accepted = []
+            for agent, depth in zip(recipients, depths):
+                if depth > self.ingress_max:
+                    self._dead_letter_full(sender, agent, raw, envelope, depth)
+                else:
+                    accepted.append(agent)
+            emit("switch", "forwarded", envelope, count=len(accepted))
+            for agent in accepted:
                 self._kick(agent, envelope)
             return True
         if not is_member(self.r, pod=self.pod, tenant=self.tenant, agent=destination):
@@ -117,10 +175,13 @@ class Switch:
             emit("switch", "dead_lettered", envelope, "destination is not in tenant roster")
             return True
         try:
-            self.r.rpush(prefix(self.pod, self.tenant, destination, "ingress"), raw)
+            depth = self.r.rpush(prefix(self.pod, self.tenant, destination, "ingress"), raw)
         except Exception as exc:
             emit("switch", "forward_failed", envelope, f"ingress write failed: {exc}")
             raise
+        if depth > self.ingress_max:
+            self._dead_letter_full(sender, destination, raw, envelope, depth)
+            return True
         emit("switch", "forwarded", envelope)
         self._kick(destination, envelope)
         return True
@@ -176,6 +237,7 @@ def main() -> None:
         pod=os.environ["POD"],
         tenant=os.environ["TENANT"],
         poll_seconds=int(os.environ.get("ROSTER_POLL_SECONDS", "5")),
+        ingress_max=int(os.environ.get("INGRESS_MAX", "300")),
     )
     # Config for the same reason ROSTER_POLL_SECONDS is: two offices can
     # legitimately trade feed latency against filesystem polling. A knob beside
