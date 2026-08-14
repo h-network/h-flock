@@ -123,9 +123,20 @@ for key in r.scan_iter(match=f"pod:{pod}:tenant:{tenant}:agent:*:dead"):
         try: print(json.dumps(json.loads(raw)))
         except Exception: print("__CONSERVATION_DEAD_JSON_PARSE_FAILURE__")
 PY
-  python3 - "$ledger" "$WORK/${label}.docker.log" "$WORK/${label}.dead.jsonl" "$WORK/injections.tsv" <<'PY'
+  dx python3 - "$POD" "$TENANT" >"$WORK/${label}.ingress.jsonl" <<'PY'
+import json, os, sys
+sys.path.insert(0, "/app/src")
+import redis
+pod, tenant = sys.argv[1:3]
+r = redis.Redis.from_url(os.environ.get("REDIS_URL", "redis://127.0.0.1:6379/0"))
+for key in r.scan_iter(match=f"pod:{pod}:tenant:{tenant}:agent:*:ingress"):
+    for raw in r.lrange(key, 0, -1):
+        try: print(json.dumps(json.loads(raw)))
+        except Exception: print("__CONSERVATION_INGRESS_JSON_PARSE_FAILURE__")
+PY
+  python3 - "$ledger" "$WORK/${label}.docker.log" "$WORK/${label}.dead.jsonl" "$WORK/${label}.ingress.jsonl" "$WORK/injections.tsv" <<'PY'
 import collections, datetime, json, sys
-ledger_path, log_path, dead_path, injection_path = sys.argv[1:]
+ledger_path, log_path, dead_path, ingress_path, injection_path = sys.argv[1:]
 sent = {}
 with open(ledger_path) as f:
     for line in f:
@@ -156,6 +167,15 @@ with open(dead_path) as f:
         try: dead.add(json.loads(line).get("stream_id"))
         except Exception:
             dead_parse_failures += 1
+ingress = set()
+ingress_parse_failures = 0
+with open(ingress_path) as f:
+    for line in f:
+        if not line.strip():
+            continue
+        try: ingress.add(json.loads(line).get("stream_id"))
+        except Exception:
+            ingress_parse_failures += 1
 windows = []
 with open(injection_path) as f:
     for line in f:
@@ -181,7 +201,7 @@ if sent and windows:
     coverage = sum(right - left for left, right in merged)
     duration = max(0.0, run_end - run_start)
     coverage_fraction = coverage / duration if duration else 0.0
-duplicates, dead_loss, attributed, unexplained = [], [], [], []
+duplicates, dead_loss, stranded, attributed, unexplained = [], [], [], [], []
 event_time_failures = 0
 for seq, (sid, dst, sent_ts) in sent.items():
     count = opened[sid]
@@ -190,6 +210,9 @@ for seq, (sid, dst, sent_ts) in sent.items():
     elif count == 0:
         if sid in dead:
             dead_loss.append((seq, sid))
+            continue
+        if sid in ingress:
+            stranded.append((seq, sid))
             continue
         cause = None
         ev = events.get(sid, [])
@@ -202,15 +225,21 @@ for seq, (sid, dst, sent_ts) in sent.items():
                 cause = f"{kind}:{detail}"
                 break
         (attributed if cause else unexplained).append((seq, sid, cause or "none"))
-print(f"RECONCILE sent={len(sent)} delivered_once={sum(opened[sid] == 1 for sid, _, _ in sent.values())} duplicates={len(duplicates)} dead={len(dead_loss)} lost_attributed={len(attributed)} lost_unexplained={len(unexplained)}")
-print(f"PARSE_FAILURES docker_json={log_parse_failures} dead_json={dead_parse_failures} event_ts={event_time_failures}")
+print(f"RECONCILE sent={len(sent)} delivered_once={sum(opened[sid] == 1 for sid, _, _ in sent.values())} duplicates={len(duplicates)} dead={len(dead_loss)} stranded={len(stranded)} lost_attributed={len(attributed)} lost_unexplained={len(unexplained)}")
+print(f"PARSE_FAILURES docker_json={log_parse_failures} dead_json={dead_parse_failures} ingress_json={ingress_parse_failures} event_ts={event_time_failures}")
 print(f"INJECTION_COVERAGE seconds={coverage:.3f} fraction={coverage_fraction:.6f}")
 for row in duplicates[:10]: print("DUPLICATE", *row)
+for row in stranded[:10]: print("STRANDED", *row)
 for row in attributed[:10]: print("LOSS_ATTRIBUTED", *row)
 for row in unexplained[:10]: print("LOSS_UNEXPLAINED", *row)
-sys.exit(4 if (log_parse_failures or dead_parse_failures or event_time_failures) else (2 if duplicates else (1 if unexplained else 0)))
+sys.exit(4 if (log_parse_failures or dead_parse_failures or ingress_parse_failures or event_time_failures) else (2 if duplicates else (1 if unexplained else 0)))
 PY
 }
+
+if [ "${RECONCILE_ONLY:-0}" = "1" ]; then
+  reconcile "${LEDGER:?set LEDGER}" "${LABEL:-clean}"
+  exit $?
+fi
 
 echo "conservation container=$CONTAINER stations=$STATIONS rounds=$ROUNDS work=$WORK"
 seed_stations
