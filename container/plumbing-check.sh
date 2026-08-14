@@ -153,7 +153,13 @@ done
 
 echo "== 9. lifecycle =="
 cu -X POST -H 'Content-Type: application/json' -d '{"kind":"StartAgent","payload":{"agent":"dave"}}' $A/agents/host/envelopes >/dev/null
-sleep 5
+# StartAgent travels through the same asynchronous route as StopAgent. Poll both
+# halves of this lifecycle check symmetrically: a fixed wait sampled 260 ms
+# before window_created on a busy tenant and reported a healthy start as absent.
+for _ in $(seq 1 15); do
+    [ "$(dx bash -c "TMUX_TMPDIR=/home/ubuntu/.flock/tmux tmux list-windows -t $TENANT" | grep -c dave)" = "1" ] && break
+    sleep 1
+done
 ck "dave window exists" "$(dx bash -c "TMUX_TMPDIR=/home/ubuntu/.flock/tmux tmux list-windows -t $TENANT" | grep -c dave)" "1"
 cu -X POST -H 'Content-Type: application/json' -d '{"kind":"StopAgent","payload":{"agent":"dave"}}' $A/agents/host/envelopes >/dev/null
 # ⚠ Poll, do not sleep a fixed interval. A StopAgent is an envelope: it is
