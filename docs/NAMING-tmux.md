@@ -48,23 +48,23 @@ Tier A is documentation, B internal code, C Redis/environment, and D wire.
 
 | name | where it lives | kind | what it means, in one line | networking analogue, if any | tier |
 |---|---|---|---|---|---|
-| `port` | `src/flock/port/cli.py:10`, `src/flock/port/runner.py:149` | doc term | Names both outbound agent sending and inbound per-envelope delivery—opposite sides of the switch. | Two different NIC directions collapsed into one component name. | B |
-| `send` CLI | `src/flock/port/cli.py:20` | identifier | Agent-facing command that constructs an envelope and writes its own egress. | Transmit-side NIC operation. | B |
-| `run_adapter` | `src/flock/port/runner.py:149` | identifier | Acquires per-agent serialization, delivers one ingress envelope, and exits. | Receive-side port service. | B |
-| `deliver_one` | `src/flock/port/runner.py:69` | identifier | Dispatches one destination ingress item according to its port_type. | Frame delivery to a selected port type. | B |
-| `deliver_api` | `src/flock/port/runner.py:26` | identifier | Moves one ingress envelope to an enrolled client's mailbox stream. | Delivery to a different port medium. | B |
-| `deliver_unroutable` | `src/flock/port/runner.py:43` | identifier | Pops and dead-letters an envelope whose port_type has no implementation. | Unsupported-port drop. | B |
-| `opener` | `src/flock/port/runner.py:141` | doc term | Kind-specific callable whose normal return means an envelope was opened. | Ethertype handler. | B |
+| `port` | `src/flock/port/send.py:9`, `src/flock/port/deliver.py:165` | doc term | Names both outbound agent sending and inbound per-envelope delivery—opposite sides of the switch. | Two different NIC directions collapsed into one component name. | B |
+| `send` CLI | `src/flock/port/send.py:9` | identifier | Agent-facing command that constructs an envelope and writes its own egress. | Transmit-side NIC operation. | B |
+| `run_port` | `src/flock/port/deliver.py:165` | identifier | Acquires per-agent serialization, delivers one ingress envelope, and exits. | Receive-side port service. | B |
+| `deliver_one` | `src/flock/port/deliver.py:76` | identifier | Dispatches one destination ingress item according to its port_type. | Frame delivery to a selected port type. | B |
+| `deliver_api` | `src/flock/port/deliver.py:25` | identifier | Moves one ingress envelope to an enrolled client's mailbox stream. | Delivery to a different port medium. | B |
+| `deliver_unroutable` | `src/flock/port/deliver.py:51` | identifier | Pops and dead-letters an envelope whose port_type has no implementation. | Unsupported-port drop. | B |
+| `opener` | `src/flock/port/deliver.py:148` | doc term | Kind-specific callable whose normal return means an envelope was opened. | Ethertype handler. | B |
 | `message_opener` / `command_opener` / `add_ticket_opener` | `src/flock/port/openers.py:55` | identifier | Terminal or board actions selected by envelope kind. | Protocol handlers. | B |
-| `opened` | `src/flock/port/runner.py:40` | doc term | Terminal outcome meaning an opener completed, not proof a human/CLI consumed it. | Accepted by destination handler, not delivery acknowledgement. | A |
-| `delivering` | `src/flock/port/runner.py:161` | redis key | Tenant hash serving as a per-agent mutual-exclusion/busy tag. | Per-port transmit lock. | C |
-| `paused` | `src/flock/port/runner.py:77` | redis key | Marker that leaves ingress queued rather than opening it. | Administratively down port. | C |
+| `opened` | `src/flock/port/deliver.py:153` | doc term | Terminal outcome meaning an opener completed, not proof a human/CLI consumed it. | Accepted by destination handler, not delivery acknowledgement. | A |
+| `delivering` | `src/flock/port/deliver.py:177` | redis key | Tenant hash serving as a per-agent mutual-exclusion/busy tag. | Per-port transmit lock. | C |
+| `paused` | `src/flock/port/deliver.py:84` | redis key | Marker that leaves ingress queued rather than opening it. | Administratively down port. | C |
 | `pending.verify` | `src/flock/port/openers.py:43` | redis key | Stream of pasted deliveries awaiting out-of-band activity judgment. | Delivery telemetry awaiting observation. | C |
 | `VERIFIABLE_CLIS` | `src/flock/port/openers.py:15` | identifier | Allowlist of CLI implementations whose session files can confirm input. | Observable port types. | B |
-| `inbox` | `src/flock/port/runner.py:33` | redis key | Resumable mailbox stream for a `port_type: api` participant. | Receive buffer on an application port. | C |
-| `dead` | `src/flock/port/runner.py:56` | redis key | Retained list of envelopes that could not be opened. | Dead-letter/drop queue. | C |
-| `ingress` | `src/flock/port/runner.py:51` | redis key | Recipient-side queue from which delivery pops. | Ingress queue. | C |
-| `_CatchAllDict` | `src/flock/port/runner.py:11` | identifier | Mapping facade that makes every kind openable for API mailboxes. | Promiscuous protocol handler. | B |
+| `inbox` | `src/flock/port/deliver.py:32` | redis key | Resumable mailbox stream for a `port_type: api` participant. | Receive buffer on an application port. | C |
+| `dead` | `src/flock/port/deliver.py:63` | redis key | Retained list of envelopes that could not be opened. | Dead-letter/drop queue. | C |
+| `ingress` | `src/flock/port/deliver.py:59` | redis key | Recipient-side queue from which delivery pops. | Ingress queue. | C |
+| `_CatchAllDict` | `src/flock/port/deliver.py:10` | identifier | Mapping facade that makes every kind openable for API mailboxes. | Promiscuous protocol handler. | B |
 
 ## `flock.control`
 
@@ -116,8 +116,8 @@ Tier A is documentation, B internal code, C Redis/environment, and D wire.
 
 ### One word, two meanings
 
-- **`port`** names the outbound `send` CLI (`port/cli.py`) and the inbound
-  one-envelope receiver (`port/runner.py`). They sit on opposite sides of the
+- **`port`** names the outbound `send` CLI (`port/send.py`) and the inbound
+  one-envelope receiver (`port/deliver.py`). They sit on opposite sides of the
   switch and have different lifecycles.
 - **`host`** means the tmux reconciliation module and the fixed control-plane
   roster participant.
