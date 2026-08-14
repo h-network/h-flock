@@ -467,6 +467,27 @@ restarts.
 > established why the current design fails: **nothing reads the reply.** Both
 > halves are now known, which is more than we had this morning.
 >
+> ⚠ **It fired a SECOND time on the same correct behaviour**, seven minutes
+> later. The lane was still waiting, still correctly. **That is the cost of a
+> watchdog that cannot tell waiting from stuck: not a wrong answer once, but the
+> same wrong answer forever**, until a reader stops believing it.
+>
+> ✅ **And the second firing gives a third discriminator, cheaper than the other
+> two: KNOWN BLOCKING.** The lane was waiting on a resource held by another
+> lane — a fact the *system already had*. It did not need to infer liveness or
+> ask anyone.
+>
+> **The h-flock analogue is exact:** a port waiting on `delivering` is blocked on
+> a lock whose **holder is recorded in that very hash**. A watchdog that reads it
+> knows the difference between *waiting for a known holder* and *nothing is
+> happening*, with no probe and no declaration.
+>
+> | discriminator | cost | covers |
+> |---|---|---|
+> | **known blocking** — is it waiting on something we recorded? | free, already stored | the wedged-tag case |
+> | declaration | needs a protocol | intentional idleness |
+> | active probe | needs a reader for the reply | genuine liveness |
+>
 > ⚠ **§8.1–8.4 below are retained as the record of the reasoning, not as a
 > buildable design.** The parts that ARE settled: the fix belongs in the port and
 > the watchdog rather than the switch; ingress must be bounded at forward time
