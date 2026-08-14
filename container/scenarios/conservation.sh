@@ -362,6 +362,14 @@ import os, sys, redis
 r=redis.Redis.from_url(os.environ.get("REDIS_URL", "redis://127.0.0.1:6379/0")); print(r.info("memory")["used_memory"])
 PY
 )"
+  : >"$WORK/a-docker-stats.tsv"
+  (
+    while true; do
+      printf '%s\t' "$(date +%s.%N)" >>"$WORK/a-docker-stats.tsv"
+      docker stats --no-stream --format '{{.CPUPerc}}\t{{.MemUsage}}' "$CONTAINER" >>"$WORK/a-docker-stats.tsv" 2>/dev/null || true
+      sleep 1
+    done
+  ) & sampler=$!
   start="$(date +%s.%N)"; build67_push stress-paused "$count" A-injected
   deadline=$((SECONDS + 300))
   while [ "$SECONDS" -lt "$deadline" ]; do
@@ -369,12 +377,15 @@ PY
     sleep 1
   done
   end="$(date +%s.%N)"; elapsed="$(python3 -c "print(float('$end')-float('$start'))")"
+  kill "$sampler" 2>/dev/null || true; wait "$sampler" 2>/dev/null || true; sampler=""
   after="$(build67_redis <<'PY'
 import os, sys, redis
 r=redis.Redis.from_url(os.environ.get("REDIS_URL", "redis://127.0.0.1:6379/0")); print(r.info("memory")["used_memory"])
 PY
 )"
   build67_metrics stress-paused
+  echo "A_DOCKER_STATS timestamp cpu_percent memory_usage"
+  cat "$WORK/a-docker-stats.tsv"
   python3 - "$count" "$before" "$after" "$elapsed" <<'PY'
 import sys
 n, before, after, elapsed = int(sys.argv[1]), *map(float, sys.argv[2:])
