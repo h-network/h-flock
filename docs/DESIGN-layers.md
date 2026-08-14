@@ -409,9 +409,26 @@ frame the dead one was kicked for.
 ⚠ **This does not need an observer, a sweeper, or any switch change.** The cost
 is borne per delivery, in a process that is already running, and it is parallel.
 
-⚠ **One residual case survives and must be stated:** if the port handling the
-**final** envelope dies and no further kick ever arrives, that frame strands
-permanently. Draining shrinks the window from *every killed port* to *only a
-killed port with no successor* — which is exactly the condition build 58 hit,
-because its producer had stopped. **That residual is what an observer would be
-for, and it is a separate decision.**
+⚠ **One residual case survives:** if the port handling the **final** envelope
+dies and no further kick ever arrives, that frame strands permanently. Draining
+shrinks the window from *every killed port* to *only a killed port with no
+successor* — exactly the condition build 58 hit, because its producer had
+stopped.
+
+✅ **The residual belongs to the WATCHDOG. No new observer.** `flock/watchdog`
+is already the periodic observer: it polls agents, reads presence and activity,
+judges blocked and absent, and raises alerts. **Ingress non-empty with no
+progress is the same shape of question it already answers** — and it lives
+outside the switch, so noticing costs the forwarding path nothing.
+
+⚠ **Three components, three jobs, and none of them the switch:**
+
+| | job | cost borne |
+|---|---|---|
+| **port** | drain until empty | per delivery, parallel, already running |
+| **watchdog** | notice a queue that stopped moving | periodic, outside the hot path |
+| **switch** | ⚠ **nothing. It forwards.** | unchanged |
+
+⚠ **What the watchdog must NOT do is deliver.** It observes and alerts; a
+watchdog that re-kicks is a retry mechanism, and at-most-once with zero retries
+is deliberate. Whether it may re-kick is a separate decision and not this one.

@@ -62,8 +62,12 @@ knows.** The switch cannot log "the port died before popping" — it kicked and
 moved on. Detecting a strand needs an **observer**: something that notices
 ingress non-empty with no progress.
 
-⚠ **If a record requires a new observer, say so and STOP.** Do not build a
-sweeper inside this build. A sweeper changes delivery behaviour — it is the
+✅ **The observer already exists: it is the WATCHDOG** (`DESIGN-layers` §8).
+`flock/watchdog` polls agents, judges blocked and absent and raises alerts, and
+it runs outside the switch. **Classify such transitions as "watchdog's job" —
+do not invent a new component and do not build it here.**
+
+⚠ **Do not build a sweeper inside the switch.** A sweeper changes delivery behaviour — it is the
 liveness fix, it is a design decision, and it is mine and the operator's to
 make. **This build establishes what is invisible; it does not make it visible by
 changing how delivery works.**
