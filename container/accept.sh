@@ -53,18 +53,46 @@ PROJECT="h-flock-${TENANT}"
 CONTAINER="${PROJECT}-tenant-1"
 FAILED=0
 SKIPPED=""
+CREATED_PROJECT=""
+CONSOLE_PID=""
 step() { echo; echo "══ $* ══"; }
 fail() { echo "  ✗ $*" >&2; FAILED=$((FAILED+1)); }
 
 cleanup() {
   [ "$KEEP" = "1" ] && { echo; echo "kept: $CONTAINER (--keep)"; return 0; }
   step "teardown"
-  pkill -9 -f "[s]erver\.py --listen 0.0.0.0 --port $CONSOLE_PORT" 2>/dev/null || true
-  docker compose -p "$PROJECT" --env-file container/.env -f container/compose.yaml down -v 2>&1 | tail -2
+  # Kill only the console this invocation started. A host-wide pkill pattern
+  # killed unrelated SSH shells whose command line happened to contain it.
+  [ -n "$CONSOLE_PID" ] && kill "$CONSOLE_PID" 2>/dev/null || true
+  # Never destroy a compose project that this invocation did not create.
+  [ "$CREATED_PROJECT" = "$PROJECT" ] && \
+    docker compose -p "$CREATED_PROJECT" --env-file container/.env \
+      -f container/compose.yaml down -v 2>&1 | tail -2
 }
-trap cleanup EXIT
+
+# This harness is destructive by design. Refuse the live office even if its
+# tenant name was supplied by reflex or leaked from the agent environment.
+if [ "${FORCE:-0}" != "1" ] && { [ "$PROJECT" = "${AGENT_OFFICE:-}" ] || [ "$TENANT" = "${AGENT_OFFICE:-}" ]; }; then
+  echo "accept: refusing live office '${AGENT_OFFICE}' (set FORCE=1 only if destruction is intentional)" >&2
+  exit 2
+fi
 
 command -v docker >/dev/null || { echo "accept: docker is required" >&2; exit 2; }
+
+# An existing project cannot have been created by this invocation. Refusing it
+# also makes the ownership rule hold for non-office tenants. Query Docker's
+# compose labels directly: loading compose.yaml can fail before setup writes
+# its .env, and an empty result from that failure would be dangerously false.
+EXISTING_PROJECT_RESOURCE="$({
+  docker ps -aq --filter "label=com.docker.compose.project=$PROJECT"
+  docker network ls -q --filter "label=com.docker.compose.project=$PROJECT"
+  docker volume ls -q --filter "label=com.docker.compose.project=$PROJECT"
+} 2>/dev/null | head -1)"
+if [ -n "$EXISTING_PROJECT_RESOURCE" ]; then
+  echo "accept: refusing existing compose project '$PROJECT'; this run does not own it" >&2
+  exit 2
+fi
+trap cleanup EXIT
 
 step "install — driving setup.sh as a person would"
 # pod, tenant, 2 agents and their names, no extra accounts, no provider,
@@ -72,6 +100,11 @@ step "install — driving setup.sh as a person would"
 rm -f container/.env
 printf 'acme\n%s\n2\narchitect\nsme-2\nn\nn\ny\n\nn\n' "$TENANT" | ./setup.sh 2>&1 \
   | grep -E "healthy|error|Error|NEEDS LOGIN|logged in|wrote container/.env" | head -8
+# setup.sh is the operation that creates the project. Record ownership only
+# after Docker confirms that this run brought its container into existence.
+if [ -n "$(docker ps -aq --filter "label=com.docker.compose.project=$PROJECT" 2>/dev/null | head -1)" ]; then
+  CREATED_PROJECT="$PROJECT"
+fi
 [ -f container/.env ] || { fail "setup.sh wrote no container/.env"; exit 1; }
 
 if [ "$API_PORT" != "8080" ] || [ "$SESSION_PORT" != "8081" ]; then
@@ -106,9 +139,9 @@ if [ "$CONSOLE" = "1" ]; then
   step "console"
   SECRET="$(openssl rand -hex 8 2>/dev/null || echo acceptsecret)"
   TOKEN="$(grep '^API_TOKEN=' container/.env | cut -d= -f2)"
-  ( cd clients/web && setsid nohup python3 server.py --listen 0.0.0.0 --port "$CONSOLE_PORT" \
+  CONSOLE_PID="$(cd clients/web && setsid python3 server.py --listen 0.0.0.0 --port "$CONSOLE_PORT" \
       --api "http://127.0.0.1:${API_PORT}" --session "http://127.0.0.1:${SESSION_PORT}" \
-      --token "$TOKEN" --secret "$SECRET" > /tmp/accept-console.log 2>&1 & )
+      --token "$TOKEN" --secret "$SECRET" > /tmp/accept-console.log 2>&1 & echo $!)"
   sleep 8
   CODE="$(curl -s -o /dev/null -w '%{http_code}' "http://127.0.0.1:${CONSOLE_PORT}/" || true)"
   echo "  console http=${CODE}"
