@@ -122,6 +122,29 @@ run reads **6.47/s steady-state** and **5.36/s wall-clock** — 21% apart, becau
 wall-clock keeps counting through a drain in which nothing arrives. Much of the
 "35% host variance" is this.
 
+### ⚠ Correction — the base-run figures are contaminated, and one is withdrawn
+
+`bus` found it while using them: the base run logged **2,100 `opened`, not
+2,000**. The extra 100 are `StartAgent` **enrolment** deliveries, so both
+throughput figures include non-workload events.
+
+⚠ **The end-to-end figure is WITHDRAWN.** `sent → popped` had **n=100 of 2,000**,
+because the injector runs through `docker exec` and those `sent` records never
+reach the container log. I noted that artefact and then **quoted the p50
+anyway** — it described the enrolment traffic, not the run.
+
+**What survives**, because medians are robust to ~5% contamination and the two
+logs agree independently:
+
+- the **per-stage shape**: switch single-digit ms, kick-to-pop hundreds of ms
+- the **~1% switch share**
+- the **steady-versus-wall-clock gap**, since both readings cover the same data
+
+⚠ **This is the failure my own spec named**: a per-stage figure computed from a
+partial population and reported as if whole. `analyse-run.py` must **refuse a
+stage** whose sample does not cover the run rather than averaging what it has,
+and workload must be filtered from control traffic. `bus` is doing both.
+
 ### 2.1a The router is a station, so it has a port
 
 Nothing about the switch changes when the router arrives, and nothing special
