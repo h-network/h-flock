@@ -40,13 +40,49 @@ translates to **filter at the port** — and in this architecture the software
 sitting on the port is the adapter. The switch process is the analogue of the
 *fabric*, not of a port.
 
-⚠ **The argument is scaling, not current load.** Measured: the forwarding
-decision is ~500 µs at 100 stations against a ~160 ms per-delivery path — about
-**0.3%**. The switch is not busy today, and any claim that it is can be
-disproved in ten minutes. The real point is that **the switch is the one
-component whose cost cannot be parallelised**, while ports are per-send and
-concurrent. A `source:destination` pair ACL is *n²* and RT tag intersection is
-per-envelope set work; both compound in exactly the wrong place.
+⚠ **CORRECTED 2026-08-14. This section previously argued that policy belongs at
+the port *because the switch is serialized*. Measurement says otherwise, and the
+correct answer is not a placement at all — it is TWO DIFFERENT CHECKS at two
+layers.**
+
+| | what it checks | data | measured |
+|---|---|---|---|
+| **switch** | L2 port ACL — may these two ports talk inside this tenant | small, changes on hire/letGo, **cacheable in memory** | **0.2 µs**; +10% over forwarding-only |
+| **sending port** | RT export/import tags | freshness-sensitive, read per send | 28–46 µs, invisible against a ~233 ms send path |
+| **router's port** | L3 policy between domains | the router is a **station with a port like any other** | its own port's problem |
+
+⚠ **The switch can cache and a one-shot port cannot** — that asymmetry runs
+*opposite* to the argument this section used to make. From Redis the same check
+costs the switch 254% over forwarding-only; from memory it costs 10%. **The
+earlier 69% figure came from a benchmark that made the switch read Redis, which
+contradicts §3.1's own decision. I stacked it and reported it as evidence.**
+
+**Both are affordable in their own context and neither displaces the other.**
+Port-side policy is justified by **feedback and freshness** — the error lands in
+the sender's terminal instead of dead-lettering, and there is no cache to
+invalidate — **not by cost.**
+
+⚠ **`n²` is an argument about the DATA MODEL, not about placement.** Measured:
+cost tracks tag-set size, not roster size — 30.6 / 28.3 / 29.5 µs at rosters of
+10 / 100 / 1000. Tags beat pairs because of how they are stored, wherever the
+check runs.
+
+### 2.1a The router is a station, so it has a port
+
+Nothing about the switch changes when the router arrives, and nothing special
+is added anywhere: **the router is reached by name, and like every participant
+it has a port.** L3 policy, qualified-address resolution and re-addressing all
+happen *in the router's port*, which is the same machinery every other
+participant already uses.
+
+```
+sending port  ── assembles, L2+L3 headers, RT check ──►  switch  ── L2 ACL + forward ──►  receiving port ── de-assembles, delivers by port_type
+                                                            │
+                                                            └─ destination is routerX ─►  router's PORT ── L3 policy, re-address ──► back onto the fabric
+```
+
+⚠ **Every hop is a port, and every port both assembles and de-assembles.** That
+is the whole model: ports do the work, the switch moves frames.
 
 ### 2.2 The division
 
