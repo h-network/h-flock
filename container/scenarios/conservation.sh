@@ -15,7 +15,7 @@ mkdir -p "$WORK"
 : >"$WORK/injections.tsv"
 : >"$WORK/samples.tsv"
 
-dx() { docker exec "$CONTAINER" "$@"; }
+dx() { docker exec -i "$CONTAINER" "$@"; }
 tmux_switch=""
 test_switch=""
 sampler=""
