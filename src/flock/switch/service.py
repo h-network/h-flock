@@ -29,11 +29,30 @@ class Switch:
         return members(self.r, pod=self.pod, tenant=self.tenant)
 
     @staticmethod
-    def _kick(agent: str) -> None:
+    def _kick(agent: str, envelope: dict) -> None:
         try:
             subprocess.Popen(["flock.port", agent])
         except OSError as exc:
-            log_record("switch", "error", destination=agent, reason=f"port kick failed: {exc}")
+            log_record(
+                "switch",
+                "kick_failed",
+                stream_id=envelope.get("stream_id"),
+                correlation_id=envelope.get("correlation_id"),
+                source=envelope.get("l2", {}).get("source"),
+                destination=agent,
+                reason=f"port kick failed: {exc}",
+            )
+            return
+        # Popen success proves only that the switch started a delivery attempt;
+        # it does not claim that the child reached or popped the ingress queue.
+        log_record(
+            "switch",
+            "kick_started",
+            stream_id=envelope.get("stream_id"),
+            correlation_id=envelope.get("correlation_id"),
+            source=envelope.get("l2", {}).get("source"),
+            destination=agent,
+        )
 
     def step(self, timeout: float | None = None) -> bool:
         agents = sorted(self._agents())
@@ -84,18 +103,26 @@ class Switch:
             pipe = self.r.pipeline()
             for agent in recipients:
                 pipe.rpush(prefix(self.pod, self.tenant, agent, "ingress"), raw)
-            pipe.execute()
+            try:
+                pipe.execute()
+            except Exception as exc:
+                emit("switch", "forward_failed", envelope, f"broadcast ingress write failed: {exc}")
+                raise
             emit("switch", "forwarded", envelope, count=len(recipients))
             for agent in recipients:
-                self._kick(agent)
+                self._kick(agent, envelope)
             return True
         if not is_member(self.r, pod=self.pod, tenant=self.tenant, agent=destination):
             self.r.rpush(prefix(self.pod, self.tenant, sender, "dead"), raw)
             emit("switch", "dead_lettered", envelope, "destination is not in tenant roster")
             return True
-        self.r.rpush(prefix(self.pod, self.tenant, destination, "ingress"), raw)
+        try:
+            self.r.rpush(prefix(self.pod, self.tenant, destination, "ingress"), raw)
+        except Exception as exc:
+            emit("switch", "forward_failed", envelope, f"ingress write failed: {exc}")
+            raise
         emit("switch", "forwarded", envelope)
-        self._kick(destination)
+        self._kick(destination, envelope)
         return True
 
     def run(

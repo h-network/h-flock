@@ -190,6 +190,48 @@ class DoorsAndRouterTest(unittest.TestCase):
         self.assertEqual(record["source"], "alice")
         self.assertEqual(record["destination"], "acme:sales:bob")
 
+    def test_egress_write_failure_is_logged_without_sent(self):
+        output = io.StringIO()
+        with (
+            patch.object(self.r, "rpush", side_effect=ConnectionError("redis down")),
+            redirect_stdout(output),
+            self.assertRaisesRegex(ConnectionError, "redis down"),
+        ):
+            send(
+                self.r,
+                pod="acme",
+                tenant="hq",
+                source="alice",
+                destination="bob",
+                payload={},
+            )
+        records = [json.loads(line) for line in output.getvalue().splitlines()]
+        self.assertEqual([record["event"] for record in records], ["send_failed"])
+        self.assertNotEqual(records[0]["stream_id"], "unknown")
+
+    def test_ingress_write_failure_is_logged_without_forward_or_kick(self):
+        send(
+            self.r,
+            pod="acme",
+            tenant="hq",
+            source="alice",
+            destination="bob",
+            payload={},
+        )
+        output = io.StringIO()
+        with (
+            patch.object(self.r, "rpush", side_effect=ConnectionError("redis down")),
+            redirect_stdout(output),
+            self.assertRaisesRegex(ConnectionError, "redis down"),
+        ):
+            Switch(self.r, pod="acme", tenant="hq").step()
+        records = [json.loads(line) for line in output.getvalue().splitlines()]
+        self.assertEqual(
+            [record["event"] for record in records],
+            ["popped", "forward_failed"],
+        )
+        self.popen.assert_not_called()
+
     def test_policy_denial_refuses_before_assembly_and_emits_record(self):
         self.r.hashes[tags_key("acme", "hq", "alice")] = {
             "export": json.dumps(["engineering"])
@@ -285,7 +327,7 @@ class DoorsAndRouterTest(unittest.TestCase):
             records = [json.loads(line) for line in output.getvalue().splitlines()]
             self.assertEqual(
                 [record["event"] for record in records],
-                ["sent", "popped", "forwarded", "received", "opened"],
+                ["sent", "popped", "forwarded", "kick_started", "received", "opened"],
             )
             self.assertEqual(len({record["stream_id"] for record in records}), 1)
             observed.append(opened[0]["l2"])
@@ -350,7 +392,7 @@ class DoorsAndRouterTest(unittest.TestCase):
         records = [json.loads(line) for line in output.getvalue().splitlines()]
         self.assertEqual(
             [record["event"] for record in records],
-            ["popped", "source_stamped", "forwarded"],
+            ["popped", "source_stamped", "forwarded", "kick_started"],
         )
         stamped = records[1]
         self.assertEqual(stamped["source"], "alice")
@@ -375,7 +417,7 @@ class DoorsAndRouterTest(unittest.TestCase):
             self.assertTrue(Switch(self.r, pod="acme", tenant="hq").step())
 
         events = [json.loads(line)["event"] for line in output.getvalue().splitlines()]
-        self.assertEqual(events, ["popped", "forwarded"])
+        self.assertEqual(events, ["popped", "forwarded", "kick_started"])
 
     def test_forged_broadcast_is_stamped_and_excludes_queue_sender(self):
         envelope = build("Message", "carol", "all", {"text": "forged broadcast"})
@@ -429,9 +471,10 @@ class DoorsAndRouterTest(unittest.TestCase):
         with redirect_stdout(output):
             self.assertTrue(Switch(self.r, pod="acme", tenant="hq").step())
         records = [json.loads(line) for line in output.getvalue().splitlines()]
-        error = next(record for record in records if record["event"] == "error")
+        error = next(record for record in records if record["event"] == "kick_failed")
         self.assertEqual(error["destination"], "bob")
-        self.assertNotIn("stream_id", error)
+        self.assertNotEqual(error["stream_id"], "unknown")
+        self.assertNotIn("kick_started", [record["event"] for record in records])
         self.assertEqual(len(self.r.lists[prefix("acme", "hq", "bob", "ingress")]), 1)
 
     def test_broadcast_fans_out_to_roster_except_sender(self):

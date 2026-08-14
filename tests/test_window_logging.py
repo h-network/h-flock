@@ -102,8 +102,12 @@ def test_agent_sent_envelope_is_observed_end_to_end_in_central_log(monkeypatch, 
 
     records = [json.loads(line) for line in central.getvalue().splitlines()]
     joined = [record for record in records if record.get("stream_id") == stream_id]
-    assert [record["event"] for record in joined] == ["sent", "popped", "forwarded", "received", "opened"]
-    assert [record["module"] for record in joined] == ["port", "switch", "switch", "port", "port"]
+    assert [record["event"] for record in joined] == [
+        "sent", "popped", "forwarded", "kick_started", "received", "opened"
+    ]
+    assert [record["module"] for record in joined] == [
+        "port", "switch", "switch", "switch", "port", "port"
+    ]
 
 
 def test_unwritable_window_log_never_breaks_send(monkeypatch, tmp_path, capsys):

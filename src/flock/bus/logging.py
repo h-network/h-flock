@@ -7,9 +7,13 @@ from datetime import datetime, timezone
 
 _ENVELOPE_EVENTS = {
     "sent",
+    "send_failed",
     "popped",
     "forwarded",
+    "forward_failed",
     "source_stamped",
+    "kick_started",
+    "kick_failed",
     "dead_lettered",
     "received",
     "opened",
