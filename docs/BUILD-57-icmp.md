@@ -1,9 +1,10 @@
 # Build 57 — there is no ICMP
 
-> ⚠ **SUPERSEDED — folded into the watchdog.** `DESIGN-layers` §8.1: this is one
-> function of h-flock's ICMP, not a build of its own, and building it alone would
-> have produced a second component doing half the watchdog's job. The content
-> below stands; the ownership moved.
+> ⚠ **STILL PARKED, and NOT the watchdog's.** `DESIGN-layers` §8.1: three of the
+> five failure modes here are detected by the switch or a port **at the moment
+> they happen** — those notifications belong at the point of detection, not in a
+> later observer. Only the strand and the non-consuming destination need the
+> watchdog, because nothing else can see them.
 >
 > ⚠ **PARKED, not filed. Do not start this.** The gap is real and recorded, but
 > building it now is feature work ahead of proof. **The framework has never been

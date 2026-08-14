@@ -460,31 +460,37 @@ of memory, with **no cap, no dead-letter, and no alert**. Build 58 injected port
 ⚠ **Dead-lettering is what bounds it**, and it needs no new machinery: `dead` is
 already trimmed by retention and already has a record type.
 
-### 8.1 ✅ The watchdog IS h-flock's ICMP
+### 8.1 ⚠ h-flock needs an ICMP capability. Where each part lives depends on WHO KNOWS
 
-Three things we had been treating separately are one component. **All of it sits
-outside the switch, which keeps doing its one lookup.**
+⚠ **An earlier version of this section claimed "the watchdog IS h-flock's ICMP".
+That was my overstatement, not the operator's point.** He said the ICMP
+*feature* is needed somewhere and guessed the watchdog. Consolidating all of it
+into one component is wrong, and the reason is instructive.
 
-| ICMP | h-flock | state |
+**Split by who has the information at the moment of failure:**
+
+| failure | who knows, and when | who should say so |
 |---|---|---|
-| **echo / probe** — is this port alive? | liveness check that refreshes the table entry | new |
-| **destination unreachable** — tell the source | `BUILD-57`, parked — **unpark into the watchdog** | designed |
-| *(no ICMP equivalent)* | acting: re-kick, dead-letter, quarantine | new |
+| destination not in roster | **the switch, immediately** | the switch — it is already dead-lettering |
+| policy denied | **the sending port, before assembly** | the port — already does, `send_refused` |
+| unknown `kind`, opener raised | **the receiving port, immediately** | that port — already dead-letters |
+| **strand** — kicked port died before popping | ⚠ **nobody, ever** | **the watchdog. Only it looks later** |
+| **destination cannot consume** | ⚠ **nobody at the time; visible only as depth over time** | **the watchdog** |
 
-⚠ **`BUILD-57` was parked as a standalone build and that was the right call for
-the wrong reason.** It is not a feature of its own; it is one function of the
-watchdog, and building it alone would have produced a second component doing
-half this job.
+⚠ **The first three need no watchdog at all.** The detector already knows and is
+already emitting a record — it simply does not tell the **source**. Turning that
+into a notification is a frame addressed back to the origin, travelling the
+normal path. `BUILD-57`'s content applies there, at the point of detection.
 
-**The probe, concretely, needs no new mechanism.** Openers are per-kind and
-pluggable (`port/openers.py`). A **`Ping` kind with a no-op opener** traverses the
-entire real path — switch forward, kick, port spawn, pop, open — and emits the
-same custody records as any other frame. The agent never sees it: no paste, no
-mailbox entry, because the opener discards it. **The record is the reply.**
+⚠ **Only the last two are the watchdog's**, and precisely because *nothing else
+can see them*. That is the real dividing line, not "ICMP-ness".
 
-⚠ **That is a true echo, not a simulation.** It exercises the path being asserted
-about rather than a proxy for it — the distinction that cost build 58 three
-attempts.
+**A liveness probe, if we want one**, needs no new mechanism: openers are
+per-kind, so a **`Ping` kind with a no-op opener** traverses the whole real path
+— forward, kick, spawn, pop, open — and emits ordinary custody records while the
+agent sees nothing. **The record is the reply**, and it exercises the real path
+rather than a proxy for it. Whether the watchdog is the right prober is a
+separate question from whether the probe is the right mechanism.
 
 ### 8.2 ⚠ Age on FAILURE, not on silence
 
