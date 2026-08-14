@@ -52,7 +52,7 @@ tenant container instead.
 
 | Process | Module | Notes |
 |---|---|---|
-| redis | — | the bus. Loopback, no persistence needed for a skeleton |
+| redis | — | the bus. Loopback, AOF persistence enabled; ephemeral transport queues purged at boot (BUILD-63) |
 | switch | `LLD-bus-and-switch` | one per tenant, therefore one per container |
 | tmux host | `LLD-tmux-host` | creates the server, session and windows for `port_type: tmux` entries |
 | tmux port | `LLD-port-tmux` | kicked per delivery; pastes into windows (`port_type: tmux`), appends to mailbox stream (`port_type: api`), writes pending.verify marker, exits |
@@ -192,8 +192,9 @@ Order matters only where a dependency is real:
 
 **Bringing the container up twice must be safe.** A second `compose up` against
 an already-running container is a no-op, and every reconciliation pass converges
-rather than duplicating. A container restart is different: Redis persistence is
-disabled and tmux is restarted, so boot configuration reconstructs the office.
+rather than duplicating. A container restart is different: Redis persistence (AOF)
+replays durable boards and stream history, while `container/entrypoint.sh` purges
+ephemeral transport queues at boot before services launch.
 
 Enrolling an external application client (`StartAgent` with `port_type: "api"`) adds a roster row only, creating no window or CLI process.
 
@@ -219,8 +220,9 @@ either up or it is not.
 thing to want eventually, and needs a supervisor inside the container. Not for
 the first build, where "restart the tenant" is an acceptable answer.
 
-**Redis persistence.** A skeleton loses its queues on restart, which is fine
-while nothing depends on a backlog surviving one.
+**Cross-tenant persistence.** Redis persistence is enabled locally within the
+container (AOF `appendfsync everysec` for durable boards and streams, with
+transport queues purged at boot via `purge_transport`).
 
 **More than one tenant per host.** Several containers is the obvious answer and
 needs no design; what needs design is them reaching each other, which is

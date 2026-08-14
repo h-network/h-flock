@@ -9,10 +9,13 @@ from .roster import is_member, members, port_type
 from .resources import (
     AGENT_DATA_RESOURCES,
     AGENT_STATE_RESOURCES,
+    DURABLE_DATA_RESOURCES,
     DYNAMIC_RESOURCE_PATTERNS,
     PER_AGENT_RESOURCES,
     TENANT_RESOURCES,
+    TRANSPORT_QUEUE_RESOURCES,
     purge_agent,
+    purge_transport,
 )
 
 __all__ = [
@@ -36,8 +39,12 @@ __all__ = [
     "port_type",
     "AGENT_DATA_RESOURCES",
     "AGENT_STATE_RESOURCES",
+    "DURABLE_DATA_RESOURCES",
     "DYNAMIC_RESOURCE_PATTERNS",
     "PER_AGENT_RESOURCES",
     "TENANT_RESOURCES",
+    "TRANSPORT_QUEUE_RESOURCES",
     "purge_agent",
+    "purge_transport",
 ]
+
