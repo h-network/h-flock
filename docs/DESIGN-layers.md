@@ -488,6 +488,23 @@ restarts.
 > | declaration | needs a protocol | intentional idleness |
 > | active probe | needs a reader for the reply | genuine liveness |
 >
+> ⚠ **Score after one afternoon: three alerts, two different lanes, ZERO true
+> positives.** Both were blocked on the **lab**, held by the other, in a sequence
+> *I* set. Presence read `wedged` for both.
+>
+> **A monitor with a 100% false-positive rate is worse than no monitor**, because
+> it trains its reader to disbelieve it — and the fourth alert is the one that
+> matters.
+>
+> ⚠ **All three would have been silent under `known blocking` alone.** The system
+> held the answer every time: which lane had the lab. It never needed to infer
+> liveness, ask anything, or wait out a threshold.
+>
+> **In h-flock that fact is the `delivering` hash**, which records the holder. A
+> watchdog reading it before alerting separates *waiting for a known holder* from
+> *nothing is happening* — for free, and it would eliminate this entire class of
+> alert.
+>
 > ⚠ **§8.1–8.4 below are retained as the record of the reasoning, not as a
 > buildable design.** The parts that ARE settled: the fix belongs in the port and
 > the watchdog rather than the switch; ingress must be bounded at forward time
