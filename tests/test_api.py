@@ -51,8 +51,24 @@ class FakeRedis:
         return f in self.roster
 
     def hget(self, key, field):
+        if key in self.hashes:
+            val = self.hashes[key].get(field)
+            if val is None and isinstance(field, str):
+                val = self.hashes[key].get(field.encode())
+            elif val is None and isinstance(field, bytes):
+                val = self.hashes[key].get(field.decode())
+            return val
         f = field.encode() if isinstance(field, str) else field
         return self.roster.get(f)
+
+    def hset(self, key, field, value):
+        self.hashes.setdefault(key, {})[field] = value
+
+    def delete(self, *keys):
+        for k in keys:
+            self.hashes.pop(k, None)
+            self.lists.pop(k, None)
+            self.streams.pop(k, None)
 
     def hkeys(self, key):
         return list(self.roster.keys())
@@ -627,6 +643,77 @@ def test_get_agent_blocked_presence(client):
     assert status == 200
     assert body["presence"]["state"] == "blocked"
     assert body["presence"]["since"] == "2026-08-09T15:00:00Z"
+
+
+def test_post_envelope_policy_denied_returns_422(client):
+    app, redis = client
+    # Set disjoint tags: telegram exports ['finance'], bob imports ['ops']
+    telegram_tags_key = "pod:test:tenant:office:agent:telegram:tags"
+    bob_tags_key = "pod:test:tenant:office:agent:bob:tags"
+    redis.hashes[telegram_tags_key] = {"export": json.dumps(["finance"])}
+    redis.hashes[bob_tags_key] = {"import": json.dumps(["ops"])}
+
+    status_code, body = request(
+        app,
+        "POST",
+        "/agents/bob/envelopes",
+        token="secret",
+        body={"text": "hello bob", "as": "telegram"},
+    )
+    assert status_code == 422
+    assert body == {"detail": "policy denied 'telegram' -> 'bob': no shared export/import tag"}
+
+
+def test_post_envelope_policy_permitted_returns_202(client):
+    app, redis = client
+    # Set overlapping tags: telegram exports ['ops', 'finance'], bob imports ['ops']
+    telegram_tags_key = "pod:test:tenant:office:agent:telegram:tags"
+    bob_tags_key = "pod:test:tenant:office:agent:bob:tags"
+    redis.hashes[telegram_tags_key] = {"export": json.dumps(["ops", "finance"])}
+    redis.hashes[bob_tags_key] = {"import": json.dumps(["ops"])}
+
+    status_code, body = request(
+        app,
+        "POST",
+        "/agents/bob/envelopes",
+        token="secret",
+        body={"text": "hello bob", "as": "telegram"},
+    )
+    assert status_code == 202
+    assert "stream_id" in body
+    assert "correlation_id" in body
+
+
+def test_post_envelope_policy_permitted_when_absent_returns_202(client):
+    app, redis = client
+    # Clear tags: unconfigured participants inside tenant permit by default
+    status_code, body = request(
+        app,
+        "POST",
+        "/agents/bob/envelopes",
+        token="secret",
+        body={"text": "hello bob", "as": "telegram"},
+    )
+    assert status_code == 202
+    assert "stream_id" in body
+
+
+def test_send_door_non_local_destination_raises_envelope_error(client):
+    _, redis = client
+    from flock.bus.doors import send
+    from flock.bus.envelope import EnvelopeError
+
+    with pytest.raises(EnvelopeError, match="no route to non-local destination 'otherpod:othertenant:bob'"):
+        send(
+            redis,
+            pod="test",
+            tenant="office",
+            source="telegram",
+            destination="otherpod:othertenant:bob",
+            payload={"text": "remote msg"},
+        )
+
+
 
 
 

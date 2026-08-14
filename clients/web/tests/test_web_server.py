@@ -993,3 +993,52 @@ def test_conversation_audit_prompts_and_client_mailbox_replies(tmp_path):
         web_server.server_close()
         upstream_server.shutdown()
         upstream_server.server_close()
+
+
+def test_proxy_422_policy_refusal(tmp_path):
+    class Upstream422Handler(BaseHTTPRequestHandler):
+        def do_POST(self):
+            body = json.dumps({"detail": "policy denied 'web' -> 'backend': no shared export/import tag"}).encode()
+            self.send_response(422)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+
+    upstream_server = ThreadingHTTPServer(("127.0.0.1", 0), Upstream422Handler)
+    upstream_port = upstream_server.server_address[1]
+    upstream_thread = threading.Thread(target=upstream_server.serve_forever, daemon=True)
+    upstream_thread.start()
+
+    web_server = ThreadingHTTPServer(("127.0.0.1", 0), OfficeHandler)
+    web_server.api_base = f"http://127.0.0.1:{upstream_port}"
+    web_server.api_token = "demo-token"
+    web_server.client_name = "web"
+    web_server.audit_log = str(tmp_path / "audit.jsonl")
+    web_server.demo_mode = False
+    web_server.sessions_lock = threading.Lock()
+    web_port = web_server.server_address[1]
+
+    web_thread = threading.Thread(target=web_server.serve_forever, daemon=True)
+    web_thread.start()
+
+    try:
+        req = urllib.request.Request(
+            f"http://127.0.0.1:{web_port}/api/agents/backend/envelopes",
+            data=json.dumps({"text": "Hello Backend"}).encode(),
+            headers={"Content-Type": "application/json"},
+            method="POST",
+        )
+        try:
+            urllib.request.urlopen(req)
+            assert False, "expected HTTPError 422"
+        except urllib.error.HTTPError as exc:
+            assert exc.code == 422
+            body = json.loads(exc.read().decode())
+            assert body == {"detail": "policy denied 'web' -> 'backend': no shared export/import tag"}
+    finally:
+        web_server.shutdown()
+        web_server.server_close()
+        upstream_server.shutdown()
+        upstream_server.server_close()
+

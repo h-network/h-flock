@@ -65,8 +65,8 @@ keyspace scan, and agents holding nothing still appear.
 
 ## 3. Sending
 
-Build a `v=1` envelope with the `destination` from the path, `send` it, return
-`202` with the `stream_id` and the `correlation_id`.
+Build a `v=2` layered wire frame with the `destination` from the path, check tag-based policy, `send` it, return
+`202` with the `stream_id` and the `correlation_id`. A policy refusal or unrouted non-local destination returns `422 Unprocessable Content` synchronously before anything is enqueued.
 
 **The body carries `kind` and `payload`, and the api validates neither.**
 
