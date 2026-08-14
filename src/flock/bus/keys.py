@@ -3,7 +3,7 @@
 import re
 
 SEGMENT_REGEX = re.compile(r"^[a-z0-9][a-z0-9-]{0,62}$")
-# "all" is the broadcast recipient (LLD-bus-and-switch §3.1), so no agent may
+# "all" is the broadcast destination (LLD-bus-and-switch §3.1), so no agent may
 # carry that name — it would be unaddressable.
 RESERVED = {"pod", "tenant", "agent", "all"}
 
@@ -14,7 +14,7 @@ RESERVED = {"pod", "tenant", "agent", "all"}
 # Measured: with windows [1:first, 2:second, 3:"2"], both `s:2` and the
 # exact-name form `s:=2` resolve to `second`. So a message for an agent named
 # "2" is pasted into whichever agent happens to sit at index 2 — silent
-# delivery to the wrong recipient, with an honest `opened` record.
+# delivery to the wrong destination, with an honest `opened` record.
 #
 # Hyphens and digits are fine; `sme-2` resolves correctly. Only an all-digit
 # name collides.

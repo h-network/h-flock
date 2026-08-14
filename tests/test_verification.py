@@ -82,7 +82,7 @@ def test_missing_later_input_is_surfaced_and_not_retried(capsys):
     assert record["module"] == "switch"
     assert record["event"] == "delivery_unverified"
     assert record["stream_id"] == "not-confirmed"
-    assert record["recipient"] == "sme-2"
+    assert record["destination"] == "sme-2"
     assert record["waited"] == 20
     assert record["reason"] == (
         "not confirmed by a later input activity event; "
@@ -122,7 +122,7 @@ def test_first_delivery_without_activity_history_is_dropped_unjudged(capsys):
         "module": "switch",
         "event": "delivery_unjudged",
         "stream_id": "first",
-        "recipient": "sme-2",
+        "destination": "sme-2",
         "reason": "agent has no activity history; first delivery is not judged",
         "waited": 20,
     }

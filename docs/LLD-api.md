@@ -65,7 +65,7 @@ keyspace scan, and agents holding nothing still appear.
 
 ## 3. Sending
 
-Build a `v=1` envelope with the `recipient` from the path, `send` it, return
+Build a `v=1` envelope with the `destination` from the path, `send` it, return
 `202` with the `stream_id` and the `correlation_id`.
 
 **The body carries `kind` and `payload`, and the api validates neither.**
@@ -82,9 +82,9 @@ among several and naming the resource after it made the whole HTTP surface
 Message-shaped: the one thing the bus was built to make cheap — adding a kind —
 could not be reached over HTTP at all.
 
-A POST request can specify `"as": "<client>"` to declare its producer identity.
+A POST request can specify `"as": "<client>"` to declare its source identity.
 `as` is validated against the roster — it must name an enrolled agent with port_type `api`.
-When omitted, `producer` defaults to `"api"`.
+When omitted, `source` defaults to `"api"`.
 
 ⚠ **Payload size limit:** Envelopes submitted to `POST /agents/{agent}/envelopes` are bounded at **1 MB (1,048,576 bytes)**. Envelopes exceeding 1 MB are rejected immediately with HTTP `422 Unprocessable Content`.
 
@@ -105,7 +105,7 @@ an agent with a port_type of `api` (`LLD-bus-and-switch` §3.2), so when the swi
 writes its ingress it kicks the port exactly as it would for any window
 agent. The port reads the port_type, dispatches to the api delivery routine
 (`deliver_api`), which pops the envelope, logs `received` and `opened`, and
-writes the verbatim JSON envelope into the recipient client's Redis Stream inbox
+writes the verbatim JSON envelope into the destination client's Redis Stream inbox
 (`pod:<pod>:tenant:<tenant>:agent:<client>:inbox`, capped at `MAXLEN ~ 1000`) under
 the `envelope` field.
 

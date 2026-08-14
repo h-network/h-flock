@@ -198,8 +198,8 @@ def test_envelope_passes_unknown_kind_and_payload_without_validation(client, mon
     assert sent | {"correlation_id": None} == {
         "pod": "test",
         "tenant": "office",
-        "producer": "api",
-        "recipient": "alice",
+        "source": "api",
+        "destination": "alice",
         "kind": "KindAddedLater",
         "payload": {"shape": ["is", "opaque"]},
         "correlation_id": None,
@@ -339,8 +339,8 @@ def test_post_envelope_with_valid_as_client(client, monkeypatch):
         body={"text": "hello", "as": "telegram"},
     )
     assert status_code == 202
-    assert sent["producer"] == "telegram"
-    assert sent["recipient"] == "alice"
+    assert sent["source"] == "telegram"
+    assert sent["destination"] == "alice"
     assert sent["payload"] == {"text": "hello"}
 
 
@@ -371,8 +371,8 @@ def test_get_messages_for_api_client(client):
     app, redis = client
     env = {
         "v": 1,
-        "producer": "alice",
-        "recipient": "telegram",
+        "source": "alice",
+        "destination": "telegram",
         "kind": "Message",
         "payload": {"text": "reply text"},
         "stream_id": "s-1",
@@ -392,8 +392,8 @@ def test_get_messages_for_api_client(client):
             {
                 "cursor": "1000-0",
                 "v": 1,
-                "producer": "alice",
-                "recipient": "telegram",
+                "source": "alice",
+                "destination": "telegram",
                 "kind": "Message",
                 "payload": {"text": "reply text"},
                 "stream_id": "s-1",
@@ -407,8 +407,8 @@ def test_get_messages_for_api_client(client):
 
 def test_get_messages_cursor_after(client):
     app, redis = client
-    env1 = {"v": 1, "producer": "alice", "recipient": "telegram", "kind": "Message", "payload": {"text": "msg1"}}
-    env2 = {"v": 1, "producer": "bob", "recipient": "telegram", "kind": "Message", "payload": {"text": "msg2"}}
+    env1 = {"v": 1, "source": "alice", "destination": "telegram", "kind": "Message", "payload": {"text": "msg1"}}
+    env2 = {"v": 1, "source": "bob", "destination": "telegram", "kind": "Message", "payload": {"text": "msg2"}}
     inbox_key = "pod:test:tenant:office:agent:telegram:inbox"
     redis.streams[inbox_key] = [
         (b"1000-0", {b"envelope": json.dumps(env1).encode()}),
@@ -419,7 +419,7 @@ def test_get_messages_cursor_after(client):
     assert status_code == 200
     assert len(body["messages"]) == 1
     assert body["messages"][0]["cursor"] == "1001-0"
-    assert body["messages"][0]["producer"] == "bob"
+    assert body["messages"][0]["source"] == "bob"
     assert body["next_cursor"] == "1001-0"
 
 
@@ -461,13 +461,13 @@ def test_hyphenated_agent_names_with_digits(client):
 
     # 5. Messages for sme-2
     inbox_key = "pod:test:tenant:office:agent:sme-2:inbox"
-    env = {"v": 1, "producer": "architect", "recipient": "sme-2", "kind": "Message", "payload": {"text": "task for sme-2"}}
+    env = {"v": 1, "source": "architect", "destination": "sme-2", "kind": "Message", "payload": {"text": "task for sme-2"}}
     redis.streams[inbox_key] = [(b"2000-0", {b"envelope": json.dumps(env).encode()})]
     status_code, body = request(app, "GET", "/agents/sme-2/messages", token="secret")
     assert status_code == 200
     assert body["agent"] == "sme-2"
     assert len(body["messages"]) == 1
-    assert body["messages"][0]["recipient"] == "sme-2"
+    assert body["messages"][0]["destination"] == "sme-2"
 
 
 def test_get_activity_empty(client):

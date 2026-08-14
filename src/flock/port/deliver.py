@@ -44,7 +44,7 @@ def deliver_api(
         openers=openers,
         timeout=timeout,
         blocking=False,
-        module="adapter",
+        module="port",
     )
 
 
@@ -65,12 +65,12 @@ def deliver_unroutable(
         envelope = parse(raw)
     except EnvelopeError as exc:
         r.rpush(dead_key, raw)
-        emit("adapter", "dead_lettered", {}, str(exc))
+        emit("port", "dead_lettered", {}, str(exc))
         return
-    emit("adapter", "received", envelope)
+    emit("port", "received", envelope)
     r.rpush(dead_key, raw)
     reason = f"unroutable port_type: {port_type_name!r}"
-    emit("adapter", "dead_lettered", envelope, reason)
+    emit("port", "dead_lettered", envelope, reason)
 
 
 def deliver_one(
@@ -101,7 +101,7 @@ def deliver_one(
                 socket=socket,
             )
         except ImportError:
-            log_record("adapter", "error", recipient=agent, reason="flock.control module not available")
+            log_record("port", "error", destination=agent, reason="flock.control module not available")
         return
 
     if agent_port_type == "api":
@@ -158,7 +158,7 @@ def deliver_one(
         openers=openers,
         timeout=1,
         blocking=False,
-        module="adapter",
+        module="port",
     )
 
 

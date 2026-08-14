@@ -113,7 +113,7 @@ def _render_restdoc_html(app: FastAPI) -> str:
             "curl": 'curl -H "Authorization: Bearer $API_TOKEN" http://localhost:8080/agents/sme-2',
         },
         "/agents/{agent}/envelopes": {
-            "desc": "Post an envelope of any kind to a specific agent or broadcast to 'all'. Accepts standard envelope shape, sugar `{\"text\": \"...\"}` for Message, and optional `\"as\"` for api client producer identity.",
+            "desc": "Post an envelope of any kind to a specific agent or broadcast to 'all'. Accepts standard envelope shape, sugar `{\"text\": \"...\"}` for Message, and optional `\"as\"` for api client source identity.",
             "curl": 'curl -X POST -H "Authorization: Bearer $API_TOKEN" -H "Content-Type: application/json" -d \'{"text": "hello", "as": "telegram"}\' http://localhost:8080/agents/sme-2/envelopes',
         },
         "/agents/{agent}/messages": {
@@ -348,7 +348,7 @@ def _render_restdoc_html(app: FastAPI) -> str:
         <tr>
           <td><code>Message</code></td>
           <td><code>{{"text": "..."}}</code></td>
-          <td>Pastes <code>[message from &lt;producer&gt;] &lt;text&gt;</code> into the recipient agent's terminal window.</td>
+          <td>Pastes <code>[message from &lt;source&gt;] &lt;text&gt;</code> into the destination agent's terminal window.</td>
         </tr>
         <tr>
           <td><code>Command</code></td>
@@ -375,10 +375,10 @@ def _render_restdoc_html(app: FastAPI) -> str:
 
     <h2>3. Meaning of HTTP 202 Accepted</h2>
     <p>
-      An HTTP <code>202 Accepted</code> response from <code>POST /agents/{{agent}}/envelopes</code> means the envelope was successfully validated structurally, assigned a <code>stream_id</code> and <code>correlation_id</code>, and written to Redis on the producer's egress queue.
+      An HTTP <code>202 Accepted</code> response from <code>POST /agents/{{agent}}/envelopes</code> means the envelope was successfully validated structurally, assigned a <code>stream_id</code> and <code>correlation_id</code>, and written to Redis on the source's egress queue.
     </p>
     <p>
-      It does <strong>NOT</strong> mean the envelope has been delivered to the recipient or executed. Delivery is asynchronous: the switch moves envelopes from egress to recipient ingress queues and kicks the corresponding port process. If delivery fails (e.g. unknown recipient or opener failure), the envelope dead-letters asynchronously. To trace envelope progress, inspect log output using the returned <code>stream_id</code>.
+      It does <strong>NOT</strong> mean the envelope has been delivered to the destination or executed. Delivery is asynchronous: the switch moves envelopes from egress to destination ingress queues and kicks the corresponding port process. If delivery fails (e.g. unknown destination or opener failure), the envelope dead-letters asynchronously. To trace envelope progress, inspect log output using the returned <code>stream_id</code>.
     </p>
 
     <h2>4. Live Terminal Session Protocol</h2>
@@ -613,7 +613,7 @@ def create_app(*, settings: Settings | None = None, redis_client: Any = None) ->
                 raise HTTPException(status_code=404, detail="invalid agent") from exc
             if not is_member(client, pod=settings.pod, tenant=settings.tenant, agent=agent):
                 raise HTTPException(status_code=404, detail="unknown agent")
-        producer = "api"
+        source = "api"
         if "as" in envelope:
             as_client = envelope["as"]
             if not isinstance(as_client, str):
@@ -632,7 +632,7 @@ def create_app(*, settings: Settings | None = None, redis_client: Any = None) ->
                     status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
                     detail="invalid 'as' client: must be an enrolled client with port_type 'api'",
                 ) from exc
-            producer = as_client
+            source = as_client
         try:
             payload_str = json.dumps(envelope)
         except (TypeError, ValueError):
@@ -654,8 +654,8 @@ def create_app(*, settings: Settings | None = None, redis_client: Any = None) ->
                 client,
                 pod=settings.pod,
                 tenant=settings.tenant,
-                producer=producer,
-                recipient=agent,
+                source=source,
+                destination=agent,
                 kind=kind,
                 payload=payload,
                 correlation_id=correlation_id,

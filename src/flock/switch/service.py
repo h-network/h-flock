@@ -33,7 +33,7 @@ class Switch:
         try:
             subprocess.Popen(["flock.port", agent])
         except OSError as exc:
-            log_record("switch", "error", recipient=agent, reason=f"port kick failed: {exc}")
+            log_record("switch", "error", destination=agent, reason=f"port kick failed: {exc}")
 
     def step(self, timeout: float | None = None) -> bool:
         agents = sorted(self._agents())
@@ -74,12 +74,12 @@ class Switch:
         if claimed_producer != sender:
             emit(
                 "switch",
-                "producer_stamped",
+                "source_stamped",
                 envelope,
-                reason=f"claimed producer {claimed_producer!r} stamped from egress sender {sender!r}",
+                reason=f"claimed source {claimed_producer!r} stamped from egress sender {sender!r}",
             )
-        recipient = envelope["l2"]["destination"]
-        if recipient == "all":
+        destination = envelope["l2"]["destination"]
+        if destination == "all":
             recipients = sorted(self._agents() - {sender})
             pipe = self.r.pipeline()
             for agent in recipients:
@@ -89,13 +89,13 @@ class Switch:
             for agent in recipients:
                 self._kick(agent)
             return True
-        if not is_member(self.r, pod=self.pod, tenant=self.tenant, agent=recipient):
+        if not is_member(self.r, pod=self.pod, tenant=self.tenant, agent=destination):
             self.r.rpush(prefix(self.pod, self.tenant, sender, "dead"), raw)
-            emit("switch", "dead_lettered", envelope, "recipient is not in tenant roster")
+            emit("switch", "dead_lettered", envelope, "destination is not in tenant roster")
             return True
-        self.r.rpush(prefix(self.pod, self.tenant, recipient, "ingress"), raw)
+        self.r.rpush(prefix(self.pod, self.tenant, destination, "ingress"), raw)
         emit("switch", "forwarded", envelope)
-        self._kick(recipient)
+        self._kick(destination)
         return True
 
     def run(

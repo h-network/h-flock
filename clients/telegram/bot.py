@@ -69,11 +69,11 @@ class FlockClient:
             {"kind": "StartAgent", "payload": {"agent": self.app_name, "port_type": "api"}},
         )
 
-    def send_message(self, recipient: str, text: str) -> tuple[int, dict]:
+    def send_message(self, destination: str, text: str) -> tuple[int, dict]:
         """Send a text message envelope to an agent."""
         return self.request(
             "POST",
-            f"/agents/{recipient}/envelopes",
+            f"/agents/{destination}/envelopes",
             {"text": text, "as": self.app_name},
         )
 

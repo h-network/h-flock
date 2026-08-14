@@ -394,8 +394,8 @@ class OfficeHandler(SimpleHTTPRequestHandler):
                                 outbound.append({
                                     "ts": rec.get("timestamp", ""),
                                     "kind": "Message",
-                                    "producer": client_name,
-                                    "recipient": agent_name,
+                                    "source": client_name,
+                                    "destination": agent_name,
                                     "direction": "outbound",
                                     "payload": {"text": text},
                                 })
@@ -408,8 +408,8 @@ class OfficeHandler(SimpleHTTPRequestHandler):
                 {
                     "ts": "2026-08-10T02:35:00Z",
                     "kind": "Message",
-                    "producer": agent_name,
-                    "recipient": client_name,
+                    "source": agent_name,
+                    "destination": client_name,
                     "direction": "inbound",
                     "payload": {"text": f"Build complete and verified for {agent_name}."},
                 },
@@ -417,8 +417,8 @@ class OfficeHandler(SimpleHTTPRequestHandler):
             outbound.append({
                 "ts": "2026-08-10T02:30:00Z",
                 "kind": "Message",
-                "producer": client_name,
-                "recipient": agent_name,
+                "source": client_name,
+                "destination": agent_name,
                 "direction": "outbound",
                 "payload": {"text": f"Can you check the build status for {agent_name}?"},
             })
@@ -426,7 +426,7 @@ class OfficeHandler(SimpleHTTPRequestHandler):
             token = getattr(self.server, "api_token", "")
             headers = {"Authorization": f"Bearer {token}"} if token else {}
 
-            # Replies delivered to client's mailbox (/agents/{client_name}/messages) filtered producer == agent_name
+            # Replies delivered to client's mailbox (/agents/{client_name}/messages) filtered source == agent_name
             try:
                 req = urllib.request.Request(
                     f"{self.server.api_base}/agents/{client_name}/messages",
@@ -438,8 +438,8 @@ class OfficeHandler(SimpleHTTPRequestHandler):
                         for msg in data.get("messages", []):
                             if msg.get("l2", {}).get("source") == agent_name:
                                 msg["direction"] = "inbound"
-                                msg["producer"] = msg["l2"]["source"]
-                                msg["recipient"] = msg["l2"].get("destination", client_name)
+                                msg["source"] = msg["l2"]["source"]
+                                msg["destination"] = msg["l2"].get("destination", client_name)
                                 inbound.append(msg)
             except Exception:
                 pass
@@ -448,8 +448,8 @@ class OfficeHandler(SimpleHTTPRequestHandler):
         seen = set()
         for msg in (outbound + inbound):
             text = msg.get("payload", {}).get("text") if isinstance(msg.get("payload"), dict) else str(msg.get("payload"))
-            producer = msg.get("l2", {}).get("source", msg.get("producer"))
-            key = f"{msg.get('ts')}:{producer}:{text}"
+            source = msg.get("l2", {}).get("source", msg.get("source"))
+            key = f"{msg.get('ts')}:{source}:{text}"
             if key not in seen:
                 seen.add(key)
                 combined.append(msg)
@@ -1062,7 +1062,7 @@ class OfficeHandler(SimpleHTTPRequestHandler):
             })
         elif clean_subpath.endswith("/messages/stream"):
             self._demo_sse([
-                ("msg-1", "message", {"cursor": "msg-1", "ts": "2026-08-10T02:35:00Z", "kind": "Message", "producer": "architect", "recipient": "web", "payload": {"text": "Please review Build 33 console UI."}}),
+                ("msg-1", "message", {"cursor": "msg-1", "ts": "2026-08-10T02:35:00Z", "kind": "Message", "source": "architect", "destination": "web", "payload": {"text": "Please review Build 33 console UI."}}),
             ])
         elif clean_subpath.endswith("/messages"):
             agent_name = clean_subpath.split("/")[2] if len(clean_subpath.split("/")) > 2 else "architect"
@@ -1072,16 +1072,16 @@ class OfficeHandler(SimpleHTTPRequestHandler):
                         "cursor": "msg-0",
                         "ts": "2026-08-10T02:30:00Z",
                         "kind": "Message",
-                        "producer": "operator",
-                        "recipient": agent_name,
+                        "source": "operator",
+                        "destination": agent_name,
                         "payload": {"text": f"Can you check the latest build changes for {agent_name}?"}
                     },
                     {
                         "cursor": "msg-1",
                         "ts": "2026-08-10T02:35:00Z",
                         "kind": "Message",
-                        "producer": agent_name,
-                        "recipient": "operator",
+                        "source": agent_name,
+                        "destination": "operator",
                         "payload": {"text": f"Review complete. All 260 unit tests pass and presence is verified."}
                     }
                 ]

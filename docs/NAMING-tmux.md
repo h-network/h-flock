@@ -51,7 +51,7 @@ Tier A is documentation, B internal code, C Redis/environment, and D wire.
 | `port` | `src/flock/port/cli.py:10`, `src/flock/port/runner.py:149` | doc term | Names both outbound agent sending and inbound per-envelope delivery—opposite sides of the switch. | Two different NIC directions collapsed into one component name. | B |
 | `send` CLI | `src/flock/port/cli.py:20` | identifier | Agent-facing command that constructs an envelope and writes its own egress. | Transmit-side NIC operation. | B |
 | `run_adapter` | `src/flock/port/runner.py:149` | identifier | Acquires per-agent serialization, delivers one ingress envelope, and exits. | Receive-side port service. | B |
-| `deliver_one` | `src/flock/port/runner.py:69` | identifier | Dispatches one recipient ingress item according to its port_type. | Frame delivery to a selected port type. | B |
+| `deliver_one` | `src/flock/port/runner.py:69` | identifier | Dispatches one destination ingress item according to its port_type. | Frame delivery to a selected port type. | B |
 | `deliver_api` | `src/flock/port/runner.py:26` | identifier | Moves one ingress envelope to an enrolled client's mailbox stream. | Delivery to a different port medium. | B |
 | `deliver_unroutable` | `src/flock/port/runner.py:43` | identifier | Pops and dead-letters an envelope whose port_type has no implementation. | Unsupported-port drop. | B |
 | `opener` | `src/flock/port/runner.py:141` | doc term | Kind-specific callable whose normal return means an envelope was opened. | Ethertype handler. | B |

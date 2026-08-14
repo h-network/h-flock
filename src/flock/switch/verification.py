@@ -90,7 +90,7 @@ class DeliveryVerifier:
                         "switch",
                         "delivery_unjudged",
                         stream_id=marker.get("stream_id"),
-                        recipient=agent,
+                        destination=agent,
                         reason="agent has no activity history; first delivery is not judged",
                         waited=_elapsed(now, marker_time),
                     )
@@ -115,7 +115,7 @@ class DeliveryVerifier:
                         "switch",
                         "delivery_unverified",
                         stream_id=marker.get("stream_id"),
-                        recipient=agent,
+                        destination=agent,
                         reason=(
                             "not confirmed by a later input activity event; "
                             "not retried because verification cannot distinguish "

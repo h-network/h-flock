@@ -9,7 +9,7 @@ _ENVELOPE_EVENTS = {
     "sent",
     "popped",
     "forwarded",
-    "producer_stamped",
+    "source_stamped",
     "dead_lettered",
     "received",
     "opened",
@@ -24,8 +24,8 @@ def log_record(
     *,
     stream_id: str | None = None,
     correlation_id: str | None = None,
-    producer: str | None = None,
-    recipient: str | None = None,
+    source: str | None = None,
+    destination: str | None = None,
     reason: str | None = None,
     count: int | None = None,
     task_id: str | None = None,
@@ -47,8 +47,8 @@ def log_record(
         record["stream_id"] = stream_id or "unknown"
     for field, value in (
         ("correlation_id", correlation_id),
-        ("producer", producer),
-        ("recipient", recipient),
+        ("source", source),
+        ("destination", destination),
         ("reason", reason),
         ("count", count),
         ("task_id", task_id),
@@ -61,7 +61,7 @@ def log_record(
     # ⚠ Not to stdout when we are inside an agent's window. `office` runs in a
     # pane, so its stdout IS the agent's screen, and printing an envelope record
     # there hands the agent module names, stream ids and correlation ids it has
-    # no use for. Measured: an agent read `{"module":"adapter",...}` out of its
+    # no use for. Measured: an agent read `{"module":"port",...}` out of its
     # own terminal, reasoned that envelope ids imply a broker, went looking, and
     # found Redis. HLD §5 already says these records reach the log through the
     # window file the switch tails — the print was redundant as well as a
@@ -69,7 +69,7 @@ def log_record(
     # ⚠ `office` sets FLOCK_LOG_QUIET because it runs in an agent's PANE: its
     # stdout is the agent's screen. Printing an envelope record there hands the
     # agent module names, stream ids and correlation ids it has no use for.
-    # Measured: an agent read {"module":"adapter",...} out of its own terminal,
+    # Measured: an agent read {"module":"port",...} out of its own terminal,
     # reasoned that envelope ids imply a broker, went looking and found Redis.
     # The record still reaches the log through the window file the switch tails
     # (HLD §5), so nothing is lost. Daemons do not set this and keep printing.
@@ -108,8 +108,8 @@ def emit(
         event,
         stream_id=envelope.get("stream_id"),
         correlation_id=envelope.get("correlation_id"),
-        producer=envelope.get("l2", {}).get("source"),
-        recipient=envelope.get("l2", {}).get("destination"),
+        source=envelope.get("l2", {}).get("source"),
+        destination=envelope.get("l2", {}).get("destination"),
         reason=reason,
         count=count,
     )

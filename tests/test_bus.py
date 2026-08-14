@@ -105,7 +105,7 @@ class EnvelopeTest(unittest.TestCase):
 
     def test_flat_v1_is_not_accepted_on_v2_wire(self):
         with self.assertRaisesRegex(EnvelopeError, "unsupported frame version"):
-            parse(json.dumps({"v": 1, "producer": "alice", "recipient": "bob"}))
+            parse(json.dumps({"v": 1, "source": "alice", "destination": "bob"}))
 
     def test_switch_parser_does_not_validate_or_read_l3(self):
         frame = build("Message", "alice", "bob", {})
@@ -154,8 +154,8 @@ class DoorsAndRouterTest(unittest.TestCase):
             self.r,
             pod="acme",
             tenant="hq",
-            producer="alice",
-            recipient="bob",
+            source="alice",
+            destination="bob",
             payload={"text": "hello"},
         )
         self.assertTrue(Switch(self.r, pod="acme", tenant="hq").step())
@@ -180,15 +180,15 @@ class DoorsAndRouterTest(unittest.TestCase):
                 self.r,
                 pod="acme",
                 tenant="hq",
-                producer="alice",
-                recipient="acme:sales:bob",
+                source="alice",
+                destination="acme:sales:bob",
                 payload={},
             )
         self.assertNotIn(prefix("acme", "hq", "alice", "egress"), self.r.lists)
         record = json.loads(output.getvalue())
         self.assertEqual(record["event"], "send_refused")
-        self.assertEqual(record["producer"], "alice")
-        self.assertEqual(record["recipient"], "acme:sales:bob")
+        self.assertEqual(record["source"], "alice")
+        self.assertEqual(record["destination"], "acme:sales:bob")
 
     def test_switch_forwards_on_l2_without_reading_l3_destination(self):
         frame = build(
@@ -216,8 +216,8 @@ class DoorsAndRouterTest(unittest.TestCase):
                     r,
                     pod="acme",
                     tenant="hq",
-                    producer="alice",
-                    recipient=destination,
+                    source="alice",
+                    destination=destination,
                     payload={"text": "same local delivery"},
                 )
                 self.assertTrue(Switch(r, pod="acme", tenant="hq").step())
@@ -260,8 +260,8 @@ class DoorsAndRouterTest(unittest.TestCase):
             self.r,
             pod="acme",
             tenant="hq",
-            producer="alice",
-            recipient="sme-2",
+            source="alice",
+            destination="sme-2",
             payload={"text": "review"},
         )
         self.assertTrue(Switch(self.r, pod="acme", tenant="hq").step())
@@ -276,8 +276,8 @@ class DoorsAndRouterTest(unittest.TestCase):
             self.r,
             pod="acme",
             tenant="hq",
-            producer="alice",
-            recipient="nobody",
+            source="alice",
+            destination="nobody",
             payload={},
         )
         Switch(self.r, pod="acme", tenant="hq").step()
@@ -297,14 +297,14 @@ class DoorsAndRouterTest(unittest.TestCase):
         records = [json.loads(line) for line in output.getvalue().splitlines()]
         self.assertEqual(
             [record["event"] for record in records],
-            ["popped", "producer_stamped", "forwarded"],
+            ["popped", "source_stamped", "forwarded"],
         )
         stamped = records[1]
-        self.assertEqual(stamped["producer"], "alice")
+        self.assertEqual(stamped["source"], "alice")
         self.assertEqual(stamped["stream_id"], envelope["stream_id"])
         self.assertEqual(
             stamped["reason"],
-            "claimed producer 'carol' stamped from egress sender 'alice'",
+            "claimed source 'carol' stamped from egress sender 'alice'",
         )
 
     def test_switch_does_not_log_stamp_when_producer_matches_queue(self):
@@ -312,8 +312,8 @@ class DoorsAndRouterTest(unittest.TestCase):
             self.r,
             pod="acme",
             tenant="hq",
-            producer="alice",
-            recipient="bob",
+            source="alice",
+            destination="bob",
             payload={"text": "honest"},
         )
 
@@ -354,8 +354,8 @@ class DoorsAndRouterTest(unittest.TestCase):
             self.r,
             pod="acme",
             tenant="hq",
-            producer="alice",
-            recipient="api",
+            source="alice",
+            destination="api",
             payload={},
         )
         Switch(self.r, pod="acme", tenant="hq").step()
@@ -368,8 +368,8 @@ class DoorsAndRouterTest(unittest.TestCase):
             self.r,
             pod="acme",
             tenant="hq",
-            producer="alice",
-            recipient="bob",
+            source="alice",
+            destination="bob",
             payload={},
         )
         output = io.StringIO()
@@ -377,7 +377,7 @@ class DoorsAndRouterTest(unittest.TestCase):
             self.assertTrue(Switch(self.r, pod="acme", tenant="hq").step())
         records = [json.loads(line) for line in output.getvalue().splitlines()]
         error = next(record for record in records if record["event"] == "error")
-        self.assertEqual(error["recipient"], "bob")
+        self.assertEqual(error["destination"], "bob")
         self.assertNotIn("stream_id", error)
         self.assertEqual(len(self.r.lists[prefix("acme", "hq", "bob", "ingress")]), 1)
 
@@ -387,8 +387,8 @@ class DoorsAndRouterTest(unittest.TestCase):
             self.r,
             pod="acme",
             tenant="hq",
-            producer="alice",
-            recipient="all",
+            source="alice",
+            destination="all",
             payload={"text": "hello room"},
         )
         Switch(self.r, pod="acme", tenant="hq").step()
@@ -407,8 +407,8 @@ class DoorsAndRouterTest(unittest.TestCase):
             self.r,
             pod="acme",
             tenant="hq",
-            producer="alice",
-            recipient="all",
+            source="alice",
+            destination="all",
             payload={},
         )
         self.assertTrue(Switch(self.r, pod="acme", tenant="hq").step())
@@ -426,7 +426,7 @@ def test_all_digit_agent_names_are_rejected():
     Measured on tmux 3.5a with windows [1:first, 2:second, 3:"2"]: both `s:2`
     and the exact-name form `s:=2` resolve to `second`. An agent named "2" would
     therefore have its messages pasted into whichever agent sits at index 2 —
-    the wrong recipient, with an honest `opened` record and nothing to show for
+    the wrong destination, with an honest `opened` record and nothing to show for
     it. Unaddressable, so it is not a valid name.
     """
     import pytest

@@ -52,7 +52,7 @@ visible from reading it, and the next person tidying this file will reach for
 
 ## 5. Also worth a line while you are here
 
-`popped` was logged **before** the producer's own `sent` for the same envelope
+`popped` was logged **before** the source's own `sent` for the same envelope
 (`04:47:12.470` vs `.477`) — the append happens before the emit, so a fast
 switch beats the sender's log write. That is correct behaviour and a trap for
 anything reconstructing order from timestamps. Say so in `CONTRACTS` §3:

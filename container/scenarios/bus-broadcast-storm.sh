@@ -30,7 +30,7 @@ echo "roster=$(dx redis-cli HKEYS "$ROSTER" | sort | tr '\n' ',')"
 
 for sequence in $(seq 1 "$N"); do
   identifier=$(printf '%016x%016x' "$$" "$sequence")
-  envelope="{\"v\":1,\"kind\":\"Message\",\"stream_id\":\"$identifier\",\"correlation_id\":\"$identifier\",\"ts\":\"2026-08-11T00:00:00.000Z\",\"producer\":\"architect\",\"recipient\":\"all\",\"payload\":{\"text\":\"$RUN-$sequence\"}}"
+  envelope="{\"v\":1,\"kind\":\"Message\",\"stream_id\":\"$identifier\",\"correlation_id\":\"$identifier\",\"ts\":\"2026-08-11T00:00:00.000Z\",\"source\":\"architect\",\"destination\":\"all\",\"payload\":{\"text\":\"$RUN-$sequence\"}}"
   dx redis-cli RPUSH "$PREFIX:agent:architect:egress" "$envelope" >/dev/null
 done
 echo "queued=$N source_egress=$(dx redis-cli LLEN "$PREFIX:agent:architect:egress")"

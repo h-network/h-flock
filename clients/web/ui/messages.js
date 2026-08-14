@@ -43,7 +43,7 @@ export class MessagesPanel {
 
   add(envelope) {
     if (envelope.kind !== "Message" || typeof envelope.payload?.text !== "string") return;
-    const agent = envelope.producer || "unknown";
+    const agent = envelope.source || "unknown";
     envelope.direction ||= "inbound";
     if (!this.history.has(agent)) this.history.set(agent, []);
     this.history.get(agent).push(envelope);
@@ -54,12 +54,12 @@ export class MessagesPanel {
   element(envelope) {
     const item = document.createElement("li");
     const outbound = envelope.direction === "outbound";
-    const producer = envelope.producer || "unknown";
-    const operator = outbound && (producer === "operator" || producer === this.client);
-    const enrolledAgent = !outbound && this.isAgent(producer);
+    const source = envelope.source || "unknown";
+    const operator = outbound && (source === "operator" || source === this.client);
+    const enrolledAgent = !outbound && this.isAgent(source);
     item.className = `conversation-message ${operator ? "message-operator" : enrolledAgent ? "message-agent" : "message-client"}`;
-    const speaker = operator ? "You" : enrolledAgent ? producer : `Claimed by ${producer}`;
-    const trust = operator ? "recorded by this console" : enrolledAgent ? "unverified producer · enrolled agent address" : "unverified client identity";
+    const speaker = operator ? "You" : enrolledAgent ? source : `Claimed by ${source}`;
+    const trust = operator ? "recorded by this console" : enrolledAgent ? "unverified source · enrolled agent address" : "unverified client identity";
     item.innerHTML = `<header><strong>${escapeHtml(speaker)}</strong><span>${escapeHtml(trust)}</span><time datetime="${escapeHtml(envelope.ts || "")}" title="${escapeHtml(absoluteTime(envelope.ts))}">${escapeHtml(relativeTime(envelope.ts))}</time></header><p>${escapeHtml(envelope.payload.text)}</p>`;
     return item;
   }
@@ -123,7 +123,7 @@ export class MessagesPanel {
     input.value = "";
     try {
       await api(`/agents/${encodeURIComponent(this.selected)}/envelopes`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ text, as: this.client }) });
-      const outgoing = { ts: new Date().toISOString(), kind: "Message", producer: "operator", recipient: this.selected, direction: "outbound", payload: { text } };
+      const outgoing = { ts: new Date().toISOString(), kind: "Message", source: "operator", destination: this.selected, direction: "outbound", payload: { text } };
       if (!this.history.has(this.selected)) this.history.set(this.selected, []);
       this.history.get(this.selected).push(outgoing);
       document.getElementById("messages").append(this.element(outgoing));

@@ -165,10 +165,10 @@ trusted operator network.
   recordings performed **through the console proxy**. Operations performed directly against
   the tenant API using an `API_TOKEN` without passing through the console server bypass
   the console operator action log entirely. Direct API token traffic is tracked in tenant bus/adapter stdout logs and agent activity feeds (`GET /agents/{agent}/activity`).
-- **Producer Identity (Invariant 2)**: Tenant API envelopes carry a `producer` attribute.
+- **Producer Identity (Invariant 2)**: Tenant API envelopes carry a `source` attribute.
   Possessing the tenant `API_TOKEN` authorizes producing messages to the tenant API, but
-  the backend does not enforce sub-client producer identity bindings. Any client with the
-  tenant token may specify any producer string in an envelope body.
+  the backend does not enforce sub-client source identity bindings. Any client with the
+  tenant token may specify any source string in an envelope body.
 
 ## Deliberate limitations
 

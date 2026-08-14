@@ -10,7 +10,7 @@
 `LLD-bus-and-switch` describes cross-tenant routing twice, differently:
 
 - **§7** — *"Not a separate component — a branch in the switch. When a
-  `recipient` does not resolve inside the local tenant, look it up in a registry
+  `destination` does not resolve inside the local tenant, look it up in a registry
   of enrolled tenants and write the envelope to that tenant's Redis."*
 - **§3.2 and line 169** — `gateway` is a reserved **port_type**, a participant; `pod`
   is *"a gateway, when routing between tenants"*.

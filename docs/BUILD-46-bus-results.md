@@ -50,13 +50,13 @@ This is a successful negative trial, not a migration recommendation.
    seam state absent from the settled h-port_type flow.
 3. **The old send signature cannot structurally attest source.** A bound `Port`
    makes source absent from the client grammar, as h-port_type requires. The legacy
-   `send(... producer=...)` compatibility wrapper binds a port from the same
+   `send(... source=...)` compatibility wrapper binds a port from the same
    caller-provided name, so it does not strengthen callers that retain access
    to that signature. True attestation requires migrating callers to handles,
    which changes their interface.
 4. **Correction becomes rejection.** A raw v1 envelope written to an ingress
    port is now malformed client input and dead-letters. It is not corrected and
-   no `producer_stamped` event exists. This makes forgery non-routine, as h-port_type
+   no `source_stamped` event exists. This makes forgery non-routine, as h-port_type
    intends, but removes Build 36's correction behavior.
 5. **The eight fields carry h-flock semantics, but not perfectly.** Envelope
    `kind` maps directly to packet `type`; `correlation_id` maps to `flow`; and
@@ -142,16 +142,16 @@ Raw short multi-agent Nemotron trace, using only
 `http://172.16.0.11:8000`, includes this complete exchange:
 
 ```text
-{"module":"port","event":"sent","stream_id":"21ec57b6e7534e118bf74d0411a0e1c8","producer":"architect","recipient":"sme-2"}
-{"module":"switch","event":"popped","stream_id":"21ec57b6e7534e118bf74d0411a0e1c8","producer":"architect","recipient":"sme-2"}
-{"module":"switch","event":"forwarded","stream_id":"21ec57b6e7534e118bf74d0411a0e1c8","producer":"architect","recipient":"sme-2"}
-{"module":"port","event":"received","stream_id":"21ec57b6e7534e118bf74d0411a0e1c8","producer":"architect","recipient":"sme-2"}
-{"module":"port","event":"opened","stream_id":"21ec57b6e7534e118bf74d0411a0e1c8","producer":"architect","recipient":"sme-2"}
-{"module":"port","event":"sent","stream_id":"d543f5886aef4983b4bbf189cc6aa87a","producer":"sme-2","recipient":"architect"}
-{"module":"switch","event":"popped","stream_id":"d543f5886aef4983b4bbf189cc6aa87a","producer":"sme-2","recipient":"architect"}
-{"module":"switch","event":"forwarded","stream_id":"d543f5886aef4983b4bbf189cc6aa87a","producer":"sme-2","recipient":"architect"}
-{"module":"port","event":"received","stream_id":"d543f5886aef4983b4bbf189cc6aa87a","producer":"sme-2","recipient":"architect"}
-{"module":"port","event":"opened","stream_id":"d543f5886aef4983b4bbf189cc6aa87a","producer":"sme-2","recipient":"architect"}
+{"module":"port","event":"sent","stream_id":"21ec57b6e7534e118bf74d0411a0e1c8","source":"architect","destination":"sme-2"}
+{"module":"switch","event":"popped","stream_id":"21ec57b6e7534e118bf74d0411a0e1c8","source":"architect","destination":"sme-2"}
+{"module":"switch","event":"forwarded","stream_id":"21ec57b6e7534e118bf74d0411a0e1c8","source":"architect","destination":"sme-2"}
+{"module":"port","event":"received","stream_id":"21ec57b6e7534e118bf74d0411a0e1c8","source":"architect","destination":"sme-2"}
+{"module":"port","event":"opened","stream_id":"21ec57b6e7534e118bf74d0411a0e1c8","source":"architect","destination":"sme-2"}
+{"module":"port","event":"sent","stream_id":"d543f5886aef4983b4bbf189cc6aa87a","source":"sme-2","destination":"architect"}
+{"module":"switch","event":"popped","stream_id":"d543f5886aef4983b4bbf189cc6aa87a","source":"sme-2","destination":"architect"}
+{"module":"switch","event":"forwarded","stream_id":"d543f5886aef4983b4bbf189cc6aa87a","source":"sme-2","destination":"architect"}
+{"module":"port","event":"received","stream_id":"d543f5886aef4983b4bbf189cc6aa87a","source":"sme-2","destination":"architect"}
+{"module":"port","event":"opened","stream_id":"d543f5886aef4983b4bbf189cc6aa87a","source":"sme-2","destination":"architect"}
 ```
 
 The 60-second local-model run produced six inter-agent/API packets visible in

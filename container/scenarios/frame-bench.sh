@@ -30,8 +30,8 @@ def flat():
         "stream_id": uuid.uuid4().hex,
         "correlation_id": uuid.uuid4().hex,
         "ts": "2026-08-13T00:00:00.000Z",
-        "producer": "alice",
-        "recipient": "bob",
+        "source": "alice",
+        "destination": "bob",
         "payload": {"text": "frame benchmark"},
     }
 
@@ -86,16 +86,16 @@ for size in (10, 100, 1000):
     fields = {f"frame-{i}": "api" for i in range(size)}
     r.hset(roster_key, mapping=fields)
     destination = f"frame-{size - 1}"
-    old = {"recipient": destination}
+    old = {"destination": destination}
     new = {"l2": {"source": "alice", "destination": destination}}
     old_ns, new_ns = [], []
     for i in range(iterations):
-        pair = ((old, old_ns, "recipient"), (new, new_ns, "l2"))
+        pair = ((old, old_ns, "destination"), (new, new_ns, "l2"))
         if i % 2:
             pair = pair[::-1]
         for value, samples, shape in pair:
             started = time.perf_counter_ns()
-            candidate = value[shape] if shape == "recipient" else value[shape]["destination"]
+            candidate = value[shape] if shape == "destination" else value[shape]["destination"]
             r.hexists(roster_key, candidate)
             samples.append(time.perf_counter_ns() - started)
     print(

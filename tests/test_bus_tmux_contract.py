@@ -80,7 +80,7 @@ def test_prefix_invalid():
 
 
 def test_envelope_build_and_parse():
-    env = build_envelope(kind="Message", producer="alice", recipient="bob", payload={"text": "hello"})
+    env = build_envelope(kind="Message", source="alice", destination="bob", payload={"text": "hello"})
     assert env["v"] == 2
     assert env["l2"] == {"source": "alice", "destination": "bob"}
     assert env["l3"] == {
@@ -107,7 +107,7 @@ def test_envelope_parse_invalid():
 
 def test_send_and_receive(capsys):
     r = MockRedis()
-    stream_id = send(r, pod="acme", tenant="hq", producer="alice", recipient="bob", payload={"text": "hi"})
+    stream_id = send(r, pod="acme", tenant="hq", source="alice", destination="bob", payload={"text": "hi"})
     assert stream_id is not None
     egress_key = prefix("acme", "hq", agent="alice", resource="egress")
     assert len(r.lists[egress_key]) == 1
@@ -128,7 +128,7 @@ def test_send_and_receive(capsys):
 
 def test_opener_dead_letter_is_terminal_and_never_opened(capsys):
     r = MockRedis()
-    envelope = build_envelope(kind="Message", producer="alice", recipient="bob", payload={"text": "hi"})
+    envelope = build_envelope(kind="Message", source="alice", destination="bob", payload={"text": "hi"})
     ingress_key = prefix("acme", "hq", agent="bob", resource="ingress")
     r.rpush(ingress_key, json.dumps(envelope))
 

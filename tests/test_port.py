@@ -79,7 +79,7 @@ def test_message_opener_window_exists(mock_run_tmux, mock_list_windows):
     mock_run_tmux.return_value = (0, "", "")
 
     r = MockRedis()
-    env = build_envelope(kind="Message", producer="alice", recipient="bob", payload={"text": "hello"})
+    env = build_envelope(kind="Message", source="alice", destination="bob", payload={"text": "hello"})
 
     message_opener(r, pod="acme", tenant="hq", agent="bob", envelope=env, session_name="hq")
 
@@ -100,7 +100,7 @@ def test_message_opener_window_missing(mock_list_windows):
     mock_list_windows.return_value = {"alice"}
 
     r = MockRedis()
-    env = build_envelope(kind="Message", producer="alice", recipient="bob", payload={"text": "hello"})
+    env = build_envelope(kind="Message", source="alice", destination="bob", payload={"text": "hello"})
 
     with pytest.raises(DeadLetter, match="window_missing"):
         message_opener(r, pod="acme", tenant="hq", agent="bob", envelope=env, session_name="hq")
@@ -115,7 +115,7 @@ def test_message_opener_broadcast(mock_run_tmux, mock_list_windows):
     mock_run_tmux.return_value = (0, "", "")
 
     r = MockRedis()
-    env = build_envelope(kind="Message", producer="alice", recipient="all", payload={"text": "broadcast message"})
+    env = build_envelope(kind="Message", source="alice", destination="all", payload={"text": "broadcast message"})
 
     message_opener(r, pod="acme", tenant="hq", agent="bob", envelope=env, session_name="hq")
 
@@ -130,7 +130,7 @@ def test_command_opener_bare_paste(mock_run_tmux, mock_list_windows):
     mock_run_tmux.return_value = (0, "", "")
 
     r = MockRedis()
-    env = build_envelope(kind="Command", producer="alice", recipient="bob", payload={"text": "touch /tmp/it-ran"})
+    env = build_envelope(kind="Command", source="alice", destination="bob", payload={"text": "touch /tmp/it-ran"})
 
     command_opener(r, pod="acme", tenant="hq", agent="bob", envelope=env, session_name="hq")
 
@@ -150,8 +150,8 @@ def test_add_ticket_opener_writes_v1_ticket(mock_run_tmux, mock_list_windows):
     r = MockRedis()
     env = build_envelope(
         kind="AddTicket",
-        producer="architect",
-        recipient="backend",
+        source="architect",
+        destination="backend",
         payload={"title": "review the auth change", "description": "check auth middleware", "priority": "high"},
     )
 
@@ -178,8 +178,8 @@ def test_add_ticket_opener_writes_when_window_is_missing(mock_list_windows, caps
     r = MockRedis()
     env = build_envelope(
         kind="AddTicket",
-        producer="architect",
-        recipient="backend",
+        source="architect",
+        destination="backend",
         payload={"title": "wait for recovery"},
     )
 
@@ -190,7 +190,7 @@ def test_add_ticket_opener_writes_when_window_is_missing(mock_list_windows, caps
     assert json.loads(r.lists[todo_key][0])["title"] == "wait for recovery"
     record = json.loads(capsys.readouterr().out)
     assert record["event"] == "board_write_confirmed"
-    assert record["recipient"] == "backend"
+    assert record["destination"] == "backend"
     assert record["count"] == 1
 
 
@@ -201,8 +201,8 @@ def test_add_ticket_opener_dead_letters_failed_board_write(capsys):
 
     env = build_envelope(
         kind="AddTicket",
-        producer="architect",
-        recipient="backend",
+        source="architect",
+        destination="backend",
         payload={"title": "cannot land"},
     )
 
@@ -231,8 +231,8 @@ def test_failed_board_write_is_parked_once_by_receive(capsys):
     r = FaultyBoardRedis()
     env = build_envelope(
         kind="AddTicket",
-        producer="architect",
-        recipient="backend",
+        source="architect",
+        destination="backend",
         payload={"title": "cannot land"},
     )
     ingress_key = prefix("acme", "hq", agent="backend", resource="ingress")
@@ -254,7 +254,7 @@ def test_failed_board_write_is_parked_once_by_receive(capsys):
             )
         },
         timeout=0,
-        module="adapter",
+        module="port",
     )
 
     events = [json.loads(line)["event"] for line in capsys.readouterr().out.splitlines()]
@@ -285,8 +285,8 @@ def test_add_ticket_opener_appends_to_task_record(mock_run_tmux, mock_list_windo
             r = MockRedis()
             env = build_envelope(
                 kind="AddTicket",
-                producer="architect",
-                recipient="backend",
+                source="architect",
+                destination="backend",
                 payload={"title": "fix log issue", "description": "detail"},
             )
             add_ticket_opener(r, pod="acme", tenant="hq", agent="backend", envelope=env, session_name="hq")
@@ -317,7 +317,7 @@ def test_run_port_kicked_one_shot(mock_run_tmux, mock_list_windows, mock_redis_c
     mock_r.hset(roster_key, "bob", "tmux")
 
     ingress_key = "pod:acme:tenant:hq:agent:bob:ingress"
-    env = build_envelope(kind="Message", producer="alice", recipient="bob", payload={"text": "kicked message"})
+    env = build_envelope(kind="Message", source="alice", destination="bob", payload={"text": "kicked message"})
     mock_r.rpush(ingress_key, json.dumps(env))
 
     run_port(agent="bob", pod="acme", tenant="hq", session_name="hq")
@@ -343,7 +343,7 @@ def test_run_port_paused_leaves_envelope_in_ingress(mock_redis_cls):
     mock_r.hset(roster_key, "bob", "tmux")
 
     ingress_key = "pod:acme:tenant:hq:agent:bob:ingress"
-    env = build_envelope(kind="Message", producer="alice", recipient="bob", payload={"text": "paused message"})
+    env = build_envelope(kind="Message", source="alice", destination="bob", payload={"text": "paused message"})
     mock_r.rpush(ingress_key, json.dumps(env))
 
     run_port(agent="bob", pod="acme", tenant="hq", session_name="hq")
@@ -390,7 +390,7 @@ def test_run_port_port_type_api_pops_and_writes_mailbox(mock_redis_cls):
     mock_r.hset(roster_key, "api", "api")
 
     ingress_key = "pod:acme:tenant:hq:agent:api:ingress"
-    env = build_envelope(kind="Message", producer="alice", recipient="api", payload={"text": "reply"})
+    env = build_envelope(kind="Message", source="alice", destination="api", payload={"text": "reply"})
     mock_r.rpush(ingress_key, json.dumps(env))
 
     run_port(agent="api", pod="acme", tenant="hq", session_name="hq")
@@ -416,7 +416,7 @@ def test_run_port_unroutable_port_type_pops_and_dead_letters(mock_redis_cls):
     mock_r.hset(roster_key, "host", "custom_port_type")
 
     ingress_key = "pod:acme:tenant:hq:agent:host:ingress"
-    env = build_envelope(kind="Message", producer="alice", recipient="host", payload={"text": "test"})
+    env = build_envelope(kind="Message", source="alice", destination="host", payload={"text": "test"})
     mock_r.rpush(ingress_key, json.dumps(env))
 
     run_port(agent="host", pod="acme", tenant="hq", session_name="hq")
@@ -434,7 +434,7 @@ def test_message_opener_writes_pending_verify_marker_for_claude(mock_run_tmux, m
 
     r = MockRedis()
     r.set("pod:acme:tenant:hq:agent:bob:launch", "claude")
-    env = build_envelope(kind="Message", producer="alice", recipient="bob", payload={"text": "hello"})
+    env = build_envelope(kind="Message", source="alice", destination="bob", payload={"text": "hello"})
     env["stream_id"] = "12345-0"
 
     message_opener(r, pod="acme", tenant="hq", agent="bob", envelope=env, session_name="hq")
@@ -456,7 +456,7 @@ def test_message_opener_skips_pending_verify_marker_for_agy(mock_run_tmux, mock_
     r = MockRedis()
     launch_key = "pod:acme:tenant:hq:agent:bob:launch"
     r.set(launch_key, "agy")
-    env = build_envelope(kind="Message", producer="alice", recipient="bob", payload={"text": "hello"})
+    env = build_envelope(kind="Message", source="alice", destination="bob", payload={"text": "hello"})
     env["stream_id"] = "12345-0"
 
     message_opener(r, pod="acme", tenant="hq", agent="bob", envelope=env, session_name="hq")
@@ -472,7 +472,7 @@ def test_add_ticket_opener_skips_pending_verify_marker(mock_run_tmux, mock_list_
     mock_run_tmux.return_value = (0, "", "")
 
     r = MockRedis()
-    env = build_envelope(kind="AddTicket", producer="architect", recipient="backend", payload={"title": "task"})
+    env = build_envelope(kind="AddTicket", source="architect", destination="backend", payload={"title": "task"})
     env["stream_id"] = "12345-0"
 
     add_ticket_opener(r, pod="acme", tenant="hq", agent="backend", envelope=env, session_name="hq")
@@ -492,7 +492,7 @@ def test_mark_delivery_pending_swallows_redis_exceptions(mock_run_tmux, mock_lis
             raise RuntimeError("Redis stream error")
 
     r = FaultyRedis()
-    env = build_envelope(kind="Message", producer="alice", recipient="bob", payload={"text": "hello"})
+    env = build_envelope(kind="Message", source="alice", destination="bob", payload={"text": "hello"})
     env["stream_id"] = "12345-0"
 
     # Must complete cleanly without raising exception
@@ -513,7 +513,7 @@ def test_no_marker_for_a_window_running_no_cli(mock_run_tmux, mock_list_windows)
     mock_run_tmux.return_value = (0, "", "")
 
     r = MockRedis()  # no launch key at all
-    env = build_envelope(kind="Message", producer="alice", recipient="bob", payload={"text": "hi"})
+    env = build_envelope(kind="Message", source="alice", destination="bob", payload={"text": "hi"})
     env["stream_id"] = "12345-0"
 
     message_opener(r, pod="acme", tenant="hq", agent="bob", envelope=env, session_name="hq")

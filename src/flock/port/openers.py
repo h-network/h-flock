@@ -62,7 +62,7 @@ def message_opener(
     socket: str | None = None,
 ) -> None:
     stream_id = envelope.get("stream_id", "")
-    producer = envelope.get("l2", {}).get("source", "unknown")
+    source = envelope.get("l2", {}).get("source", "unknown")
     payload = envelope.get("payload", {})
 
     windows = list_windows(session_name, socket=socket)
@@ -70,7 +70,7 @@ def message_opener(
         raise DeadLetter("window_missing")
 
     text = payload.get("text", "")
-    formatted_msg = f"[message from {producer}] {text}\n"
+    formatted_msg = f"[message from {source}] {text}\n"
     # ⚠ Mark BEFORE pasting. The CLI records its input the instant the text is
     # submitted, so a marker written afterwards can carry a later timestamp than
     # the very event meant to confirm it — a sub-second race the comparison then
@@ -92,7 +92,7 @@ def command_opener(
     socket: str | None = None,
 ) -> None:
     stream_id = envelope.get("stream_id", "")
-    producer = envelope.get("l2", {}).get("source", "unknown")
+    source = envelope.get("l2", {}).get("source", "unknown")
     payload = envelope.get("payload", {})
 
     windows = list_windows(session_name, socket=socket)
@@ -122,7 +122,7 @@ def add_ticket_opener(
     socket: str | None = None,
 ) -> None:
     corr_id = envelope.get("correlation_id")
-    producer = envelope.get("l2", {}).get("source", "unknown")
+    source = envelope.get("l2", {}).get("source", "unknown")
     payload = envelope.get("payload", {})
 
     if isinstance(payload, dict) and "v" in payload and "id" in payload:
@@ -133,7 +133,7 @@ def add_ticket_opener(
             "id": payload.get("id", corr_id or os.urandom(4).hex()),
             "title": payload.get("title", ""),
             "description": payload.get("description", ""),
-            "created_by": payload.get("created_by", payload.get("from", producer)),
+            "created_by": payload.get("created_by", payload.get("from", source)),
             "status": payload.get("status", "todo"),
             "created_ts": payload.get("created_ts", payload.get("created_at", datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.%f")[:-3] + "Z")),
             "started_ts": payload.get("started_ts", ""),
@@ -151,7 +151,7 @@ def add_ticket_opener(
             "id": task_id,
             "title": title,
             "description": description,
-            "created_by": producer,
+            "created_by": source,
             "status": "todo",
             "created_ts": created_ts,
             "started_ts": "",
@@ -164,30 +164,30 @@ def add_ticket_opener(
         depth = r.rpush(todo_key, json.dumps(ticket_obj))
     except Exception as exc:
         log_record(
-            "adapter",
+            "port",
             "board_write_failed",
             correlation_id=corr_id,
-            recipient=agent,
+            destination=agent,
             reason=str(exc),
             task_id=ticket_obj.get("id", ""),
         )
         raise DeadLetter("board_write_failed") from exc
     if not isinstance(depth, int) or depth < 1:
         log_record(
-            "adapter",
+            "port",
             "board_write_failed",
             correlation_id=corr_id,
-            recipient=agent,
+            destination=agent,
             reason="RPUSH did not return a positive list length",
             task_id=ticket_obj.get("id", ""),
         )
         raise DeadLetter("board_write_failed")
 
     log_record(
-        "adapter",
+        "port",
         "board_write_confirmed",
         correlation_id=corr_id,
-        recipient=agent,
+        destination=agent,
         count=depth,
         task_id=ticket_obj.get("id", ""),
     )
@@ -197,6 +197,6 @@ def add_ticket_opener(
         id=ticket_obj.get("id", ""),
         title=ticket_obj.get("title", ""),
         agent=agent,
-        actor=producer,
+        actor=source,
         timestamp=ticket_obj.get("created_ts"),
     )

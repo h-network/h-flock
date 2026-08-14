@@ -22,7 +22,7 @@ Comprehensive inventory of names, identifiers, Redis keys, environment variables
 | `GET /alerts/stream` | [`API.md:612`](file:///workspace/api/h-flock/docs/API.md#L612), [`app.py:791`](file:///workspace/api/h-flock/src/flock/api/app.py#L791) | `wire` | Live SSE stream of watchdog alert events across the tenant | L7 System Alarm Push Stream | **Tier D** |
 | `GET /restdoc` | [`API.md:151`](file:///workspace/api/h-flock/docs/API.md#L151), [`app.py:558`](file:///workspace/api/h-flock/src/flock/api/app.py#L558) | `wire` | Self-contained HTML documentation page describing providers and schemas | L7 Documentation Endpoint | **Tier D** |
 | `ws://HOST:8111/session` | [`API.md:664`](file:///workspace/api/h-flock/docs/API.md#L664), [`session/app.py:152`](file:///workspace/api/h-flock/src/flock/session/app.py#L152) | `wire` | WebSocket provider for live terminal output streaming and keystroke input | L7 Interactive Terminal Socket | **Tier D** |
-| `as` | [`API.md:99`](file:///workspace/api/h-flock/docs/API.md#L99), [`app.py:617`](file:///workspace/api/h-flock/src/flock/api/app.py#L617) | `wire` | POST JSON field declaring application client producer identity | Source Address Header | **Tier D** |
+| `as` | [`API.md:99`](file:///workspace/api/h-flock/docs/API.md#L99), [`app.py:617`](file:///workspace/api/h-flock/src/flock/api/app.py#L617) | `wire` | POST JSON field declaring application client source identity | Source Address Header | **Tier D** |
 | `stream_id` | [`API.md:84`](file:///workspace/api/h-flock/docs/API.md#L84), [`app.py:666`](file:///workspace/api/h-flock/src/flock/api/app.py#L666) | `wire` | Unique trace identifier for published envelope | Flow ID / Packet Sequence ID | **Tier D** |
 | `correlation_id` | [`API.md:85`](file:///workspace/api/h-flock/docs/API.md#L85), [`app.py:666`](file:///workspace/api/h-flock/src/flock/api/app.py#L666) | `wire` | Transaction correlation identifier for tracking request-reply pairs | Session Transaction ID | **Tier D** |
 | `cursor` / `next_cursor` | [`API.md:140`](file:///workspace/api/h-flock/docs/API.md#L140), [`app.py:678`](file:///workspace/api/h-flock/src/flock/api/app.py#L678) | `wire` | Stream position token (Redis stream entry ID) for catching up on streams | Stream Sequence ACK Pointer | **Tier D** |
@@ -75,13 +75,13 @@ Comprehensive inventory of names, identifiers, Redis keys, environment variables
 ## 2. Callouts for Collisions, Drifts, and Undeterminable Names
 
 ### 1. One Word, Two Meanings (Collisions)
-- **`as`**: On `POST /agents/{agent}/envelopes` (wire), `"as"` declares producer origin (`"as": "telegram"`). However, in CLI commands `office send -a <agent>`, `-a` means the destination recipient. Thus, `-a` on the CLI means destination, while `"as"` on the wire means origin!
+- **`as`**: On `POST /agents/{agent}/envelopes` (wire), `"as"` declares source origin (`"as": "telegram"`). However, in CLI commands `office send -a <agent>`, `-a` means the destination destination. Thus, `-a` on the CLI means destination, while `"as"` on the wire means origin!
 - **`session`**: Refers to `flock.session` (the WebSocket door service on `:8081`), the tenant tmux session (`TMUX_SESSION`), and an individual client's WebSocket connection (`session_socket`). Three distinct objects share the same noun.
 - **`mode`**: In `SessionSettings` / WebSocket frame, `mode` means `read-only` vs `read-write` permission for terminal driving. In `presence.state` or `watchdog`, `mode` is sometimes used informally to refer to execution state.
 
 ### 2. Two Words, One Meaning (Drifts)
 - **`after` vs `cursor` vs `Last-Event-ID`**: The pagination pointer for stream providers is called `after` in query parameters (`?after=`), `cursor` in JSON response bodies (`"cursor": "1786..."`), and `Last-Event-ID` in HTTP SSE request headers.
-- **`producer` vs `as`**: The envelope schema field naming the origin is `producer`, but the HTTP JSON parameter used to declare it on `POST /agents/{agent}/envelopes` is `as`.
+- **`source` vs `as`**: The envelope schema field naming the origin is `source`, but the HTTP JSON parameter used to declare it on `POST /agents/{agent}/envelopes` is `as`.
 - **`port_type` vs `Virtual Agent Base`**: In Redis and JSON wire responses, the field is `port_type` (`"port_type": "api"`). In docs, it is expanded as "Virtual Agent Base".
 
 ### 3. Undeterminable / Misleading Names
@@ -96,8 +96,8 @@ Comprehensive inventory of names, identifiers, Redis keys, environment variables
 
 ## 3. Three Most-Wanted Name Changes
 
-1. **Change `as` parameter on `POST /agents/{agent}/envelopes` to `from` or `producer` (Tier D):**
-   - *Why:* On the wire, `"as"` specifies producer identity, whereas in `office send -a <agent>` CLI syntax `-a` specifies destination recipient. Renaming the JSON field to `"from"` or `"producer"` eliminates the origin/destination collision and matches the envelope schema field (`producer`).
+1. **Change `as` parameter on `POST /agents/{agent}/envelopes` to `from` or `source` (Tier D):**
+   - *Why:* On the wire, `"as"` specifies source identity, whereas in `office send -a <agent>` CLI syntax `-a` specifies destination destination. Renaming the JSON field to `"from"` or `"source"` eliminates the origin/destination collision and matches the envelope schema field (`source`).
 2. **Change `port_type` (wire, redis, docs) to `port_type` or `driver` (Tier D / Tier C / Tier A):**
    - *Why:* "Virtual Agent Base" implies a hosting environment, which is false for `api` clients (mailboxes) and `control` (openers). Renaming `port_type` to `port_type` or `driver` accurately reflects its role as a switch port delivery encapsulation in the network model.
 3. **Change route `GET /agents/{agent}/messages` to `GET /agents/{client}/inbox` (Tier D):**

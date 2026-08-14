@@ -11,7 +11,7 @@
 ## 1. The question
 
 The bus is a small re-implementation of what NATS does natively. The three
-things next on the list — a `(producer, recipient)` ACL, per-client keys at the
+things next on the list — a `(source, destination)` ACL, per-client keys at the
 door, and cross-tenant routing — are NATS features rather than code we should
 write. **So the question is not "is NATS good", it is: does h-flock survive the
 swap with its properties intact?**

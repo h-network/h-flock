@@ -499,9 +499,9 @@ board and lifecycle are secondary to it.
   terminal
 - **history on open** — catch up by cursor, so opening a conversation shows what
   was said before, not an empty box
-- ⚠ **who said it must be honest.** `producer` is unverified (`HLD` invariant 2),
+- ⚠ **who said it must be honest.** `source` is unverified (`HLD` invariant 2),
   so a message from an api client is *claimed* identity. Render agent messages
-  and client messages differently, and do not present a producer string as proof
+  and client messages differently, and do not present a source string as proof
   of anything
 
 ## 26. Everything else demotes

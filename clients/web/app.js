@@ -225,7 +225,7 @@ async function handleRoute(route) {
 async function start() {
   const config = await fetch("/client-config").then((response) => response.json());
   state.demo = Boolean(config.demo);
-  messages = new MessagesPanel({ client: config.client, isAgent: (producer) => agents.detail(producer)?.port_type === "tmux" });
+  messages = new MessagesPanel({ client: config.client, isAgent: (source) => agents.detail(source)?.port_type === "tmux" });
   lifecycle = new LifecyclePanel({ agents });
   router = new HashRouter({ onRoute: handleRoute });
   $("empty-office-hire").onclick = () => $("hire-dialog").showModal();

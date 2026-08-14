@@ -60,7 +60,7 @@ class TmuxHost:
         upper = name.upper().replace("-", "_")
         url = os.environ.get(f"PROVIDER_{upper}_URL")
         if not url:
-            log_record("tmuxhost", "error", recipient=agent,
+            log_record("tmuxhost", "error", destination=agent,
                        reason=f"provider '{name}' has no PROVIDER_{upper}_URL")
             return None
         return {
@@ -113,7 +113,7 @@ class TmuxHost:
             if code != 0:
                 log_record("tmuxhost", "error", reason=f"Failed to create tmux session: {err}")
             elif initial_window != "__init__":
-                log_record("tmuxhost", "window_created", recipient=initial_window)
+                log_record("tmuxhost", "window_created", destination=initial_window)
 
         # Set session & server options
         tmux_ops.run_tmux("set-option", "-g", "exit-empty", "off", socket=self.socket)
@@ -147,19 +147,19 @@ class TmuxHost:
             lead=lead, profile=profile
         )
         if ret == 0:
-            log_record("tmuxhost", "window_created", recipient=agent_name)
+            log_record("tmuxhost", "window_created", destination=agent_name)
             return True
         else:
-            log_record("tmuxhost", "error", recipient=agent_name, reason=f"new-window failed: {stderr}")
+            log_record("tmuxhost", "error", destination=agent_name, reason=f"new-window failed: {stderr}")
             return False
 
     def kill_window(self, window_name: str) -> bool:
         ret, stdout, stderr = tmux_ops.kill_window(self.session_name, window_name, socket=self.socket)
         if ret == 0:
-            log_record("tmuxhost", "window_killed", recipient=window_name)
+            log_record("tmuxhost", "window_killed", destination=window_name)
             return True
         else:
-            log_record("tmuxhost", "error", recipient=window_name, reason=f"kill-window failed: {stderr}")
+            log_record("tmuxhost", "error", destination=window_name, reason=f"kill-window failed: {stderr}")
             return False
 
     def reconcile_once(self, r: redis.Redis) -> None:
@@ -213,7 +213,7 @@ class TmuxHost:
                 if ret == 0:
                     existing_windows.add(placeholder)
                 else:
-                    log_record("tmuxhost", "error", recipient=placeholder,
+                    log_record("tmuxhost", "error", destination=placeholder,
                                reason=f"placeholder window failed, keeping stale window: {stderr}")
         for window in stale:
             if len(existing_windows) > 1:

@@ -66,7 +66,7 @@ def prefix(pod: str, tenant: str, agent: str | None = None,
     # raises KeyError on anything invalid. There is no way to build a flat Redis key.
 
 # flock.bus.envelope
-def build(kind: str, producer: str, recipient: str, payload: dict,
+def build(kind: str, source: str, destination: str, payload: dict,
           correlation_id: str | None = None, *, pod="default",
           tenant="default") -> dict
     # returns a v2 frame with L2 source/destination and qualified L3 addresses;
@@ -76,11 +76,11 @@ def parse_for_switch(raw: str) -> dict
     # validates common and L2 fields only; never reads L3
 
 # flock.bus.doors
-def send(r, *, pod, tenant, producer, recipient, payload,
+def send(r, *, pod, tenant, source, destination, payload,
          kind="Message", correlation_id=None) -> str
-    # resolves recipient locally, builds, writes the egress named by producer,
-    # and logs. A non-local qualified recipient is logged and raises before write.
-    # ⚠ Not "its own" — the caller supplies `producer`, and the same value
+    # resolves destination locally, builds, writes the egress named by source,
+    # and logs. A non-local qualified destination is logged and raises before write.
+    # ⚠ Not "its own" — the caller supplies `source`, and the same value
     # picks the queue. They agree by construction, not by verification.
 class DeadLetter(Exception)             # opener rejection; reason is str(exc)
 def receive(r, *, pod, tenant, agent, openers: dict[str, callable],
@@ -238,7 +238,7 @@ transport paths for records, not competing lifecycle schemas.
 | `event` | required | see below |
 | `stream_id` | envelope events only | the join key; absent on lifecycle records |
 | `correlation_id` | when known | |
-| `producer`, `recipient` | when known | |
+| `source`, `destination` | when known | |
 | `reason` | on a failure | why it dead-lettered |
 | `count` | on a broadcast | how many copies were written |
 | `task_id` | on a board move | the entry's `id` |
@@ -249,7 +249,7 @@ in the same record and reads as a third identity for the same thing.
 
 The five custody records are a **set, not a sequence**. Join them by
 `stream_id`; do not reconstruct custody by sorting timestamps. `send` appends
-before it emits `sent`, so a fast switch can emit `popped` before the producer
+before it emits `sent`, so a fast switch can emit `popped` before the source
 emits `sent` even though custody is correct.
 
 Events, in custody order (not guaranteed log or timestamp order):
@@ -268,7 +268,7 @@ which is not about any envelope. Those carry no `stream_id`: it is the join key
 for one envelope's life, and a synthetic value like `"system"` in that field
 makes the five records of a real **unicast** envelope harder to find, not
 easier. ⚠ **A broadcast leaves three shared records plus a `received`/`opened`
-pair per recipient** — the pairs carry `recipient: all` and cannot be told apart
+pair per destination** — the pairs carry `destination: all` and cannot be told apart
 by that field; `forwarded.count` is the cardinality. `stream_id`
 is required on the six events above and absent on the rest.
 
@@ -313,7 +313,7 @@ memory alongside the processes. The careless-looking version is the correct one.
 
 ⚠ **A kick that cannot start is not fatal.** `Popen` raises `FileNotFoundError`
 when the binary is missing, and `OSError` under fork pressure. Catch it, log a
-lifecycle `error` with the agent in `recipient`, and carry on — the envelope is
+lifecycle `error` with the agent in `destination`, and carry on — the envelope is
 already safely on the ingress queue, so the worst case is that it waits for the
 next kick. Letting it propagate kills the switch and, per `LLD-container` §6,
 the whole tenant.
@@ -366,7 +366,7 @@ The agent-facing surface, and the only part of this a human touches. One binary
 on `PATH` in every agent window (`LLD-port-tmux` §1).
 
 ```bash
-office send -a <recipient> <text>...    # kind defaults to Message
+office send -a <destination> <text>...    # kind defaults to Message
 office broadcast <text>...              # tenant broadcast, everyone but you
 office peers | hire | letGo | pause | resume
 office add | list | take | done | cancel | hold | delete
@@ -388,7 +388,7 @@ an agent types, the function is what it ends up calling.
 Identity is **never** an argument — it comes from `AGENT_NAME`, `POD` and
 `TENANT` in the window's environment, so the command writes the right egress
 without being told. Exit 0 on write, non-zero with a message on an invalid
-recipient name. It does not report delivery, because it cannot observe it.
+destination name. It does not report delivery, because it cannot observe it.
 
 **Payload for `kind: "Message"`** is `{"text": "<the message>"}`. This is an
 agreement between `send` and the tmux Message opener, not a bus concern — the
@@ -403,7 +403,7 @@ the api validates.
 
 | `kind` | port_type that opens it | Payload | Does |
 |---|---|---|---|
-| `Message` | `tmux` | `{"text": "..."}` | pastes `[message from <producer>] <text>` |
+| `Message` | `tmux` | `{"text": "..."}` | pastes `[message from <source>] <text>` |
 | `Command` | `tmux` | `{"text": "..."}` | pastes `<text>` **bare** — it executes |
 | `StartAgent` | `control` | `{"agent": "networking", "cli": "claude", "port_type": "tmux"}` | enrols, creates the window, starts the CLI |
 | `StopAgent` | `control` | `{"agent": "networking"}` | reverses all three |
@@ -445,7 +445,7 @@ identity state**, retaining its mailbox and other data and touching no tmux.
 - **An agent does see a client's name when one writes to it.** A message sent
   with `as: "telegram"` arrives as `[message from telegram]`, and replying by
   that name is the whole point. "Agents never see clients" would be wrong.
-- **A raw `recipient: "all"` does reach clients**, unlike `office broadcast`.
+- **A raw `destination: "all"` does reach clients**, unlike `office broadcast`.
   The switch fans out over roster *fields* and by invariant 8 cannot read a port_type,
   so it has no way to exclude them. Client-side filtering is what `office
   broadcast` does; the switch does not and structurally could not.
@@ -579,9 +579,9 @@ here**:
   priority    str?    present only when set
 ```
 
-⚠ **`created_by` is whatever the writer supplied** — the envelope's `producer`
+⚠ **`created_by` is whatever the writer supplied** — the envelope's `source`
 for an `AddTicket`, the caller for `office add`. Nothing resolves or verifies it,
-for the same reason `producer` itself is unverified (`HLD` invariant 2). An
+for the same reason `source` itself is unverified (`HLD` invariant 2). An
 earlier draft claimed the bus resolved it; it does not.
 
 So the api parses each entry as JSON and returns an object. `status`,
@@ -710,7 +710,7 @@ LIST would need a hand-rolled sequence counter.
 
 ```json
 GET /agents/telegram/messages   { "agent": "telegram",
-                                  "messages": [ { "cursor": "…-0", "producer": "backend",
+                                  "messages": [ { "cursor": "…-0", "source": "backend",
                                                   "kind": "Message", "payload": {…} } ],
                                   "next_cursor": "…-0" }
 ```
@@ -721,9 +721,9 @@ otherwise, including for a tmux agent, which has no mailbox.
 
 ⚠ **`POST /agents/{agent}/envelopes` accepts `"as": "<client>"`**, checked against
 the roster, so an agent sees `[message from telegram]` and replies by name like
-anyone else. Omitted, the producer is `api`. It is a *declaration*, not
+anyone else. Omitted, the source is `api`. It is a *declaration*, not
 authentication — one shared token means any holder can claim any enrolled name,
-which is no weaker than `producer` already being forgeable.
+which is no weaker than `source` already being forgeable.
 
 ## 9. Shared environment
 

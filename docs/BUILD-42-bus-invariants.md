@@ -7,7 +7,7 @@ from unit tests. Each item names the observation that would disprove it.
 |---|---|
 | A participant queue is tenant-scoped and FIFO. | A later stream ID arrives before an earlier one from the same egress, or any fixture appears under another tenant prefix. |
 | A broadcast fan-out is one atomic Redis transaction over the roster snapshot. | Recipients selected for one broadcast end with different copy counts, excluding the sender, or a partial set receives a uniquely identified broadcast. |
-| The queue named by the popped egress is the producer attribution. | A directly forged producer claim reaches an ingress unchanged, or a mismatch is corrected without a producer_stamped record. |
+| The queue named by the popped egress is the source attribution. | A directly forged source claim reaches an ingress unchanged, or a mismatch is corrected without a source_stamped record. |
 | A retired name retains ingress, egress, inbox and board data. Re-enrolling that name resumes it. | Retirement deletes one of those resources, or retained egress routes while the name is absent rather than after it returns. |
 | A destructive pop is never retried automatically after an ambiguous Redis failure. | One switch step removes two envelopes, or a single envelope is forwarded twice, after one connection interruption. |
 | A graceful tenant restart preserves Redis-backed custody and board state. | A named sentinel, queued envelope, or ticket present immediately before docker restart is absent after health returns. |

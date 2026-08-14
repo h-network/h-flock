@@ -16,8 +16,8 @@ moving `main` the whole time — it is already **15 commits behind**.
 
 ⚠ **`main` is currently incoherent and that is the strongest argument.** Build 53
 named the frame's fields `l2.source` / `l2.destination` — the *new* vocabulary —
-while the code around them still says `producer` (70 occurrences) and
-`recipient` (63). The wire speaks one language and the code speaks another.
+while the code around them still says `source` (70 occurrences) and
+`destination` (63). The wire speaks one language and the code speaks another.
 
 ## 2. What to do
 

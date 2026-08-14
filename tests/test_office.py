@@ -147,11 +147,11 @@ def test_send_treats_inner_flags_as_literal_message(office_env, monkeypatch, cap
         {
             "pod": "acme",
             "tenant": "hq",
-            "producer": "frontend",
-            "recipient": "backend",
+            "source": "frontend",
+            "destination": "backend",
             "payload": {"text": "run: office send -a frontend hi"},
             "kind": "Message",
-            "module": "adapter",
+            "module": "port",
         }
     ]
     assert capsys.readouterr().out.strip() == "stream-one"
@@ -161,7 +161,7 @@ def test_broadcast_resolves_tmux_peers_without_self_or_plumbing(office_env, monk
     calls = []
     monkeypatch.setattr(cli, "send", lambda r, **kwargs: calls.append(kwargs) or "stream")
     cli.main(["broadcast", "standup", "now"])
-    assert [call["recipient"] for call in calls] == ["backend"]
+    assert [call["destination"] for call in calls] == ["backend"]
     assert calls[0]["payload"] == {"text": "standup now"}
 
 
@@ -256,7 +256,7 @@ def test_lifecycle_commands_send_to_host(office_env, monkeypatch, argv, kind, pa
     calls = []
     monkeypatch.setattr(cli, "send", lambda r, **kwargs: calls.append(kwargs) or "control-stream")
     cli.main(argv)
-    assert calls[0]["recipient"] == "host"
+    assert calls[0]["destination"] == "host"
     assert calls[0]["kind"] == kind
     assert calls[0]["payload"] == payload
 
@@ -353,11 +353,11 @@ def test_add_sends_envelope_and_never_writes_recipient_board(office_env, monkeyp
         {
             "pod": "acme",
             "tenant": "hq",
-            "producer": "frontend",
-            "recipient": "backend",
+            "source": "frontend",
+            "destination": "backend",
             "payload": {"title": "explain office send", "description": "full brief", "priority": "high"},
             "kind": "AddTicket",
-            "module": "adapter",
+            "module": "port",
         }
     ]
     assert office_env.moves == []

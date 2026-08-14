@@ -74,47 +74,47 @@ def _operation_parser(command: str, description: str) -> argparse.ArgumentParser
 
 
 def _context():
-    producer = os.environ.get("AGENT_NAME")
-    if not producer:
+    source = os.environ.get("AGENT_NAME")
+    if not source:
         raise OfficeError("AGENT_NAME environment variable not set")
     pod = os.environ.get("POD", "default")
     tenant = os.environ.get("TENANT", "default")
-    return redis.Redis.from_url(_REDIS_URL), pod, tenant, producer
+    return redis.Redis.from_url(_REDIS_URL), pod, tenant, source
 
 
-def _message(r, *, pod: str, tenant: str, producer: str, recipient: str, text: str) -> str:
+def _message(r, *, pod: str, tenant: str, source: str, destination: str, text: str) -> str:
     return send(
         r,
         pod=pod,
         tenant=tenant,
-        producer=producer,
-        recipient=recipient,
+        source=source,
+        destination=destination,
         payload={"text": text},
         kind="Message",
-        module="adapter",
+        module="port",
     )
 
 
 def _send_command(argv: list[str]) -> None:
     parser = _operation_parser("send", "Send a message to one agent.")
-    parser.add_argument("-a", "--agent", metavar="AGENT", help="recipient agent")
+    parser.add_argument("-a", "--agent", metavar="AGENT", help="destination agent")
     parser.add_argument("text", nargs=argparse.REMAINDER, help="message text")
     if argv in (["-h"], ["--help"]):
         parser.parse_args(argv)
 
-    # Parse only the recipient prefix. Everything after it is message data, not
+    # Parse only the destination prefix. Everything after it is message data, not
     # CLI syntax; an inner `-a` must survive when explaining office commands.
     if len(argv) < 2 or argv[0] not in ("-a", "--agent"):
         raise OfficeError("office send requires -a <agent>")
-    recipient = argv[1]
+    destination = argv[1]
     words = argv[2:]
     if not words:
         raise OfficeError("office send requires message text")
 
-    r, pod, tenant, producer = _context()
-    if not is_member(r, pod=pod, tenant=tenant, agent=recipient):
-        raise OfficeError(f"unknown recipient agent {recipient!r}")
-    print(_message(r, pod=pod, tenant=tenant, producer=producer, recipient=recipient, text=" ".join(words)))
+    r, pod, tenant, source = _context()
+    if not is_member(r, pod=pod, tenant=tenant, agent=destination):
+        raise OfficeError(f"unknown destination agent {destination!r}")
+    print(_message(r, pod=pod, tenant=tenant, source=source, destination=destination, text=" ".join(words)))
 
 
 def _broadcast_command(argv: list[str]) -> None:
@@ -125,27 +125,27 @@ def _broadcast_command(argv: list[str]) -> None:
     if not argv:
         raise OfficeError("office broadcast requires message text")
 
-    r, pod, tenant, producer = _context()
+    r, pod, tenant, source = _context()
     recipients = sorted(
         agent
         for agent in members(r, pod=pod, tenant=tenant)
-        if agent != producer and port_type(r, pod=pod, tenant=tenant, agent=agent) == "tmux"
+        if agent != source and port_type(r, pod=pod, tenant=tenant, agent=agent) == "tmux"
     )
-    for recipient in recipients:
-        print(_message(r, pod=pod, tenant=tenant, producer=producer, recipient=recipient, text=" ".join(argv)))
+    for destination in recipients:
+        print(_message(r, pod=pod, tenant=tenant, source=source, destination=destination, text=" ".join(argv)))
 
 
 def _peers_command(argv: list[str]) -> None:
     parser = _operation_parser("peers", "List peer agents in this office.")
     parser.parse_args(argv)
-    r, pod, tenant, producer = _context()
+    r, pod, tenant, source = _context()
     raw_lead = r.get(prefix(pod, tenant, resource="lead"))
     lead = raw_lead.decode() if isinstance(raw_lead, bytes) else str(raw_lead) if raw_lead else None
     all_agents = sorted(members(r, pod=pod, tenant=tenant))
     peer_names = [
         agent
         for agent in all_agents
-        if agent != producer and port_type(r, pod=pod, tenant=tenant, agent=agent) == "tmux"
+        if agent != source and port_type(r, pod=pod, tenant=tenant, agent=agent) == "tmux"
     ]
     formatted = [f"{agent} (lead)" if agent == lead else agent for agent in peer_names]
     print(", ".join(formatted))
@@ -253,16 +253,16 @@ def _control_command(command: str, argv: list[str]) -> None:
     if command == "hire":
         payload["cli"] = args.cli
 
-    r, pod, tenant, producer = _context()
+    r, pod, tenant, source = _context()
     stream_id = send(
         r,
         pod=pod,
         tenant=tenant,
-        producer=producer,
-        recipient="host",
+        source=source,
+        destination="host",
         payload=payload,
         kind=kinds[command],
-        module="adapter",
+        module="port",
     )
     print(stream_id)
 
@@ -343,7 +343,7 @@ def _remove(r, key: str, raw) -> None:
 
 
 def _log_task(event: str, *, agent: str, ticket: dict) -> None:
-    log_record("office", event, recipient=agent, task_id=ticket["id"])
+    log_record("office", event, destination=agent, task_id=ticket["id"])
 
 
 def _list_one(r, *, pod: str, tenant: str, agent: str, heading: bool) -> None:
@@ -367,11 +367,11 @@ def _list_command(argv: list[str]) -> None:
     target.add_argument("-a", "--agent", metavar="AGENT")
     target.add_argument("--all", action="store_true", help="show every agent board")
     args = parser.parse_args(argv)
-    r, pod, tenant, producer = _context()
+    r, pod, tenant, source = _context()
     if args.all:
         agents = sorted(agent for agent in members(r, pod=pod, tenant=tenant) if port_type(r, pod=pod, tenant=tenant, agent=agent) == "tmux")
     else:
-        agents = [args.agent or producer]
+        agents = [args.agent or source]
     for index, agent in enumerate(agents):
         if index:
             print()
@@ -382,8 +382,8 @@ def _take_command(argv: list[str]) -> None:
     parser = _operation_parser("take", "Move a todo or held task into doing.")
     parser.add_argument("id", nargs="?", help="ticket id or unique prefix")
     args = parser.parse_args(argv)
-    r, pod, tenant, producer = _context()
-    keys = _task_keys(pod, tenant, producer)
+    r, pod, tenant, source = _context()
+    keys = _task_keys(pod, tenant, source)
     if r.llen(keys["doing"]):
         raise OfficeError("you already have one open task")
     if args.id is None:
@@ -398,8 +398,8 @@ def _take_command(argv: list[str]) -> None:
     ticket["started_ts"] = _now()
     ticket["done_ts"] = None
     r.rpush(keys["doing"], _serialized(ticket))
-    record_task_event("take", id=ticket["id"], title=ticket["title"], agent=producer, actor=producer)
-    _log_task("task_taken", agent=producer, ticket=ticket)
+    record_task_event("take", id=ticket["id"], title=ticket["title"], agent=source, actor=source)
+    _log_task("task_taken", agent=source, ticket=ticket)
     print(_serialized(ticket))
 
 
@@ -411,16 +411,16 @@ def _finish_command(action: str, argv: list[str]) -> None:
     parser = _operation_parser(action, f"{action.title()} your open task.")
     parser.add_argument("id", nargs="?", help="ticket id or unique prefix")
     args = parser.parse_args(argv)
-    r, pod, tenant, producer = _context()
-    keys = _task_keys(pod, tenant, producer)
+    r, pod, tenant, source = _context()
+    keys = _task_keys(pod, tenant, source)
     _, raw, ticket = _select(r, keys, ("doing",), args.id)
     _remove(r, keys["doing"], raw)
     ticket["status"] = "done" if action == "done" else "cancelled"
     ticket["done_ts"] = _now()
     r.rpush(keys["done"], _serialized(ticket))
-    record_task_event(action, id=ticket["id"], title=ticket["title"], agent=producer, actor=producer)
+    record_task_event(action, id=ticket["id"], title=ticket["title"], agent=source, actor=source)
     log_event = "task_done" if action == "done" else "task_cancelled"
-    _log_task(log_event, agent=producer, ticket=ticket)
+    _log_task(log_event, agent=source, ticket=ticket)
     print(_serialized(ticket))
 
 
@@ -428,14 +428,14 @@ def _hold_command(argv: list[str]) -> None:
     parser = _operation_parser("hold", "Put your open task on hold.")
     parser.add_argument("id", nargs="?", help="ticket id or unique prefix")
     args = parser.parse_args(argv)
-    r, pod, tenant, producer = _context()
-    keys = _task_keys(pod, tenant, producer)
+    r, pod, tenant, source = _context()
+    keys = _task_keys(pod, tenant, source)
     _, raw, ticket = _select(r, keys, ("doing",), args.id)
     _remove(r, keys["doing"], raw)
     ticket["status"] = "hold"
     r.rpush(keys["hold"], _serialized(ticket))
-    record_task_event("hold", id=ticket["id"], title=ticket["title"], agent=producer, actor=producer)
-    _log_task("task_held", agent=producer, ticket=ticket)
+    record_task_event("hold", id=ticket["id"], title=ticket["title"], agent=source, actor=source)
+    _log_task("task_held", agent=source, ticket=ticket)
     print(_serialized(ticket))
 
 
@@ -443,12 +443,12 @@ def _delete_command(argv: list[str]) -> None:
     parser = _operation_parser("delete", "Permanently remove a task.")
     parser.add_argument("id", help="ticket id or unique prefix")
     args = parser.parse_args(argv)
-    r, pod, tenant, producer = _context()
-    keys = _task_keys(pod, tenant, producer)
+    r, pod, tenant, source = _context()
+    keys = _task_keys(pod, tenant, source)
     state, raw, ticket = _select(r, keys, ("todo", "doing", "hold", "done"), args.id)
     _remove(r, keys[state], raw)
-    record_task_event("delete", id=ticket["id"], title=ticket["title"], agent=producer, actor=producer)
-    _log_task("task_deleted", agent=producer, ticket=ticket)
+    record_task_event("delete", id=ticket["id"], title=ticket["title"], agent=source, actor=source)
+    _log_task("task_deleted", agent=source, ticket=ticket)
     print(_serialized(ticket))
 
 
@@ -460,19 +460,19 @@ def _add_command(argv: list[str]) -> None:
     parser.add_argument("-p", "--priority", metavar="PRIORITY")
     args = parser.parse_args(argv)
 
-    r, pod, tenant, producer = _context()
+    r, pod, tenant, source = _context()
     if not is_member(r, pod=pod, tenant=tenant, agent=args.agent):
-        raise OfficeError(f"unknown recipient agent {args.agent!r}")
+        raise OfficeError(f"unknown destination agent {args.agent!r}")
     payload = {"title": args.title, "description": args.description, "priority": args.priority}
     stream_id = send(
         r,
         pod=pod,
         tenant=tenant,
-        producer=producer,
-        recipient=args.agent,
+        source=source,
+        destination=args.agent,
         payload=payload,
         kind="AddTicket",
-        module="adapter",
+        module="port",
     )
     print(stream_id)
 

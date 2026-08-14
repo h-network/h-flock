@@ -63,8 +63,8 @@ def _identifier(value: object, field: str) -> str:
 
 def build(
     kind: str,
-    producer: str,
-    recipient: str,
+    source: str,
+    destination: str,
     payload: dict,
     correlation_id: str | None = None,
     *,
@@ -74,9 +74,9 @@ def build(
     """Construct a valid v2 frame after resolving its destination locally."""
     if not isinstance(kind, str) or not kind:
         raise EnvelopeError("kind must be a non-empty string")
-    source = _segment(producer)
+    source = _segment(source)
     l3_destination, l2_destination = resolve_destination(
-        pod=pod, tenant=tenant, destination=recipient
+        pod=pod, tenant=tenant, destination=destination
     )
     if not isinstance(payload, dict):
         raise EnvelopeError("payload must be an object")

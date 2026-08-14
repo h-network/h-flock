@@ -102,7 +102,7 @@ here.
 
 ## 3. Opening & Delivery Routines
 
-`flock.port` checks the recipient's port_type in the roster:
+`flock.port` checks the destination's port_type in the roster:
 
 - **`port_type: "tmux"` (`deliver_one`)**: dispatches on `kind` to select an opener (`Message`, `Command`, `AddTicket`) and pastes into the agent's window (or mutates the board for `AddTicket`).
 - **`port_type: "api"` (`deliver_api`)**: pops the envelope from `ingress`, logs `received` and `opened`, and appends the envelope verbatim as JSON to the client's mailbox Redis Stream (`<prefix>:agent:<client>:inbox`) via `XADD MAXLEN ~ 1000 * envelope '<verbatim JSON>'`. Every kind is stored; nothing dead-letters for being uninteresting.
@@ -138,13 +138,13 @@ is the reason `LLD-api` §6 says the token is not optional.
 ### `AddTicket` — board mutation, pastes nothing
 
 `{"title": "…", "description": "…", "priority": "…"}`. The `AddTicket` opener
-creates a v1 ticket entry in the recipient agent's `tasks.todo` Redis list, records
+creates a v1 ticket entry in the destination agent's `tasks.todo` Redis list, records
 the `add` event via `flock.bus.record_task_event`, and **pastes nothing** into the
 window.
 
 ⚠ **No window check:** The opener writes for a rostered agent even when its
 tmux window is absent. The pulled ticket waits in `tasks.todo` for a later
-`office take`; a roster-less recipient is rejected by the switch before port
+`office take`; a roster-less destination is rejected by the switch before port
 delivery. The returned `RPUSH` list length confirms the synchronous mutation:
 success logs `board_write_confirmed`, while an exception or non-positive result
 logs `board_write_failed` and raises `DeadLetter`.
@@ -282,5 +282,5 @@ Not the tmux host — it does not create the server, the session or the windows,
 and it does not decide what runs in them. It attaches to what is already there,
 and if a window is missing for `port_type: tmux`, that is a dead-letter, not something to repair.
 
-Not the switch. It never resolves a recipient and never writes another agent's
+Not the switch. It never resolves a destination and never writes another agent's
 ingress.

@@ -60,10 +60,10 @@ Retained egress:
     while_absent egress=1 inbox_matches=0
     after_reenrol roster_value=[api] egress=0 inbox_matches=1
     matching_logs:
-    {"ts":"2026-08-11T21:25:33.179Z","module":"switch","event":"popped","stream_id":"00000000000000000000000000385ecf","correlation_id":"00000000000000000000000000385ecf","producer":"retained-probe","recipient":"api"}
-    {"ts":"2026-08-11T21:25:33.180Z","module":"switch","event":"forwarded","stream_id":"00000000000000000000000000385ecf","correlation_id":"00000000000000000000000000385ecf","producer":"retained-probe","recipient":"api"}
-    {"ts":"2026-08-11T21:25:33.861Z","module":"port","event":"received","stream_id":"00000000000000000000000000385ecf","correlation_id":"00000000000000000000000000385ecf","producer":"retained-probe","recipient":"api"}
-    {"ts":"2026-08-11T21:25:33.863Z","module":"port","event":"opened","stream_id":"00000000000000000000000000385ecf","correlation_id":"00000000000000000000000000385ecf","producer":"retained-probe","recipient":"api"}
+    {"ts":"2026-08-11T21:25:33.179Z","module":"switch","event":"popped","stream_id":"00000000000000000000000000385ecf","correlation_id":"00000000000000000000000000385ecf","source":"retained-probe","destination":"api"}
+    {"ts":"2026-08-11T21:25:33.180Z","module":"switch","event":"forwarded","stream_id":"00000000000000000000000000385ecf","correlation_id":"00000000000000000000000000385ecf","source":"retained-probe","destination":"api"}
+    {"ts":"2026-08-11T21:25:33.861Z","module":"port","event":"received","stream_id":"00000000000000000000000000385ecf","correlation_id":"00000000000000000000000000385ecf","source":"retained-probe","destination":"api"}
+    {"ts":"2026-08-11T21:25:33.863Z","module":"port","event":"opened","stream_id":"00000000000000000000000000385ecf","correlation_id":"00000000000000000000000000385ecf","source":"retained-probe","destination":"api"}
 
 Graceful restart, run one:
 

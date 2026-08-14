@@ -335,7 +335,7 @@ Post an envelope to a specific agent, or to `"all"` for broadcast messages.
 
 - **Request Body Fields:**
   - `text` (optional string): Text message shorthand (implies `kind: "Message"`).
-  - `as` (optional string): Enrolled application client name to declare as `producer`. Must name an enrolled `port_type: "api"` client.
+  - `as` (optional string): Enrolled application client name to declare as `source`. Must name an enrolled `port_type: "api"` client.
   - `kind` (optional string): Envelope kind (e.g. `"Message"`, `"AddTicket"`, `"StartAgent"`, `"StopAgent"`).
   - `payload` (optional object): Payload dictionary associated with the envelope kind.
 

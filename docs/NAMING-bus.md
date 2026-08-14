@@ -11,17 +11,17 @@ D wire compatibility.
 |---|---|---|---|---|---|
 | bus | `src/flock/bus/__init__.py:1` | doc term | A | The shared library for envelopes, Redis addresses, queue doors, roster reads, logs, and retirement policy; broader than transport alone. | The data-link service plus some control-plane utilities. |
 | door | `src/flock/bus/doors.py:1` | doc term | A | One of the library operations that puts an envelope onto an egress queue or takes one from ingress and opens it. | An interface to the switching fabric. |
-| send | `src/flock/bus/doors.py:15` | identifier | B | Builds an envelope and appends it to the queue selected by its producer argument. | Transmit through a named source port. |
-| receive | `src/flock/bus/doors.py:33` | identifier | B | Pops one recipient queue, validates and dispatches its envelope, then records the outcome. | Receive and demultiplex at a destination port. |
+| send | `src/flock/bus/doors.py:15` | identifier | B | Builds an envelope and appends it to the queue selected by its source argument. | Transmit through a named source port. |
+| receive | `src/flock/bus/doors.py:33` | identifier | B | Pops one destination queue, validates and dispatches its envelope, then records the outcome. | Receive and demultiplex at a destination port. |
 | opener | `src/flock/bus/doors.py:54` | identifier | B | A kind-indexed callback that consumes an already received envelope. | Protocol handler selected by an ethertype. |
 | DeadLetter | `src/flock/bus/doors.py:11` | identifier | B | An opener's explicit signal that a received envelope must go to the dead queue. | Reject after receive custody; no exact network analogue. |
 | envelope | `src/flock/bus/envelope.py:40` | doc term | A | The versioned JSON object routed between participants. | Frame. |
 | EnvelopeError | `src/flock/bus/envelope.py:10` | identifier | B | Invalid envelope structure or addressing, both while building and parsing. | Malformed frame error. |
 | build | `src/flock/bus/envelope.py:33` | identifier | B | Validates application fields, adds identity and time fields, and constructs a v1 envelope. | Frame construction. |
 | parse | `src/flock/bus/envelope.py:60` | identifier | B | Decodes and structurally validates a v1 envelope while retaining unknown outer fields. | Frame decoding and header validation. |
-| kind | `src/flock/bus/envelope.py:50` | wire | D | An opaque non-empty string selecting the recipient opener. | Ethertype or next-protocol discriminator. |
-| producer | `src/flock/bus/envelope.py:54` | wire | D | Claimed source participant when built; the switch later stamps it from the popped egress queue. | Source address, corrected from the ingress port. |
-| recipient | `src/flock/bus/envelope.py:55` | wire | D | Destination participant or the reserved broadcast value `all`. | Destination address. |
+| kind | `src/flock/bus/envelope.py:50` | wire | D | An opaque non-empty string selecting the destination opener. | Ethertype or next-protocol discriminator. |
+| source | `src/flock/bus/envelope.py:54` | wire | D | Claimed source participant when built; the switch later stamps it from the popped egress queue. | Source address, corrected from the ingress port. |
+| destination | `src/flock/bus/envelope.py:55` | wire | D | Destination participant or the reserved broadcast value `all`. | Destination address. |
 | payload | `src/flock/bus/envelope.py:56` | wire | D | Opaque kind-specific JSON object. | Frame payload. |
 | stream_id | `src/flock/bus/envelope.py:51` | wire | D | Unique identity for one envelope and the join key for its lifecycle records. | Frame identity for observability; no normal Ethernet equivalent. |
 | correlation_id | `src/flock/bus/envelope.py:52` | wire | D | Identity propagated across related envelopes, or minted for the first one. | Trace or conversation identity; no data-link equivalent. |
@@ -60,9 +60,9 @@ D wire compatibility.
 | Switch | `src/flock/switch/service.py:19` | identifier | B | Stateful queue-forwarder whose offset rotates the first queue checked for fairness. | Switching loop. |
 | step | `src/flock/switch/service.py:37` | identifier | B | Performs at most one forwarding attempt after one blocking pop. | One receive/switch iteration. |
 | run | `src/flock/switch/service.py:98` | identifier | B | Repeats forwarding and periodically invokes all switch-hosted maintenance services. | Data-plane loop plus control-plane scheduler. |
-| sender | `src/flock/switch/service.py:54` | identifier | B | Participant name derived from the popped egress key and used as authoritative producer attribution. | Source port identity. |
-| source_key | `src/flock/switch/service.py:51` | identifier | B | Full Redis egress key returned by BLPOP; “source” here means queue source, not envelope producer claim. | Ingress interface on the switching process. |
-| claimed_producer | `src/flock/switch/service.py:63` | identifier | B | Envelope producer value before correction from the queue-derived sender. | Untrusted claimed source address. |
+| sender | `src/flock/switch/service.py:54` | identifier | B | Participant name derived from the popped egress key and used as authoritative source attribution. | Source port identity. |
+| source_key | `src/flock/switch/service.py:51` | identifier | B | Full Redis egress key returned by BLPOP; “source” here means queue source, not envelope source claim. | Ingress interface on the switching process. |
+| claimed_producer | `src/flock/switch/service.py:63` | identifier | B | Envelope source value before correction from the queue-derived sender. | Untrusted claimed source address. |
 | _kick | `src/flock/switch/service.py:31` | identifier | B | Fire-and-forget launch of a delivery port after ingress is written. | Interrupt/doorbell to the destination port driver. |
 | offset | `src/flock/switch/service.py:25` | identifier | B | Index rotating roster order between BLPOP calls; distinct from file-tail offsets stored in Redis. | Fairness cursor. |
 | maintenance pass | `src/flock/switch/service.py:123` | doc term | A | One scheduled batch of activity, presence, verification, log-tail, and retention work. | Control/management-plane polling cycle. |
@@ -109,7 +109,7 @@ are tier C.
 | lead | `src/flock/bus/resources.py:36` | redis key | C | Tenant scalar naming the participant treated as office lead. | Designated controller address. |
 | window.log.offset | `src/flock/bus/resources.py:36` | redis key | C | Tenant byte cursor into the shared window log spool. | Telemetry collector cursor. |
 | delivering | `src/flock/bus/resources.py:36` | redis key | C | Tenant hash of participants currently holding delivery locks/leases; classification alone does not explain its value shape. | Port-busy/dispatch-lock table. |
-| alerts | `src/flock/bus/resources.py:36` | redis key | C | Tenant alert collection; I could not tell its element schema or producer/consumer from the bus and switch code alone. | Management alarms. |
+| alerts | `src/flock/bus/resources.py:36` | redis key | C | Tenant alert collection; I could not tell its element schema or source/consumer from the bus and switch code alone. | Management alarms. |
 | credential.alerted | `src/flock/bus/resources.py:36` | redis key | C | Tenant marker suppressing repeated credential alerts; I could not tell its exact value shape here. | Alarm deduplication state. |
 | egress | `src/flock/bus/resources.py:24` | redis key | C | Per-participant FIFO written by send and popped by the switch. | Transmit queue from a participant; switch ingress port in switching terms. |
 | ingress | `src/flock/bus/resources.py:23` | redis key | C | Per-participant FIFO written by the switch and popped by a receiving port. | Receive queue to a participant; output port from the switch. |
@@ -148,7 +148,7 @@ are tier C.
   `src/flock/switch/windowlog.py:23`.
 - `agent` names every roster participant in Redis addressing, but roster values
   include API clients and control, not only agent CLIs.
-- `switch` accurately names recipient resolution but understates that the same
+- `switch` accurately names destination resolution but understates that the same
   process owns five maintenance jobs at `src/flock/switch/service.py:110-121`;
   in the documented network model its queue forwarding behavior is closer to a
   switch than an inter-network switch.

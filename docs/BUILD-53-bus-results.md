@@ -59,7 +59,7 @@ L2 and each produces the complete `sent`, `popped`, `forwarded`, `received`,
 A live non-local send failed before writing egress and emitted its refusal:
 
 ```text
-{"ts":"2026-08-13T18:45:26.398Z","module":"bus","event":"send_refused","producer":"architect","recipient":"acme:sales:bob","reason":"no route to non-local destination 'acme:sales:bob'"}
+{"ts":"2026-08-13T18:45:26.398Z","module":"bus","event":"send_refused","source":"architect","destination":"acme:sales:bob","reason":"no route to non-local destination 'acme:sales:bob'"}
 raised=no route to non-local destination 'acme:sales:bob'
 egress_before=0 egress_after=0
 ```

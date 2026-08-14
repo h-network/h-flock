@@ -24,9 +24,9 @@ you chose.
 | # | claim to check | |
 |---|---|---|
 | 30 ✅ | the LLD says the broadcast fan-out is "pipelined, not atomic"; `pipeline()` defaults to `transaction=True`, so it **is** atomic | `switch/service.py:78`, `LLD-bus-and-switch.md:637` |
-| 32 | the five-record claim does not hold for `recipient: "all"` — per-recipient deliveries are indistinguishable | `bus/doors.py:53` |
+| 32 | the five-record claim does not hold for `destination: "all"` — per-destination deliveries are indistinguishable | `bus/doors.py:53` |
 | 38 | "the switch does not rewrite the envelope" is absolute in one place, contradicted by a documented exception in another | `LLD-bus-and-switch.md:632-635`, `:743-747` |
-| 39 | `popped` is not emitted "before doing anything" and carries the corrected producer | `switch/service.py:52-67` |
+| 39 | `popped` is not emitted "before doing anything" and carries the corrected source | `switch/service.py:52-67` |
 | 44 | `Redis.from_url` yields **zero** connection retries — load-bearing, undocumented, and the obvious "improvement" would break at-most-once | `bus/` |
 | 48 | presence pulls up to 1000 stream entries per agent per pass to read one timestamp | `bus/` |
 | 49 | `waited` reports the configured threshold, not the actual wait | `switch/service.py` |

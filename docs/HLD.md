@@ -11,13 +11,13 @@
 ## 1. The one idea
 
 **h-flock is a switch.** Producers emit envelopes; a switch forwards them by
-`recipient` and never opens one. Everything else follows from that, and the L2
+`destination` and never opens one. Everything else follows from that, and the L2
 analogy is load-bearing rather than decorative:
 
 | L2 switch | h-flock |
 |---|---|
-| destination MAC | `recipient` — the only thing forwarding depends on |
-| source MAC | `producer` — **stamped from the egress queue** by the switch before forwarding; a mismatch is corrected and logged |
+| destination MAC | `destination` — the only thing forwarding depends on |
+| source MAC | `source` — **stamped from the egress queue** by the switch before forwarding; a mismatch is corrected and logged |
 | MAC table | the **roster** — `name → port_type` |
 | port config | the **port_type** — a property of the port, not of the frame |
 | ethertype | `kind` — the switch ignores it; an opener at the far edge reads it |
@@ -103,7 +103,7 @@ delivery per agent, since two adapters pasting into one window would interleave.
 
 ### 4a. An agent is addressed by window *name*
 
-The name in `recipient` is the tmux window name, which is why two facts that look
+The name in `destination` is the tmux window name, which is why two facts that look
 like implementation detail are architectural:
 
 ⚠ **Window creation is idempotent by name.** A duplicate name makes the target
@@ -137,7 +137,7 @@ generalised this from queues to every per-agent key, and it is what keeps "who
 did this" answerable.
 
 ⚠ **The switch does, and that is its job** (`switch/service.py:83`, `:93` push
-into a recipient's ingress), as does an port writing the board of the agent it
+into a destination's ingress), as does an port writing the board of the agent it
 is delivering for. The rule constrains *participants*, not the switch — an
 earlier wording said "nothing", which the code contradicts.
 
@@ -170,7 +170,7 @@ Confusing the two loses work.
 | | reaches | filtered by |
 |---|---|---|
 | `office broadcast …` | **tmux agents only**, minus you | the command, client-side, on `port_type == "tmux"` |
-| an envelope to `recipient: "all"` | **every roster row** — agents *and* app clients | nothing |
+| an envelope to `destination: "all"` | **every roster row** — agents *and* app clients | nothing |
 
 ```bash
 office broadcast standup in five                    # colleagues
@@ -385,11 +385,11 @@ it is only true while nothing hands an agent a thread to pull.
 
 The short list that everything else assumes:
 
-1. **The switch forwards on `recipient` alone** — never on content.
-2. **`producer` is stamped from the queue the envelope was popped from.**
+1. **The switch forwards on `destination` alone** — never on content.
+2. **`source` is stamped from the queue the envelope was popped from.**
    `send()` writes the header and picks the egress from the same argument, so an
    honest sender always agrees. The switch compares them and, on a mismatch,
-   overwrites the claim and logs `producer_stamped` with what was claimed.
+   overwrites the claim and logs `source_stamped` with what was claimed.
 
    ⚠ **This is attribution, not authentication.** It guarantees the name matches
    the queue; it says nothing about which process wrote that queue. Inside one
@@ -401,7 +401,7 @@ The short list that everything else assumes:
    able to write a queue destroy another agent's traffic.
 
 3. **No AGENT writes another agent's keys** — it sends an envelope. ⚠ The
-   switch writes a recipient's ingress and `AddTicket` writes a recipient's
+   switch writes a destination's ingress and `AddTicket` writes a destination's
    board: that is the delivery mechanism, and it is what the rule exists to
    route work *through*.
 4. **The switch reads roster fields, never values.** It cannot know a port_type.

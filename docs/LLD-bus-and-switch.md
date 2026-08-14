@@ -24,7 +24,7 @@ above it.
   │                means                                         │
   ├──────────────────────────────────────────────────────────────┤
   │  L2  SWITCH    subscribe set · sender from the queue key     │
-  │                resolve recipient → queue · dead-letter       │
+  │                resolve destination → queue · dead-letter       │
   │                observation and retention pass                │
   ├──────────────────────────────────────────────────────────────┤
   │  L3  EDGE      adapters: send onto <prefix>:egress           │
@@ -66,7 +66,7 @@ inspectors:
 
 | | Does | Rejects |
 |---|---|---|
-| **send** | builds the envelope, writes the egress selected by `producer`, logs | nothing malformed can be constructed |
+| **send** | builds the envelope, writes the egress selected by `source`, logs | nothing malformed can be constructed |
 | **receive** | validates what came off ingress, dispatches on `kind` to an opener, logs | unknown kind → dead-letter |
 
 For registered VABs, each check therefore has one home. An envelope built by
@@ -74,10 +74,10 @@ For registered VABs, each check therefore has one home. An envelope built by
 normal ingress validation and terminal logging. `deliver_unroutable` duplicates
 that parse/park boundary for the exceptional port_type case. `send` does **not**,
 however, authenticate its caller: its
-`producer` argument selects both the envelope field and the egress prefix. The
+`source` argument selects both the envelope field and the egress prefix. The
 agent CLI supplies that argument from `AGENT_NAME`. At the switch, the popped
-egress key is authoritative: a mismatched `producer` field is overwritten with
-the queue owner and logged as `producer_stamped`. This makes attribution honest,
+egress key is authoritative: a mismatched `source` field is overwritten with
+the queue owner and logged as `source_stamped`. This makes attribution honest,
 but does not authenticate which process wrote that queue or prevent a direct
 caller from choosing another participant's valid egress prefix.
 
@@ -85,18 +85,18 @@ A consequence worth stating: **an agent never learns a queue name.** Components
 at the edge use `send` and `receive`; a terminal agent sees the `office` verbs
 and the name of whoever it is addressing.
 
-**Why a switch exists at all.** A producer could write straight into its
-recipient's queue, and then no switch would be needed — this is what h-office
-does, and its envelope has no `recipient` field at all: the address is the queue,
+**Why a switch exists at all.** A source could write straight into its
+destination's queue, and then no switch would be needed — this is what h-office
+does, and its envelope has no `destination` field at all: the address is the queue,
 and the courier derives everything from the key it popped. Simpler, and it works.
 
-**The switch is what buys scale.** A producer names a **recipient**, never a
-route, so where that recipient actually is can change without touching a single
+**The switch is what buys scale.** A source names a **destination**, never a
+route, so where that destination actually is can change without touching a single
 sender:
 
-- **another tenant.** A producer cannot know a foreign tenant's topology, and
+- **another tenant.** A source cannot know a foreign tenant's topology, and
   should not. Cross-tenant routing has one home (§7) instead of needing every
-  producer to learn a second address space.
+  source to learn a second address space.
 - **another base.** An agent moving from a tmux window to something else changes
   nothing for anyone addressing it, because nobody was addressing a queue.
 - **gone.** An unresolvable name dead-letters in one place with a reason, rather
@@ -113,7 +113,7 @@ default address, even though credential-bearing Redis environment variables are
 deliberately removed before its window is created. One read the whole roster
 within minutes of starting. Topology is a command away. The switch earns its
 place by being the single component that has to change when the answer to
-"where is that recipient" changes — not by keeping the answer secret.
+"where is that destination" changes — not by keeping the answer secret.
 
 ## 2. The model, in one picture
 
@@ -129,7 +129,7 @@ payload. That is the whole design.
   │  │       │──────────►│ …:backend:egress │───────►│                │  │
   │  │ backend │           └────────────────┘        │     switch     │  │
   │  │       │  consume  ┌────────────────┐ RPUSH  │                │  │
-  │  │       │◄──────────│ …:backend:ingress│◄───────│  recipient →   │  │
+  │  │       │◄──────────│ …:backend:ingress│◄───────│  destination →   │  │
   │  └───────┘           └────────────────┘        │     queue      │  │
   │                                                │                │  │
   │  ┌───────┐  produce  ┌────────────────┐ BLPOP  │  from_key →    │  │
@@ -150,7 +150,7 @@ The supported agent command never writes to another agent's ingress queue. It
 calls `send` with its own `AGENT_NAME`, and the switch decides what happens next.
 Routing decisions therefore happen in exactly one place. This is not a Redis
 authorization boundary: a direct library caller can supply another valid name
-as `producer` and thereby select that participant's egress queue. The switch
+as `source` and thereby select that participant's egress queue. The switch
 attributes the envelope to that queue; the current shared Redis credential does
 not establish which process wrote it.
 
@@ -191,7 +191,7 @@ validates every name, so this is one more check in the same place — cheaper th
 a marker segment that would lengthen every key to solve the same problem.
 
 `all` is reserved too, for the same reason one level up: it is the broadcast
-recipient (§4), so an agent by that name would be unaddressable.
+destination (§4), so an agent by that name would be unaddressable.
 
 Putting the agent in the address rather than in the queue name makes a future
 per-agent ACL scope expressible: a credential could be scoped to
@@ -287,7 +287,7 @@ is duplicated, so nothing can drift.
 
 | | Reads | Asks |
 |---|---|---|
-| switch | `HKEYS`, `HEXISTS` | who exists; does this recipient resolve |
+| switch | `HKEYS`, `HEXISTS` | who exists; does this destination resolve |
 | port/control | `HGET <agent>` | how do I deliver to or stop this one |
 
 That split is what makes invariant 8 structural rather than a promise: the
@@ -302,10 +302,10 @@ dead-letter, everything, with in-flight envelopes stranded in the old queue.
 §3.1 already rejected exactly this trade — a marker segment lengthening every key
 to answer a question one lookup answers.
 
-**Why it is not in the envelope.** A producer knows its own name and the name it
+**Why it is not in the envelope.** A source knows its own name and the name it
 is addressing, and nothing else (§1). If an envelope carried `port_type: tmux`, every
-producer would need to know how its recipient is hosted, and would be wrong the
-moment that changes. The port_type is a property of the recipient, not of the message.
+source would need to know how its destination is hosted, and would be wrong the
+moment that changes. The port_type is a property of the destination, not of the message.
 This holds regardless of the header-versus-payload line — reading a header is
 legitimate (§5), but the sender has no business knowing this in the first place.
 
@@ -331,7 +331,7 @@ filesystem observation have different costs.
 
 Staleness is bounded by the relevant polling interval and is harmless in the two obvious
 directions. A participant added a moment ago is simply not routed to yet; once a
-removed recipient disappears from the switch's next roster read, new envelopes
+removed destination disappears from the switch's next roster read, new envelopes
 addressed to it dead-letter at their senders. Neither is a race worth closing,
 and closing it — keyspace notifications, a watched version key — would add a
 write-side obligation to every roster mutation.
@@ -615,7 +615,7 @@ A dead-lettered envelope is parked under the prefix of **whoever failed to move
 it on**, which differs by where it died:
 
 - **The switch** parks under the *sender's* prefix. An envelope that failed
-  because its recipient could not be resolved has no recipient prefix to park
+  because its destination could not be resolved has no destination prefix to park
   under, and the sender is the party who needs to see it.
 - **An port** parks under *its own*. The envelope arrived; the failure was at
   this end. Parking it under the sender's prefix would put an port outside
@@ -639,9 +639,9 @@ the rejection back into `opened`. Other opener exceptions remain failures;
 
 ## 4. Semantics
 
-**Fire-and-forget, like UDP.** The producer gets no acknowledgement, there is no
+**Fire-and-forget, like UDP.** The source gets no acknowledgement, there is no
 retransmit, and nothing at the bus layer promises delivery. A terminal agent
-replies by addressing the producer's name. When that producer is an app client,
+replies by addressing the source's name. When that source is an app client,
 its `api` delivery routine stores the reply in the client's mailbox for polling
 or SSE. That is an application return path, not a transport acknowledgement: a
 reply may never come.
@@ -653,7 +653,7 @@ come to depend on ordering *across* queues.
 one tenant and stops there, the way a broadcast domain ends at a switch.
 Reaching another tenant is explicit addressing, never implicit fan-out.
 
-**`recipient: "all"` is the broadcast address.** The switch walks the roster and
+**`destination: "all"` is the broadcast address.** The switch walks the roster and
 writes one copy to each member's ingress, skipping the sender derived from the
 popped egress key — a participant does not receive its own broadcast.
 
@@ -663,16 +663,16 @@ different, conversational surface: it sends N individual `Message` envelopes
 only to port_type `tmux`, excluding app clients and fixed plumbing. The switch still
 knows only the first form and never reads a port_type.
 
-It has to be a value of `recipient` and not anything else, because routing is
-`recipient` and nothing else (§6.4) — a `kind` of `Broadcast` would make the
+It has to be a value of `destination` and not anything else, because routing is
+`destination` and nothing else (§6.4) — a `kind` of `Broadcast` would make the
 switch branch on `kind`, which is exactly the coupling §5 exists to prevent. And
 it has to be a name rather than a pattern: §3.1 excludes glob metacharacters so
 that a prefix is safe in a `SCAN MATCH`, which rules out `*`. A reserved name is
 what is left, and reserving it costs one entry in a list that already exists.
 
-**Broadcast does not rewrite its recipient.** Each copy keeps `recipient:
+**Broadcast does not rewrite its destination.** Each copy keeps `destination:
 "all"`, so a receiver can tell it was addressed to the room rather than to it.
-The separate port-stamping rule below may rewrite a mismatched `producer`
+The separate port-stamping rule below may rewrite a mismatched `source`
 before either unicast or broadcast forwarding; no other field is changed.
 
 The fan-out is one pop and *n* pushes in a transactional Redis pipeline. The
@@ -683,7 +683,7 @@ from it. Two switch log records still, not *n*: the outcome is a single
 `forwarded` carrying `count`. One pop, one outcome, as §4 requires.
 
 A broadcast into a tenant of one is *n* = 0 — a successful broadcast to nobody,
-not a dead-letter. There was no unresolvable recipient; there was simply no one
+not a dead-letter. There was no unresolvable destination; there was simply no one
 else there.
 
 **Loss after `popped` is visible; one earlier window is not.** `BLPOP` is
@@ -707,7 +707,7 @@ reissued automatically.
 envelope leaves five transport records across its life:
 
 ```
-  sent        the producer's own end            (flock.bus.doors)
+  sent        the source's own end            (flock.bus.doors)
   popped      the switch took custody           (switch)
   forwarded   … and what it then did            (switch)
   received    the port took custody          (port)
@@ -716,8 +716,8 @@ envelope leaves five transport records across its life:
 
 An opener may add a kind-specific lifecycle record between `received` and
 `opened`; `AddTicket`, for example, emits `board_write_confirmed`, so its complete
-trace has six records. A corrected producer adds `producer_stamped` between
-`popped` and `forwarded`; the event carries the corrected producer and names the
+trace has six records. A corrected source adds `source_stamped` between
+`popped` and `forwarded`; the event carries the corrected source and names the
 original claim in `reason`. The pair-per-component is what matters: each
 component records that it took custody and what it then did. `send` has no pair
 because it has no custody to hand on — it is the origin.
@@ -730,12 +730,12 @@ started arriving.
 
 A broadcast instead leaves the three shared records `sent`, `popped` and
 `forwarded`, then one `received`/`opened` pair per receiving participant. Those
-pairs retain the envelope address `recipient: "all"`; they are not
-per-recipient delivery records and cannot be distinguished from each other by
-recipient field alone. The `forwarded.count` field is the fan-out cardinality.
+pairs retain the envelope address `destination: "all"`; they are not
+per-destination delivery records and cannot be distinguished from each other by
+destination field alone. The `forwarded.count` field is the fan-out cardinality.
 
 The `popped` record is emitted only after the destructive `BLPOP`, structural
-parse and producer stamp. It therefore carries the corrected producer when the
+parse and source stamp. It therefore carries the corrected source when the
 claim differed from the egress queue. A malformed envelope has no trustworthy
 structural fields, so its `popped` record contains none and is followed by
 `dead_lettered`.
@@ -766,11 +766,11 @@ message means becomes a change to the switch.
 
 Outer fields are structural and always present. Everything kind-specific lives
 inside `payload`, and validating it is the consumer's job, never the bus's.
-Unknown top-level fields are ignored, so a newer producer cannot break an older
+Unknown top-level fields are ignored, so a newer source cannot break an older
 switch.
 
 L2 `destination` is a **participant name, not a queue name**. The port accepts
-either a bare recipient or a qualified `pod:tenant:participant` address. It
+either a bare destination or a qualified `pod:tenant:participant` address. It
 resolves either local form to the same bare L2 destination and preserves the
 qualified address in L3. A non-local qualified address fails and is logged at
 the sender; routing between tenants is not implemented.
@@ -778,7 +778,7 @@ the sender; routing between tenants is not implemented.
 A bare name means "in my tenant". The local switch reads L2 only; qualification
 rides through untouched in L3 for a future inter-tenant switch.
 
-`kind` is **opaque to the switch**. Routing is `recipient` and nothing else. A
+`kind` is **opaque to the switch**. Routing is `destination` and nothing else. A
 switch that branches on `kind` has to change every time a new kind is added,
 which is the coupling this design exists to avoid.
 
@@ -798,7 +798,7 @@ L2 `source` is **port-stamped attribution**. `send` initially writes the caller'
 claim, but before any forwarding the switch compares it with the participant
 name in the popped egress key and overwrites a mismatch. It does not reject the
 envelope: rejection would let any process able to write that queue destroy its
-owner's traffic. A changed value emits `producer_stamped`; a matching value adds
+owner's traffic. A changed value emits `source_stamped`; a matching value adds
 no record. This is not agent isolation or writer authentication — all agents are
 colleagues inside one development office, using one reachable Redis.
 
@@ -807,13 +807,13 @@ colleagues inside one development office, using one reachable Redis.
 1. **`prefix()` on every Redis key.** No flat Redis keys, anywhere, ever.
 2. **L2 `source` is stamped from the popped egress queue before forwarding.** The
    switch uses that queue-derived sender for dead-letter placement and broadcast
-   exclusion, overwrites a mismatched claim, and logs `producer_stamped` only
+   exclusion, overwrites a mismatched claim, and logs `source_stamped` only
    when the value changes. This guarantees queue attribution, not the identity
    of the process that wrote the queue.
 3. **Supported participant tools write to their own `egress`; the switch is the
    only supported writer of `ingress`.** This is an API boundary, not an enforced
-   Redis ACL: `send(producer=...)` accepts any valid participant name. The switch
-   remains load-bearing because supported sends name a recipient rather than
+   Redis ACL: `send(source=...)` accepts any valid participant name. The switch
+   remains load-bearing because supported sends name a destination rather than
    writing its ingress directly.
 4. **The switch never reads the payload or L3.** It forwards on L2 `destination` and
    derives the sender from the queue key. Nothing else in an envelope affects
@@ -833,7 +833,7 @@ colleagues inside one development office, using one reachable Redis.
    port_type. It kicks one fixed command with a name. This is structural, not a
    convention anyone has to remember.
 9. **One bad envelope never stops the loop.** Malformed JSON and an unresolvable
-   recipient are logged and dead-lettered per envelope. Queue names are generated
+   destination are logged and dead-lettered per envelope. Queue names are generated
    from validated roster members rather than parsed as untrusted envelope data.
 
 ## 7. Built extensions and deferred work
@@ -846,10 +846,10 @@ pre-emptively.
 settled — see §3.3, "one delivery per participant".)*
 
 **Cross-tenant routing.** Not a separate component — a branch in the switch.
-When a `recipient` does not resolve inside the local tenant, look it up in a
+When a `destination` does not resolve inside the local tenant, look it up in a
 registry of enrolled tenants and write the envelope to that tenant's Redis.
 Registration supplies the discovery half; what remains undesigned is the
-enrolment handshake, qualified recipient names, and what happens to an envelope
+enrolment handshake, qualified destination names, and what happens to an envelope
 for a tenant that is known but offline.
 
 ⚠ Keep remote forwarding **off the hot path**. A local forward is a Redis round
@@ -891,7 +891,7 @@ of per-agent identity state; queues and board data remain. The switch
 does not change for any of this; it still routes a name without reading its port_type.
 
 **The agent-facing command is a deliberately narrow edge.** `office send` and
-`office broadcast` treat every token after the recipient as literal message
+`office broadcast` treat every token after the destination as literal message
 text, including option-looking tokens such as `-a`; explaining an `office`
 command to another agent must not let the outer parser consume the inner
 command's flags. `office status` is read-only: it combines presence, the single
@@ -905,12 +905,12 @@ upstream rather than at the first local clone. Existing target directories are
 skipped, and `--dry-run` performs no writes.
 
 **The ticket board is pulled at the agent edge.** `AddTicket` is the one bus
-delivery that mutates a board: its opener appends to the recipient's
+delivery that mutates a board: its opener appends to the destination's
 `tasks.todo` and pastes nothing. The write does not require a current window;
 the opener confirms the returned list length synchronously, while a failed or
 unconfirmed write dead-letters. It never uses `pending.verify` or `blocked`,
 because an untaken ticket is normal board state rather than an unconsumed
-terminal delivery. The recipient later moves its own ticket; no command directly
+terminal delivery. The destination later moves its own ticket; no command directly
 mutates another participant's board. `office take` refuses
 while `tasks.doing` is non-empty, so the one-open-ticket rule is explicit rather
 than an emergent property of pull delivery. It distinguishes that refusal from
@@ -925,7 +925,7 @@ and description remain opaque text.
 
 **Subscribe-set fairness.** `BLPOP` returns from the first non-empty key in
 argument order, so a fixed order can starve later queues whenever an earlier
-producer keeps its queue non-empty. The code makes no claim about producer rate:
+source keeps its queue non-empty. The code makes no claim about source rate:
 the switch rotates the sorted key list one position per pass, ensuring that a
 permanently busy first queue does not permanently occupy the first position.
 

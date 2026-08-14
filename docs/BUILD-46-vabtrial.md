@@ -24,7 +24,7 @@ A separate design (`github.com/h-network/h-port_type`, branch `naming/vocabulary
   (client), `source` `id` `arrived` `hops` (**fabric-stamped**)
 - ⚠ **attestation is structural**: the client grammar has *no slot* for the
   fabric fields. A submitted packet carrying one is **rejected**, not corrected.
-  h-flock corrects and logs `producer_stamped`, so a forgery reads as routine
+  h-flock corrects and logs `source_stamped`, so a forgery reads as routine
 - **addressing**: `domain/station`, qualified always inside the fabric, exact
   byte match, no wildcards or prefixes ever
 - **custody boundary** at a successful append, `packet_too_large` before it, and
@@ -43,7 +43,7 @@ does not:
   whether h-flock's kinds survive `type`, and `correlation_id` surviving `flow`
 - **addressing** — `domain/station` where h-flock has `pod:tenant:agent`
 - **attestation by rejection** rather than correction, and what that does to
-  build 36's `producer_stamped`
+  build 36's `source_stamped`
 - **custody, `packet_too_large`, `port_congested`** replacing the current
   silent-loss behaviour
 
