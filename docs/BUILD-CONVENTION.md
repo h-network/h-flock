@@ -47,6 +47,19 @@ falsifiability, not on volume.
   inside-container is not a comparison
 - **redirect to a lab-local file.** An SSH detach has already cost one run's
   evidence
+- ⚠ **`docker exec` output does NOT reach `docker logs`.** `docker logs` shows
+  PID 1's streams; a process started by `docker exec` writes to the exec session
+  instead. **Records emitted by an exec'd process are invisible to anything
+  reading the container log.** Three occurrences: `fabric-bench` reported
+  `sent: 54` against `popped: 553`; `bus` flagged it in build 47's evidence and
+  declined to present those counts as a custody audit; build 58's duplicate
+  control injected a real duplicate that reconciliation then scored as a *loss*.
+  ⚠ **A control must travel the same path as the thing it controls for** — do
+  not teach the reader about a second evidence source, make the control use the
+  first one
+- ⚠ **`docker exec` with a heredoc needs `-i`.** Without it the program reads
+  empty and exits 0 — silently, successfully, having done nothing. Also three
+  occurrences
 - **one h-flock tenant at a time** on the lab
 - ⚠ **state the prediction before measuring.** Four claims were retracted in one
   day because a measurement was read as confirming what was expected
