@@ -50,7 +50,14 @@ def send(
             reason=str(exc),
         )
         raise
-    r.rpush(prefix(pod, tenant, source, "egress"), json.dumps(envelope, separators=(",", ":")))
+    try:
+        r.rpush(
+            prefix(pod, tenant, source, "egress"),
+            json.dumps(envelope, separators=(",", ":")),
+        )
+    except Exception as exc:
+        emit(module, "send_failed", envelope, f"egress write failed: {exc}")
+        raise
     emit(module, "sent", envelope)
     return envelope["stream_id"]
 

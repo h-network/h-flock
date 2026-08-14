@@ -277,6 +277,15 @@ rejected a request before assembly and before any egress write, so there is no
 enqueued envelope whose custody could be joined to the five-record set. It
 carries `source`, `destination` and `reason`, but no `stream_id`.
 
+Four joinable **attempt records** describe work around custody without claiming
+a handover: `send_failed` means an assembled frame was not written to egress;
+`forward_failed` means a popped frame was not written to ingress;
+`kick_started` means the switch successfully spawned a port process; and
+`kick_failed` means it could not. The kick records name the actual destination
+port, including one record per recipient of a broadcast. They do not prove that
+the port ran, popped, or delivered anything; only `received` and `opened` make
+those later claims.
+
 ⚠ **Never log a payload.** Invariant 4 says the switch does not read one; the
 same restraint applies to everything else, and a payload is the one field that
 may hold something private. Headers are enough to trace an envelope end to end.
