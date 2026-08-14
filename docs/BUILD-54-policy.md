@@ -3,6 +3,44 @@
 > **Not yet filed.** Follows build 53. Recorded now so build 53 is not scoped
 > against a moving target.
 
+## 0. ⚠ Measured priors — read before you assume the answer
+
+I ran a standalone model of this decision against a real Redis
+(`container/scenarios/policy-bench.py`). **It contradicts the design's stated
+reasoning, and it contradicts my own prediction.**
+
+| | µs per decision |
+|---|---|
+| policy read from Redis (what a **one-shot port** must do) | **28–46** |
+| the same check from an **in-memory table** (what a long-lived **switch** can do) | **0.2** |
+| switch: forwarding lookup only | 13.6 |
+| switch: forwarding + policy **from memory** | **15.0** — a 10% cost |
+| switch: forwarding + policy **from Redis** | 48.2 — a 254% cost |
+
+⚠ **Roster size does not matter** — 30.6 / 28.3 / 29.5 µs at rosters of
+10 / 100 / 1000. Cost tracks tag-set size, not participant count. That is the
+O(1) property tags were chosen for, and it means the "pair ACLs are n²"
+argument is about the **data model**, not about placement.
+
+⚠ **The switch can cache; the port cannot.** The switch is long-lived, the port
+is a one-shot process. That asymmetry runs **opposite** to `DESIGN-layers` §2.1,
+which argues policy belongs at the port because the switch is serialized. On
+cost, the switch wins by ~150×.
+
+**So the performance argument for port-side placement does not survive.** Two
+non-performance arguments do, and they are why this build still puts it at the
+port:
+
+1. **The error lands at the sender** — a port-side refusal is a real error in
+   the agent's terminal; a switch-side refusal dead-letters
+2. **No cache invalidation** — the port reads current tags every send; a cached
+   switch table must be invalidated on every tag change
+
+⚠ **Do not "fix" the numbers to agree with the design.** If the in-system
+benchmark reproduces the standalone one, `DESIGN-layers` §2.1 gets rewritten to
+say policy sits at the port for **feedback and freshness, not cost**. That is
+the expected outcome.
+
 ## 1. Why this one carries the real benchmark
 
 The whole layer design rests on an argument we have **asserted and never
