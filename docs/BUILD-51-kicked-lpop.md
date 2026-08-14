@@ -5,7 +5,7 @@
 
 ## 1. One line
 
-`receive()` at `doors.py:43` does a **blocking** pop:
+Before this build, `receive()` (now at `doors.py:58`) did a **blocking** pop:
 
 ```python
 item = r.blpop(prefix(pod, tenant, agent, "ingress"), timeout=timeout)
