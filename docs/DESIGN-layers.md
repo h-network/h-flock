@@ -390,6 +390,20 @@ decision, and they were not previously connected.
 
 ## 8. ⚠ The liveness fix belongs in the receiving PORT, not the switch
 
+> ⚠ **STATUS — read this before implementing anything below.** `api`'s design
+> review found that this section, §8.1, §8.2 and §3.1 **state intent in the
+> present tense**, which reads as description of built behaviour. It is not.
+> That is the exact defect `GLOSSARY` exists to prevent — *built* versus
+> *intended* — committed in the document that defines the discipline.
+>
+> | claim | actually |
+> |---|---|
+> | the port drains until empty | ⚠ **NOT on `main`** — build 66, in flight. `deliver.py` calls `receive(blocking=False)` once and exits |
+> | the watchdog watches and clears the queue | ⚠ **NOT BUILT.** `watchdog/service.py`'s own docstring says *"without repairing either"*; it never inspects ingress, re-kicks, or dead-letters |
+> | the switch reads an in-memory FIB (§3.1) | ⚠ **NOT BUILT.** `switch/service.py:28,67,115` call `members()` and `is_member()` against Redis every time |
+> | strand exists and is measured | ✅ **built and measured** — build 58, 2 of 5 port kills |
+> | ingress is unbounded | ✅ **verified** — retention trims only `dead` and `tasks.done` |
+
 Build 58 proved a frame can strand: the switch forwards, kicks a port, and that
 port dies before it pops. **The obvious fix — a sweeper that scans ingress — is
 the wrong one**, because it puts periodic work in the one component whose cost
@@ -513,3 +527,29 @@ to the switch on the very next envelope, with no reload, no invalidation and no
 message between them. **This section is the answer to the invalidation question
 that arrives with the FIB (§3.1), recorded now because it is much harder to
 reconstruct mid-build.**
+
+### 8.3 ⚠ Two objections from `api`'s review that change the design
+
+**1. Bound ingress at FORWARD time, not by culling later.** `api` proposed an
+`INGRESS_MAX` enforced in the switch: if the destination's queue is full,
+dead-letter immediately. That gives **synchronous attribution** — a record, at
+the moment, naming the destination — instead of silent background eviction by a
+watchdog racing a live port.
+
+⚠ **And it costs nothing.** `RPUSH` **returns the new list length**. The switch
+already calls it, so the bound is a comparison on a value it is handed for free
+— no extra Redis round trip, no `LLEN`, no new read. This is strictly better
+than what §8.2 proposed and it is `api`'s, not mine.
+
+**2. ⚠ A busy agent is indistinguishable from a dead one by depth alone.** This
+may kill the depth-based watchdog design as written. An agent running a long
+command in tmux holds a climbing queue for **minutes** and is perfectly healthy.
+A watchdog that dead-letters on climbing depth would destroy legitimate work.
+
+⚠ **Depth alone is not a liveness signal.** Whatever the watchdog does must
+distinguish *slow* from *dead*, and §8.2 does not. That is unsolved, and
+`presence` and `activity` — which the watchdog already reads — are the obvious
+place to look, since they are how the system already tells busy from absent.
+
+⚠ **Both of these were asserted in §8.2 without evidence and neither has been
+tested.** Recorded as objections, not as decisions.
