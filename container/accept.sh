@@ -57,19 +57,19 @@ CREATED_PROJECT=""
 CONSOLE_PID=""
 step() { echo; echo "══ $* ══"; }
 fail() { echo "  ✗ $*" >&2; FAILED=$((FAILED+1)); }
-GATE_DEADLINE_SECONDS="${GATE_DEADLINE_SECONDS:-15}"
+CONSOLE_GATE_DEADLINE_SECONDS="${CONSOLE_GATE_DEADLINE_SECONDS:-15}"
 NEGATIVE_GATE="${NEGATIVE_GATE:-}"
 poll_console() {
-  local deadline=$(( $(date +%s) + GATE_DEADLINE_SECONDS ))
+  local deadline=$(( $(date +%s) + CONSOLE_GATE_DEADLINE_SECONDS ))
   CODE=""
   while :; do
     CODE="$(curl -s -o /dev/null -w '%{http_code}' "http://127.0.0.1:${CONSOLE_PORT}/" || true)"
     [ "$CODE" = "200" ] && return 0
     if [ "$(date +%s)" -ge "$deadline" ]; then
-      echo "  ✗ console deadline ${GATE_DEADLINE_SECONDS}s expected [http 200] got [${CODE:-no response}]" >&2
+      echo "  ✗ console deadline ${CONSOLE_GATE_DEADLINE_SECONDS}s expected [http 200] got [${CODE:-no response}]" >&2
       FAILED=$((FAILED+1))
       if [ "$NEGATIVE_GATE" = "console-ready" ]; then
-        echo "NEGATIVE_CONTROL gate=console-ready deadline=${GATE_DEADLINE_SECONDS}s condition=absent"
+        echo "NEGATIVE_CONTROL gate=console-ready deadline=${CONSOLE_GATE_DEADLINE_SECONDS}s condition=absent"
         exit 97
       fi
       return 1
