@@ -55,6 +55,14 @@ def resolve_destination(*, pod: str, tenant: str, destination: str) -> tuple[str
     return destination, agent
 
 
+def resolve_source(*, pod: str, tenant: str, source: str) -> tuple[str, str]:
+    """Return qualified L3 and local L2 source names."""
+    _segment(pod, "pod")
+    _segment(tenant, "tenant")
+    local_source = _segment(source, "source")
+    return f"{pod}:{tenant}:{local_source}", local_source
+
+
 def _identifier(value: object, field: str) -> str:
     if not isinstance(value, str) or not value or any(c not in "0123456789abcdef" for c in value):
         raise EnvelopeError(f"{field} must be non-empty lowercase hex")
@@ -74,7 +82,7 @@ def build(
     """Construct a valid v2 frame after resolving its destination locally."""
     if not isinstance(kind, str) or not kind:
         raise EnvelopeError("kind must be a non-empty string")
-    source = _segment(source)
+    l3_source, source = resolve_source(pod=pod, tenant=tenant, source=source)
     l3_destination, l2_destination = resolve_destination(
         pod=pod, tenant=tenant, destination=destination
     )
@@ -89,7 +97,7 @@ def build(
         "ts": _timestamp(),
         "l2": {"source": source, "destination": l2_destination},
         "l3": {
-            "source": f"{pod}:{tenant}:{source}",
+            "source": l3_source,
             "destination": l3_destination,
         },
         "payload": payload,

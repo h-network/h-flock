@@ -119,6 +119,45 @@ def test_start_api_client_only_writes_roster_row():
     ]
 
 
+def test_start_agent_publishes_policy_before_roster_visibility():
+    events = []
+    start_agent(
+        RecordingRedis(events),
+        pod="acme",
+        tenant="hq",
+        envelope={
+            "payload": {
+                "agent": "telegram",
+                "port_type": "api",
+                "export": ["reviewers", "hq", "reviewers"],
+                "import": ["hq"],
+            }
+        },
+        replace_window=lambda agent: events.append(("replace_window", agent)),
+    )
+    policy_key = prefix("acme", "hq", "telegram", "tags")
+    assert events == [
+        ("delete", policy_key),
+        ("hset", policy_key, "export", '["hq","reviewers"]'),
+        ("hset", policy_key, "import", '["hq"]'),
+        ("hset", prefix("acme", "hq", resource="roster"), "telegram", "api"),
+    ]
+
+
+@pytest.mark.parametrize("side", ["export", "import"])
+def test_start_agent_rejects_invalid_policy_before_mutation(side):
+    events = []
+    with pytest.raises(ValueError, match=f"payload.{side}"):
+        start_agent(
+            RecordingRedis(events),
+            pod="acme",
+            tenant="hq",
+            envelope={"payload": {"agent": "dave", side: ["valid", "NOT VALID"]}},
+            replace_window=lambda agent: events.append(("replace_window", agent)),
+        )
+    assert events == []
+
+
 def test_start_agent_rejects_unknown_payload_key_before_defaulting_port_type():
     events = []
     with pytest.raises(ValueError, match="unknown payload key 'port_typ'"):

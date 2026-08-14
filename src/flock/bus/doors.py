@@ -3,9 +3,10 @@
 import json
 from collections.abc import Callable
 
-from .envelope import EnvelopeError, build, parse
+from .envelope import EnvelopeError, build, parse, resolve_destination, resolve_source
 from .keys import prefix
 from .logging import emit, log_record
+from .policy import require_allowed
 
 
 class DeadLetter(Exception):
@@ -25,6 +26,18 @@ def send(
     module: str = "bus",
 ) -> str:
     try:
+        _, local_source = resolve_source(pod=pod, tenant=tenant, source=source)
+        _, local_destination = resolve_destination(
+            pod=pod, tenant=tenant, destination=destination
+        )
+        if local_destination != "all":
+            require_allowed(
+                r,
+                pod=pod,
+                tenant=tenant,
+                source=local_source,
+                destination=local_destination,
+            )
         envelope = build(
             kind, source, destination, payload, correlation_id, pod=pod, tenant=tenant
         )

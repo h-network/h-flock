@@ -1,12 +1,16 @@
 """Openers for agent lifecycle control envelopes."""
 
+import json
+
 from collections.abc import Callable
 
-from flock.bus import prefix, purge_agent, port_type
+from flock.bus import SEGMENT_REGEX, prefix, purge_agent, port_type, tags_key
 
 _STARTABLE_VABS = {"tmux", "api"}
 _FIXED_PARTICIPANTS = {"api", "host"}
-_START_AGENT_KEYS = frozenset({"agent", "port_type", "cli", "profile", "provider"})
+_START_AGENT_KEYS = frozenset(
+    {"agent", "port_type", "cli", "profile", "provider", "export", "import"}
+)
 _TARGET_ONLY_KEYS = frozenset({"agent"})
 
 
@@ -33,12 +37,30 @@ def start_agent(
 ) -> None:
     """Publish desired state; tmuxhost is the one implementation that creates windows."""
     agent, payload = _target(envelope, _START_AGENT_KEYS)
+    policy = {}
+    policy_supplied = any(side in payload for side in ("export", "import"))
+    for side in ("export", "import"):
+        values = payload.get(side)
+        if values is None:
+            continue
+        if (
+            not isinstance(values, list)
+            or not all(isinstance(value, str) and SEGMENT_REGEX.fullmatch(value) for value in values)
+        ):
+            raise ValueError(f"StartAgent payload.{side} must be a list of tag names")
+        policy[side] = sorted(set(values))
+
     agent_port_type = payload.get("port_type", "tmux")
     if agent_port_type not in _STARTABLE_VABS:
         raise ValueError("StartAgent payload.port_type must be 'tmux' or 'api'")
 
     roster_key = prefix(pod, tenant, resource="roster")
     if agent_port_type == "api":
+        if policy_supplied:
+            policy_key = tags_key(pod, tenant, agent)
+            r.delete(policy_key)
+            for side, values in policy.items():
+                r.hset(policy_key, side, json.dumps(values, separators=(",", ":")))
         r.hset(roster_key, agent, agent_port_type)
         return
 
@@ -86,6 +108,11 @@ def start_agent(
     # Publish all launch state before roster membership: tmuxhost reconciles on
     # that row and an early window cannot be corrected by name-idempotent create.
     r.set(launch_key, cli)
+    if policy_supplied:
+        policy_key = tags_key(pod, tenant, agent)
+        r.delete(policy_key)
+        for side, values in policy.items():
+            r.hset(policy_key, side, json.dumps(values, separators=(",", ":")))
     r.hset(roster_key, agent, agent_port_type)
     if config_changed:
         # Remove only stale actual state. tmuxhost observes the roster row and

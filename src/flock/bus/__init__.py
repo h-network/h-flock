@@ -4,6 +4,7 @@ from .doors import DeadLetter, receive, send
 from .envelope import EnvelopeError, build, parse
 from .keys import RESERVED, SEGMENT_REGEX, prefix
 from .logging import emit, log_record, record_task_event
+from .policy import allows, require_allowed, tags_key
 from .roster import is_member, members, port_type
 from .resources import (
     AGENT_DATA_RESOURCES,
@@ -23,6 +24,9 @@ __all__ = [
     "emit",
     "log_record",
     "record_task_event",
+    "allows",
+    "require_allowed",
+    "tags_key",
     "is_member",
     "members",
     "parse",
