@@ -149,8 +149,8 @@ filtering belongs.
 - **not:** a TCP port, and not a security boundary — see `DESIGN-layers` §2.3.
   The port filters **mistakes, not adversaries**; `HLD` §10 makes the container
   the boundary and an agent with `sudo` can bypass any of this.
-- **halves:** the port **sends** (`adapter/cli.py` today) and **delivers**
-  (`adapter/runner.py` today).
+- **halves:** the port **sends** (`port/send.py`) and **delivers**
+  (`port/deliver.py`).
 
 ### ⚠ `ingress` / `egress` — the QUEUES only, never the port's halves
 `agent:<name>:egress` is what the participant sends; `agent:<name>:ingress` is

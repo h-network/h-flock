@@ -167,8 +167,8 @@ it is on send.
 
 | today | becomes |
 |---|---|
-| `adapter/cli.py` — `office send` | the port's **send** half |
-| `adapter/runner.py` — kicked delivery | the port's **deliver** half |
+| `port/send.py` — `office send` | the port's **send** half |
+| `port/deliver.py` — kicked delivery | the port's **deliver** half |
 | `agent:<name>:egress` / `:ingress` | **unchanged** — participant-relative |
 
 ### 2.5 The port assembles the frame, and filters BEFORE it assembles
@@ -290,7 +290,7 @@ and no attributes alongside it.
   293 µs at 1,000
 
 ⚠ **The payoff today is not speed.** At ~390 ms of serialized work per envelope
-(`subprocess.Popen` per delivery, `router/service.py:31`), a 1 ms lookup is
+(`subprocess.Popen` per delivery, `switch/service.py`), a 1 ms lookup is
 0.3% either way. The reason to separate the tables is that **the hot path must
 not carry policy** — the moment `import`/`export` land in the roster row, a
 switch that reads the roster is reading policy per frame, which is the design
