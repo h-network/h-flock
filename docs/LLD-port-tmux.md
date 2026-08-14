@@ -84,7 +84,7 @@ For tmux windows, tmux calls interleave against one window:
 ```
 
 `send-keys` targets a window, not a delivery, so nothing separates them. A busy
-tag in Redis serialises them: an port kicked for an agent that is already
+tag in Redis serialises them: a port kicked for an agent that is already
 being delivered to **waits for the tag to clear, then delivers its own
 envelope**. It does not exit, and nothing drains a backlog on another kick's
 behalf. See `LLD-bus-and-switch` §3.3 for the tag, and for why a crash leaves it

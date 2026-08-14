@@ -30,7 +30,7 @@ one that would have caught this. Say in your report which test that is.
 | 1 ✅ | `.append()` on the `set` from `list_windows` — the `__init__` path raises | `tmuxhost/host.py:201`, `tmux/ops.py:56` |
 | 2 ✅ | `REDIS_PASSWORD` reaches every agent window and is never unset | `container/entrypoint.sh:108-114`, `:232`, and `:27` for the pattern to copy |
 | 5 | two codex agents without profiles share one session directory, so activity is attributed to the wrong agent | `switch/activity.py:86`, `tmux/ops.py:236-240` |
-| 16 | an port that cannot get the busy tag spins forever | `port/deliver.py:179-184`, `bus/resources.py:45` |
+| 16 | a port that cannot get the busy tag spins forever | `port/deliver.py:179-184`, `bus/resources.py:45` |
 
 ⚠ **Row 2 is the one I would not leave sitting.** It undoes the isolation claim
 the moment anyone sets a Redis password — and the fix pattern already exists

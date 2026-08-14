@@ -104,7 +104,7 @@ shape; mailbox consumers receive the layered frame and must read L2/L3.
 
 ⚠ **The switch calls `members` and `is_member`, never `port_type`.** Reading the value
 is what would tell it how an agent is hosted, which invariant 8 forbids. That is
-the whole of the split: the switch reads the table's fields, an port reads its
+the whole of the split: the switch reads the table's fields, a port reads its
 values.
 
 An opener is `callable(envelope: dict) -> None`. A normal return means opened;
@@ -213,7 +213,7 @@ def deliver_one(r, *, pod, tenant, agent, session_name, socket=None) -> None
 
 ⚠ **This is a named exception to the rule above.** `flock.port` imports
 `flock.control`, which is a module and not a shared library. It is done as a
-*lazy* import inside the dispatch branch, so an port with no control module
+*lazy* import inside the dispatch branch, so a port with no control module
 installed logs and carries on rather than failing to start. Any further
 cross-module import needs the same explicit justification, or the layer split
 stops meaning anything.
@@ -658,7 +658,7 @@ read one of those records off its own screen and reasoned its way to Redis
 ⚠ **An agent may run against a model provider of its own.** `<prefix>:agent:<n>:provider`
 holds a **name**; the address lives in the tenant environment as
 `PROVIDER_<NAME>_URL` / `_MODEL` / `_TOKEN` / `_SMALL_MODEL` / `_KIND`. A url in a
-Redis value would be an provider an agent could read and change, and the roster
+Redis value would be a provider an agent could read and change, and the roster
 holds membership and port_type, nothing else. Written before roster visibility, like
 `launch` and `profile`, or the window is built against the wrong model.
 

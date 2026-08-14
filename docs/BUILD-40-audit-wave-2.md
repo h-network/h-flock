@@ -58,7 +58,7 @@ just as incoherent.
 | # | finding | first lines to open |
 |---|---|---|
 | 26 | a departed agent's egress is never drained, so re-hiring the name delivers it | `switch/service.py` |
-| 27 | the credential check has no idea what an provider agent is — a local-model agent needs no vendor login and is reported as missing one | `watchdog/service.py:208-228` |
+| 27 | the credential check has no idea what a provider agent is — a local-model agent needs no vendor login and is reported as missing one | `watchdog/service.py:208-228` |
 | 28 | a stalled agent whose window is gone is never reported | `watchdog/service.py:171-173`, `:90-91` |
 | 29 | one failing maintenance job silently disables the other four, and the log record names only the exception class | `watchdog/service.py` |
 

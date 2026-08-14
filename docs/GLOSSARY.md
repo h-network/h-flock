@@ -45,8 +45,8 @@ community notation.
 
 - **networking:** BGP **communities**, and specifically the **route target**
   idea: a tag you match policy against rather than a path you walk.
-- **not:** ⚠ **the roster value.** `tmux` / `api` / `control` has been carrying
-  this name and is not this concept — it is an attachment type (below).
+- **not:** ⚠ **the roster value.** `tmux` / `api` / `control` carried this name
+  until build 56 and is not this concept — it is `port_type` (below).
 - **not:** "virtual agent base". That expansion appears in the first
   architecture commit and every document since; it was never the intended term
   and only makes sense for one of the three values it was applied to.
@@ -95,10 +95,9 @@ other attachment types.
 a mailbox, or an opener.
 
 - **networking:** the port type — a property of the port, not of the frame.
-- **decided:** `port_type`. The HLD's own switch table already calls it *"port
-  config — a property of the port, not of the frame"*, so the docs were using
-  the word informally before it was chosen.
-- **was called:** `vab`, which belongs to the address model above.
+- **decided and EXECUTED** (build 56): `port_type` is the roster field, the
+  `StartAgent` payload key, and a `GET /agents/{agent}` response field.
+- **was called:** `vab`, which belonged to the address model above.
 
 ### `roster`
 **`name → attachment` for a tenant.** The MAC table: membership and port type,

@@ -121,7 +121,7 @@ indices shift as windows are retired.
 office send -a frontend …        the agent's own command, its only surface
    → …:backend:egress         it writes its OWN queue, never frontend's
    → switch                 pops, resolves frontend in the roster, RPUSHes
-   → …:frontend:ingress          and kicks an port
+   → …:frontend:ingress          and kicks a port
    → port                reads frontend's port_type, dispatches, exits
    → opener                 tmux → paste · api → mailbox · control → act
 ```
@@ -137,7 +137,7 @@ generalised this from queues to every per-agent key, and it is what keeps "who
 did this" answerable.
 
 ⚠ **The switch does, and that is its job** (`switch/service.py:83`, `:93` push
-into a destination's ingress), as does an port writing the board of the agent it
+into a destination's ingress), as does a port writing the board of the agent it
 is delivering for. The rule constrains *participants*, not the switch — an
 earlier wording said "nothing", which the code contradicts.
 
@@ -421,7 +421,7 @@ hands back a report. It can be as ugly as it needs to be, because nothing
 depends on it being right for a message to be delivered.
 
 That is what would make a screen scraper acceptable in a watchdog and
-unacceptable in an port. Not the technique — the position.
+unacceptable in a port. Not the technique — the position.
 
 ⚠ **And in the end nothing scrapes.** A scraping `blocked` was designed, built and
 abandoned: a consumed message stays visible in the transcript, so it marked

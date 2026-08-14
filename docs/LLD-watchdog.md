@@ -165,7 +165,7 @@ Alert records are facts, not diagnoses. Their common fields are `v`, `ts` and
 ## 5. Credential warnings
 
 Once an hour, the watchdog walks the `tmux` roster and reads each enrolled
-agent's `provider`, `launch` and `profile` keys. An agent with an provider name
+agent's `provider`, `launch` and `profile` keys. An agent with a provider name
 is skipped because it talks directly to the tenant's configured model server and
 uses no vendor account credential. For the remaining agents, the watchdog checks
 each distinct CLI account in use once; an unused profile directory is not

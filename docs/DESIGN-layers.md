@@ -13,7 +13,7 @@ field and a policy layer rather than a redesign.
 | table | `name → attachment` | `pod:tenant` prefix → next hop |
 | policy | port ACL on `source:destination` | **RT import/export** at the domain boundary |
 | knows about | its own tenant, nothing else | other tenants, other pods, how to reach them |
-| built? | **yes** — it is `flock/router` today, misnamed | **no** |
+| built? | **yes** — `flock/switch` since build 56 | **no** |
 
 ⚠ **The switch never holds a route.** That is what keeps it fast, keeps topology
 knowledge from spreading, and stops one tenant holding credentials for another's
@@ -25,7 +25,7 @@ component.** It belongs in the router's table.
 
 ## 2. The adapter IS the port, and the port is where filtering belongs
 
-⚠ **The component we call `adapter` is a switchport.** It belongs to exactly one
+⚠ **The component now called `port` — `adapter` until build 56 — is a switchport.** It belongs to exactly one
 participant, it has a type (`port_type`: `tmux` / `api` / `control`), it is where
 the participant meets the fabric, and it is the closest thing to the source. Once
 named that way, three things that were separately decided turn out to be the same
@@ -37,7 +37,7 @@ On real hardware you filter on the switchport, and it is free — TCAM, per-port
 silicon, line rate. **There is no software equivalent.** So "filter at the
 switchport" does *not* translate to "filter in the switch process". It
 translates to **filter at the port** — and in this architecture the software
-sitting on the port is the adapter. The switch process is the analogue of the
+sitting on the port is the port itself. The switch process is the analogue of the
 *fabric*, not of a port.
 
 ⚠ **CORRECTED 2026-08-14. This section previously argued that policy belongs at

@@ -44,7 +44,7 @@ say so on the row and close it, rather than "fixing" something that was decided.
 | 13 | The pane→agent map assumes one pane per window and nothing enforces it; duplicate window names silently merge two terminals | `session/control.py:128-139`, `:185-203` | **both** | ✅ **fixed — the first pane wins for a duplicated window name**
 | 14 | The activity tailer restarts from byte 0 when the newest session file changes, replaying a whole file into a capped stream | `switch/activity.py` | claude | ✅ **fixed — offsets are kept per path and migrate from the old shape**
 | 15 | One undecodable byte in the window-log spool makes the tailer re-emit forever, never advancing or truncating, with no log record | `switch/windowlog.py` | claude | ✅ **fixed — an undecodable line is skipped past, with `window_log_decode_error` recorded**
-| 16 | ~~An port that cannot get the busy tag spins forever~~ **REJECTED — deliberate.** Non-expiry and non-takeover are stated choices (`LLD-bus-and-switch.md:546-568`, `CONTRACTS.md:316-330`), with `HGETALL delivering` and ingress depth exposed for diagnosis | `port/runner.py:163-168` | claude | ✅ closed |
+| 16 | ~~A port that cannot get the busy tag spins forever~~ **REJECTED — deliberate.** Non-expiry and non-takeover are stated choices (`LLD-bus-and-switch.md:546-568`, `CONTRACTS.md:316-330`), with `HGETALL delivering` and ingress depth exposed for diagnosis | `port/deliver.py` | claude | ✅ closed |
 
 ## 2. A failure that reads as success
 
@@ -76,7 +76,7 @@ synchronous creator is gone — `StartAgent` publishes desired state and
 
 | # | finding | evidence | source | status |
 |---|---|---|---|---|
-| 27 | The credential check has no idea what an provider agent is — a local-model agent needs no vendor login and is reported as missing one | `watchdog/service.py:208-228` | claude | ✅ **fixed — provider agents are excluded from vendor credential checks, and stale `credential.alerted` clears. ⚠ Live: this office runs agents on vLLM and ollama**
+| 27 | The credential check has no idea what a provider agent is — a local-model agent needs no vendor login and is reported as missing one | `watchdog/service.py:208-228` | claude | ✅ **fixed — provider agents are excluded from vendor credential checks, and stale `credential.alerted` clears. ⚠ Live: this office runs agents on vLLM and ollama**
 | 28 | A stalled agent whose window is gone is never reported | `watchdog/service.py:171-173`, `:90-91` | claude | ✅ **fixed — a missing window now reports `window_missing: true` instead of being read as no signal. `HLD` corrected: an agent that cannot be observed is not an agent that is fine**
 | 29 | One failing maintenance job silently disables the other four, and the log record names only the exception class | `watchdog/service.py` | claude | ✅ **fixed — window lookup, stalls, blocked verdicts and credentials have independent failure boundaries, and the record carries `type: message`**
 

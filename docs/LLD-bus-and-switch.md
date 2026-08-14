@@ -6,7 +6,7 @@
 ## 1. Purpose & layer
 
 A **participant** is anything that talks on the bus: a terminal agent, an app
-client, or a control provider. It is a roster row and a name. An port
+client, or a control provider. It is a roster row and a name. A port
 produces onto the participant's egress and consumes from its ingress on its
 behalf; its port_type says what is attached at the far end. The bus carries envelopes
 and the switch forwards them between participants. What a participant *is* — a
@@ -37,7 +37,7 @@ without knowing anything about how the receiving agent is implemented or
 hosted.** If routing and delivery live in one component, the bus can only ever
 reach the kind of agent that component knows how to drive.
 
-**Everything reaches the bus through an port.** Not a workaround for agents
+**Everything reaches the bus through a port.** Not a workaround for agents
 that cannot speak Redis — the rule for all of them. For registered VABs, `send`
 writes what its participant emits onto egress and `receive` takes what arrives
 on ingress and passes it to an opener. The switch owns the middle, where it pops
@@ -555,7 +555,7 @@ invariants, not intentions:
    safely on ingress. The moment the switch tracks a kick outcome it is holding
    delivery state, and that is the slide this list exists to prevent.
 
-Rail 2 is what keeps invariant 8 true here. The switch does not know an port
+Rail 2 is what keeps invariant 8 true here. The switch does not know a port
 by name, by type or by capability — it knows one command, and the knowledge of
 what to do lives on the far side of it.
 
@@ -597,14 +597,14 @@ And it is visible, without anything new being built:
   LLEN …:agent:frontend:ingress        what has piled up behind it
 ```
 
-The log says which failure it was. An port that died **before** popping leaves
+The log says which failure it was. A port that died **before** popping leaves
 its envelope in the queue — nothing lost, tag set, depth growing. One that died
 **after** popping leaves a `received` with no `opened` on that `stream_id`, which
 is precisely the signature §4's two-record rule exists to produce. A wedged
 port and a dead one look the same from outside, and they do not need telling
 apart: something is wrong with frontend, go and look.
 
-An port that diagnoses or repairs its own stuck deliveries is a real thing to
+A port that diagnoses or repairs its own stuck deliveries is a real thing to
 want, and it is not for a build that does not yet work end to end.
 
 Note this property was free under a blocked-consumer-per-agent design — one
@@ -617,8 +617,8 @@ it on**, which differs by where it died:
 - **The switch** parks under the *sender's* prefix. An envelope that failed
   because its destination could not be resolved has no destination prefix to park
   under, and the sender is the party who needs to see it.
-- **An port** parks under *its own*. The envelope arrived; the failure was at
-  this end. Parking it under the sender's prefix would put an port outside
+- **A port** parks under *its own*. The envelope arrived; the failure was at
+  this end. Parking it under the sender's prefix would put a port outside
   its own agent's keys, which §6.3 forbids.
 
 The opener contract has exactly two declared terminal outcomes: return normally

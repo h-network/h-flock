@@ -56,7 +56,7 @@ Crashes and data loss, mostly on paths that run rarely:
 
 Fewer, and each one a claim in a document that is precisely wrong:
 
-- **the broadcast fan-out is atomic.** `service.py:78` calls `pipeline()` with no
+- **the broadcast fan-out is atomic.** `switch/service.py` calls `pipeline()` with no
   arguments and redis-py defaults `transaction=True`, so it is `MULTI`/`EXEC`.
   `LLD-bus-and-switch.md:637` says "pipelined, not atomic". ✅ **verified**
 - `LLD-tmux-host` documents two bugs that were already removed

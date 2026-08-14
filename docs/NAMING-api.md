@@ -90,7 +90,7 @@ Comprehensive inventory of names, identifiers, Redis keys, environment variables
 
 ### 4. Names Contradicting the Network Switch Model
 - **`port_type`**: In the network switch model ([`HLD.md`](file:///workspace/api/h-flock/docs/HLD.md)), `port_type` is described as a "port config" or "port type". Calling it "Virtual Agent Base" treats it as a hosting platform rather than a switch port configuration.
-- **`provider`**: Env vars `AGENT_PROVIDERS` / `PROVIDER_*` refer to LLM inference provider models (Ollama/vLLM), whereas in networking an provider is a network host:port socket tuple.
+- **`provider`**: Env vars `AGENT_PROVIDERS` / `PROVIDER_*` refer to LLM inference provider models (Ollama/vLLM), whereas in networking a provider is a network host:port socket tuple.
 
 ---
 
