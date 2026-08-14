@@ -121,7 +121,7 @@ r = redis.Redis.from_url(os.environ.get("REDIS_URL", "redis://127.0.0.1:6379/0")
 for key in r.scan_iter(match=f"pod:{pod}:tenant:{tenant}:agent:*:dead"):
     for raw in r.lrange(key, 0, -1):
         try: print(json.dumps(json.loads(raw)))
-        except Exception: pass
+        except Exception: print("__CONSERVATION_DEAD_JSON_PARSE_FAILURE__")
 PY
   python3 - "$ledger" "$WORK/${label}.docker.log" "$WORK/${label}.dead.jsonl" "$WORK/injections.tsv" <<'PY'
 import collections, datetime, json, sys
@@ -134,26 +134,55 @@ with open(ledger_path) as f:
         sent[seq] = (sid, dst, float(ts))
 opened = collections.Counter()
 events = collections.defaultdict(list)
+log_parse_failures = 0
 with open(log_path, errors="replace") as f:
     for line in f:
+        if not line.lstrip().startswith("{"):
+            continue
         try: rec = json.loads(line)
-        except Exception: continue
+        except Exception:
+            log_parse_failures += 1
+            continue
         sid = rec.get("stream_id")
         if not sid: continue
         events[sid].append(rec)
         if rec.get("event") == "opened": opened[sid] += 1
 dead = set()
+dead_parse_failures = 0
 with open(dead_path) as f:
     for line in f:
+        if not line.strip():
+            continue
         try: dead.add(json.loads(line).get("stream_id"))
-        except Exception: pass
+        except Exception:
+            dead_parse_failures += 1
 windows = []
 with open(injection_path) as f:
     for line in f:
         if line.strip():
             start, end, kind, detail = line.rstrip().split("\t", 3)
             windows.append((float(start), float(end), kind, detail))
+coverage = 0.0
+coverage_fraction = 0.0
+if sent and windows:
+    run_start = min(value[2] for value in sent.values())
+    run_end = max(value[2] for value in sent.values())
+    intervals = []
+    merged = []
+    for start, end, _, _ in windows:
+        left, right = max(run_start, start - 2), min(run_end, end + 2)
+        if right > left:
+            intervals.append((left, right))
+    for left, right in sorted(intervals):
+        if not merged or left > merged[-1][1]:
+            merged.append([left, right])
+        else:
+            merged[-1][1] = max(merged[-1][1], right)
+    coverage = sum(right - left for left, right in merged)
+    duration = max(0.0, run_end - run_start)
+    coverage_fraction = coverage / duration if duration else 0.0
 duplicates, dead_loss, attributed, unexplained = [], [], [], []
+event_time_failures = 0
 for seq, (sid, dst, sent_ts) in sent.items():
     count = opened[sid]
     if count > 1:
@@ -167,17 +196,19 @@ for seq, (sid, dst, sent_ts) in sent.items():
         event_times = []
         for rec in ev:
             try: event_times.append(datetime.datetime.fromisoformat(rec["ts"].replace("Z", "+00:00")).timestamp())
-            except Exception: pass
+            except Exception: event_time_failures += 1
         for start, end, kind, detail in windows:
             if start - 2 <= sent_ts <= end + 2 or any(start - 1 <= t <= end + 1 for t in event_times):
                 cause = f"{kind}:{detail}"
                 break
         (attributed if cause else unexplained).append((seq, sid, cause or "none"))
 print(f"RECONCILE sent={len(sent)} delivered_once={sum(opened[sid] == 1 for sid, _, _ in sent.values())} duplicates={len(duplicates)} dead={len(dead_loss)} lost_attributed={len(attributed)} lost_unexplained={len(unexplained)}")
+print(f"PARSE_FAILURES docker_json={log_parse_failures} dead_json={dead_parse_failures} event_ts={event_time_failures}")
+print(f"INJECTION_COVERAGE seconds={coverage:.3f} fraction={coverage_fraction:.6f}")
 for row in duplicates[:10]: print("DUPLICATE", *row)
 for row in attributed[:10]: print("LOSS_ATTRIBUTED", *row)
 for row in unexplained[:10]: print("LOSS_UNEXPLAINED", *row)
-sys.exit(2 if duplicates else (1 if unexplained else 0))
+sys.exit(4 if (log_parse_failures or dead_parse_failures or event_time_failures) else (2 if duplicates else (1 if unexplained else 0)))
 PY
 }
 
