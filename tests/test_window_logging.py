@@ -16,6 +16,7 @@ class LogRedis:
 
     def rpush(self, key, value):
         self.lists.setdefault(key, []).append(value)
+        return len(self.lists[key])
 
     def blpop(self, keys, timeout=0):
         keys = [keys] if isinstance(keys, str) else keys

@@ -16,6 +16,11 @@ class FakeRedis:
 
     def rpush(self, key, value):
         self.lists.setdefault(key, []).append(value)
+        return len(self.lists[key])
+
+    def rpop(self, key):
+        values = self.lists.get(key, [])
+        return values.pop() if values else None
 
     def blpop(self, keys, timeout=0):
         if isinstance(keys, str):
@@ -53,9 +58,10 @@ class FakePipeline:
         return self
 
     def execute(self):
+        results = []
         for key, value in self.commands:
-            self.r.rpush(key, value)
-        return [1] * len(self.commands)
+            results.append(self.r.rpush(key, value))
+        return results
 
 
 class KeysTest(unittest.TestCase):
@@ -413,6 +419,77 @@ class DoorsAndRouterTest(unittest.TestCase):
         self.assertEqual(len(self.r.lists[prefix("acme", "hq", "alice", "dead")]), 1)
         self.popen.assert_not_called()
 
+    def test_full_ingress_dead_letters_without_kick(self):
+        ingress = prefix("acme", "hq", "bob", "ingress")
+        self.r.rpush(ingress, "already queued 1")
+        self.r.rpush(ingress, "already queued 2")
+        send(
+            self.r,
+            pod="acme",
+            tenant="hq",
+            source="alice",
+            destination="bob",
+            payload={"text": "over the bound"},
+        )
+
+        output = io.StringIO()
+        with redirect_stdout(output):
+            self.assertTrue(
+                Switch(self.r, pod="acme", tenant="hq", ingress_max=2).step()
+            )
+
+        self.assertEqual(len(self.r.lists[ingress]), 2)
+        self.assertEqual(
+            len(self.r.lists[prefix("acme", "hq", "alice", "dead")]), 1
+        )
+        self.popen.assert_not_called()
+        records = [json.loads(line) for line in output.getvalue().splitlines()]
+        self.assertEqual([record["event"] for record in records], ["popped", "dead_lettered"])
+        self.assertEqual(records[-1]["destination"], "bob")
+        self.assertIn("depth 3 exceeds INGRESS_MAX 2", records[-1]["reason"])
+
+    def test_ingress_at_bound_after_push_still_forwards_and_kicks(self):
+        ingress = prefix("acme", "hq", "bob", "ingress")
+        self.r.rpush(ingress, "already queued")
+        send(
+            self.r,
+            pod="acme",
+            tenant="hq",
+            source="alice",
+            destination="bob",
+            payload={"text": "fits exactly"},
+        )
+
+        output = io.StringIO()
+        with redirect_stdout(output):
+            self.assertTrue(
+                Switch(self.r, pod="acme", tenant="hq", ingress_max=2).step()
+            )
+
+        self.assertEqual(len(self.r.lists[ingress]), 2)
+        self.popen.assert_called_once_with(["flock.port", "bob"])
+        events = [json.loads(line)["event"] for line in output.getvalue().splitlines()]
+        self.assertEqual(events, ["popped", "forwarded", "kick_started"])
+
+    def test_popped_is_recorded_before_frame_validation(self):
+        frame = build("Message", "alice", "bob", {"text": "visible pop"})
+        self.r.rpush(prefix("acme", "hq", "alice", "egress"), json.dumps(frame))
+        output = io.StringIO()
+
+        def reject_after_observing(_raw):
+            records = [json.loads(line) for line in output.getvalue().splitlines()]
+            self.assertEqual([record["event"] for record in records], ["popped"])
+            self.assertEqual(records[0]["stream_id"], frame["stream_id"])
+            raise EnvelopeError("negative control: validation stopped")
+
+        with redirect_stdout(output), patch(
+            "flock.switch.service.parse_for_switch", side_effect=reject_after_observing
+        ):
+            self.assertTrue(Switch(self.r, pod="acme", tenant="hq").step())
+
+        events = [json.loads(line)["event"] for line in output.getvalue().splitlines()]
+        self.assertEqual(events, ["popped", "dead_lettered"])
+
     def test_switch_stamps_forged_producer_from_egress_queue(self):
         envelope = build("Message", "carol", "bob", {"text": "forged"})
         self.r.rpush(prefix("acme", "hq", "alice", "egress"), json.dumps(envelope))
@@ -530,6 +607,37 @@ class DoorsAndRouterTest(unittest.TestCase):
             sorted(call.args[0][1] for call in self.popen.call_args_list),
             ["api", "bob", "carol"],
         )
+
+    def test_broadcast_dead_letters_only_full_recipient_and_does_not_kick_it(self):
+        bob_ingress = prefix("acme", "hq", "bob", "ingress")
+        self.r.rpush(bob_ingress, "bob is full")
+        send(
+            self.r,
+            pod="acme",
+            tenant="hq",
+            source="alice",
+            destination="all",
+            payload={"text": "bounded fanout"},
+        )
+
+        output = io.StringIO()
+        with redirect_stdout(output):
+            self.assertTrue(
+                Switch(self.r, pod="acme", tenant="hq", ingress_max=1).step()
+            )
+
+        self.assertEqual(self.r.lists[bob_ingress], ["bob is full"])
+        for agent in ("carol",):
+            self.assertEqual(
+                len(self.r.lists[prefix("acme", "hq", agent, "ingress")]), 1
+            )
+        kicked = [call.args[0][1] for call in self.popen.call_args_list]
+        self.assertEqual(kicked, ["carol"])
+        records = [json.loads(line) for line in output.getvalue().splitlines()]
+        rejected = next(record for record in records if record["event"] == "dead_lettered")
+        forwarded = next(record for record in records if record["event"] == "forwarded")
+        self.assertEqual(rejected["destination"], "bob")
+        self.assertEqual(forwarded["count"], 1)
 
     def test_broadcast_to_one_agent_is_successful_noop(self):
         self.r.hashes[self.roster] = {"alice": "tmux"}

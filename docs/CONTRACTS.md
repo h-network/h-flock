@@ -199,8 +199,9 @@ window-creation implementation. tmuxhost passes the resolved environment and
 
 ### A delivery routine per port_type
 
-`flock.port.runner` dispatches on the port_type and calls one of these. Both take
-the same shape, so adding a base is adding a module and a branch:
+`flock.port.deliver` dispatches on the port_type and calls one of these. The
+tmux path is inline; API and control have delivery routines with the same
+single-envelope contract, so adding a base is adding a routine and a branch:
 
 ```python
 def deliver_one(r, *, pod, tenant, agent, session_name, socket=None) -> None
@@ -208,7 +209,8 @@ def deliver_one(r, *, pod, tenant, agent, session_name, socket=None) -> None
 
 | port_type | Module | Owner |
 |---|---|---|
-| `tmux` | `flock.port.runner` (inline) | `tmux` lane |
+| `tmux` | `flock.port.deliver` (inline) | `tmux` lane |
+| `api` | `flock.port.deliver.deliver_api` | `api` lane |
 | `control` | `flock.control` | `bus` lane |
 
 ⚠ **This is a named exception to the rule above.** `flock.port` imports
@@ -247,7 +249,7 @@ transport paths for records, not competing lifecycle schemas.
 ⚠ `task_id`, not `id` — a bare `id` sits beside `stream_id` and `correlation_id`
 in the same record and reads as a third identity for the same thing.
 
-The five custody records are a **set, not a sequence**. Join them by
+The five successful-unicast custody records are a **set, not a sequence**. Join them by
 `stream_id`; do not reconstruct custody by sorting timestamps. `send` appends
 before it emits `sent`, so a fast switch can emit `popped` before the source
 emits `sent` even though custody is correct.
@@ -258,7 +260,7 @@ Events, in custody order (not guaranteed log or timestamp order):
   sent          send wrote an egress                     (flock.bus.doors)
   popped        the switch took it off an egress         (switch)
   forwarded     … and wrote an ingress                   (switch)
-  dead_lettered … or could not                           (switch or port)
+  dead_lettered terminal alternative to forward/open    (switch or port)
   received      receive took it off an ingress           (flock.bus.doors)
   opened        an opener ran to completion              (port)
 ```
@@ -274,7 +276,16 @@ though the unchanged frame still carries L2 `destination: all`;
 `stream_id` are correct for a broadcast. More than one record for the same
 `(stream_id, recipient)` is a duplicate; for unicast, more than one record for
 the `stream_id` is therefore still a defect. `stream_id`
-is required on the six events above and absent on the rest.
+is required on the six events above and absent on the rest. A parsed frame can
+carry its `stream_id` on all six possible events above, but a successful
+unicast has five:
+`dead_lettered` replaces a later success path rather than joining it.
+
+⚠ A malformed frame may have no trustworthy identifier. Its `popped` and
+`dead_lettered` records therefore carry `stream_id: unknown` and are not
+joinable to a custody set. What remains knowable is the source egress queue,
+the time it was popped, the parse reason, and the sender's dead queue retaining
+the raw value. The literal field being present does not make it a join key.
 
 `send_refused` is **not a sixth custody record**. It says the sending port
 rejected a request before assembly and before any egress write, so there is no
@@ -308,9 +319,10 @@ The switch's only outbound call. One fixed command, one argument:
 flock.port <agent>          # e.g.  flock.port frontend
 ```
 
-Fire and forget — the switch does not wait, does not read a return code, does
-not retry, and keeps no record (`LLD-bus-and-switch` §3.3, rail 3). It hands
-over a name and moves on.
+Fire and forget — the switch does not wait, does not read a return code, and
+does not retry (`LLD-bus-and-switch` §3.3, rail 3). It emits `kick_started` when
+`Popen` returns or `kick_failed` when spawning raises, then throws the process
+handle away. Those attempt records do not claim that the port ran or delivered.
 
 ⚠ **The switch must set `signal.signal(signal.SIGCHLD, signal.SIG_IGN)` at
 start.** Without it the kernel keeps every exited kick as a zombie until the
@@ -336,23 +348,23 @@ already safely on the ingress queue, so the worst case is that it waits for the
 next kick. Letting it propagate kills the switch and, per `LLD-container` §6,
 the whole tenant.
 
-**Measured cost of a delivery: ~500 ms**, split `forwarded` → `received` 274 ms
-(process start, busy tag, `HGET`, `BLPOP`) and `received` → `opened` 226 ms (the
-paste).
+The pre-delay measurement split delivery into `forwarded` → `received` 274 ms
+(process start, busy tag, `HGET`, `LPOP`) and `received` → `opened` 226 ms (the
+paste path).
 
 ⚠ **`PASTE_ENTER_DELAY` is the environment variable; `ENTER_DELAY` is the module
 constant it is read into** (`tmux/ops.py`). Both names refer to the same thing.
 
 ⚠ **That measurement predates `PASTE_ENTER_DELAY = 0.5`**, which
-adds 500 ms inside the second half — a delivery now costs about a second. The
+adds 500 ms inside the second half — a delivery now costs about a second, with
+roughly 726 ms on the paste side versus 274 ms before `received`. The
 delay is not slack for a slow terminal: the paste and the Enter are **two
 writes**, and a CLI arriving at both together takes the text and drops the
 submit. Do not tune it to zero because the machine is fast.
 
-So **process startup is the larger half**, not tmux. `LLD-port-tmux` §6
-predicted fork cost would be noise next to paste-and-settle; at these numbers it
-is bigger than the paste. That puts a single agent at roughly **2 deliveries a
-second**. Deliveries to different agents overlap freely, so it is a per-agent
+So **paste-and-enter is the larger half** after the configured delay. The total
+puts a single tmux agent near **1 delivery a second**, not 2. Deliveries to
+different agents overlap freely, so it is a per-agent
 ceiling, not a tenant one, and nothing is lost above it — the backlog waits in
 Redis. If it ever matters, the lever is the port's import graph.
 
