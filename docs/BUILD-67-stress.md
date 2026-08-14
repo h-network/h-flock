@@ -46,7 +46,7 @@ would not see these today.
 - Strand an **api** client and a **control** participant; confirm both can strand
   and that nothing observes them
 
-**D. The `blpop`-to-`emit` gap**, now understood: `service.py:68` removes the
+**D. The `blpop`-to-`emit` gap**, now understood: `switch/service.py:68` removes the
 frame before any record exists, so a switch killed there loses it with **zero
 records**. Build 66 hit this twice.
 - ⚠ **Use FIFO bracketing to attribute** (`BUILD-CONVENTION` §3) — a frame's own

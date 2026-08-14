@@ -113,7 +113,7 @@ is the whole model: ports do the work, the switch moves frames.
 
 1. **build** — ⚠ **INTENDED, NOT BUILT.** `doors.send()` takes `source` from the
    **caller** and `require_allowed()` at `doors.py:34` evaluates policy against
-   it; the switch only corrects `l2.source` at `service.py:90`, **after** policy
+   it; the switch only corrects `l2.source` at `switch/service.py:90`, **after** policy
    has run. Consistent with §2.3 (the port filters mistakes, not adversaries),
    but the port does **not** stamp identity. Making it structural is h-vab's
    bound-`Port` handle, recorded as *not taken* in `DECISION-h-vab`
