@@ -2,6 +2,25 @@
 
 Worked from main at `e1c351b`; implementation checkpoint `42b23c0`.
 
+## Decision — negative result, do not merge
+
+Build 66 proved that draining removes the off-by-one strand, but the proposed
+fix is rejected. The final comparable benchmark measured 5.54/s against the
+6.45/s baseline, a 14.1% unconditional regression. The benefit appears only
+after an injected port death, while the final no-successor strand remains for
+an external observer to address.
+
+The throughput prediction was falsified. Exit-not-spin removed persistent
+waiters and reduced their load, but throughput did not recover. Delivery is
+serialized per participant by the `delivering` tag. Single-pop lets the startup
+costs of many kicked processes overlap; draining makes one holder deliver its
+batch sequentially. With startup dominating useful work, that lost concurrency
+costs more than process amortisation saves. Changing the cap does not alter
+that structure.
+
+The branch retains the experiment and evidence, but its final delivery code
+and tests restore main's single-pop behaviour. It must not merge.
+
 ## Implementation
 
 Only the kicked tmux path, `flock.port.deliver.run_port`, drains. It uses
