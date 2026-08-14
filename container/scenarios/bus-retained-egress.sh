@@ -26,7 +26,7 @@ dx redis-cli HSET "$ROSTER" "$AGENT" api >/dev/null
 dx redis-cli HDEL "$ROSTER" "$AGENT" >/dev/null
 echo "after_retire roster_value=[$(dx redis-cli HGET "$ROSTER" "$AGENT")] egress=$(dx redis-cli LLEN "$EGRESS")"
 
-envelope="{\"v\":1,\"kind\":\"Message\",\"stream_id\":\"$IDENTIFIER\",\"correlation_id\":\"$IDENTIFIER\",\"ts\":\"2026-08-11T00:00:00.000Z\",\"producer\":\"$AGENT\",\"recipient\":\"api\",\"payload\":{\"text\":\"$RUN\"}}"
+envelope="{\"v\":1,\"kind\":\"Message\",\"stream_id\":\"$IDENTIFIER\",\"correlation_id\":\"$IDENTIFIER\",\"ts\":\"2026-08-11T00:00:00.000Z\",\"source\":\"$AGENT\",\"destination\":\"api\",\"payload\":{\"text\":\"$RUN\"}}"
 dx redis-cli RPUSH "$EGRESS" "$envelope" >/dev/null
 sleep 2
 echo "while_absent egress=$(dx redis-cli LLEN "$EGRESS") inbox_matches=$(dx redis-cli XRANGE "$INBOX" - + | grep -c "$RUN" || true)"

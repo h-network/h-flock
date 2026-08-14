@@ -9,7 +9,7 @@ is trying to describe.
 
 ## 1. Process boundary
 
-The entrypoint starts the watchdog beside the router. It is a separate process
+The entrypoint starts the watchdog beside the switch. It is a separate process
 with its own cadence and failure boundary:
 
 ```
@@ -18,14 +18,14 @@ tmux window-activity metadata ───────────┼─> flock.wat
 CLI credential files ───────────────────┘                    └> container log
 ```
 
-The router is the tenant's data path. Watchdog policy, external observations or
+The switch is the tenant's data path. Watchdog policy, external observations or
 a slow tmux call must not delay forwarding, so none of this work runs in the
-router's pass. The watchdog imports shared bus and tmux library functions, but
+switch's pass. The watchdog imports shared bus and tmux library functions, but
 it neither receives nor sends envelopes.
 
 Each ordinary pass:
 
-1. reads roster fields and keeps participants whose VAB is `tmux`;
+1. reads roster fields and keeps participants whose port_type is `tmux`;
 2. obtains all window activity timestamps with one tmux `list-windows` call;
 3. evaluates ticket stalls; and
 4. reports retained `blocked` verdicts.
@@ -85,13 +85,13 @@ not reported again while that key remains; a different ticket can be.
 
 ## 3. `blocked`: a retained delivery verdict
 
-The router, not the watchdog, owns:
+The switch, not the watchdog, owns:
 
 ```
 <prefix>:agent:<name>:blocked    HASH    { since, stream_id }
 ```
 
-After the verification delay, the router writes this key on the first delivery
+After the verification delay, the switch writes this key on the first delivery
 it judges unverified. A later verified delivery deletes it. The first `since`
 is retained so duration means how long the condition has existed, not how
 recently it was noticed.
@@ -114,7 +114,7 @@ The deterministic lab run established the boundary:
 | bare shell | never marked |
 | agy | never marked |
 
-The limit is history, not a special terminal screen. The router judges only an
+The limit is history, not a special terminal screen. The switch judges only an
 agent that has previously produced an activity offset or feed. A new agent's
 first delivery is dropped unjudged even if the agent is unable to consume it;
 the watchdog therefore has no `blocked` verdict to report. Bare shells and agy
@@ -165,12 +165,12 @@ Alert records are facts, not diagnoses. Their common fields are `v`, `ts` and
 ## 5. Credential warnings
 
 Once an hour, the watchdog walks the `tmux` roster and reads each enrolled
-agent's `endpoint`, `launch` and `profile` keys. An agent with an endpoint name
+agent's `provider`, `launch` and `profile` keys. An agent with an provider name
 is skipped because it talks directly to the tenant's configured model server and
 uses no vendor account credential. For the remaining agents, the watchdog checks
 each distinct CLI account in use once; an unused profile directory is not
 evidence of a running account and is ignored. If an account ceases to require a
-credential because every user moved to endpoints, its stale
+credential because every user moved to providers, its stale
 `credential.alerted` field is cleared.
 
 | CLI | source | interpretation |
@@ -227,7 +227,7 @@ the tenant name; `TMUX_SOCKET` selects an explicit tmux socket when present.
 3. A fully checked stall needs old work, no current model activity, and a quiet
    window together; unavailable activity is disclosed in `unchecked`, while a
    known-missing window is reported explicitly.
-4. The router is the sole writer of `blocked`; the watchdog never derives or
+4. The switch is the sole writer of `blocked`; the watchdog never derives or
    clears that state.
 5. `blocked` is a limited delivery-verification verdict, not a diagnosis.
 6. Alerts go to the Redis Stream and container log for humans, never into an

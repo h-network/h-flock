@@ -11,11 +11,11 @@ envelope was not missing anything: all five records existed, and two of them
 shared a line.
 
 ```
-{"ts":"…04:47:12.477Z","module":"api","event":"sent",…}{"ts":"…04:47:12.484Z","module":"router","event":"forwarded",…}
+{"ts":"…04:47:12.477Z","module":"api","event":"sent",…}{"ts":"…04:47:12.484Z","module":"switch","event":"forwarded",…}
 ```
 
 Across the whole run: **2 torn lines in 290 (0.7%)**, involving four different
-modules — `tmuxhost`+`container` in one, `api`+`router` in the other. It is not
+modules — `tmuxhost`+`container` in one, `api`+`switch` in the other. It is not
 one bad pair of writers; it is any two.
 
 ## 2. Why
@@ -52,9 +52,9 @@ visible from reading it, and the next person tidying this file will reach for
 
 ## 5. Also worth a line while you are here
 
-`popped` was logged **before** the producer's own `sent` for the same envelope
+`popped` was logged **before** the source's own `sent` for the same envelope
 (`04:47:12.470` vs `.477`) — the append happens before the emit, so a fast
-router beats the sender's log write. That is correct behaviour and a trap for
+switch beats the sender's log write. That is correct behaviour and a trap for
 anything reconstructing order from timestamps. Say so in `CONTRACTS` §3:
 **the five records are a set, not a sequence.**
 

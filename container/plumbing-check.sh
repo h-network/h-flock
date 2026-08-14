@@ -41,7 +41,7 @@ T=$(docker exec $C printenv API_TOKEN)
 read -r AG1 AG2 <<<"$(docker exec $C redis-cli --no-raw HGETALL $ROSTER \
   | paste - - | grep '"tmux"' | awk -F'"' '{print $2}' | sort | head -2 | tr '\n' ' ')"
 [ -n "${AG1:-}" ] && [ -n "${AG2:-}" ] || { echo "plumbing-check: need two tmux agents in the roster" >&2; exit 2; }
-echo "using agents: $AG1 (sender) and $AG2 (recipient)"
+echo "using agents: $AG1 (sender) and $AG2 (destination)"
 
 H="Authorization: Bearer $T"
 dx() { docker exec "$C" "$@"; }
@@ -101,7 +101,7 @@ ckc "task record file"   "$(dx bash -lc 'cat /home/ubuntu/.flock/tasks.jsonl 2>/
 dx bash -lc "cd /workdir/$AG2 && AGENT_NAME=$AG2 office done" >/dev/null 2>&1
 
 echo "== 4. app client =="
-cu -X POST -H 'Content-Type: application/json' -d '{"kind":"StartAgent","payload":{"agent":"telegram","vab":"api"}}' $A/agents/host/envelopes >/dev/null
+cu -X POST -H 'Content-Type: application/json' -d '{"kind":"StartAgent","payload":{"agent":"telegram","port_type":"api"}}' $A/agents/host/envelopes >/dev/null
 sleep 3
 ckc "client enrolled"    "$(dx redis-cli HGET $ROSTER telegram)" "api"
 ck  "no window made"     "$(dx bash -c "TMUX_TMPDIR=/home/ubuntu/.flock/tmux tmux list-windows -t $TENANT" | grep -c telegram)" "0"
@@ -130,7 +130,7 @@ ckc "only the new one" "$(cu "$A/agents/telegram/messages?after=$CUR")" "second-
 ck  "and only one"     "$(cu "$A/agents/telegram/messages?after=$CUR" | python3 -c 'import sys,json;print(len(json.load(sys.stdin)["messages"]))')" "1"
 
 echo "== 8. isolation between clients =="
-cu -X POST -H 'Content-Type: application/json' -d '{"kind":"StartAgent","payload":{"agent":"webapp","vab":"api"}}' $A/agents/host/envelopes >/dev/null
+cu -X POST -H 'Content-Type: application/json' -d '{"kind":"StartAgent","payload":{"agent":"webapp","port_type":"api"}}' $A/agents/host/envelopes >/dev/null
 sleep 3
 # ⚠ Isolation is "webapp did not get telegram's message", not "webapp's mailbox
 # is empty". A raw broadcast to `all` reaches app clients too — documented
@@ -168,10 +168,10 @@ ck "dave window gone"   "$(dx bash -c "TMUX_TMPDIR=/home/ubuntu/.flock/tmux tmux
 
 echo "== 10. dead-letter =="
 # ⚠ Written straight onto an egress queue, deliberately. Both supported doors
-# refuse an unknown recipient before an envelope exists — the api returns 404 and
-# `office send` errors with "unknown recipient agent" — so neither can reach the
-# router's dead-letter path. This is a test of the ROUTER, so the envelope is
-# placed where the router pops from. Nothing in the product may do this.
+# refuse an unknown destination before an envelope exists — the api returns 404 and
+# `office send` errors with "unknown destination agent" — so neither can reach the
+# switch's dead-letter path. This is a test of the ROUTER, so the envelope is
+# placed where the switch pops from. Nothing in the product may do this.
 DEAD_ENV="{\"v\":2,\"kind\":\"Message\",\"stream_id\":\"plumbingdead1\",\"correlation_id\":\"plumbingdead1\",\"ts\":\"2026-01-01T00:00:00.000Z\",\"l2\":{\"source\":\"$AG1\",\"destination\":\"ghost\"},\"l3\":{\"source\":\"$POD:$TENANT:$AG1\",\"destination\":\"$POD:$TENANT:ghost\"},\"payload\":{\"text\":\"nobody home\"}}"
 dx redis-cli DEL "pod:$POD:tenant:$TENANT:agent:$AG1:dead" >/dev/null
 dx redis-cli RPUSH "pod:$POD:tenant:$TENANT:agent:$AG1:egress" "$DEAD_ENV" >/dev/null

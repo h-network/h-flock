@@ -17,7 +17,7 @@ from .verification import DeliveryVerifier
 from .windowlog import WindowLogTailer
 
 
-class Router:
+class Switch:
     def __init__(self, r, *, pod: str, tenant: str, poll_seconds: int = 5):
         self.r = r
         self.pod = pod
@@ -31,9 +31,9 @@ class Router:
     @staticmethod
     def _kick(agent: str) -> None:
         try:
-            subprocess.Popen(["flock.adapter", agent])
+            subprocess.Popen(["flock.port", agent])
         except OSError as exc:
-            log_record("router", "error", recipient=agent, reason=f"adapter kick failed: {exc}")
+            log_record("switch", "error", destination=agent, reason=f"port kick failed: {exc}")
 
     def step(self, timeout: float | None = None) -> bool:
         agents = sorted(self._agents())
@@ -58,11 +58,11 @@ class Router:
         except EnvelopeError as exc:
             dead = prefix(self.pod, self.tenant, sender, "dead")
             self.r.rpush(dead, raw)
-            emit("router", "popped", {}, str(exc))
-            emit("router", "dead_lettered", {}, str(exc))
+            emit("switch", "popped", {}, str(exc))
+            emit("switch", "dead_lettered", {}, str(exc))
             return True
         # The forwarding decision reads L2 and the roster only. L3 rides through
-        # untouched for a future router; this local switch never parses it.
+        # untouched for a future switch; this local switch never parses it.
         claimed_producer = envelope["l2"]["source"]
         if claimed_producer != sender:
             # The popped queue is the ingress port and therefore the attribution
@@ -70,32 +70,32 @@ class Router:
             # would let a raw queue writer destroy another participant's traffic.
             envelope["l2"]["source"] = sender
             raw = json.dumps(envelope, separators=(",", ":"))
-        emit("router", "popped", envelope)
+        emit("switch", "popped", envelope)
         if claimed_producer != sender:
             emit(
-                "router",
-                "producer_stamped",
+                "switch",
+                "source_stamped",
                 envelope,
-                reason=f"claimed producer {claimed_producer!r} stamped from egress sender {sender!r}",
+                reason=f"claimed source {claimed_producer!r} stamped from egress sender {sender!r}",
             )
-        recipient = envelope["l2"]["destination"]
-        if recipient == "all":
+        destination = envelope["l2"]["destination"]
+        if destination == "all":
             recipients = sorted(self._agents() - {sender})
             pipe = self.r.pipeline()
             for agent in recipients:
                 pipe.rpush(prefix(self.pod, self.tenant, agent, "ingress"), raw)
             pipe.execute()
-            emit("router", "forwarded", envelope, count=len(recipients))
+            emit("switch", "forwarded", envelope, count=len(recipients))
             for agent in recipients:
                 self._kick(agent)
             return True
-        if not is_member(self.r, pod=self.pod, tenant=self.tenant, agent=recipient):
+        if not is_member(self.r, pod=self.pod, tenant=self.tenant, agent=destination):
             self.r.rpush(prefix(self.pod, self.tenant, sender, "dead"), raw)
-            emit("router", "dead_lettered", envelope, "recipient is not in tenant roster")
+            emit("switch", "dead_lettered", envelope, "destination is not in tenant roster")
             return True
-        self.r.rpush(prefix(self.pod, self.tenant, recipient, "ingress"), raw)
-        emit("router", "forwarded", envelope)
-        self._kick(recipient)
+        self.r.rpush(prefix(self.pod, self.tenant, destination, "ingress"), raw)
+        emit("switch", "forwarded", envelope)
+        self._kick(destination)
         return True
 
     def run(
@@ -123,7 +123,7 @@ class Router:
                     if retention_trimmer is not None:
                         retention_trimmer.poll(agents)
                 except Exception as exc:
-                    emit("router", "error", {}, reason=f"router maintenance pass failed: {type(exc).__name__}")
+                    emit("switch", "error", {}, reason=f"switch maintenance pass failed: {type(exc).__name__}")
                 next_activity = now + activity_poll_seconds
             timeout = self.poll_seconds
             if activity_tailer is not None:
@@ -132,19 +132,19 @@ class Router:
 
 
 def main() -> None:
-    # Let the kernel reap kicked adapters. Without this the router accumulates a
+    # Let the kernel reap kicked ports. Without this the switch accumulates a
     # zombie per delivery under load: CPython only reaps children that have
     # already exited, at the top of the next Popen, so during a burst the
     # reaping lags the spawning. Measured at 65 zombies for a 100-envelope run,
     # and they persist at rest until traffic resumes.
     #
-    # Safe here precisely because the kick is fire and forget (LLD-bus-and-router
+    # Safe here precisely because the kick is fire and forget (LLD-bus-and-switch
     # §3.3, rail 3): SIG_IGN makes wait()/poll() unusable, and we never call
     # them — we do not want a return code.
     signal.signal(signal.SIGCHLD, signal.SIG_IGN)
 
     r = redis.Redis.from_url(os.environ["REDIS_URL"])
-    router = Router(
+    switch = Switch(
         r,
         pod=os.environ["POD"],
         tenant=os.environ["TENANT"],
@@ -153,31 +153,31 @@ def main() -> None:
     # Config for the same reason ROSTER_POLL_SECONDS is: two offices can
     # legitimately trade feed latency against filesystem polling. A knob beside
     # an existing knob is consistency; a knob on its own would be speculation.
-    router.run(
-        ActivityTailer(r, pod=router.pod, tenant=router.tenant),
+    switch.run(
+        ActivityTailer(r, pod=switch.pod, tenant=switch.tenant),
         activity_poll_seconds=float(os.environ.get("ACTIVITY_POLL_SECONDS", "2")),
         delivery_verifier=DeliveryVerifier(
             r,
-            pod=router.pod,
-            tenant=router.tenant,
+            pod=switch.pod,
+            tenant=switch.tenant,
             verify_after_seconds=float(os.environ.get("VERIFY_AFTER_SECONDS", "10")),
         ),
         presence_sampler=PresenceSampler(
             r,
-            pod=router.pod,
-            tenant=router.tenant,
+            pod=switch.pod,
+            tenant=switch.tenant,
             working_seconds=float(os.environ.get("PRESENCE_WORKING_SECONDS", "30")),
         ),
         window_log_tailer=WindowLogTailer(
             r,
-            pod=router.pod,
-            tenant=router.tenant,
+            pod=switch.pod,
+            tenant=switch.tenant,
             max_bytes=int(os.environ.get("WINDOW_LOG_MAX_BYTES", str(8 * 1024 * 1024))),
         ),
         retention_trimmer=RetentionTrimmer(
             r,
-            pod=router.pod,
-            tenant=router.tenant,
+            pod=switch.pod,
+            tenant=switch.tenant,
             board_done_max=int(os.environ.get("BOARD_DONE_MAX", "500")),
             dead_max=int(os.environ.get("DEAD_MAX", "500")),
         ),

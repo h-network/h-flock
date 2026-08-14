@@ -98,8 +98,8 @@ def test_agent_page_is_a_two_sided_conversation_with_inline_safe_activity():
     html = (WEB_DIR / "index.html").read_text(encoding="utf-8")
     assert 'api(`/agents/${encodeURIComponent(agent)}/conversation`)' in messages
     assert 'envelope.direction === "outbound"' in messages
-    assert 'producer === this.client' in messages
-    assert "unverified producer" in messages
+    assert 'source === this.client' in messages
+    assert "unverified source" in messages
     assert "unverified client identity" in messages
     assert 'event.kind !== "tool"' in messages
     assert "event.tool" in messages
@@ -154,7 +154,7 @@ def test_empty_office_and_scaled_roster_are_deliberate_states():
     assert 'id="empty-office-hire"' in html
     assert '$("empty-office").hidden = summary.staffed !== 0' in app
     assert '$("empty-office-hire").onclick' in app
-    assert 'detail.vab === "tmux"' in agents
+    assert 'detail.port_type === "tmux"' in agents
     assert '["blocked", "unknown", "pending", "working", "idle"]' in agents
     assert 'presence === "blocked" ? " · action required"' in agents
     assert "position: sticky" in styles

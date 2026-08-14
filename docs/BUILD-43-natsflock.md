@@ -11,7 +11,7 @@
 ## 1. The question
 
 The bus is a small re-implementation of what NATS does natively. The three
-things next on the list — a `(producer, recipient)` ACL, per-client keys at the
+things next on the list — a `(source, destination)` ACL, per-client keys at the
 door, and cross-tenant routing — are NATS features rather than code we should
 write. **So the question is not "is NATS good", it is: does h-flock survive the
 swap with its properties intact?**
@@ -34,9 +34,9 @@ away. That is why this is being asked now rather than later.
 | today | proposed |
 |---|---|
 | `pod:acme:tenant:hq:agent:bob:ingress` (list) | subject `flock.acme.hq.agent.bob` |
-| broadcast fan-out by the router | each agent also subscribes `flock.acme.hq.broadcast` |
-| egress list + router forwarding loop | publish; the server routes |
-| adapter `BLPOP` when kicked | **JetStream durable consumer per agent** — the queue must survive while no adapter is running, which is the whole reason for JetStream rather than core NATS |
+| broadcast fan-out by the switch | each agent also subscribes `flock.acme.hq.broadcast` |
+| egress list + switch forwarding loop | publish; the server routes |
+| port `BLPOP` when kicked | **JetStream durable consumer per agent** — the queue must survive while no port is running, which is the whole reason for JetStream rather than core NATS |
 
 ⚠ **Single node. No clustering.** The majority of open `nats-server` issues are
 RAFT, quorum and recovery in clustered mode — a surface this project would never
@@ -52,7 +52,7 @@ defects last night that fifty audit rows and three lane test-runs missed. If it
 degrades into generic broker metrics, **the spike says no** — we would have
 traded our best diagnostic for someone else's clustering code.
 
-⚠ **Publishing direct removes the router's vantage point.** Today one process
+⚠ **Publishing direct removes the switch's vantage point.** Today one process
 sees every envelope. Say plainly where the records come from afterwards: the
 edges, JetStream metadata, or a thin observer kept for the purpose. "We would
 add that later" is not an answer.
@@ -65,14 +65,14 @@ ones:
 - **integrity**: `container/scenarios/` + the log audit — 1,285 envelopes,
   `popped/forwarded/received/opened` complete for 1,283, zero dead-letters
 - **the harness**: `bash container/accept.sh` — plumbing 25/25, simulator 19/19
-- **the load**: four agents on the local endpoint for at least 30 minutes, then
+- **the load**: four agents on the local provider for at least 30 minutes, then
   the same integrity audit
 
 ⚠ **Report the raw output.** A verdict without the numbers is not a result.
 
 ## 6. Two decisions to make deliberately, not inherit
 
-1. **At-most-once is a choice, not an accident.** `LLD-bus-and-router` records
+1. **At-most-once is a choice, not an accident.** `LLD-bus-and-switch` records
    zero retries as load-bearing: retrying a destructive pop whose reply was lost
    can deliver an envelope twice. JetStream defaults to at-least-once with acks.
    Acking on receipt approximates today's behaviour — **choose it explicitly and
@@ -89,9 +89,9 @@ Say so plainly if any of these hold, and stop:
 
 - the five-record trace cannot be reconstructed without a bespoke observer that
   is as much code as the bus it replaced
-- the adapter's kick-and-exit lifecycle cannot map onto a durable consumer
+- the port's kick-and-exit lifecycle cannot map onto a durable consumer
   without becoming a daemon — **an office of idle agents must still cost nothing**
-- `nats-py` being asyncio-first forces the router or adapter into a rewrite
+- `nats-py` being asyncio-first forces the switch or port into a rewrite
   rather than an adaptation
 - two substrates end up worse than one: Redis for state, NATS for transport,
   and no clear seam between them

@@ -34,7 +34,7 @@ echo
 echo "== enrolling stations =="
 for i in $(seq 1 "$STATIONS"); do
   dx curl -s -o /dev/null -H "Authorization: Bearer $T" -X POST -H 'Content-Type: application/json' \
-    -d "{\"kind\":\"StartAgent\",\"payload\":{\"agent\":\"bench-$i\",\"vab\":\"api\"}}" \
+    -d "{\"kind\":\"StartAgent\",\"payload\":{\"agent\":\"bench-$i\",\"port_type\":\"api\"}}" \
     "$A/agents/host/envelopes"
 done
 sleep 5
@@ -61,7 +61,7 @@ sent = 0
 for rnd in range(rounds):
     for i in range(1, n + 1):
         dst = f"bench-{(i % n) + 1}"
-        send(r, pod=pod, tenant=tenant, producer=f"bench-{i}", recipient=dst,
+        send(r, pod=pod, tenant=tenant, source=f"bench-{i}", destination=dst,
              kind="Message", payload={"text": f"r{rnd}"})
         sent += 1
 dt = time.time() - t0

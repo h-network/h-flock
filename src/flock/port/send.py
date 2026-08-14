@@ -24,14 +24,14 @@ def main() -> None:
     args, positional = parser.parse_known_args()
 
     if args.help or (not positional and not args.payload):
-        sys.stderr.write("Usage: send <recipient> <text>...\n       send --kind <kind> <recipient> --payload '<json>'\n")
+        sys.stderr.write("Usage: send <destination> <text>...\n       send --kind <kind> <destination> --payload '<json>'\n")
         sys.exit(0 if args.help else 1)
 
     if args.payload is not None:
         if not positional:
-            sys.stderr.write("Error: Missing recipient argument.\n")
+            sys.stderr.write("Error: Missing destination argument.\n")
             sys.exit(1)
-        recipient = positional[0]
+        destination = positional[0]
         try:
             payload = json.loads(args.payload)
         except Exception as e:
@@ -39,7 +39,7 @@ def main() -> None:
             sys.exit(1)
         kind = args.kind
     else:
-        recipient = positional[0]
+        destination = positional[0]
         text_words = positional[1:]
         text_content = " ".join(text_words)
         kind = args.kind
@@ -51,8 +51,8 @@ def main() -> None:
             r,
             pod=pod,
             tenant=tenant,
-            producer=agent_name,
-            recipient=recipient,
+            source=agent_name,
+            destination=destination,
             payload=payload,
             kind=kind,
         )

@@ -20,7 +20,7 @@ dependencies = [
 ]
 
 [project.scripts]
-"flock.adapter" = "flock.adapter.__main__:main"
+"flock.port" = "flock.port.__main__:main"
 office = "flock.office:main"
 
 [tool.setuptools.packages.find]

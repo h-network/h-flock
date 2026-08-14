@@ -1,4 +1,4 @@
-"""One-envelope delivery routine for the control VAB."""
+"""One-envelope delivery routine for the control port_type."""
 
 import subprocess
 
@@ -15,9 +15,9 @@ def _ensure_tmux(command: str, result: tuple[int, str, str]) -> None:
 
 def _kick(agent: str) -> None:
     try:
-        subprocess.Popen(["flock.adapter", agent])
+        subprocess.Popen(["flock.port", agent])
     except OSError as exc:
-        log_record("adapter", "error", recipient=agent, reason=f"adapter kick failed: {exc}")
+        log_record("port", "error", destination=agent, reason=f"port kick failed: {exc}")
 
 
 def deliver_one(
@@ -106,5 +106,5 @@ def deliver_one(
         },
         timeout=1,
         blocking=False,
-        module="adapter",
+        module="port",
     )

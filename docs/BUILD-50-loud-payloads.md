@@ -8,7 +8,7 @@
 `control/openers.py` reads the participant's attachment as:
 
 ```python
-agent_vab = payload.get("vab", "tmux")
+agent_port_type = payload.get("port_type", "tmux")
 ```
 
 During build 49 the server was renamed to `port_type` and nine client files were
@@ -17,7 +17,7 @@ default, and the client **enrolled as a tmux participant**, getting a window
 instead of a mailbox. Green everywhere, wrong behaviour.
 
 ⚠ **The rename found it, but the rename is not the cause.** Any client typo —
-`"port_typ"`, `"vab"`, `"type"` — produces a silently mis-enrolled participant
+`"port_typ"`, `"port_type"`, `"type"` — produces a silently mis-enrolled participant
 today.
 
 ## 2. ⚠ Do NOT make the field required
@@ -31,8 +31,8 @@ Requiring it breaks hiring.
 sane default — from "you said something I do not understand", which never
 should.
 
-⚠ **This build bases on `main`, where the key is still `vab`.** An earlier
-version of this table showed `{"vab":"api"}` returning 422, which would break
+⚠ **This build bases on `main`, where the key is still `port_type`.** An earlier
+version of this table showed `{"port_type":"api"}` returning 422, which would break
 every currently valid caller — `clients/web/server.py:1206`,
 `clients/telegram/bot.py:69` and the container scenarios all send it. `tmux`
 caught that before implementing it. **Enforce the allow-list in `main`'s
@@ -41,16 +41,16 @@ vocabulary:**
 | payload | today | after this build |
 |---|---|---|
 | `{"agent":"x"}` | tmux | tmux — **unchanged** |
-| `{"agent":"x","vab":"api"}` | api | api — **unchanged, it is valid on `main`** |
+| `{"agent":"x","port_type":"api"}` | api | api — **unchanged, it is valid on `main`** |
 | `{"agent":"x","typo":"api"}` | **silently tmux** | **422, unknown key `typo`** |
 
 ⚠ **The post-rename behaviour then falls out for free.** When
 `rename/vocabulary` lands, the codemod rewrites the allow-list to `port_type`
-and `provider`, at which point a client still sending `vab` hits the unknown-key
+and `provider`, at which point a client still sending `port_type` hits the unknown-key
 path and gets its 422 — with no second change and no compatibility window.
 
 ⚠ **That coupling is now load-bearing:** this build adds fresh occurrences of
-`vab` and `endpoint` to `main` inside the allow-list, so the next regeneration
+`port_type` and `provider` to `main` inside the allow-list, so the next regeneration
 of `rename/vocabulary` must pick them up. Verify it does rather than assume it.
 
 ## 3. Scope
@@ -60,7 +60,7 @@ The lifecycle openers in `flock/control`: `StartAgent`, `StopAgent`,
 a `ValueError` naming the offending key, which the door already turns into a 422.
 
 ⚠ **Name the key in the error.** "invalid payload" sends someone reading source;
-"unknown payload key 'vab'" ends the investigation at the log line.
+"unknown payload key 'port_type'" ends the investigation at the log line.
 
 ⚠ **Do not touch `Message` or the envelope itself.** Payload shapes there are
 open by design — `kind` is the ethertype and openers own their payloads. This

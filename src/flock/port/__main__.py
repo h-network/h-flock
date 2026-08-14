@@ -1,11 +1,11 @@
 import os
 import sys
-from flock.adapter.runner import run_adapter
+from flock.port.deliver import run_port
 
 
 def main() -> None:
     if len(sys.argv) < 2:
-        sys.stderr.write("Usage: flock.adapter <agent>\n")
+        sys.stderr.write("Usage: flock.port <agent>\n")
         sys.exit(1)
 
     agent = sys.argv[1]
@@ -15,7 +15,7 @@ def main() -> None:
     session_name = os.environ.get("TMUX_SESSION", tenant)
     socket = os.environ.get("TMUX_SOCKET")
 
-    run_adapter(
+    run_port(
         agent=agent,
         pod=pod,
         tenant=tenant,

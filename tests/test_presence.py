@@ -2,7 +2,7 @@ import json
 from datetime import datetime, timezone
 
 from flock.bus import prefix
-from flock.router.presence import PresenceSampler
+from flock.switch.presence import PresenceSampler
 
 
 class PresenceRedis:

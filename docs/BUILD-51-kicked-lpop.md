@@ -1,4 +1,4 @@
-# Build 51 — a kicked adapter should not block
+# Build 51 — a kicked port should not block
 
 > **Base on `main`.** Branch `<lane>/build-51-kicked-lpop`, push to origin.
 > Owner: `bus` (`src/flock/bus/doors.py`).
@@ -11,7 +11,7 @@
 item = r.blpop(prefix(pod, tenant, agent, "ingress"), timeout=timeout)
 ```
 
-⚠ **The router kicks the adapter because it has just forwarded an envelope.**
+⚠ **The switch kicks the port because it has just forwarded an envelope.**
 There is nothing to wait for. A kick that loses the race to a sibling — same
 agent, two envelopes, two kicks — finds an empty queue and then sits blocked for
 a full second doing nothing.
@@ -41,7 +41,7 @@ does. This changes waiting, not delivery.
 
 It caps a one-second worst case on a path whose real work is 0.84 ms, and it is
 the last cheap thing on the delivery path — everything else remaining is
-structural (a long-lived adapter) or environmental (the 1.3–1.9 ms loopback
+structural (a long-lived port) or environmental (the 1.3–1.9 ms loopback
 Redis round trip, still unexplained).
 
 ⚠ **Deliberately kept out of build 48** so that build's throughput number

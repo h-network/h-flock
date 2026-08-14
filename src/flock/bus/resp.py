@@ -110,7 +110,7 @@ class Redis:
     def hexists(self, key, field): return self._command("HEXISTS", key, field)
     def delete(self, *keys): return self._command("DEL", *keys)
 
-    # Control is delivered by the same one-shot adapter and overwrites desired
+    # Control is delivered by the same one-shot port and overwrites desired
     # state. These two calls are therefore part of its measured path even though
     # the Build 48 inventory omitted them.
     def set(self, key, value): return self._command("SET", key, value)

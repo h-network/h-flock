@@ -61,8 +61,8 @@ value of these is that a second reader can disagree with your conclusion.
 Not a checklist to complete; a set of directions. Pick what is dangerous in
 *your* module.
 
-- **Failure injection.** Kill Redis mid-delivery. `SIGKILL` the router with
-  envelopes in flight. Kill a pane while an adapter is pasting into it. Restart
+- **Failure injection.** Kill Redis mid-delivery. `SIGKILL` the switch with
+  envelopes in flight. Kill a pane while an port is pasting into it. Restart
   the container with agents mid-task. Fill the disk the window-log spool writes
   to.
 - **Time.** Hours, not minutes. Stream trimming, activity offsets, presence

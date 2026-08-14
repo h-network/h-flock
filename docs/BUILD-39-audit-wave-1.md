@@ -29,8 +29,8 @@ one that would have caught this. Say in your report which test that is.
 |---|---|---|
 | 1 ✅ | `.append()` on the `set` from `list_windows` — the `__init__` path raises | `tmuxhost/host.py:201`, `tmux/ops.py:56` |
 | 2 ✅ | `REDIS_PASSWORD` reaches every agent window and is never unset | `container/entrypoint.sh:108-114`, `:232`, and `:27` for the pattern to copy |
-| 5 | two codex agents without profiles share one session directory, so activity is attributed to the wrong agent | `router/activity.py:86`, `tmux/ops.py:236-240` |
-| 16 | an adapter that cannot get the busy tag spins forever | `adapter/runner.py:161-168`, `bus/resources.py:45` |
+| 5 | two codex agents without profiles share one session directory, so activity is attributed to the wrong agent | `switch/activity.py:86`, `tmux/ops.py:236-240` |
+| 16 | an port that cannot get the busy tag spins forever | `port/runner.py:161-168`, `bus/resources.py:45` |
 
 ⚠ **Row 2 is the one I would not leave sitting.** It undoes the isolation claim
 the moment anyone sets a Redis password — and the fix pattern already exists
@@ -44,10 +44,10 @@ never exercised*, because that is the more useful answer.
 | # | finding | first lines to open |
 |---|---|---|
 | 3 | `StopAgent` destroys an api client's unread mailbox; docs promise retention | `bus/resources.py:13` |
-| 4 | retiring `host` deletes the control endpoint, and the empty roster then spins the router against Redis — one chain | `bus/keys.py:8`, `control/openers.py:16`, `router/service.py:38-40` |
-| 6 | destructive `BLPOP` before `popped` is emitted — an envelope can vanish unrecorded | `router/service.py:45`, `:48`, `:52-67` |
-| 14 | the activity tailer restarts from byte 0 when the newest session file changes | `router/activity.py` |
-| 15 | one undecodable byte in the window-log spool re-emits forever and never truncates | `router/windowlog.py` |
+| 4 | retiring `host` deletes the control provider, and the empty roster then spins the switch against Redis — one chain | `bus/keys.py:8`, `control/openers.py:16`, `switch/service.py:38-40` |
+| 6 | destructive `BLPOP` before `popped` is emitted — an envelope can vanish unrecorded | `switch/service.py:45`, `:48`, `:52-67` |
+| 14 | the activity tailer restarts from byte 0 when the newest session file changes | `switch/activity.py` |
+| 15 | one undecodable byte in the window-log spool re-emits forever and never truncates | `switch/windowlog.py` |
 
 ⚠ **Row 6 is the interesting one.** At-most-once is deliberate (`AUDIT.md` 44:
 zero connection retries is load-bearing). The question is not "make it
@@ -62,7 +62,7 @@ change the delivery guarantee to close this row.
 | 8 | one oversized `%output` line kills the reader permanently | `session/control.py:220`, `:71-76` |
 | 9 | non-ASCII terminal output is corrupted | `session/control.py:193-203`, `session/app.py:159-164` |
 | 10 | a slow viewer grows the session process without bound — **found by both offices** | `session/control.py:40-45`, `session/app.py:159-167` |
-| 11 | the SSE endpoints do blocking Redis I/O on the event loop | `api/app.py:516`, `:659`, `:443` |
+| 11 | the SSE providers do blocking Redis I/O on the event loop | `api/app.py:516`, `:659`, `:443` |
 | 12 | one malformed roster row makes `/board` return `404` for the whole tenant | `api/app.py:705-712`, `bus/roster.py:6-8` |
 | 13 | the pane→agent map assumes one pane per window; duplicate names merge terminals — **both offices** | `session/control.py:128-139`, `:185-203` |
 

@@ -147,11 +147,11 @@ def test_send_treats_inner_flags_as_literal_message(office_env, monkeypatch, cap
         {
             "pod": "acme",
             "tenant": "hq",
-            "producer": "frontend",
-            "recipient": "backend",
+            "source": "frontend",
+            "destination": "backend",
             "payload": {"text": "run: office send -a frontend hi"},
             "kind": "Message",
-            "module": "adapter",
+            "module": "port",
         }
     ]
     assert capsys.readouterr().out.strip() == "stream-one"
@@ -161,7 +161,7 @@ def test_broadcast_resolves_tmux_peers_without_self_or_plumbing(office_env, monk
     calls = []
     monkeypatch.setattr(cli, "send", lambda r, **kwargs: calls.append(kwargs) or "stream")
     cli.main(["broadcast", "standup", "now"])
-    assert [call["recipient"] for call in calls] == ["backend"]
+    assert [call["destination"] for call in calls] == ["backend"]
     assert calls[0]["payload"] == {"text": "standup now"}
 
 
@@ -256,7 +256,7 @@ def test_lifecycle_commands_send_to_host(office_env, monkeypatch, argv, kind, pa
     calls = []
     monkeypatch.setattr(cli, "send", lambda r, **kwargs: calls.append(kwargs) or "control-stream")
     cli.main(argv)
-    assert calls[0]["recipient"] == "host"
+    assert calls[0]["destination"] == "host"
     assert calls[0]["kind"] == kind
     assert calls[0]["payload"] == payload
 
@@ -331,7 +331,7 @@ def test_take_normalizes_old_ticket_prints_and_logs_task_id(office_env, monkeypa
 def test_done_moves_open_task_and_logs_task_id(office_env, monkeypatch, tmp_path, capsys):
     monkeypatch.setenv("TASK_RECORD", str(tmp_path / "tasks.jsonl"))
     # ⚠ `office` no longer prints bus telemetry to stdout — its stdout is an
-    # agent's pane. The record goes to the window log the router tails.
+    # agent's pane. The record goes to the window log the switch tails.
     window_log = tmp_path / "window.jsonl"
     monkeypatch.setenv("FLOCK_LOG_FILE", str(window_log))
     raw = b'{"id":"b2","title":"finish"}'
@@ -353,11 +353,11 @@ def test_add_sends_envelope_and_never_writes_recipient_board(office_env, monkeyp
         {
             "pod": "acme",
             "tenant": "hq",
-            "producer": "frontend",
-            "recipient": "backend",
+            "source": "frontend",
+            "destination": "backend",
             "payload": {"title": "explain office send", "description": "full brief", "priority": "high"},
             "kind": "AddTicket",
-            "module": "adapter",
+            "module": "port",
         }
     ]
     assert office_env.moves == []
@@ -504,7 +504,7 @@ def test_office_imports_no_other_flock_module_than_bus():
 def test_only_office_agent_command_is_packaged():
     scripts = tomllib.loads(Path("pyproject.toml").read_text())["project"]["scripts"]
     assert scripts["office"] == "flock.office:main"
-    assert "flock.adapter" in scripts
+    assert "flock.port" in scripts
     for old in ("sendMessage", "sendBroadcast", "peers", "hire", "letGo", "pause", "resume"):
         assert old not in scripts
 

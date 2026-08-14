@@ -100,7 +100,7 @@ poll_blocked_key() {
     dx redis-cli HGETALL "$key" 2>/dev/null || true
 }
 
-# The router drops a pending.verify marker once it has judged it. Waiting for the
+# The switch drops a pending.verify marker once it has judged it. Waiting for the
 # stream to empty is the only deterministic signal that a verdict exists — polling
 # the blocked key for a while and calling an empty result "verified" is a race,
 # and it is what made an earlier run report the login-prompt gap as confirmed.
@@ -225,7 +225,7 @@ if [ "$PANE_COMM" = "sleep" ] && [ "$LAUNCH" = "claude" ]; then
 
     cu -X POST -H 'Content-Type: application/json' -d '{"text":"wake up"}' "$A/agents/sim-wedged/envelopes" >/dev/null
 
-    echo "  polling for router verification pass (blocked Redis key)..."
+    echo "  polling for switch verification pass (blocked Redis key)..."
     BLOCKED_KEY=$(poll_blocked_key "sim-wedged")
     ckc "sim-wedged is blocked" "$BLOCKED_KEY" "since"
 else
@@ -273,9 +273,9 @@ ck "sim-trust started without a trust picker (seeding works)" "$NO_PICKER" "1"
 cu -X POST -H 'Content-Type: application/json' -d '{"text":"hello trusted agent"}' "$A/agents/sim-trust/envelopes" >/dev/null
 
 # The delivery should verify, so the blocked key must stay empty. poll_blocked_key
-# returns as soon as it sees a value, so an empty result here means the router
+# returns as soon as it sees a value, so an empty result here means the switch
 # ran its pass and judged it verified.
-echo "  waiting for the router to judge the marker..."
+echo "  waiting for the switch to judge the marker..."
 poll_judged "sim-trust"
 ck "sim-trust marker judged" "$?" "0"
 BLOCKED_KEY=$(dx redis-cli HGETALL "pod:$POD:tenant:$TENANT:agent:sim-trust:blocked" 2>/dev/null || true)
@@ -318,7 +318,7 @@ if [ "$PROVED_NOLOGIN" -eq 1 ]; then
 
     cu -X POST -H 'Content-Type: application/json' -d '{"text":"hello login prompt"}' "$A/agents/sim-nologin/envelopes" >/dev/null
 
-    echo "  waiting for the router to judge the marker..."
+    echo "  waiting for the switch to judge the marker..."
     poll_judged "sim-nologin"
     ck "sim-nologin marker judged" "$?" "0"
 
@@ -379,7 +379,7 @@ if [ "$PROVED_CLAUDELOGIN" -eq 1 ]; then
 
     cu -X POST -H 'Content-Type: application/json' -d '{"text":"hello claude login prompt"}' "$A/agents/sim-nologin-claude/envelopes" >/dev/null
 
-    echo "  waiting for the router to judge the marker..."
+    echo "  waiting for the switch to judge the marker..."
     poll_judged "sim-nologin-claude"
     ck "sim-nologin-claude marker judged" "$?" "0"
 

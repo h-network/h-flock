@@ -7,7 +7,7 @@
 ## 1. Why now
 
 The parking condition was *"until the new frame works"*. Build 53 landed the
-frame: qualified addressing accepted, the adapter resolving, the switch reading
+frame: qualified addressing accepted, the port resolving, the switch reading
 L2 only. **The gate is met.**
 
 ⚠ **And the operator's reason is the better one: everyone understands the new
@@ -16,8 +16,8 @@ moving `main` the whole time — it is already **15 commits behind**.
 
 ⚠ **`main` is currently incoherent and that is the strongest argument.** Build 53
 named the frame's fields `l2.source` / `l2.destination` — the *new* vocabulary —
-while the code around them still says `producer` (70 occurrences) and
-`recipient` (63). The wire speaks one language and the code speaks another.
+while the code around them still says `source` (70 occurrences) and
+`destination` (63). The wire speaks one language and the code speaks another.
 
 ## 2. What to do
 
@@ -45,7 +45,7 @@ known to have been checked.**
 ## 4. ⚠ What this breaks, and it must be stated not implied
 
 **Tier C changes Redis key resources and environment variables**
-(`vab` → `port_type`, `endpoint` → `provider`, `ENDPOINT_*` → `PROVIDER_*`).
+(`port_type` → `port_type`, `provider` → `provider`, `PROVIDER_*` → `PROVIDER_*`).
 **A tenant running across this change breaks.** There is no dual-read.
 
 **Say plainly in the report that a fresh tenant is required**, and confirm

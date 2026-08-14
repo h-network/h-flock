@@ -1,4 +1,4 @@
-"""Control VAB delivery for agent lifecycle envelopes."""
+"""Control port_type delivery for agent lifecycle envelopes."""
 
 from .openers import pause_agent, resume_agent, start_agent, stop_agent
 from .runner import deliver_one

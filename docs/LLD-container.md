@@ -13,7 +13,7 @@ inside belongs to it, every key written inside sits under its prefix, and
 reaching a different tenant means reaching a different container.
 
 This is a deliberate simplification, not a limit discovered later: co-locating
-Redis, the router and the agents means they address each other over loopback,
+Redis, the switch and the agents means they address each other over loopback,
 nothing needs discovery, and the whole tenant starts and stops as one thing.
 
 ⚠ **A rebuild is a new office wearing the same name.** Rebuilding a tenant container
@@ -32,7 +32,7 @@ tenant container instead.
   │        ▲              ▲                    ▲               │
   │        │              │                    │               │
   │   ┌────┴────┐   ┌─────┴──────┐      ┌──────┴──────┐        │
-  │   │ router  │   │  adapter   │      │     api     │        │
+  │   │ switch  │   │  port   │      │     api     │        │
   │   └─────────┘   └─────┬──────┘      └──────┬──────┘        │
   │                       │ send-keys          │               │
   │                 ┌─────▼──────┐             │               │
@@ -53,13 +53,13 @@ tenant container instead.
 | Process | Module | Notes |
 |---|---|---|
 | redis | — | the bus. Loopback, no persistence needed for a skeleton |
-| router | `LLD-bus-and-router` | one per tenant, therefore one per container |
-| tmux host | `LLD-tmux-host` | creates the server, session and windows for `vab: tmux` entries |
-| tmux adapter | `LLD-adapter-tmux` | kicked per delivery; pastes into windows (`vab: tmux`), appends to mailbox stream (`vab: api`), writes pending.verify marker, exits |
+| switch | `LLD-bus-and-switch` | one per tenant, therefore one per container |
+| tmux host | `LLD-tmux-host` | creates the server, session and windows for `port_type: tmux` entries |
+| tmux port | `LLD-port-tmux` | kicked per delivery; pastes into windows (`port_type: tmux`), appends to mailbox stream (`port_type: api`), writes pending.verify marker, exits |
 | watchdog | `flock.watchdog` | background process; samples presence, tasks, activity; writes alerts for human operator |
 | api | `LLD-api` | envelopes in, state out, client mailbox polling & SSE streaming |
 | session | `LLD-session` | terminal output and keystrokes. Its own port |
-| agents | — | one per tmux window for `vab: tmux` roster entries |
+| agents | — | one per tmux window for `port_type: tmux` roster entries |
 
 ## 3. Only doors are published, and each one separately
 
@@ -124,7 +124,7 @@ forward traffic it has no business understanding.
 You may want the api reachable and terminals not, or terminals on a private
 network while data calls go out. One mapping each rather than one for both.
 
-A single external endpoint is still available later, as a **proxy in front of
+A single external provider is still available later, as a **proxy in front of
 both** rather than one module absorbing the other. Nothing here changes for it:
 neither process learns the proxy exists, and it is also where TLS belongs
 (`LLD-api` §7 — terminate it outside the process). Do it once there is something
@@ -170,9 +170,9 @@ docker exec -it -e TMUX_TMPDIR=/home/ubuntu/.flock/tmux <container> tmux attach 
 root — a socket there cannot be created by the user the agents run as.
 
 `ROSTER_POLL_SECONDS` is here rather than in either polling module because the
-router and tmux host must use one value (`LLD-bus-and-router` §3.2). Set in one
+switch and tmux host must use one value (`LLD-bus-and-switch` §3.2). Set in one
 place and inherited, they agree by construction; configured per module, they
-agree until someone edits one of them. The adapter is invoked per delivery and
+agree until someone edits one of them. The port is invoked per delivery and
 does not poll the roster.
 
 ## 5. Starting up
@@ -182,7 +182,7 @@ Order matters only where a dependency is real:
 ```
   redis            first — everything else connects to it
   tmux host        creates the server, session and one window per tmux agent
-  router           needs redis; subscribe set comes from the roster
+  switch           needs redis; subscribe set comes from the roster
   watchdog         needs redis; samples presence, tasks, activity; writes alerts
   api              needs redis
   session          needs the tmux server; holds one control-mode client
@@ -195,7 +195,7 @@ an already-running container is a no-op, and every reconciliation pass converges
 rather than duplicating. A container restart is different: Redis persistence is
 disabled and tmux is restarted, so boot configuration reconstructs the office.
 
-Enrolling an external application client (`StartAgent` with `vab: "api"`) adds a roster row only, creating no window or CLI process.
+Enrolling an external application client (`StartAgent` with `port_type: "api"`) adds a roster row only, creating no window or CLI process.
 
 ### Entrypoint CLI Defaulting & Credential Verification
 

@@ -19,11 +19,11 @@ back the other way.
 
 **It is not an agent.** The api has an address because agents reply to it —
 *"not to be a peer, but to be reachable"* (`LLD-api` §1). Nothing ever replies to
-a terminal. So this module has no queue pair, no roster row, no VAB, and nothing
+a terminal. So this module has no queue pair, no roster row, no port_type, and nothing
 on the bus knows it exists. It never calls `send` or `receive`.
 
-The cleanest way to think about it: **it is the adapter for a human.** The tmux
-adapter takes an envelope off a queue and pastes it into a window; this takes a
+The cleanest way to think about it: **it is the port for a human.** The tmux
+port takes an envelope off a queue and pastes it into a window; this takes a
 person's keystrokes off a socket and does the same. Same mechanism, different
 origin — one from the bus, one from a browser.
 
@@ -48,7 +48,7 @@ covers the whole tenant and the fan-out to subscribers is ours to do in memory.
   fan out to subscribers of that agent
 ```
 
-This is where control mode finally earns its place. `LLD-adapter-tmux` §6
+This is where control mode finally earns its place. `LLD-port-tmux` §6
 rejected it for *delivery* and said its real advantage — streaming a window
 somewhere — *"belongs to whatever eventually renders agent windows in an app —
 weigh it there, with that requirement in hand."* The requirement is now in hand,
@@ -84,7 +84,7 @@ everything.
 
 **A subscriber gets a snapshot first, then the stream.** `capture-pane` (without `-S -`) captures the visible screen (not the full scrollback history), prefixed with clear-and-home (`\x1b[2J\x1b[H`), followed by the screen lines and cursor position restoration (`\x1b[{row};{col}H` queried via `display-message -p -t <pane> "#{cursor_y} #{cursor_x}"`), so row 1 of the client matches row 1 of the pane and live updates stay aligned without offset.
 
-⚠ `capture-pane` is used exclusively by this module to render visible terminal screen snapshots to human operators over the session door. Observation modules outside the session door (watchdog, router, adapters) never execute `capture-pane`.
+⚠ `capture-pane` is used exclusively by this module to render visible terminal screen snapshots to human operators over the session door. Observation modules outside the session door (watchdog, switch, adapters) never execute `capture-pane`.
 
 ## 4. Writing: keystrokes
 
@@ -93,7 +93,7 @@ control-mode client.
 
 **Keystrokes do not go through the bus.** A keypress is not a message. Arrow
 keys, `Ctrl-C`, tab completion and escape sequences are not signals between
-agents, and one envelope per keypress would be absurd — `LLD-bus-and-router` §8
+agents, and one envelope per keypress would be absurd — `LLD-bus-and-switch` §8
 is explicit that the bus is not a general transport.
 
 ⚠ **Input is arbitrary code execution in an agent's window**, exactly like the
@@ -178,12 +178,12 @@ So an app wanting both a live terminal *and* a readable account of what an agent
 is doing needs both feeds. Reconstructing "it ran `Bash`, then `Edit`" from
 terminal escape sequences is guesswork; watching a transcript tail is not live.
 
-The Activity Feed is served by `flock.api` (`GET /agents/{agent}/activity` and `/stream`, Build 18), populated by the router tailing CLI session log files into Redis stream `<prefix>:agent:<agent>:activity`. `flock.session` remains strictly focused on moving live terminal bytes.
+The Activity Feed is served by `flock.api` (`GET /agents/{agent}/activity` and `/stream`, Build 18), populated by the switch tailing CLI session log files into Redis stream `<prefix>:agent:<agent>:activity`. `flock.session` remains strictly focused on moving live terminal bytes.
 
 ## 9. What this is not
 
 Not an agent. No address, no queues, no envelopes, in either direction.
 
-Not the adapter. It never opens an envelope and never reads an ingress queue.
+Not the port. It never opens an envelope and never reads an ingress queue.
 
 Not a terminal emulator. It moves bytes; rendering them is the app's job.

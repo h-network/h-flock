@@ -31,7 +31,7 @@ export class LifecyclePanel {
 
   select(agent) {
     this.selected = agent;
-    const tmux = this.agents.detail(agent)?.vab === "tmux";
+    const tmux = this.agents.detail(agent)?.port_type === "tmux";
     for (const id of ["pause-agent", "resume-agent", "retire-agent"]) document.getElementById(id).disabled = !tmux;
     this.status.ready(tmux ? "Lifecycle controls ready" : "Lifecycle applies to tmux agents");
   }
@@ -48,7 +48,7 @@ export class LifecyclePanel {
       error.textContent = "Use lowercase letters, digits and hyphens; do not use a reserved or all-digit name.";
       return;
     }
-    const payload = { agent, vab: "tmux", cli: document.getElementById("hire-cli").value };
+    const payload = { agent, port_type: "tmux", cli: document.getElementById("hire-cli").value };
     const profile = document.getElementById("hire-profile").value.trim();
     if (profile) payload.profile = profile;
     try {

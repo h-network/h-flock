@@ -2,7 +2,7 @@ from unittest.mock import patch
 
 import pytest
 
-from flock.adapter.openers import message_opener
+from flock.port.openers import message_opener
 from flock.bus import build as build_envelope
 from flock.tmux import TmuxCommandError, create_window, list_windows
 
@@ -30,7 +30,7 @@ def test_create_window_does_not_create_when_window_listing_fails(mock_run_tmux, 
     assert [call.args[0] for call in mock_run_tmux.call_args_list] == ["list-windows"]
 
 
-@patch("flock.adapter.openers.list_windows")
+@patch("flock.port.openers.list_windows")
 @patch("flock.tmux.ops.run_tmux")
 def test_message_opener_raises_when_tmux_paste_fails_and_cleans_buffer(mock_run_tmux, mock_list_windows):
     mock_list_windows.return_value = {"bob"}
@@ -39,7 +39,7 @@ def test_message_opener_raises_when_tmux_paste_fails_and_cleans_buffer(mock_run_
         (1, "", "can't find pane"),
         (0, "", ""),
     ]
-    envelope = build_envelope(kind="Message", producer="alice", recipient="bob", payload={"text": "hello"})
+    envelope = build_envelope(kind="Message", source="alice", destination="bob", payload={"text": "hello"})
 
     with pytest.raises(TmuxCommandError, match="paste-buffer.*can't find pane"):
         message_opener(StubRedis(), pod="acme", tenant="hq", agent="bob", envelope=envelope, session_name="hq")

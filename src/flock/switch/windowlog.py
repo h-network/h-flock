@@ -42,7 +42,7 @@ class WindowLogTailer:
                         # forever. Record and skip exactly that line; later valid
                         # records and size-based truncation can then progress.
                         log_record(
-                            "router",
+                            "switch",
                             "window_log_decode_error",
                             reason=f"invalid UTF-8 at byte {committed + exc.start}",
                             byte_count=len(raw),
@@ -56,8 +56,8 @@ class WindowLogTailer:
             if current_size > self.max_bytes and committed == current_size:
                 self.path.write_bytes(b"")
                 self.r.set(self.offset_key, 0)
-                log_record("router", "window_log_truncated", byte_count=current_size)
+                log_record("switch", "window_log_truncated", byte_count=current_size)
         except (OSError, TypeError, ValueError):
-            # A missing/rotating file is an absent observation, never a router
+            # A missing/rotating file is an absent observation, never a switch
             # failure. The next existing pass tries again from the same offset.
             return

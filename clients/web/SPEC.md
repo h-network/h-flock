@@ -9,7 +9,7 @@ this build. If the console needs something the api does not offer, **say so
 first** — a gap is a finding. Small, reviewed additions are allowed when the
 alternative is the client rediscovering what the api already knows.
 
-⚠ **One such change is already in:** `GET /agents/{agent}` returns `vab`. Use it.
+⚠ **One such change is already in:** `GET /agents/{agent}` returns `port_type`. Use it.
 An earlier draft of this rule was absolute, and cost a lane an afternoon nearly
 building a probe-every-agent workaround for a field the api now states.
 
@@ -106,7 +106,7 @@ An operator should be able to staff an office without a shell.
 
 | action | envelope to `POST /agents/host/envelopes` |
 |---|---|
-| **hire** | `{"kind":"StartAgent","payload":{"agent":"<name>","vab":"tmux","cli":"claude","profile":"<optional>"}}` |
+| **hire** | `{"kind":"StartAgent","payload":{"agent":"<name>","port_type":"tmux","cli":"claude","profile":"<optional>"}}` |
 | **retire** | `{"kind":"StopAgent","payload":{"agent":"<name>"}}` |
 | **pause / resume** | `PauseAgent` / `ResumeAgent`, same shape |
 
@@ -499,9 +499,9 @@ board and lifecycle are secondary to it.
   terminal
 - **history on open** — catch up by cursor, so opening a conversation shows what
   was said before, not an empty box
-- ⚠ **who said it must be honest.** `producer` is unverified (`HLD` invariant 2),
+- ⚠ **who said it must be honest.** `source` is unverified (`HLD` invariant 2),
   so a message from an api client is *claimed* identity. Render agent messages
-  and client messages differently, and do not present a producer string as proof
+  and client messages differently, and do not present a source string as proof
   of anything
 
 ## 26. Everything else demotes

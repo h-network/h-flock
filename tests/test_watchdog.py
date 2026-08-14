@@ -284,10 +284,10 @@ def test_profile_codex_is_unknown_even_without_an_auth_file(tmp_path, capsys):
     capsys.readouterr()
 
 
-def test_endpoint_agent_needs_no_vendor_credential_and_clears_stale_status(tmp_path):
+def test_provider_agent_needs_no_vendor_credential_and_clears_stale_status(tmp_path):
     r = WatchRedis()
     r.values[_key("architect", "launch")] = "claude"
-    r.values[_key("architect", "endpoint")] = "local-vllm"
+    r.values[_key("architect", "provider")] = "local-vllm"
     alerted_key = prefix("acme", "hq", resource="credential.alerted")
     r.hashes[alerted_key] = {"default:claude": "absent"}
 

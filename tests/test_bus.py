@@ -4,9 +4,9 @@ import unittest
 from contextlib import redirect_stdout
 from unittest.mock import patch
 
-from flock.bus import EnvelopeError, build, emit, is_member, members, parse, prefix, receive, send, vab
+from flock.bus import EnvelopeError, build, emit, is_member, members, parse, prefix, receive, send, port_type
 from flock.bus.envelope import parse_for_switch
-from flock.router.service import Router
+from flock.switch.service import Switch
 
 
 class FakeRedis:
@@ -105,7 +105,7 @@ class EnvelopeTest(unittest.TestCase):
 
     def test_flat_v1_is_not_accepted_on_v2_wire(self):
         with self.assertRaisesRegex(EnvelopeError, "unsupported frame version"):
-            parse(json.dumps({"v": 1, "producer": "alice", "recipient": "bob"}))
+            parse(json.dumps({"v": 1, "source": "alice", "destination": "bob"}))
 
     def test_switch_parser_does_not_validate_or_read_l3(self):
         frame = build("Message", "alice", "bob", {})
@@ -125,7 +125,7 @@ class EnvelopeTest(unittest.TestCase):
     def test_lifecycle_log_omits_stream_id(self):
         output = io.StringIO()
         with redirect_stdout(output):
-            emit("router", "started", {})
+            emit("switch", "started", {})
         self.assertNotIn("stream_id", json.loads(output.getvalue()))
 
 
@@ -134,19 +134,19 @@ class DoorsAndRouterTest(unittest.TestCase):
         self.r = FakeRedis()
         self.roster = prefix("acme", "hq", resource="roster")
         self.r.hashes[self.roster] = {"alice": "tmux", "bob": "tmux", "carol": "tmux"}
-        self.popen = patch("flock.router.service.subprocess.Popen").start()
+        self.popen = patch("flock.switch.service.subprocess.Popen").start()
         self.addCleanup(patch.stopall)
 
     def test_roster_reads(self):
         self.assertEqual(members(self.r, pod="acme", tenant="hq"), {"alice", "bob", "carol"})
         self.assertTrue(is_member(self.r, pod="acme", tenant="hq", agent="alice"))
-        self.assertEqual(vab(self.r, pod="acme", tenant="hq", agent="alice"), "tmux")
-        self.assertIsNone(vab(self.r, pod="acme", tenant="hq", agent="nobody"))
+        self.assertEqual(port_type(self.r, pod="acme", tenant="hq", agent="alice"), "tmux")
+        self.assertIsNone(port_type(self.r, pod="acme", tenant="hq", agent="nobody"))
 
     def test_empty_roster_waits_instead_of_spinning(self):
         self.r.hashes[self.roster] = {}
-        with patch("flock.router.service.time.sleep") as sleep:
-            self.assertFalse(Router(self.r, pod="acme", tenant="hq", poll_seconds=5).step())
+        with patch("flock.switch.service.time.sleep") as sleep:
+            self.assertFalse(Switch(self.r, pod="acme", tenant="hq", poll_seconds=5).step())
         sleep.assert_called_once_with(5)
 
     def test_send_route_receive_round_trip(self):
@@ -154,12 +154,12 @@ class DoorsAndRouterTest(unittest.TestCase):
             self.r,
             pod="acme",
             tenant="hq",
-            producer="alice",
-            recipient="bob",
+            source="alice",
+            destination="bob",
             payload={"text": "hello"},
         )
-        self.assertTrue(Router(self.r, pod="acme", tenant="hq").step())
-        self.popen.assert_called_once_with(["flock.adapter", "bob"])
+        self.assertTrue(Switch(self.r, pod="acme", tenant="hq").step())
+        self.popen.assert_called_once_with(["flock.port", "bob"])
         opened = []
         receive(
             self.r,
@@ -180,26 +180,26 @@ class DoorsAndRouterTest(unittest.TestCase):
                 self.r,
                 pod="acme",
                 tenant="hq",
-                producer="alice",
-                recipient="acme:sales:bob",
+                source="alice",
+                destination="acme:sales:bob",
                 payload={},
             )
         self.assertNotIn(prefix("acme", "hq", "alice", "egress"), self.r.lists)
         record = json.loads(output.getvalue())
         self.assertEqual(record["event"], "send_refused")
-        self.assertEqual(record["producer"], "alice")
-        self.assertEqual(record["recipient"], "acme:sales:bob")
+        self.assertEqual(record["source"], "alice")
+        self.assertEqual(record["destination"], "acme:sales:bob")
 
-    def test_router_forwards_on_l2_without_reading_l3_destination(self):
+    def test_switch_forwards_on_l2_without_reading_l3_destination(self):
         frame = build(
             "Message", "alice", "bob", {}, pod="acme", tenant="hq"
         )
-        # If the local router consults L3, this contradictory address sends the
+        # If the local switch consults L3, this contradictory address sends the
         # frame to carol. L3 is deliberately opaque at this layer.
         frame["l3"]["destination"] = "acme:hq:carol"
         self.r.rpush(prefix("acme", "hq", "alice", "egress"), json.dumps(frame))
 
-        self.assertTrue(Router(self.r, pod="acme", tenant="hq").step())
+        self.assertTrue(Switch(self.r, pod="acme", tenant="hq").step())
 
         self.assertIn(prefix("acme", "hq", "bob", "ingress"), self.r.lists)
         self.assertNotIn(prefix("acme", "hq", "carol", "ingress"), self.r.lists)
@@ -216,11 +216,11 @@ class DoorsAndRouterTest(unittest.TestCase):
                     r,
                     pod="acme",
                     tenant="hq",
-                    producer="alice",
-                    recipient=destination,
+                    source="alice",
+                    destination=destination,
                     payload={"text": "same local delivery"},
                 )
-                self.assertTrue(Router(r, pod="acme", tenant="hq").step())
+                self.assertTrue(Switch(r, pod="acme", tenant="hq").step())
                 receive(
                     r,
                     pod="acme",
@@ -260,12 +260,12 @@ class DoorsAndRouterTest(unittest.TestCase):
             self.r,
             pod="acme",
             tenant="hq",
-            producer="alice",
-            recipient="sme-2",
+            source="alice",
+            destination="sme-2",
             payload={"text": "review"},
         )
-        self.assertTrue(Router(self.r, pod="acme", tenant="hq").step())
-        self.popen.assert_called_once_with(["flock.adapter", "sme-2"])
+        self.assertTrue(Switch(self.r, pod="acme", tenant="hq").step())
+        self.popen.assert_called_once_with(["flock.port", "sme-2"])
         raw = self.r.lists[prefix("acme", "hq", "sme-2", "ingress")][0]
         envelope = json.loads(raw)
         self.assertEqual(envelope["stream_id"], stream_id)
@@ -276,50 +276,50 @@ class DoorsAndRouterTest(unittest.TestCase):
             self.r,
             pod="acme",
             tenant="hq",
-            producer="alice",
-            recipient="nobody",
+            source="alice",
+            destination="nobody",
             payload={},
         )
-        Router(self.r, pod="acme", tenant="hq").step()
+        Switch(self.r, pod="acme", tenant="hq").step()
         self.assertEqual(len(self.r.lists[prefix("acme", "hq", "alice", "dead")]), 1)
         self.popen.assert_not_called()
 
-    def test_router_stamps_forged_producer_from_egress_queue(self):
+    def test_switch_stamps_forged_producer_from_egress_queue(self):
         envelope = build("Message", "carol", "bob", {"text": "forged"})
         self.r.rpush(prefix("acme", "hq", "alice", "egress"), json.dumps(envelope))
 
         output = io.StringIO()
         with redirect_stdout(output):
-            self.assertTrue(Router(self.r, pod="acme", tenant="hq").step())
+            self.assertTrue(Switch(self.r, pod="acme", tenant="hq").step())
 
         raw = self.r.lists[prefix("acme", "hq", "bob", "ingress")][0]
         self.assertEqual(json.loads(raw)["l2"]["source"], "alice")
         records = [json.loads(line) for line in output.getvalue().splitlines()]
         self.assertEqual(
             [record["event"] for record in records],
-            ["popped", "producer_stamped", "forwarded"],
+            ["popped", "source_stamped", "forwarded"],
         )
         stamped = records[1]
-        self.assertEqual(stamped["producer"], "alice")
+        self.assertEqual(stamped["source"], "alice")
         self.assertEqual(stamped["stream_id"], envelope["stream_id"])
         self.assertEqual(
             stamped["reason"],
-            "claimed producer 'carol' stamped from egress sender 'alice'",
+            "claimed source 'carol' stamped from egress sender 'alice'",
         )
 
-    def test_router_does_not_log_stamp_when_producer_matches_queue(self):
+    def test_switch_does_not_log_stamp_when_producer_matches_queue(self):
         send(
             self.r,
             pod="acme",
             tenant="hq",
-            producer="alice",
-            recipient="bob",
+            source="alice",
+            destination="bob",
             payload={"text": "honest"},
         )
 
         output = io.StringIO()
         with redirect_stdout(output):
-            self.assertTrue(Router(self.r, pod="acme", tenant="hq").step())
+            self.assertTrue(Switch(self.r, pod="acme", tenant="hq").step())
 
         events = [json.loads(line)["event"] for line in output.getvalue().splitlines()]
         self.assertEqual(events, ["popped", "forwarded"])
@@ -328,7 +328,7 @@ class DoorsAndRouterTest(unittest.TestCase):
         envelope = build("Message", "carol", "all", {"text": "forged broadcast"})
         self.r.rpush(prefix("acme", "hq", "alice", "egress"), json.dumps(envelope))
 
-        self.assertTrue(Router(self.r, pod="acme", tenant="hq").step())
+        self.assertTrue(Switch(self.r, pod="acme", tenant="hq").step())
 
         self.assertNotIn(prefix("acme", "hq", "alice", "ingress"), self.r.lists)
         for agent in ("bob", "carol"):
@@ -354,30 +354,30 @@ class DoorsAndRouterTest(unittest.TestCase):
             self.r,
             pod="acme",
             tenant="hq",
-            producer="alice",
-            recipient="api",
+            source="alice",
+            destination="api",
             payload={},
         )
-        Router(self.r, pod="acme", tenant="hq").step()
+        Switch(self.r, pod="acme", tenant="hq").step()
         self.assertEqual(len(self.r.lists[prefix("acme", "hq", "api", "ingress")]), 1)
-        self.popen.assert_called_once_with(["flock.adapter", "api"])
+        self.popen.assert_called_once_with(["flock.port", "api"])
 
     def test_kick_spawn_failure_is_logged_and_does_not_lose_ingress(self):
-        self.popen.side_effect = FileNotFoundError("flock.adapter not found")
+        self.popen.side_effect = FileNotFoundError("flock.port not found")
         send(
             self.r,
             pod="acme",
             tenant="hq",
-            producer="alice",
-            recipient="bob",
+            source="alice",
+            destination="bob",
             payload={},
         )
         output = io.StringIO()
         with redirect_stdout(output):
-            self.assertTrue(Router(self.r, pod="acme", tenant="hq").step())
+            self.assertTrue(Switch(self.r, pod="acme", tenant="hq").step())
         records = [json.loads(line) for line in output.getvalue().splitlines()]
         error = next(record for record in records if record["event"] == "error")
-        self.assertEqual(error["recipient"], "bob")
+        self.assertEqual(error["destination"], "bob")
         self.assertNotIn("stream_id", error)
         self.assertEqual(len(self.r.lists[prefix("acme", "hq", "bob", "ingress")]), 1)
 
@@ -387,11 +387,11 @@ class DoorsAndRouterTest(unittest.TestCase):
             self.r,
             pod="acme",
             tenant="hq",
-            producer="alice",
-            recipient="all",
+            source="alice",
+            destination="all",
             payload={"text": "hello room"},
         )
-        Router(self.r, pod="acme", tenant="hq").step()
+        Switch(self.r, pod="acme", tenant="hq").step()
         self.assertNotIn(prefix("acme", "hq", "alice", "ingress"), self.r.lists)
         for agent in ("api", "bob", "carol"):
             raw = self.r.lists[prefix("acme", "hq", agent, "ingress")][0]
@@ -407,11 +407,11 @@ class DoorsAndRouterTest(unittest.TestCase):
             self.r,
             pod="acme",
             tenant="hq",
-            producer="alice",
-            recipient="all",
+            source="alice",
+            destination="all",
             payload={},
         )
-        self.assertTrue(Router(self.r, pod="acme", tenant="hq").step())
+        self.assertTrue(Switch(self.r, pod="acme", tenant="hq").step())
         self.assertNotIn(prefix("acme", "hq", "alice", "dead"), self.r.lists)
         self.popen.assert_not_called()
 
@@ -426,7 +426,7 @@ def test_all_digit_agent_names_are_rejected():
     Measured on tmux 3.5a with windows [1:first, 2:second, 3:"2"]: both `s:2`
     and the exact-name form `s:=2` resolve to `second`. An agent named "2" would
     therefore have its messages pasted into whichever agent sits at index 2 —
-    the wrong recipient, with an honest `opened` record and nothing to show for
+    the wrong destination, with an honest `opened` record and nothing to show for
     it. Unaddressable, so it is not a valid name.
     """
     import pytest

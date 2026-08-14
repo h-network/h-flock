@@ -29,4 +29,4 @@ for _ in $(seq 1 60); do
 done
 echo "after_restart health=$(docker inspect -f '{{.State.Health.Status}}' "$C") sentinel=[$(dx redis-cli GET "$SENTINEL")] queue_contains=$(dx redis-cli LRANGE "$QUEUE" 0 -1 | grep -c "$RUN" || true) queue_depth=$(dx redis-cli LLEN "$QUEUE")"
 echo "recent_startup:"
-docker logs --since 2m "$C" 2>&1 | grep -E 'redis|windows_ready|module.*(router|container).*event.*(started|error)' | tail -20 || true
+docker logs --since 2m "$C" 2>&1 | grep -E 'redis|windows_ready|module.*(switch|container).*event.*(started|error)' | tail -20 || true

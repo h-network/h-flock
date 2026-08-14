@@ -6,13 +6,13 @@
 ## 1. What this buys, measured
 
 The startup tax is paid **twice per message**: once when an agent runs `office
-send`, once when the router spawns `flock.adapter` to deliver it. Both are
+send`, once when the switch spawns `flock.port` to deliver it. Both are
 one-shot processes whose real work is ~20 ms.
 
 | | ms |
 |---|---|
 | `office --help` / `peers` / `status` | 466–697 |
-| `flock.adapter`, message waiting — a real delivery | 657 |
+| `flock.port`, message waiting — a real delivery | 657 |
 | `blpop` **with a message waiting** — the actual work | **0.84** |
 | spawn + connect + one command, redis-py | 566 |
 | spawn + connect + one command, **hand-rolled RESP** | **87** |
@@ -47,9 +47,9 @@ set    hset
 ```
 
 ⚠ **`set` and `hset` were missing from my first list.** I enumerated by grepping
-`r.<method>(` across `flock/bus`, `flock/adapter` and `flock/office`, which
-misses the **control openers** — the same one-shot adapter handles `launch`,
-`profile`, `endpoint`, `pause` and roster writes. Found by building it, not by
+`r.<method>(` across `flock/bus`, `flock/port` and `flock/office`, which
+misses the **control openers** — the same one-shot port handles `launch`,
+`profile`, `provider`, `pause` and roster writes. Found by building it, not by
 reading it. Grep the openers too, or better, let the tests find it.
 
 Reply types needed: simple string, integer, bulk string (including nil `$-1`),
@@ -72,7 +72,7 @@ Read each call site and assert the type in a test. Do not infer it.
 
 ## 5. What must NOT change
 
-- **The daemons keep redis-py**: `api/app.py`, `router/service.py`,
+- **The daemons keep redis-py**: `api/app.py`, `switch/service.py`,
   `tmuxhost/host.py`, `watchdog/service.py`. They start once, so the import is
   free, and they want the library's reconnection and pooling. Only the
   **one-shot** programs switch.
@@ -85,18 +85,18 @@ Read each call site and assert the type in a test. Do not infer it.
 | file | lines | change |
 |---|---|---|
 | `src/flock/bus/resp.py` | new | the client |
-| `src/flock/adapter/runner.py` | 180 | construct the RESP client instead of `redis.Redis` |
-| `src/flock/adapter/cli.py` | 74 | same |
+| `src/flock/port/runner.py` | 180 | construct the RESP client instead of `redis.Redis` |
+| `src/flock/port/cli.py` | 74 | same |
 | `src/flock/office/cli.py` | 639 | same |
 
 ⚠ **`bus` owns this build even though `tmux` owns two of those files** — the
 change is one seam and splitting it across lanes would leave the tree
 inconsistent between pushes. `tmux` has been told; coordinate before touching
-`flock/adapter` for anything else this week.
+`flock/port` for anything else this week.
 
 ## 7. Done when
 
-- ⚠ **A RATIO, not a threshold.** `office peers` and a real `flock.adapter`
+- ⚠ **A RATIO, not a threshold.** `office peers` and a real `flock.port`
   delivery both measurably faster, before and after **on the same container, by
   the same method, in the same run** — host-wall against inside-container is not
   a comparison.

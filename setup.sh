@@ -103,12 +103,12 @@ for a in "${AGENTS[@]}"; do
     fi
 done
 
-# A local model endpoint. An agent pointed at one uses NO account credential —
+# A local model provider. An agent pointed at one uses NO account credential —
 # claude talks to the server directly — so it needs no login and the watchdog's
 # credential check does not apply to it.
-ENDPOINT_MAP=(); LOCAL_URL=""; LOCAL_MODEL=""; LOCAL_TOKEN="local"
-read -rp "Point any agent at a local model endpoint? [y/N]: " USE_ENDPOINT
-if [[ "${USE_ENDPOINT:-n}" =~ ^[Yy] ]]; then
+PROVIDER_MAP=(); LOCAL_URL=""; LOCAL_MODEL=""; LOCAL_TOKEN="local"
+read -rp "Point any agent at a local model provider? [y/N]: " USE_PROVIDER
+if [[ "${USE_PROVIDER:-n}" =~ ^[Yy] ]]; then
     # ⚠ No default. There is no sensible one — an address here was this
     # developer's own box, which is meaningless on anyone else's network.
     # The kind decides the usual port and, more importantly, whether claude can
@@ -122,7 +122,7 @@ if [[ "${USE_ENDPOINT:-n}" =~ ^[Yy] ]]; then
     esac
     read -rp "  Endpoint base URL, e.g. $EP_HINT (NO trailing /v1): " LOCAL_URL
     while [ -z "$LOCAL_URL" ]; do
-        read -rp "  An endpoint needs an address. URL (blank to skip endpoints): " LOCAL_URL
+        read -rp "  An provider needs an address. URL (blank to skip providers): " LOCAL_URL
         [ -z "$LOCAL_URL" ] && break
     done
     LOCAL_URL="${LOCAL_URL%/}"
@@ -138,36 +138,36 @@ if [[ "${USE_ENDPOINT:-n}" =~ ^[Yy] ]]; then
         SERVED="$(curl -s --max-time 5 "${LOCAL_URL}/api/tags" 2>/dev/null \
                   | python3 -c 'import sys,json;print(" ".join(m["name"] for m in json.load(sys.stdin).get("models",[])))' 2>/dev/null || true)"
     fi
-    [ -n "$SERVED" ] && echo "  served by that endpoint: $SERVED"
+    [ -n "$SERVED" ] && echo "  served by that provider: $SERVED"
     read -rp "  Model id [${SERVED%% *}]: " LOCAL_MODEL
     LOCAL_MODEL="${LOCAL_MODEL:-${SERVED%% *}}"
 
     # ⚠ ASK, THEN VERIFY — and probe with a REAL model id. claude talks to
-    # /v1/messages, and an endpoint that does not answer there makes it report
+    # /v1/messages, and an provider that does not answer there makes it report
     # "issue with the selected model", which reads as a model problem and is
-    # not one. So ask the endpoint rather than assuming anything about it.
+    # not one. So ask the provider rather than assuming anything about it.
     #
     # ⚠ A 404 alone does not mean the route is missing: vLLM answers an unknown
     # model with 404 and {"type":"error","error":{"type":"NotFoundError"}}.
-    # Probing with a made-up id therefore condemns a working endpoint — measured.
+    # Probing with a made-up id therefore condemns a working provider — measured.
     # Use a served id and read the body.
     if [ -n "$LOCAL_URL" ] && [ -n "$LOCAL_MODEL" ]; then
         # ⚠ 90s, not 8. A local model that has to load answers in tens of
         # seconds the first time and under one second afterwards — measured on
-        # ollama: the same endpoint gave nothing at 8s while cold and 0.5s once
+        # ollama: the same provider gave nothing at 8s while cold and 0.5s once
         # warm. A short timeout turns a cold start into a verdict about the
-        # endpoint, which is how the previous probe condemned a working vLLM.
+        # provider, which is how the previous probe condemned a working vLLM.
         PROBE="$(curl -s --max-time 90 -H 'Content-Type: application/json' -X POST \
                  -d "{\"model\":\"${LOCAL_MODEL}\",\"max_tokens\":1,\"messages\":[{\"role\":\"user\",\"content\":\"hi\"}]}" \
                  "${LOCAL_URL}/v1/messages" 2>/dev/null || true)"
         if echo "$PROBE" | grep -q '"type"[[:space:]]*:[[:space:]]*"message"'; then
-            echo "  ✓ /v1/messages answered — claude can use this endpoint"
+            echo "  ✓ /v1/messages answered — claude can use this provider"
         elif [ -z "$PROBE" ]; then
             echo "  ⚠ ${LOCAL_URL}/v1/messages did not answer within 90s."
             echo "    That is 'no answer', not 'not served' — a model still loading"
             echo "    looks the same from here. Try again once it is warm; if it stays"
             echo "    silent, claude talks to that path and will not work against this"
-            echo "    endpoint as it stands. codex and agy speak the OpenAI shape."
+            echo "    provider as it stands. codex and agy speak the OpenAI shape."
         else
             echo "  ⚠ /v1/messages answered, but not with a message:"
             echo "    $(echo "$PROBE" | head -c 160)"
@@ -239,7 +239,7 @@ fi
 
 # Only exceptions travel, so the env stays small and readable.
 for a in "${AGENTS[@]}"; do
-    [ -n "$(mget EP "$a")" ] && ENDPOINT_MAP+=("${a}=$(mget EP "$a")")
+    [ -n "$(mget EP "$a")" ] && PROVIDER_MAP+=("${a}=$(mget EP "$a")")
 done
 for a in "${AGENTS[@]}"; do
     [ "$(mget PROF "$a")" != "default" ] && PROFILE_MAP+=("${a}=$(mget PROF "$a")")
@@ -282,13 +282,13 @@ TOKEN="$(grep -s '^API_TOKEN=' container/.env | cut -d= -f2)"
     fi
     [ "${#CLI_MAP[@]}"     -gt 0 ] && echo "AGENT_CLIS=$(IFS=,; echo "${CLI_MAP[*]}")"
     [ "${#PROFILE_MAP[@]}" -gt 0 ] && echo "AGENT_PROFILES=$(IFS=,; echo "${PROFILE_MAP[*]}")"
-    if [ "${#ENDPOINT_MAP[@]}" -gt 0 ]; then
-        echo "AGENT_ENDPOINTS=$(IFS=,; echo "${ENDPOINT_MAP[*]}")"
-        EP_UPPER="$(echo "$EP_NAME" | tr '[:lower:]-' '[:upper:]_')"
-        echo "ENDPOINT_${EP_UPPER}_URL=${LOCAL_URL}"
-        echo "ENDPOINT_${EP_UPPER}_MODEL=${LOCAL_MODEL}"
-        echo "ENDPOINT_${EP_UPPER}_TOKEN=${LOCAL_TOKEN}"
-        echo "ENDPOINT_${EP_UPPER}_KIND=${EP_KIND}"
+    if [ "${#PROVIDER_MAP[@]}" -gt 0 ]; then
+        echo "AGENT_PROVIDERS=$(IFS=,; echo "${PROVIDER_MAP[*]}")"
+        PR_UPPER="$(echo "$EP_NAME" | tr '[:lower:]-' '[:upper:]_')"
+        echo "PROVIDER_${PR_UPPER}_URL=${LOCAL_URL}"
+        echo "PROVIDER_${PR_UPPER}_MODEL=${LOCAL_MODEL}"
+        echo "PROVIDER_${PR_UPPER}_TOKEN=${LOCAL_TOKEN}"
+        echo "PROVIDER_${PR_UPPER}_KIND=${EP_KIND}"
     fi
 } > container/.env
 chmod 600 container/.env

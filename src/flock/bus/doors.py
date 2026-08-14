@@ -17,8 +17,8 @@ def send(
     *,
     pod: str,
     tenant: str,
-    producer: str,
-    recipient: str,
+    source: str,
+    destination: str,
     payload: dict,
     kind: str = "Message",
     correlation_id: str | None = None,
@@ -26,18 +26,18 @@ def send(
 ) -> str:
     try:
         envelope = build(
-            kind, producer, recipient, payload, correlation_id, pod=pod, tenant=tenant
+            kind, source, destination, payload, correlation_id, pod=pod, tenant=tenant
         )
     except EnvelopeError as exc:
         log_record(
             module,
             "send_refused",
-            producer=producer,
-            recipient=recipient,
+            source=source,
+            destination=destination,
             reason=str(exc),
         )
         raise
-    r.rpush(prefix(pod, tenant, producer, "egress"), json.dumps(envelope, separators=(",", ":")))
+    r.rpush(prefix(pod, tenant, source, "egress"), json.dumps(envelope, separators=(",", ":")))
     emit(module, "sent", envelope)
     return envelope["stream_id"]
 
@@ -51,7 +51,7 @@ def receive(
     openers: dict[str, Callable[[dict], None]],
     timeout: int,
     blocking: bool = True,
-    module: str = "adapter",
+    module: str = "port",
 ) -> None:
     ingress_key = prefix(pod, tenant, agent, "ingress")
     if blocking:

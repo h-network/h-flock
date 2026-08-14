@@ -1,21 +1,21 @@
-# LLD — the tmux adapter
+# LLD — the tmux port
 
 > **Status: built and running.**
 >
-> Depends on [`LLD-bus-and-router.md`](LLD-bus-and-router.md) for the address
-> scheme, the envelope, and the two doors. One adapter binary (`flock.adapter`) per
-> delivery; handles agents in tmux windows (`vab: tmux`) and enrolled REST clients (`vab: api`).
+> Depends on [`LLD-bus-and-switch.md`](LLD-bus-and-switch.md) for the address
+> scheme, the envelope, and the two doors. One port binary (`flock.port`) per
+> delivery; handles agents in tmux windows (`port_type: tmux`) and enrolled REST clients (`port_type: api`).
 > Bringing tmux up — the server, the windows, sizing — is a separate module and out of scope here.
 
 ## 1. Purpose
 
 An agent in a tmux window is a program at a terminal. It cannot pop a queue, and
 nothing can hand it an object — it reads bytes on a screen and writes bytes to a
-prompt. This adapter is what makes such a thing addressable on the bus.
+prompt. This port is what makes such a thing addressable on the bus.
 
 It implements the receiving edge for tmux agents and enrolled REST clients. The
 agent-side `office` command is shown for context, but it calls the shared bus
-library directly and is not part of `flock.adapter`:
+library directly and is not part of `flock.port`:
 
 ```
   ┌──────────────────── agent and receiving edge ─────────────────┐
@@ -23,8 +23,8 @@ library directly and is not part of `flock.adapter`:
   │  send      office command → bus library → own egress          │
   │                                                               │
   │  receive   blocks on ingress, woken by Redis on arrival       │
-  │            for vab=tmux: pops it, opens it, pastes into window │
-  │            for vab=api:  pops it, writes to client mailbox    │
+  │            for port_type=tmux: pops it, opens it, pastes into window │
+  │            for port_type=api:  pops it, writes to client mailbox    │
   │                                                               │
   └───────────────────────────────────────────────────────────────┘
 ```
@@ -33,23 +33,23 @@ library directly and is not part of `flock.adapter`:
 send`, `office broadcast`, `office add`, etc.), the way it invokes anything
 else. The tmux host makes that command available in the window and configures it
 with the agent's own identity (`AGENT_NAME`), so the shared bus library writes
-the right egress without being told. The adapter is not involved on this side.
+the right egress without being told. The port is not involved on this side.
 
 **Receive runs outside the window**, because the agent has no way to know an
 envelope arrived. Something else has to be waiting on its behalf and deliver it.
 
 ## 2. Receiving
 
-**The router triggers the adapter. There is no polling loop, and nothing is held
-open.** The router is the only thing that writes an ingress queue, so it is the
+**The switch triggers the port. There is no polling loop, and nothing is held
+open.** The switch is the only thing that writes an ingress queue, so it is the
 only thing that knows an envelope just landed on one. Having written it, it
 kicks off delivery for that agent.
 
 ```
-  router  ──RPUSH──►  …:backend:ingress
+  switch  ──RPUSH──►  …:backend:ingress
      │
-     └──kick──►  adapter for backend ──► pop ──► open ──► paste into window (vab=tmux)
-                 (runs, delivers, exits)              or write mailbox Stream (vab=api)
+     └──kick──►  port for backend ──► pop ──► open ──► paste into window (port_type=tmux)
+                 (runs, delivers, exits)              or write mailbox Stream (port_type=api)
 
   backend's delivery already in flight?  the envelope stays in the queue
 ```
@@ -57,7 +57,7 @@ kicks off delivery for that agent.
 The agent is not involved and its state is irrelevant — an idle agent is the
 normal case, and it has no way to know anything arrived.
 
-**The adapter is not a daemon.** It is invoked, it delivers **one envelope**, and
+**The port is not a daemon.** It is invoked, it delivers **one envelope**, and
 it exits. Nothing sits blocked on a queue, no connection is held per agent,
 and an office of idle agents costs nothing at all. The alternative — a
 long-running consumer per agent, popping eagerly — **moves the backlog into
@@ -66,14 +66,14 @@ limited, so a loop draining as fast as it can buffers unboundedly in RAM,
 invisible, lost on restart, and with nothing to inspect when it goes wrong.
 
 Triggering on arrival keeps the backlog in Redis, which is the place it should
-be. It survives adapter processes and is visible there, and depth per agent is a
+be. It survives port processes and is visible there, and depth per agent is a
 number anything can read. This deployment deliberately disables Redis
 persistence, so the backlog does not survive a tenant restart
 (`LLD-container` §7).
 
 **One delivery per agent at a time, and this is the one thing the kick does not
 give for free.** The number of adapters running for backend is the number of kicks
-the router fired, so two envelopes arriving close together start two of them.
+the switch fired, so two envelopes arriving close together start two of them.
 For tmux windows, tmux calls interleave against one window:
 
 ```
@@ -84,10 +84,10 @@ For tmux windows, tmux calls interleave against one window:
 ```
 
 `send-keys` targets a window, not a delivery, so nothing separates them. A busy
-tag in Redis serialises them: an adapter kicked for an agent that is already
+tag in Redis serialises them: an port kicked for an agent that is already
 being delivered to **waits for the tag to clear, then delivers its own
 envelope**. It does not exit, and nothing drains a backlog on another kick's
-behalf. See `LLD-bus-and-router` §3.3 for the tag, and for why a crash leaves it
+behalf. See `LLD-bus-and-switch` §3.3 for the tag, and for why a crash leaves it
 set on purpose.
 
 Deliveries for *different* agents are independent and overlap freely. A wedged
@@ -95,17 +95,17 @@ window blocks only its own agent.
 
 **Agents come and go, and this module does not care.** There is no set of
 consumers to keep in step with the roster, because there are no consumers
-between deliveries. An agent that joins is deliverable the first time the router
+between deliveries. An agent that joins is deliverable the first time the switch
 kicks for it; one that leaves simply stops being kicked. The roster polling that
-the router and the tmux host need (`LLD-bus-and-router` §3.2) has no equivalent
+the switch and the tmux host need (`LLD-bus-and-switch` §3.2) has no equivalent
 here.
 
 ## 3. Opening & Delivery Routines
 
-`flock.adapter` checks the recipient's VAB in the roster:
+`flock.port` checks the destination's port_type in the roster:
 
-- **`vab: "tmux"` (`deliver_one`)**: dispatches on `kind` to select an opener (`Message`, `Command`, `AddTicket`) and pastes into the agent's window (or mutates the board for `AddTicket`).
-- **`vab: "api"` (`deliver_api`)**: pops the envelope from `ingress`, logs `received` and `opened`, and appends the envelope verbatim as JSON to the client's mailbox Redis Stream (`<prefix>:agent:<client>:inbox`) via `XADD MAXLEN ~ 1000 * envelope '<verbatim JSON>'`. Every kind is stored; nothing dead-letters for being uninteresting.
+- **`port_type: "tmux"` (`deliver_one`)**: dispatches on `kind` to select an opener (`Message`, `Command`, `AddTicket`) and pastes into the agent's window (or mutates the board for `AddTicket`).
+- **`port_type: "api"` (`deliver_api`)**: pops the envelope from `ingress`, logs `received` and `opened`, and appends the envelope verbatim as JSON to the client's mailbox Redis Stream (`<prefix>:agent:<client>:inbox`) via `XADD MAXLEN ~ 1000 * envelope '<verbatim JSON>'`. Every kind is stored; nothing dead-letters for being uninteresting.
 
 For a tmux message, the rendered line names the sender:
 
@@ -138,20 +138,20 @@ is the reason `LLD-api` §6 says the token is not optional.
 ### `AddTicket` — board mutation, pastes nothing
 
 `{"title": "…", "description": "…", "priority": "…"}`. The `AddTicket` opener
-creates a v1 ticket entry in the recipient agent's `tasks.todo` Redis list, records
+creates a v1 ticket entry in the destination agent's `tasks.todo` Redis list, records
 the `add` event via `flock.bus.record_task_event`, and **pastes nothing** into the
 window.
 
 ⚠ **No window check:** The opener writes for a rostered agent even when its
 tmux window is absent. The pulled ticket waits in `tasks.todo` for a later
-`office take`; a roster-less recipient is rejected by the router before adapter
+`office take`; a roster-less destination is rejected by the switch before port
 delivery. The returned `RPUSH` list length confirms the synchronous mutation:
 success logs `board_write_confirmed`, while an exception or non-positive result
 logs `board_write_failed` and raises `DeadLetter`.
 
 ### Verification Markers (`pending.verify`)
 
-Before pasting a `Message` or `Command` into a `vab: tmux` window, the adapter records a pending verification marker in Redis Stream `<prefix>:agent:<name>:pending.verify` via `XADD MAXLEN ~ 100`:
+Before pasting a `Message` or `Command` into a `port_type: tmux` window, the port records a pending verification marker in Redis Stream `<prefix>:agent:<name>:pending.verify` via `XADD MAXLEN ~ 100`:
 ```json
 { "stream_id": "<stream_id>", "ts": "<ts>" }
 ```
@@ -160,7 +160,7 @@ Before pasting a `Message` or `Command` into a `vab: tmux` window, the adapter r
 - **Confirmed synchronously for `AddTicket`**: `AddTicket` pastes nothing, so it confirms its board write directly and is not verified via activity inputs. It never creates `blocked`; an untaken ticket is normal board state.
 - **Skipped for `agy` and `bash`**: `agy` has no session log file / activity feed and `bash` has no CLI turn records, so markers are skipped to avoid false unverified alerts.
 - **Fail-safe**: Marker creation is wrapped in `try...except` so stream write failures never impact envelope delivery.
-- **`blocked` state**: The router checks these markers on its pass. If an agent has produced prior activity and a delivery is unverified with no activity produced since, the router writes `<prefix>:agent:<name>:blocked`. It catches wedged processes, trust pickers, and unauthenticated login prompts. An agent with no prior activity is `unknown` and its first delivery is `unjudged` rather than `blocked`.
+- **`blocked` state**: The switch checks these markers on its pass. If an agent has produced prior activity and a delivery is unverified with no activity produced since, the switch writes `<prefix>:agent:<name>:blocked`. It catches wedged processes, trust pickers, and unauthenticated login prompts. An agent with no prior activity is `unknown` and its first delivery is `unjudged` rather than `blocked`.
 - **Wedged process simulation**: ⚠ `SIGSTOP` cannot wedge a process running as a tmux pane process — a plain `sleep` started from a shell reaches state `T`, but the same `sleep` started as a tmux pane process never does (it reads back state `S`, and process-group forms fare no better). To simulate an unconsuming wedged window in tests (`container/sim-blocked.sh`), the pane is respawned with a non-consuming process (`respawn-pane -k 'sleep infinity'`) while leaving the agent's launch key as `claude` so the delivery is marked for verification.
 
 ## 4. Getting text into a window
@@ -190,7 +190,7 @@ silent: the Enter is swallowed, the message sits unsubmitted, and the agent look
 submits its first line early and arrives split in two.
 
 **Verification never reads the pane and never retries.** Before the paste, the
-adapter writes the `pending.verify` marker described in §3. The router later
+port writes the `pending.verify` marker described in §3. The switch later
 compares it with the CLI's own session-file `input` events and reports verified,
 unverified, or unjudged. A rendered pane is not a data source (the HLD's
 *nothing in the data path reads a terminal* invariant),
@@ -199,7 +199,7 @@ paste the same command again.
 
 ## 5. Is it safe to deliver?
 
-For tmux agents, the adapter checks the window exists before it pastes. If it does not, the
+For tmux agents, the port checks the window exists before it pastes. If it does not, the
 envelope is dead-lettered rather than delivered into nothing.
 
 **Measured: delivery into a busy window is buffered, not lost.** Three messages
@@ -273,14 +273,14 @@ as PID 1, and unrelated to this choice.
 session service does read terminal output for human viewers, out of band from
 envelope delivery; it does not turn pane output into bus data.
 
-**Session endpoints** — implemented by the separate `flock.session` module; they
-remain outside this adapter.
+**Session providers** — implemented by the separate `flock.session` module; they
+remain outside this port.
 
 ## 8. What this is not
 
 Not the tmux host — it does not create the server, the session or the windows,
 and it does not decide what runs in them. It attaches to what is already there,
-and if a window is missing for `vab: tmux`, that is a dead-letter, not something to repair.
+and if a window is missing for `port_type: tmux`, that is a dead-letter, not something to repair.
 
-Not the router. It never resolves a recipient and never writes another agent's
+Not the switch. It never resolves a destination and never writes another agent's
 ingress.

@@ -17,7 +17,7 @@ from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from flock.bus.doors import send
 from flock.bus.envelope import EnvelopeError
 from flock.bus.keys import prefix
-from flock.bus.roster import is_member, members, vab
+from flock.bus.roster import is_member, members, port_type
 
 
 @dataclass(frozen=True)
@@ -113,7 +113,7 @@ def _render_restdoc_html(app: FastAPI) -> str:
             "curl": 'curl -H "Authorization: Bearer $API_TOKEN" http://localhost:8080/agents/sme-2',
         },
         "/agents/{agent}/envelopes": {
-            "desc": "Post an envelope of any kind to a specific agent or broadcast to 'all'. Accepts standard envelope shape, sugar `{\"text\": \"...\"}` for Message, and optional `\"as\"` for api client producer identity.",
+            "desc": "Post an envelope of any kind to a specific agent or broadcast to 'all'. Accepts standard envelope shape, sugar `{\"text\": \"...\"}` for Message, and optional `\"as\"` for api client source identity.",
             "curl": 'curl -X POST -H "Authorization: Bearer $API_TOKEN" -H "Content-Type: application/json" -d \'{"text": "hello", "as": "telegram"}\' http://localhost:8080/agents/sme-2/envelopes',
         },
         "/agents/{agent}/messages": {
@@ -180,7 +180,7 @@ def _render_restdoc_html(app: FastAPI) -> str:
             {
                 "desc": getattr(route, "description", "")
                 or getattr(route, "summary", "")
-                or "API endpoint",
+                or "API provider",
                 "curl": f'curl -X {method} -H "Authorization: Bearer $API_TOKEN" http://localhost:8080{path}',
             },
         )
@@ -323,13 +323,13 @@ def _render_restdoc_html(app: FastAPI) -> str:
     <div class="auth-banner">
       <h3 style="margin-top:0; color:#818cf8;">Authentication Required</h3>
       <p style="margin-bottom:0;">
-        Every HTTP REST endpoint and generated documentation route (<code>/restdoc</code>, <code>/docs</code>, <code>/redoc</code>, <code>/openapi.json</code>) requires a valid Bearer token header:
+        Every HTTP REST provider and generated documentation route (<code>/restdoc</code>, <code>/docs</code>, <code>/redoc</code>, <code>/openapi.json</code>) requires a valid Bearer token header:
         <br><code>Authorization: Bearer &lt;API_TOKEN&gt;</code>
       </p>
     </div>
 
     <h2>1. REST Endpoints</h2>
-    <p>Below are all endpoints currently registered on the API server (:8080), with working <code>curl</code> examples:</p>
+    <p>Below are all providers currently registered on the API server (:8080), with working <code>curl</code> examples:</p>
 
     {routes_rendered}
 
@@ -348,7 +348,7 @@ def _render_restdoc_html(app: FastAPI) -> str:
         <tr>
           <td><code>Message</code></td>
           <td><code>{{"text": "..."}}</code></td>
-          <td>Pastes <code>[message from &lt;producer&gt;] &lt;text&gt;</code> into the recipient agent's terminal window.</td>
+          <td>Pastes <code>[message from &lt;source&gt;] &lt;text&gt;</code> into the destination agent's terminal window.</td>
         </tr>
         <tr>
           <td><code>Command</code></td>
@@ -370,15 +370,15 @@ def _render_restdoc_html(app: FastAPI) -> str:
 
     <div class="warning-box">
       <strong>⚠ Notice: This list of kinds is current, not authoritative.</strong><br>
-      The API server does NOT validate <code>kind</code> or <code>payload</code>. An unknown <code>kind</code> is accepted with HTTP <code>202 Accepted</code> and dead-letters at the far edge if unopenable. An application MUST NOT treat this list as a whitelist. Adding new kinds is a capability of adapters and openers, not an API schema change.
+      The API server does NOT validate <code>kind</code> or <code>payload</code>. An unknown <code>kind</code> is accepted with HTTP <code>202 Accepted</code> and dead-letters at the far edge if unopenable. An application MUST NOT treat this list as a whitelist. Adding new kinds is a capability of ports and openers, not an API schema change.
     </div>
 
     <h2>3. Meaning of HTTP 202 Accepted</h2>
     <p>
-      An HTTP <code>202 Accepted</code> response from <code>POST /agents/{{agent}}/envelopes</code> means the envelope was successfully validated structurally, assigned a <code>stream_id</code> and <code>correlation_id</code>, and written to Redis on the producer's egress queue.
+      An HTTP <code>202 Accepted</code> response from <code>POST /agents/{{agent}}/envelopes</code> means the envelope was successfully validated structurally, assigned a <code>stream_id</code> and <code>correlation_id</code>, and written to Redis on the source's egress queue.
     </p>
     <p>
-      It does <strong>NOT</strong> mean the envelope has been delivered to the recipient or executed. Delivery is asynchronous: the router moves envelopes from egress to recipient ingress queues and kicks the corresponding adapter process. If delivery fails (e.g. unknown recipient or opener failure), the envelope dead-letters asynchronously. To trace envelope progress, inspect log output using the returned <code>stream_id</code>.
+      It does <strong>NOT</strong> mean the envelope has been delivered to the destination or executed. Delivery is asynchronous: the switch moves envelopes from egress to destination ingress queues and kicks the corresponding port process. If delivery fails (e.g. unknown destination or opener failure), the envelope dead-letters asynchronously. To trace envelope progress, inspect log output using the returned <code>stream_id</code>.
     </p>
 
     <h2>4. Live Terminal Session Protocol</h2>
@@ -588,10 +588,10 @@ def create_app(*, settings: Settings | None = None, redis_client: Any = None) ->
         state = "blocked" if raw_blocked else presence_state
         since = _decode(raw_presence.get(b"since") or raw_presence.get("since")) or ""
         last_activity = _decode(raw_presence.get(b"last_activity") or raw_presence.get("last_activity")) or ""
-        agent_vab = vab(client, pod=settings.pod, tenant=settings.tenant, agent=agent)
+        agent_port_type = port_type(client, pod=settings.pod, tenant=settings.tenant, agent=agent)
         return {
             "agent": agent,
-            "vab": agent_vab,
+            "port_type": agent_port_type,
             "depths": {
                 "ingress": client.llen(ingress),
                 "egress": client.llen(egress),
@@ -613,26 +613,26 @@ def create_app(*, settings: Settings | None = None, redis_client: Any = None) ->
                 raise HTTPException(status_code=404, detail="invalid agent") from exc
             if not is_member(client, pod=settings.pod, tenant=settings.tenant, agent=agent):
                 raise HTTPException(status_code=404, detail="unknown agent")
-        producer = "api"
+        source = "api"
         if "as" in envelope:
             as_client = envelope["as"]
             if not isinstance(as_client, str):
                 raise HTTPException(
                     status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
-                    detail="invalid 'as' client: must be an enrolled client with vab 'api'",
+                    detail="invalid 'as' client: must be an enrolled client with port_type 'api'",
                 )
             try:
-                if vab(client, pod=settings.pod, tenant=settings.tenant, agent=as_client) != "api":
+                if port_type(client, pod=settings.pod, tenant=settings.tenant, agent=as_client) != "api":
                     raise HTTPException(
                         status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
-                        detail="invalid 'as' client: must be an enrolled client with vab 'api'",
+                        detail="invalid 'as' client: must be an enrolled client with port_type 'api'",
                     )
             except (KeyError, TypeError) as exc:
                 raise HTTPException(
                     status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
-                    detail="invalid 'as' client: must be an enrolled client with vab 'api'",
+                    detail="invalid 'as' client: must be an enrolled client with port_type 'api'",
                 ) from exc
-            producer = as_client
+            source = as_client
         try:
             payload_str = json.dumps(envelope)
         except (TypeError, ValueError):
@@ -654,8 +654,8 @@ def create_app(*, settings: Settings | None = None, redis_client: Any = None) ->
                 client,
                 pod=settings.pod,
                 tenant=settings.tenant,
-                producer=producer,
-                recipient=agent,
+                source=source,
+                destination=agent,
                 kind=kind,
                 payload=payload,
                 correlation_id=correlation_id,
@@ -671,7 +671,7 @@ def create_app(*, settings: Settings | None = None, redis_client: Any = None) ->
         after: str | None = None,
         limit: int = Query(default=100, ge=1, le=1000),
     ) -> dict[str, Any]:
-        if vab(client, pod=settings.pod, tenant=settings.tenant, agent=agent) != "api":
+        if port_type(client, pod=settings.pod, tenant=settings.tenant, agent=agent) != "api":
             raise HTTPException(status_code=404, detail="invalid client agent")
         inbox_key = prefix(settings.pod, settings.tenant, agent, "inbox")
         messages = _read_stream_entries(client, inbox_key, after=after, limit=limit, preferred_field="envelope")
@@ -688,7 +688,7 @@ def create_app(*, settings: Settings | None = None, redis_client: Any = None) ->
         request: Request,
         after: str | None = None,
     ) -> StreamingResponse:
-        if vab(client, pod=settings.pod, tenant=settings.tenant, agent=agent) != "api":
+        if port_type(client, pod=settings.pod, tenant=settings.tenant, agent=agent) != "api":
             raise HTTPException(status_code=404, detail="invalid client agent")
         inbox_key = prefix(settings.pod, settings.tenant, agent, "inbox")
         return _stream_response(request, client, inbox_key, "message", after, "envelope")

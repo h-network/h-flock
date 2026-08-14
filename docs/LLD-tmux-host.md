@@ -4,12 +4,12 @@
 >
 > The module that brings up and maintains the tmux the agents live in. Moving
 > envelopes into and out of those windows is
-> [`LLD-adapter-tmux.md`](LLD-adapter-tmux.md); this one never touches an
+> [`LLD-port-tmux.md`](LLD-port-tmux.md); this one never touches an
 > envelope.
 
 ## 1. Purpose
 
-One tmux server, one session per tenant, one window per `vab: tmux` agent. This module
+One tmux server, one session per tenant, one window per `port_type: tmux` agent. This module
 creates them, keeps them matching the roster, and configures them so that
 everything else can assume they are there.
 
@@ -116,7 +116,7 @@ never by index, and never infer a position from a name that happens to end in a
 digit.
 
 This is the deeper reason an all-digit agent name is rejected
-(`LLD-bus-and-router` §3.1): such a name resolves as an index, and the index it
+(`LLD-bus-and-switch` §3.1): such a name resolves as an index, and the index it
 resolves to moves.
 
 ## 5. Windows
@@ -124,11 +124,11 @@ resolves to moves.
 One window per agent, **named after the agent**, so a window is addressable by
 the same name the bus uses. Low-level tmux operations use `flock.tmux` as a shared
 library (`create_window`, `kill_window`, `list_windows`, `write_agent_guide`, etc.)
-shared across `tmuxhost`, `control`, and `adapter`.
+shared across `tmuxhost`, `control`, and `port`.
 
-Windows are **reconciled against roster members with `vab == "tmux"`**, in both directions —
-a `vab == "tmux"` agent in the roster with no window gets one, a window with no `vab == "tmux"` agent in the roster is
-removed. Non-tmux roster entries (enrolled REST clients with `vab: "api"`, or `vab: "control"`) generate no windows and are ignored by `tmuxhost`. Reconciliation is a repeatable operation, not a one-time setup step, so
+Windows are **reconciled against roster members with `port_type == "tmux"`**, in both directions —
+a `port_type == "tmux"` agent in the roster with no window gets one, a window with no `port_type == "tmux"` agent in the roster is
+removed. Non-tmux roster entries (enrolled REST clients with `port_type: "api"`, or `port_type: "control"`) generate no windows and are ignored by `tmuxhost`. Reconciliation is a repeatable operation, not a one-time setup step, so
 running it again after a roster change is the whole mechanism for hiring and
 letting go.
 
@@ -146,10 +146,10 @@ the session without leaving a departed agent present-but-unaddressable.
 
 Nothing announces a roster change, so this module polls for it like the others.
 Having no queue to block on, it polls on a loop of its own, every
-`ROSTER_POLL_SECONDS` — the same value the router takes from the environment, so
+`ROSTER_POLL_SECONDS` — the same value the switch takes from the environment, so
 both roster-polling processes refresh on the same interval. The per-delivery
-adapter reads the current VAB directly and does not poll. See
-`LLD-bus-and-router` §3.2
+port reads the current port_type directly and does not poll. See
+`LLD-bus-and-switch` §3.2
 for why that value is shared, and for the one case where being a poll behind
 still hurts: windows should lead routes, so this module reconciling promptly is
 what keeps a new agent's first envelope from being dead-lettered.
@@ -188,9 +188,9 @@ four minutes later.
 assuming the lifetime and subtracting it from `expiresAt`; measured against the
 file's mtime the gap is 7:59:59. Therefore, agents assigned to the same account profile share the single profile config directory (`CLAUDE_CONFIG_DIR=~/.claude-<profile>`). Distinct profiles maintain separate directories with their own independent OAuth logins.
 
-⚠ **Launch and Profile State Ordering:** `start_agent` (`flock.control.openers`) writes the `launch` (`pod:<pod>:tenant:<tenant>:agent:<name>:launch`) and `profile` keys to Redis *before* writing roster membership (`r.hset(roster_key, agent, agent_vab)`). `tmuxhost` reconciles windows as soon as the agent row appears in the roster; writing launch or profile after roster membership created a race condition where `tmuxhost` built a window with the default CLI or wrong account before the launch/profile keys were set.
+⚠ **Launch and Profile State Ordering:** `start_agent` (`flock.control.openers`) writes the `launch` (`pod:<pod>:tenant:<tenant>:agent:<name>:launch`) and `profile` keys to Redis *before* writing roster membership (`r.hset(roster_key, agent, agent_port_type)`). `tmuxhost` reconciles windows as soon as the agent row appears in the roster; writing launch or profile after roster membership created a race condition where `tmuxhost` built a window with the default CLI or wrong account before the launch/profile keys were set.
 
-⚠ **Quiet Terminal Telemetry:** `office` runs inside an agent's window, where `stdout` is the agent's screen. Printing bus telemetry log records (`{"module":"adapter", ...}`) to `stdout` hands the agent internal module names, stream IDs, and correlation IDs, leading agents to inspect local processes and discover Redis. `office` sets `FLOCK_LOG_QUIET=1` to suppress envelope logging to `stdout`, while log records are still written to the window log file (`FLOCK_LOG_FILE`) for router tailing.
+⚠ **Quiet Terminal Telemetry:** `office` runs inside an agent's window, where `stdout` is the agent's screen. Printing bus telemetry log records (`{"module":"port", ...}`) to `stdout` hands the agent internal module names, stream IDs, and correlation IDs, leading agents to inspect local processes and discover Redis. `office` sets `FLOCK_LOG_QUIET=1` to suppress envelope logging to `stdout`, while log records are still written to the window log file (`FLOCK_LOG_FILE`) for switch tailing.
 
 ## 6. Lifecycle
 
@@ -204,8 +204,8 @@ reconciliation must converge rather than duplicate.
 
 Two consequences for anything downstream:
 
-- A missing window for `vab == "tmux"` is a real state, not an error to repair from elsewhere. The
-  adapter dead-letters into it rather than trying to create one.
+- A missing window for `port_type == "tmux"` is a real state, not an error to repair from elsewhere. The
+  port dead-letters into it rather than trying to create one.
 - Nothing may assume a window it saw earlier is still there.
 
 ## 7. Deferred
@@ -220,7 +220,7 @@ settled and does not need to be yet.
 
 ## 8. What this is not
 
-Not the adapter — it never reads a queue, never opens an envelope, never types
+Not the port — it never reads a queue, never opens an envelope, never types
 into a window.
 
 Not a supervisor. It creates windows and reconciles them; keeping processes
@@ -231,10 +231,10 @@ supports it, not because anything here is designed around a viewer.
 
 ## Windows, models and failures — added after a night of live running
 
-⚠ **A window may point at a model endpoint.** `window_env` adds
+⚠ **A window may point at a model provider.** `window_env` adds
 `ANTHROPIC_BASE_URL`, `ANTHROPIC_AUTH_TOKEN` and **all three tier variables**
 (`ANTHROPIC_DEFAULT_OPUS_MODEL`, `_SONNET_MODEL`, `_HAIKU_MODEL`) when the agent
-has an `endpoint`. The tiers matter: claude picks one internally, so setting a
+has an `provider`. The tiers matter: claude picks one internally, so setting a
 single model variable leaves the others falling back to vendor names the server
 does not serve — and the failure reads as *"issue with the selected model"*,
 which sends you chasing a model problem that is really configuration.
@@ -263,13 +263,13 @@ bare Enter does nothing and a paste replaces it — but it looks alarming in a
 screenshot and in a terminal panel.
 
 ⚠ **Inherited `ANTHROPIC_*` are unset first.** A previous subscription's
-variables win over what we set, which is the quietest way for a local endpoint to
+variables win over what we set, which is the quietest way for a local provider to
 look broken.
 
-⚠ **There is one creation owner.** `StartAgent` publishes profile, endpoint and
+⚠ **There is one creation owner.** `StartAgent` publishes profile, provider and
 launch desired state; `tmuxhost` resolves it and builds the window. The former
 second creator drifted independently three times: it omitted the lead, seeded
-trust into the wrong profile, and once ignored the endpoint. Re-hiring with
+trust into the wrong profile, and once ignored the provider. Re-hiring with
 changed configuration removes the stale window so this canonical path rebuilds
 it; unchanged hires leave it alone.
 

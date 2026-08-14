@@ -20,7 +20,7 @@ class DummyFlockClient:
     def enrol(self):
         return 202, {"stream_id": "s1", "correlation_id": "c1"}
 
-    def send_message(self, recipient, text):
+    def send_message(self, destination, text):
         return 202, {"stream_id": "s2", "correlation_id": "c2"}
 
     def get_presence(self, agent):

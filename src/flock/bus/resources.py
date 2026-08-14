@@ -8,7 +8,7 @@ AGENT_STATE_RESOURCES = frozenset(
         "blocked",
         "launch",
         "profile",
-        "endpoint",
+        "provider",
         "paused",
         "activity",
         "activity.offset",
