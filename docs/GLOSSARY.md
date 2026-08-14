@@ -58,10 +58,10 @@ community notation.
 
 - **networking:** the RD, which travels *with* a VPNv4 route so two VRFs can
   advertise the same prefix.
-- **state:** ⚠ **in the keys, absent from the envelope.** `"recipient": "alice"`
-  is a bare name — the distinguisher never reaches the packet, which is why
-  qualified recipient names are listed as undesigned in
-  `LLD-bus-and-router` §7 and why an unresolvable name dead-letters.
+- **state:** ✅ **now on the wire.** Build 53 gave the frame an `l3` header
+  carrying `pod:tenant:agent`, and the port resolves local-vs-remote before
+  assembly. ⚠ Nothing yet *routes* on it — a non-local destination is refused at
+  the sender, because the router does not exist.
 
 ### `RT` — route target / community *(intended, not built)*
 **Membership and policy**: which participants and which domains may exchange
@@ -80,7 +80,7 @@ traffic, expressed as tags rather than as pairs.
 
 ### `participant`
 **Anything that talks on the bus** — a terminal agent, an app client, the
-lifecycle endpoint. Defined in `LLD-bus-and-router` §1 and under-used since:
+lifecycle endpoint. Defined in `LLD-bus-and-switch` §1 and under-used since:
 82 occurrences against 976 of `agent`.
 
 - **not:** a synonym for `agent`. `api` and `control` participants have no

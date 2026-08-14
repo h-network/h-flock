@@ -18,7 +18,7 @@ field and a policy layer rather than a redesign.
 ⚠ **The switch never holds a route.** That is what keeps it fast, keeps topology
 knowledge from spreading, and stops one tenant holding credentials for another's
 store — the objection that killed the alternative design in
-`LLD-bus-and-router` §7.
+`LLD-bus-and-switch` §7.
 
 ⚠ **§7's "registry of enrolled tenants" was the right idea in the wrong
 component.** It belongs in the router's table.
@@ -306,7 +306,7 @@ error the split exists to prevent.
 
 `"recipient": "alice"` is a bare name. **You cannot reach `alice` on another pod
 without saying which `alice`**, so qualified addressing is not a nice-to-have —
-it is the precondition for the router existing at all. `LLD-bus-and-router` §7
+it is the precondition for the router existing at all. `LLD-bus-and-switch` §7
 already lists it as undesigned.
 
 ## 5. How the router's table gets filled
