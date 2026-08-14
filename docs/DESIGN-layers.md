@@ -544,7 +544,13 @@ it.
 | strands | **2 → 0**. The off-by-one is real and draining clears it |
 | delivery | 9997 → 9998 |
 | duplicates | 0, unchanged |
-| **throughput** | **6.45 → 5.54/s, −14.1%** |
+| **throughput** | 6.45 → 5.54/s, −14.1% ⚠ **NOT ESTABLISHED — see below** |
+
+⚠⚠ **THE −14.1% IS NOT ESTABLISHED, and I led with it.** Build 69 later measured
+**8.12/s** on main-lineage code, against 6.00, 6.40 and 6.45 the same day — a
+**35% spread**. A 14% difference between two unpaired runs on this host means
+nothing. **The rejection stands on the argument below, not on that number**, and
+I should have said so at the time instead of putting a measurement first.
 
 ⚠ **The cost is structural, not tunable.** The `delivering` tag serialises
 delivery **per agent**. Before, 32 kicks meant 32 ports each handling one frame

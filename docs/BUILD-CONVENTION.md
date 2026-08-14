@@ -68,6 +68,11 @@ falsifiability, not on volume.
   window falls between those two pops and the frame has no `popped` record, it is
   attributable. `bus` used this on build 66's two vanished frames where
   "sent before a kill" would have proved nothing
+- ⚠⚠ **THIS LAB'S THROUGHPUT VARIES BY 35% RUN TO RUN.** Measured on
+  main-lineage code the same day: **6.00, 6.40, 6.45, 8.12 /s**. **An unpaired
+  throughput comparison on this host establishes nothing below about 35%**, and
+  several conclusions have been drawn from smaller differences. Pair every
+  throughput claim — same session, back to back — or do not make it
 - ⚠ **state the prediction before measuring.** Four claims were retracted in one
   day because a measurement was read as confirming what was expected
 
