@@ -306,7 +306,7 @@ if action == "seed":
 elif action == "clear":
     keys = []
     for name in names:
-        keys.extend(r.scan_iter(match=prefix(pod, tenant, name, "*")))
+        keys.extend(r.scan_iter(match=f"pod:{pod}:tenant:{tenant}:agent:{name}:*"))
     keys.append(prefix(pod, tenant, resource="delivering"))
     if keys: r.delete(*set(keys))
 PY
@@ -346,7 +346,7 @@ PY
 run_build67() {
   local count="${BUILD67_COUNT:-500}" deadline before after elapsed processes holder marker
   echo "build67 container=$CONTAINER work=$WORK count=$count"
-  build67_state clear; build67_state seed
+  build67_state clear && build67_state seed || { echo "BUILD67 SETUP RED: initial state failed"; return 3; }
   tmux_switch="$(dx pgrep -f 'python3 -m flock.switch' | head -1 | tr -d '\r')"
 
   echo "== A control: consumable destination stays clear =="
@@ -387,7 +387,7 @@ PY
   echo "A INJECTED DETECTED"
 
   echo "== B control: absent tag leaves no waiting ports =="
-  build67_state clear; build67_state seed
+  build67_state clear && build67_state seed || { echo "BUILD67 SETUP RED: B state failed"; return 3; }
   build67_push stress-clean 10 B-control; wait_for_queues 120 || return 3
   processes="$(dx sh -c "ps -eo args= | grep -c 'flock.port stress-clean' || true" | tr -d '\r')"
   echo "B_CONTROL waiting_processes=$processes"; [ "$processes" = 0 ] || return 3
@@ -410,7 +410,7 @@ PY
 
   echo "== C control: kicked api/control queues clear =="
   dx pkill -9 -f 'flock.port stress-clean' >/dev/null 2>&1 || true
-  build67_state clear; build67_state seed
+  build67_state clear && build67_state seed || { echo "BUILD67 SETUP RED: C state failed"; return 3; }
   build67_push stress-api 1 C-api-control; build67_push host 1 C-control-control
   wait_for_queues 120 || { echo "C CONTROL RED: kicked participant did not clear"; return 3; }
   echo "C CONTROL CLEAN"
@@ -434,7 +434,7 @@ PY
   echo "C INJECTED DETECTED"
 
   echo "== D control: same-source FIFO trio all produce custody =="
-  build67_state clear; build67_state seed
+  build67_state clear && build67_state seed || { echo "BUILD67 SETUP RED: D control state failed"; return 3; }
   : >"$WORK/d-control.tsv"
   build67_redis >"$WORK/d-control.tsv" <<'PY'
 import json, os, sys, time
@@ -450,7 +450,8 @@ PY
   echo "D CONTROL CLEAN"
 
   echo "== D injected: kill after BLPOP before first emit, FIFO bracket =="
-  build67_state clear; build67_state seed; : >"$WORK/d-injected.tsv"; : >"$WORK/injections.tsv"
+  build67_state clear && build67_state seed || { echo "BUILD67 SETUP RED: D injected state failed"; return 3; }
+  : >"$WORK/d-injected.tsv"; : >"$WORK/injections.tsv"
   # Deliver the FIFO predecessor normally.
   build67_redis >"$WORK/d-injected.tsv" <<'PY'
 import json, os, sys, time
