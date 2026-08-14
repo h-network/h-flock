@@ -8,11 +8,50 @@ Documentation for external developers building web interfaces, mobile clients, d
 
 An **h-flock** tenant is a message bus for terminal agents and external applications. Every participant in a tenant is an **agent**, identified by a unique **name**.
 
-- **Addresses:** An agent's name (e.g. `backend`, `frontend`, `telegram`) is its sole address. All communication happens by addressing messages to names.
+- **Addresses:** An agent's name (e.g. `backend`, `frontend`, `telegram`) is its sole address. All communication happens by addressing messages to names. Local names can be addressed directly (e.g. `backend`), or qualified with tenant and pod (`acme:hq:backend`).
 - **Applications as Participants:** External applications enrol as named participants on the bus with an `api` environment (`port_type: api`). Once enrolled, terminal agents can address replies to your app by name (e.g. `office send -a telegram hello`).
-- **Envelopes & Kinds:** Messages travel inside structured **envelopes**. The **kind** indicates what sort of message it is (e.g. `Message`, `AddTicket`, `StartAgent`).
-- **Asynchronous Delivery:** `POST` operations return `202 Accepted` immediately. Agents process envelopes asynchronously over seconds to minutes. A reply, if generated, is delivered to your app's inbox stream.
+- **Layered Wire Frames (v2):** Messages travel across the bus as version 2 layered wire frames (`v: 2`). A frame encapsulates Layer 2 local forwarding addresses (`l2`), Layer 3 qualified fabric addresses (`l3`), lifecycle correlation headers (`stream_id`, `correlation_id`), and an application `payload`.
+- **Envelopes & Kinds:** The **kind** indicates what sort of message it is (e.g. `Message`, `AddTicket`, `StartAgent`).
+- **Tag-Based Policy & Access Control:** Senders and recipients can declare `export` and `import` policy tags. Senders are filtered at the port before enqueuing; an unshared tag set results in an immediate, synchronous `422 Unprocessable Content` refusal.
+- **Asynchronous Delivery:** `POST` operations return `202 Accepted` immediately upon successful queueing. Agents process envelopes asynchronously over seconds to minutes. A reply, if generated, is delivered to your app's inbox stream.
 - **Pull-Based Task Boards:** Task boards are pulled by participants; adding a ticket writes to a board without interrupting or notifying the agent.
+
+### The v2 Wire Frame Specification
+
+Every envelope moving across the bus or read from `/messages` conforms to the version 2 frame schema:
+
+```json
+{
+  "v": 2,
+  "kind": "Message",
+  "stream_id": "d03d60148843438cbafac93615646951",
+  "correlation_id": "d3cec61c5c7049519920f433b325bf10",
+  "ts": "2026-08-14T15:55:54.243Z",
+  "l2": {
+    "source": "telegram",
+    "destination": "backend"
+  },
+  "l3": {
+    "source": "acme:hq:telegram",
+    "destination": "acme:hq:backend"
+  },
+  "payload": {
+    "text": "hello"
+  }
+}
+```
+
+| Field | Type | Description |
+|---|---|---|
+| `v` | integer | Wire schema version. Always `2`. Flat v1 envelopes are rejected at the door. |
+| `kind` | string | Message kind discriminator (e.g. `"Message"`, `"AddTicket"`, `"StartAgent"`, `"StopAgent"`). |
+| `stream_id` | string | Unique 32-character lowercase hex identifier for this envelope across its entire lifecycle. |
+| `correlation_id` | string | 32-character lowercase hex identifier for multi-turn conversations. Propagated from request or minted automatically. |
+| `ts` | string | RFC 3339 / ISO 8601 UTC timestamp with millisecond precision and `Z` suffix (`%Y-%m-%dT%H:%M:%S.%fZ`). |
+| `l2` | object | **Layer 2 Local Forwarding:** contains `source` (local agent name) and `destination` (local agent name or `"all"`). Used by the local switch. |
+| `l3` | object | **Layer 3 Qualified Addressing:** contains `source` (`pod:tenant:agent`) and `destination` (`pod:tenant:agent` or `pod:tenant:all`). |
+| `payload` | object | Arbitrary JSON object holding the message content for the specified `kind`. |
+| `cursor` | string *(mailbox stream only)* | Monotonically increasing Redis stream entry ID (e.g. `"1786231887036-0"`) used for pagination and catch-up resuming. |
 
 > **A reply may never come — build for silence.**
 >
@@ -333,6 +372,10 @@ you need a delivery guarantee, build it on your side.
 #### `POST /agents/{agent}/envelopes`
 Post an envelope to a specific agent, or to `"all"` for broadcast messages.
 
+- **Destination Addressing:**
+  - Local agent name: e.g. `backend`, `frontend`, `all`.
+  - Qualified address: `pod:tenant:agent` (e.g. `acme:hq:backend`). Qualified addresses within the local tenant resolve to the local agent.
+  - ⚠ **Non-Local Destinations:** Addresses naming a foreign pod or tenant (e.g. `otherpod:othertenant:backend`) are refused synchronously with `422 Unprocessable Content` (`"no route to non-local destination 'otherpod:othertenant:backend'"`). The current fabric routes intra-tenant traffic.
 - **Request Body Fields:**
   - `text` (optional string): Text message shorthand (implies `kind: "Message"`).
   - `as` (optional string): Enrolled application client name to declare as `source`. Must name an enrolled `port_type: "api"` client.
@@ -366,10 +409,36 @@ Post an envelope to a specific agent, or to `"all"` for broadcast messages.
 }
 ```
 
-**Error Response (`422 Unprocessable Content` if `as` client is invalid or not enrolled as `port_type: api`):**
+### Tag-Based Policy & Synchronous 422 Refusal
+
+Communication between participants can be governed by export and import policy tags:
+
+1. **Tag Model:** Participants declare `export` tags (what tag scopes they can emit) and `import` tags (what tag scopes they accept).
+2. **Intersection Rule:** Sending from `source` to `destination` is permitted if `source.export ∩ destination.import` is non-empty.
+3. **Permit When Absent:** If either the sender has no `export` tags defined or the destination has no `import` tags defined (the standard state for default agents), the send is **permitted**.
+4. **Synchronous Refusal (`422 Unprocessable Content`):**
+   - If both participants define tags and their intersection is empty, the send is refused synchronously **before the envelope is enqueued to egress or minted onto the bus**.
+   - An HTTP 422 response guarantees that **nothing was sent or enqueued** (not that a message was sent and lost).
+   - The bus logs a `send_refused` custody record.
+
+**Policy Denial Error Response (`422 Unprocessable Content`):**
+```json
+{
+  "detail": "policy denied 'telegram' -> 'backend': no shared export/import tag"
+}
+```
+
+**Invalid Client Error Response (`422 Unprocessable Content`):**
 ```json
 {
   "detail": "invalid 'as' client: must be an enrolled client with port_type 'api'"
+}
+```
+
+**Non-Local Destination Error Response (`422 Unprocessable Content`):**
+```json
+{
+  "detail": "no route to non-local destination 'corp:prod:backend'"
 }
 ```
 
@@ -380,7 +449,7 @@ Post an envelope to a specific agent, or to `"all"` for broadcast messages.
 Lifecycle commands are sent as envelopes addressed to the `host` agent: `POST /agents/host/envelopes`.
 
 Lifecycle payloads have a fixed vocabulary. `StartAgent` accepts `agent`,
-`port_type`, `cli`, `profile`, and `provider`; `StopAgent`, `PauseAgent`, and
+`port_type`, `cli`, `profile`, `provider`, `export`, and `import`; `StopAgent`, `PauseAgent`, and
 `ResumeAgent` accept only `agent`. An omitted optional key keeps its documented
 default, but any unknown key is refused with HTTP 422 and named in the error.
 This makes misspellings loud instead of silently selecting a default.
@@ -391,17 +460,26 @@ This makes misspellings loud instead of silently selecting a default.
 nothing else — no mailbox is cleared, no messages are lost. Clients are expected
 to enrol on every start rather than track whether they have before.
 
-Registers an external application client without creating a terminal window or starting a CLI process:
+Registers an external application client without creating a terminal window or starting a CLI process, optionally configuring policy tags:
 
 ```json
 {
   "kind": "StartAgent",
   "payload": {
     "agent": "telegram",
-    "port_type": "api"
+    "port_type": "api",
+    "export": ["frontend", "ops"],
+    "import": ["frontend"]
   }
 }
 ```
+
+| Field | Type | Description |
+|---|---|---|
+| `agent` | string | Unique agent name segment (lowercase alphanumeric, hyphens allowed). |
+| `port_type` | string | `"api"` for external applications; `"tmux"` for terminal agents. |
+| `export` | array of strings | *(Optional)* Policy tags this agent is permitted to send to. |
+| `import` | array of strings | *(Optional)* Policy tags this agent accepts incoming messages for. |
 
 #### Enrol Terminal Agent (`StartAgent` with `port_type: tmux`)
 
@@ -707,8 +785,32 @@ Port `:8081` provides WebSocket terminal access for rendering live terminal wind
 | `202 Accepted` | Accepted | Envelope accepted for asynchronous routing | Poll/stream mailbox for reply |
 | `401 Unauthorized` | Unauthorized | Missing or invalid Bearer token | Check `Authorization: Bearer <TOKEN>` header |
 | `404 Not Found` | Not Found | Unknown route, invalid agent segment name, or reading `/messages` for a non-`api` agent | Verify agent name and roster enrolment |
-| `422 Unprocessable Content` | Validation Error | Invalid `"as"` client name (not enrolled or `port_type != "api"`), payload exceeding 1MB limit, or malformed request payload | Correct request payload; do not retry identical request |
+| `422 Unprocessable Content` | Refused or Invalid | Policy refusal (disjoint tags), non-local unrouted destination, invalid `"as"` identity, or payload exceeding 1MB | Inspect `detail` field; correct request payload or permissions; do not retry without changes |
 | `5xx` | Server Error | Redis database or internal backend failure — not a fault in your request payload | **Retry with backoff.** The same request will succeed once the server/database recovers |
+
+### Distinguishing 422 Unprocessable Content Causes
+
+`422 Unprocessable Content` is returned synchronously by the API door for several distinct reasons. Callers distinguish the cause by inspecting the `detail` property of the JSON response:
+
+| Error Cause | Response `detail` Pattern | Meaning & Resolution |
+|---|---|---|
+| **Policy Denial** | `"policy denied '<source>' -> '<destination>': no shared export/import tag"` | Senders and recipients have disjoint policy tags. **Nothing was sent or enqueued.** Verify and update `export` / `import` tags via `StartAgent`. |
+| **Non-Local Route** | `"no route to non-local destination '<destination>'"` | Destination specifies a qualified pod/tenant outside this tenant. Intra-tenant local routing cannot reach foreign nodes without a gateway. |
+| **Invalid Client Identity** | `"invalid 'as' client: must be an enrolled client with port_type 'api'"` | The declared `"as"` client is not enrolled in the tenant roster as an `api` participant. Enrol with `StartAgent` first. |
+| **Malformed Address / Payload** | `"destination must be a qualified pod:tenant:agent address"` or `"payload must be an object"` | Request envelope structure does not conform to the v2 frame specification. |
+| **Payload Too Large** | `"request body too large (max 1MB)"` | Envelope payload exceeded the 1MB limit. |
+
+### Custody Records & Observability
+
+When an envelope is posted to the door or delivered across the bus, the platform emits structured custody records. Join them across system logs by `stream_id`:
+
+- **`send_refused`** *(pre-queue refusal)*: Emitted synchronously by the sender door/port when a send is rejected (e.g. policy denial, unrouted non-local destination, or validation failure). **No frame is minted and nothing is enqueued to egress.**
+- **`sent`**: Emitted when the envelope is assembled into a v2 frame and enqueued to the sender's `egress` list.
+- **`popped`**: Emitted by the switch when taking the frame off egress.
+- **`forwarded`**: Emitted by the switch when delivering the frame to the recipient's `ingress` list.
+- **`dead_lettered`**: Emitted if the switch or port fails to deliver or parse the frame.
+- **`received`**: Emitted when the recipient's port dequeues the frame from `ingress`.
+- **`opened`**: Emitted when the port's kind opener successfully completes processing.
 
 **Request & Payload Size Limits:**
 - **Maximum Envelope Payload:** Envelopes posted to `POST /agents/{agent}/envelopes` are limited to **1 MB (1,048,576 bytes)**. Requests exceeding this limit return `422 Unprocessable Content`.

@@ -178,3 +178,21 @@ def test_telegram_api_client_takes_no_context():
     """⚠ --insecure is about the h-flock door. api.telegram.org is a public host
     with a real certificate, and must keep being verified."""
     assert "ssl_context" not in inspect.signature(bot.TelegramClient.__init__).parameters
+
+
+def test_handle_user_prompt_when_refused_by_policy():
+    class RefusingFlockClient(DummyFlockClient):
+        def send_message(self, destination, text):
+            return 422, {"detail": "policy denied 'telegram' -> 'architect': no shared export/import tag"}
+
+    flock = RefusingFlockClient()
+    telegram = DummyTelegramClient()
+    with tempfile.TemporaryDirectory() as tmpdir:
+        store = CursorStore(str(Path(tmpdir) / "cursor.json"))
+        bot_instance = TelegramBot(flock, telegram, store, target_agent="architect")
+
+        reply = bot_instance.handle_user_prompt(12345, "hello architect")
+        assert "policy denied" in reply
+        assert len(telegram.sent_messages) == 1
+        assert "policy denied" in telegram.sent_messages[0]["text"]
+
