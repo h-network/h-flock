@@ -385,3 +385,33 @@ so a container restart leaves no envelopes to break. **If persistence is ever
 enabled, every wire change becomes an upgrade hazard** and needs a dual-read
 window. The persistence decision and the wire-versioning decision are the same
 decision, and they were not previously connected.
+
+---
+
+## 8. ⚠ The liveness fix belongs in the receiving PORT, not the switch
+
+Build 58 proved a frame can strand: the switch forwards, kicks a port, and that
+port dies before it pops. **The obvious fix — a sweeper that scans ingress — is
+the wrong one**, because it puts periodic work in the one component whose cost
+cannot be parallelised. *We do not slow down the switch.*
+
+**The receiving port owns this**, and it already has everything it needs:
+
+- `receive()` handles **exactly one** envelope per invocation and returns
+- so a kick that dies strands whatever was waiting, until the *next* kick — which
+  drains one, leaving the newest stranded instead. That is the permanent
+  off-by-one build 58 measured
+
+**Have the port drain until empty** rather than take one and exit. Then a kick
+that dies costs nothing: the next port to run clears the backlog, including the
+frame the dead one was kicked for.
+
+⚠ **This does not need an observer, a sweeper, or any switch change.** The cost
+is borne per delivery, in a process that is already running, and it is parallel.
+
+⚠ **One residual case survives and must be stated:** if the port handling the
+**final** envelope dies and no further kick ever arrives, that frame strands
+permanently. Draining shrinks the window from *every killed port* to *only a
+killed port with no successor* — which is exactly the condition build 58 hit,
+because its producer had stopped. **That residual is what an observer would be
+for, and it is a separate decision.**

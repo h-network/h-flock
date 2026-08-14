@@ -14,7 +14,7 @@ We already know of one that cannot.
 
 ## 2. The known hole, established by build 58
 
-`seq 9935` sat intact in `cons-36` ingress **forever**. In the log it looks like
+`seq 9956` (`cons-57`) and `seq 9990` (`cons-91`) sat intact in ingress **forever**. In the log it looks like
 this:
 
 ```
@@ -78,7 +78,10 @@ Judge whether it is worth the log volume and say why either way.
 `/home/h-lab/tmux-build58-rerun/evidence-attempt4`. **Use it.**
 
 Answer concretely: from that `docker logs` capture alone, with no queue
-inspection, could you identify `seq 9935` as stranded rather than in flight?
+inspection, could you identify `seq 9956` or `seq 9990` as stranded rather than
+in flight? ⚠ **My first version of this spec cited `seq 9935`, which was
+attempt 3's strand, not attempt 4's.** `bus` verified the checksums and found
+the right records — `popped` and `forwarded` and nothing after, for both.
 ⚠ **If the answer is no, that is the build's headline** — a 10,000-envelope
 conservation run whose most interesting finding was invisible to the log.
 
