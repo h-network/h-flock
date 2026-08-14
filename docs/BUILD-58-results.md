@@ -122,3 +122,70 @@ and `samples.tsv` before replay, however, destroying the coverage and growth
 samples. The raw run log retains all eight injection windows, but the original
 sample series is not recoverable. No duplicate count across the 10,000-frame
 run can be claimed from this attempt.
+
+## Attempt four: valid conservation result
+
+Commit `1c8cc2b` made the evidence path structural: the controlled test switch
+and every port it spawns inherit `/proc/1/fd/1`, so custody records reach the
+same PID 1 stream read by `docker logs`. Evidence-only replay no longer
+truncates the ledgers, and the drain deadline uses wall-clock seconds.
+
+Both negative controls gated correctly before stressed traffic began. The
+intentional duplicate produced one `DUPLICATE` row and exit 2; the intentional
+drop produced one `LOSS_UNEXPLAINED` row and exit 1. All parse-failure counts
+were zero in both controls.
+
+Final reconciliation across all 10,000 unique sequence numbers was:
+
+```text
+RECONCILE sent=10000 delivered_once=9997 duplicates=0 dead=0 stranded=2 lost_attributed=1 lost_unexplained=0
+PARSE_FAILURES docker_json=0 dead_json=0 ingress_json=0 event_ts=0
+INJECTION_COVERAGE seconds=48.328 fraction=0.156559
+STRANDED 9956 50a8ff8ddaa14da49ae32155171f7d85
+STRANDED 9990 77e6f275c75c401392faee0e7b38d94d
+LOSS_ATTRIBUTED 818 36ed04f6e84345c989772bd25894ca5c switch-kill:old=396,new=1427,target=2200
+```
+
+The categories sum to 10,000. At-most-once safety held with zero duplicates.
+One envelope was lost, and its send/custody timing falls within the first
+switch-kill attribution window. There were no unexplained losses.
+
+Eight failures were injected: five port kills and three switch kills. The five
+port kills resulted in two terminal strands, meaning two kills landed between
+kick and pop. A kill outside that narrow window does not create a strand. The
+two raw queued frames were captured before teardown, including their complete
+envelopes, so `stranded` means retained intact in Redis rather than inferred
+from an absent log record. Attempt three stranded one; attempt four stranded
+two. This matches a probabilistic injection window rather than every port kill
+causing a strand.
+
+Growth samples are `elapsed_s used_memory_bytes queue_depth pid1_rss_kib`:
+
+```text
+0   1567176 0    1280
+61  2545064 1136 1280
+128 3384336 2484 1280
+193 3956424 3995 1280
+259 4921624 5509 1280
+326 5604464 6354 1280
+394 5353864 5585 1280
+461 5556376 4849 1280
+529 5687664 4042 1280
+595 5532992 3301 1280
+659 5760024 2655 1280
+726 5712120 1884 1280
+795 5710448 1084 1280
+862 5881040 287  1280
+928 5909544 2    1280
+990 5888048 2    1280
+```
+
+Redis memory rose with queued traffic and levelled near 5.9 MB while the queue
+drained. PID 1 RSS stayed at 1,280 KiB. The final queue depth of two is exactly
+the two stranded frames.
+
+The lab-local evidence bundle is
+`/home/h-lab/tmux-build58-rerun/evidence-attempt4`, with SHA-256 checksums for
+the 10,000-line ledger, eight-line injection ledger, raw ingress frames, growth
+samples, Docker logs, top-level output, and reconciliation. The scoped tenant
+was removed with `down -v`; only operator-owned `h-cli` remained.
