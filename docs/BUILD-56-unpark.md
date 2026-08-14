@@ -45,7 +45,7 @@ known to have been checked.**
 ## 4. ⚠ What this breaks, and it must be stated not implied
 
 **Tier C changes Redis key resources and environment variables**
-(`vab` → `port_type`, `endpoint` → `provider`, `ENDPOINT_*` → `PROVIDER_*`).
+(`port_type` → `port_type`, `provider` → `provider`, `PROVIDER_*` → `PROVIDER_*`).
 **A tenant running across this change breaks.** There is no dual-read.
 
 **Say plainly in the report that a fresh tenant is required**, and confirm

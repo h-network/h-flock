@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # container/scenarios/api-auth-and-limits.sh
-# Tests REST API token auth, payload size bounds, malformed 'as' validation, and board endpoints.
+# Tests REST API token auth, payload size bounds, malformed 'as' validation, and board providers.
 
 HOST="${API_HOST:-http://localhost:8110}"
 TOKEN="${API_TOKEN:-7af3ad5eb2cac57e9ca97a953908ef09}"

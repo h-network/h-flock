@@ -36,8 +36,8 @@ export class AgentsPanel {
       const details = await Promise.all(names.map(async (agent) => [agent, await api(`/agents/${encodeURIComponent(agent)}`)]));
       this.details = new Map(details);
       for (const agent of names) this.pending.delete(agent);
-      for (const agent of this.pending) this.details.set(agent, { vab: "tmux", presence: { state: "pending" } });
-      const staff = Array.from(this.details.values()).filter((d) => (d?.vab || "tmux") === "tmux").length;
+      for (const agent of this.pending) this.details.set(agent, { port_type: "tmux", presence: { state: "pending" } });
+      const staff = Array.from(this.details.values()).filter((d) => (d?.port_type || "tmux") === "tmux").length;
       if (staff) this.status.ready(`${staff} agent${staff === 1 ? "" : "s"}`);
       else this.status.empty("No enrolled participants");
       this.publishRoster();
@@ -47,7 +47,7 @@ export class AgentsPanel {
 
   addPending(agent) {
     this.pending.add(agent);
-    this.details.set(agent, { vab: "tmux", presence: { state: "pending" } });
+    this.details.set(agent, { port_type: "tmux", presence: { state: "pending" } });
     this.publishRoster();
     this.render();
   }
@@ -57,7 +57,7 @@ export class AgentsPanel {
     let staffed = 0;
     for (const detail of this.details.values()) {
       const presence = presenceOrder.includes(detail.presence?.state) ? detail.presence.state : "unknown";
-      if (detail.vab === "tmux") {
+      if (detail.port_type === "tmux") {
         staffed += 1;
         counts[presence] += 1;
       }
@@ -71,7 +71,7 @@ export class AgentsPanel {
     const matches = ([agent, detail]) => {
       if (!this.filter) return true;
       const doing = this.boards.get(agent)?.doing || [];
-      return [agent, detail.vab, detail.presence?.state, ...doing.map((value) => typeof value === "string" ? value : `${value?.id || ""} ${value?.title || ""}`)]
+      return [agent, detail.port_type, detail.presence?.state, ...doing.map((value) => typeof value === "string" ? value : `${value?.id || ""} ${value?.title || ""}`)]
         .some((value) => String(value || "").toLowerCase().includes(this.filter));
     };
     const valueFor = ([agent, detail], key) => {
@@ -79,7 +79,7 @@ export class AgentsPanel {
       const task = typeof doing[0] === "string" ? { title: doing[0] } : doing[0];
       if (key === "agent") return agent;
       if (key === "presence") return presenceOrder.indexOf(detail.presence?.state || "unknown");
-      if (key === "vab") return detail.vab || "";
+      if (key === "port_type") return detail.port_type || "";
       if (key === "task") return task?.title || task?.id || "";
       if (key === "started") return task?.started_ts || "";
       return detail.presence?.last_activity || "";
@@ -89,7 +89,7 @@ export class AgentsPanel {
     // they are plumbing: no window, no CLI, no activity feed — so they render as
     // `unknown` and read as three broken agents on a healthy office. An operator
     // opening this list wants the people they can talk to and watch.
-    const isStaff = ([, detail]) => (detail?.vab || "tmux") === "tmux";
+    const isStaff = ([, detail]) => (detail?.port_type || "tmux") === "tmux";
     const entries = Array.from(this.details).filter(isStaff).filter(matches).sort((left, right) => {
       const a = valueFor(left, this.sort.key);
       const b = valueFor(right, this.sort.key);
@@ -101,7 +101,7 @@ export class AgentsPanel {
       root.innerHTML = `<p class="filtered-empty">No agents match “${escapeHtml(this.filter)}”</p>`;
       return;
     }
-    const columns = [["agent", "Agent"], ["presence", "Presence"], ["vab", "Host"], ["task", "Open task"], ["started", "Started"], ["activity", "Last activity"]];
+    const columns = [["agent", "Agent"], ["presence", "Presence"], ["port_type", "Host"], ["task", "Open task"], ["started", "Started"], ["activity", "Last activity"]];
     const table = document.createElement("table");
     table.className = "roster-table";
     table.innerHTML = `<thead><tr>${columns.map(([key, label]) => `<th scope="col" aria-sort="${this.sort.key === key ? (this.sort.direction === "asc" ? "ascending" : "descending") : "none"}"><button type="button" data-sort="${key}">${label}<span aria-hidden="true">${this.sort.key === key ? (this.sort.direction === "asc" ? "↑" : "↓") : "↕"}</span></button></th>`).join("")}</tr></thead><tbody>${entries.map(([agent, detail]) => this.agentRow(agent, detail)).join("")}</tbody>`;
@@ -133,7 +133,7 @@ export class AgentsPanel {
     const ticket = typeof doing[0] === "string" ? { title: doing[0] } : doing[0];
     const stateLabel = `${presence}${presence === "blocked" ? " · action required" : ""}`;
     const lastActivity = detail.presence?.last_activity;
-    return `<tr class="agent-row state-${presence}${agent === this.selected ? " selected" : ""}"><th scope="row"><button type="button" class="agent-link" data-agent="${escapeHtml(agent)}"><span class="state-icon" aria-hidden="true">${{ working: "●", idle: "○", blocked: "⊘", unknown: "?", pending: "…" }[presence] || "?"}</span><span>${escapeHtml(agent)}</span></button></th><td><span class="presence-label"${presence === "blocked" ? ' title="Action required"' : ""}>${escapeHtml(stateLabel)}</span></td><td class="vab">${escapeHtml(detail.vab || "unknown")}</td><td class="ticket">${presence === "pending" ? "Roster and window are converging" : ticket ? escapeHtml(ticket.title || ticket.id || "open ticket") : "No open ticket"}</td><td class="age">${ticket?.started_ts ? `<time datetime="${escapeHtml(ticket.started_ts)}" title="${escapeHtml(absoluteTime(ticket.started_ts))}">${escapeHtml(relativeTime(ticket.started_ts))}</time>` : "—"}</td><td><time datetime="${escapeHtml(lastActivity || "")}" title="${escapeHtml(lastActivity ? absoluteTime(lastActivity) : "No activity recorded")}">${lastActivity ? escapeHtml(relativeTime(lastActivity)) : "Unknown"}</time></td></tr>`;
+    return `<tr class="agent-row state-${presence}${agent === this.selected ? " selected" : ""}"><th scope="row"><button type="button" class="agent-link" data-agent="${escapeHtml(agent)}"><span class="state-icon" aria-hidden="true">${{ working: "●", idle: "○", blocked: "⊘", unknown: "?", pending: "…" }[presence] || "?"}</span><span>${escapeHtml(agent)}</span></button></th><td><span class="presence-label"${presence === "blocked" ? ' title="Action required"' : ""}>${escapeHtml(stateLabel)}</span></td><td class="port_type">${escapeHtml(detail.port_type || "unknown")}</td><td class="ticket">${presence === "pending" ? "Roster and window are converging" : ticket ? escapeHtml(ticket.title || ticket.id || "open ticket") : "No open ticket"}</td><td class="age">${ticket?.started_ts ? `<time datetime="${escapeHtml(ticket.started_ts)}" title="${escapeHtml(absoluteTime(ticket.started_ts))}">${escapeHtml(relativeTime(ticket.started_ts))}</time>` : "—"}</td><td><time datetime="${escapeHtml(lastActivity || "")}" title="${escapeHtml(lastActivity ? absoluteTime(lastActivity) : "No activity recorded")}">${lastActivity ? escapeHtml(relativeTime(lastActivity)) : "Unknown"}</time></td></tr>`;
   }
 
   demoState(value) { forceDemoState(this.status, value); }

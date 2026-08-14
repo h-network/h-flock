@@ -18,8 +18,8 @@ analogy is load-bearing rather than decorative:
 |---|---|
 | destination MAC | `recipient` — the only thing forwarding depends on |
 | source MAC | `producer` — **stamped from the egress queue** by the switch before forwarding; a mismatch is corrected and logged |
-| MAC table | the **roster** — `name → VAB` |
-| port config | the **VAB** — a property of the port, not of the frame |
+| MAC table | the **roster** — `name → port_type` |
+| port config | the **port_type** — a property of the port, not of the frame |
 | ethertype | `kind` — the switch ignores it; an opener at the far edge reads it |
 | L3 and above | `payload` — invisible to everything in the middle |
 
@@ -31,18 +31,18 @@ first-class participant in one build rather than a subsystem.
 ## 2. Participants
 
 Everything addressable is a name in the roster. What is *behind* the name is its
-**VAB** — the virtual agent base it runs on:
+**port_type** — the virtual agent base it runs on:
 
-| VAB | is | gets an envelope by |
+| port_type | is | gets an envelope by |
 |---|---|---|
 | `tmux` | an AI CLI in a terminal window | having it pasted into the window |
 | `api` | an app — web, phone, Telegram bot | having it stored in a mailbox it reads |
-| `control` | the tenant's own lifecycle endpoint (`host`) | acting on it |
+| `control` | the tenant's own lifecycle provider (`host`) | acting on it |
 
 ⚠ **The switch cannot see this column.** It reads roster *fields*, never values
 (the *roster fields, never values* invariant) — so it forwards to a name and something at the far edge decides
 what that means. This is structural rather than a convention: the switch has no
-code path that could dispatch on VAB even if someone wanted it to.
+code path that could dispatch on port_type even if someone wanted it to.
 
 ## 3. The parts
 
@@ -69,7 +69,7 @@ code path that could dispatch on VAB even if someone wanted it to.
 | `flock.bus` | library — keys, envelopes, `send`/`receive`, roster reads | shared |
 | `flock.tmux` | library — windows, and the paste sequence | shared |
 | `flock.switch` | **the one daemon** | blocks on every egress; also runs the maintenance pass (§8b) |
-| `flock.port` | invoked per delivery, dispatches on VAB, exits | not a daemon |
+| `flock.port` | invoked per delivery, dispatches on port_type, exits | not a daemon |
 | `flock.control` | `StartAgent` / `StopAgent` / pause / resume openers | reached only via the bus |
 | `flock.tmuxhost` | the tmux server, session, windows | |
 | `flock.office` | the one agent-facing command | imports `flock.bus` only |
@@ -122,7 +122,7 @@ office send -a frontend …        the agent's own command, its only surface
    → …:backend:egress         it writes its OWN queue, never frontend's
    → switch                 pops, resolves frontend in the roster, RPUSHes
    → …:frontend:ingress          and kicks an port
-   → port                reads frontend's VAB, dispatches, exits
+   → port                reads frontend's port_type, dispatches, exits
    → opener                 tmux → paste · api → mailbox · control → act
 ```
 
@@ -153,7 +153,7 @@ the same sentence as §1 from a different angle.
 | `Command` | `tmux` | pasted bare — **it executes** |
 | `AddTicket` | `tmux` | writes a ticket to that agent's board, and **pastes nothing** |
 | `StartAgent` | `control` | enrols: roster row, and for a tmux agent a home, window and CLI |
-| `StopAgent` | `control` | reverses whatever `StartAgent` created for that VAB |
+| `StopAgent` | `control` | reverses whatever `StartAgent` created for that port_type |
 | `PauseAgent` | `control` | stops the CLI, keeps the agent, its queues and its board |
 | `ResumeAgent` | `control` | starts the CLI again and drains what queued while it was paused |
 
@@ -169,7 +169,7 @@ Confusing the two loses work.
 
 | | reaches | filtered by |
 |---|---|---|
-| `office broadcast …` | **tmux agents only**, minus you | the command, client-side, on `vab == "tmux"` |
+| `office broadcast …` | **tmux agents only**, minus you | the command, client-side, on `port_type == "tmux"` |
 | an envelope to `recipient: "all"` | **every roster row** — agents *and* app clients | nothing |
 
 ```bash
@@ -177,7 +177,7 @@ office broadcast standup in five                    # colleagues
 POST /agents/all/envelopes  {"text":"…"}            # everyone, clients included
 ```
 
-⚠ **The switch cannot filter a broadcast by VAB and never will.** It fans out
+⚠ **The switch cannot filter a broadcast by port_type and never will.** It fans out
 over roster *fields*, and by that same invariant it cannot read a value — so `all` means
 all. `office broadcast` selects tmux agents *before* sending, which is why the
 two differ. If you want colleagues, use the command; if you address `all`, expect
@@ -343,9 +343,9 @@ promises otherwise.
 
 ## 10. One container is one tenant
 
-Redis, the switch, the tmux server, both doors, and one window per **`vab: tmux`**
+Redis, the switch, the tmux server, both doors, and one window per **`port_type: tmux`**
 agent — in one image that converges when brought up twice. ⚠ **`api` clients and
-`host` have no window**, which is the point of the VAB. Redis is internal and
+`host` have no window**, which is the point of the port_type. Redis is internal and
 unpublished.
 
 ⚠ **The container is the boundary, and nothing inside it is.** Agents run with
@@ -404,7 +404,7 @@ The short list that everything else assumes:
    switch writes a recipient's ingress and `AddTicket` writes a recipient's
    board: that is the delivery mechanism, and it is what the rule exists to
    route work *through*.
-4. **The switch reads roster fields, never values.** It cannot know a VAB.
+4. **The switch reads roster fields, never values.** It cannot know a port_type.
 5. **Adapters do not exist between deliveries.**
 6. **The api does not validate `kind`** — which kinds are openable is a fact
    about adapters, discovered at the far edge.

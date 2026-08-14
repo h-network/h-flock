@@ -6,7 +6,7 @@ A Telegram bot client that talks to an **h-flock** tenant over HTTP, allowing a 
 
 ## 1. Overview & Architecture
 
-- **Participant Enrolment:** On startup, the bot enrols as a participant named `telegram` on the bus (`StartAgent` with `vab: "api"`).
+- **Participant Enrolment:** On startup, the bot enrols as a participant named `telegram` on the bus (`StartAgent` with `port_type: "api"`).
 - **Single Progress Message Editing:** When a user sends a prompt, the bot creates a single Telegram progress message (`⏳ architect is working`) and edits it in place as tool execution events arrive from `/agents/architect/activity`.
 - **Tool Call Summaries:** Tool executions are rendered as tool names (e.g. `⚙ Read`, `⚙ Bash`, `⚙ Edit`). Arguments are intentionally excluded. Edits are coalesced (max once every ~1.5 seconds) to respect Telegram API rate limits.
 - **Typing Indicator:** Telegram's typing indicator is refreshed on a timer (~every 4s) while the agent presence state is `working`.
@@ -63,7 +63,7 @@ Built strictly against [`docs/API.md`](../../docs/API.md). The following gaps an
    Section 5 under `GET /agents/{agent}` (line 248) states: *"returns queue depths and presence status (working, idle, unknown)"*. It omitted `blocked` as a possible presence state in that section, even though `blocked` is a critical presence state documented in `CONTRACTS.md` and `HLD.md`.
 
 2. **Re-enrolment Idempotency Behavior**:
-   Sections 3 and 5 document `POST /agents/host/envelopes` with `StartAgent` and `vab: "api"` for enrolling application clients, but do not state whether re-enrolling an already enrolled client (e.g. upon client restart) is idempotent or what HTTP status/body is returned.
+   Sections 3 and 5 document `POST /agents/host/envelopes` with `StartAgent` and `port_type: "api"` for enrolling application clients, but do not state whether re-enrolling an already enrolled client (e.g. upon client restart) is idempotent or what HTTP status/body is returned.
 
 3. **Task Board Ticket Schema Variability**:
    Section 5 gives an example response for `GET /agents/{agent}/board` with task objects containing `id`, `title`, `description`, `created_by`, `status`, `created_ts`, and `priority`. However, for legacy tasks or raw string items, `API.md` does not explain whether task items can be non-dict objects or strings.

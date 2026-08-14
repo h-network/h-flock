@@ -41,7 +41,7 @@ session, tmux port, tmux host, container, watchdog, and public API documents.
   `LLD-api.md` says its inbox and data survive retirement. Both affected
   contract passages now say classified identity state is purged and retained
   data survives.
-- `CONTRACTS.md` put the roster row before launch/profile/endpoint state on
+- `CONTRACTS.md` put the roster row before launch/profile/provider state on
   `StartAgent`, contradicting `LLD-tmux-host.md`'s race-prevention ordering. The
   prose and sequence now put desired launch state before the roster trigger.
 - `CONTRACTS.md` still said roster ownership was deferred. Its own control
@@ -59,7 +59,7 @@ session, tmux port, tmux host, container, watchdog, and public API documents.
 ## Design contradiction — deliberately not corrected
 
 - `LLD-bus-and-switch.md` line 171 says a gateway routes between tenants, and
-  its participant table reserves `gateway` as a VAB. Lines 847–852 instead say
+  its participant table reserves `gateway` as a port_type. Lines 847–852 instead say
   cross-tenant routing is not a separate component but a switch branch that
   learns remote Redis addresses and writes their stores. Recommendation:
   architect and operator must choose. A gateway participant preserves local

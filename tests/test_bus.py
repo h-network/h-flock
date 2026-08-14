@@ -4,7 +4,7 @@ import unittest
 from contextlib import redirect_stdout
 from unittest.mock import patch
 
-from flock.bus import EnvelopeError, build, emit, is_member, members, parse, prefix, receive, send, vab
+from flock.bus import EnvelopeError, build, emit, is_member, members, parse, prefix, receive, send, port_type
 from flock.bus.envelope import parse_for_switch
 from flock.switch.service import Switch
 
@@ -140,8 +140,8 @@ class DoorsAndRouterTest(unittest.TestCase):
     def test_roster_reads(self):
         self.assertEqual(members(self.r, pod="acme", tenant="hq"), {"alice", "bob", "carol"})
         self.assertTrue(is_member(self.r, pod="acme", tenant="hq", agent="alice"))
-        self.assertEqual(vab(self.r, pod="acme", tenant="hq", agent="alice"), "tmux")
-        self.assertIsNone(vab(self.r, pod="acme", tenant="hq", agent="nobody"))
+        self.assertEqual(port_type(self.r, pod="acme", tenant="hq", agent="alice"), "tmux")
+        self.assertIsNone(port_type(self.r, pod="acme", tenant="hq", agent="nobody"))
 
     def test_empty_roster_waits_instead_of_spinning(self):
         self.r.hashes[self.roster] = {}

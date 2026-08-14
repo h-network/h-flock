@@ -34,7 +34,7 @@ echo
 echo "== enrolling stations =="
 for i in $(seq 1 "$STATIONS"); do
   dx curl -s -o /dev/null -H "Authorization: Bearer $T" -X POST -H 'Content-Type: application/json' \
-    -d "{\"kind\":\"StartAgent\",\"payload\":{\"agent\":\"bench-$i\",\"vab\":\"api\"}}" \
+    -d "{\"kind\":\"StartAgent\",\"payload\":{\"agent\":\"bench-$i\",\"port_type\":\"api\"}}" \
     "$A/agents/host/envelopes"
 done
 sleep 5

@@ -38,7 +38,7 @@ Crashes and data loss, mostly on paths that run rarely:
   `__init__` placeholder path raises `AttributeError`. ✅ **verified**
 - `StopAgent` destroys an api client's unread mailbox; the docs promise
   retention (F6)
-- retiring `host` deletes the tenant's control endpoint, and an empty roster
+- retiring `host` deletes the tenant's control provider, and an empty roster
   then spins the switch against Redis — one chain, found by cross-checking two
   separate findings (F2+F3)
 - two codex agents without profiles share a session directory, so the switch
@@ -46,7 +46,7 @@ Crashes and data loss, mostly on paths that run rarely:
 - the activity tailer restarts from byte 0 when the newest session file changes,
   replaying a whole file into a capped stream (F10)
 - the session door never recovers from a broken tmux stream, though the LLD says
-  it does (A1); the SSE endpoints do blocking Redis I/O on the event loop (A3)
+  it does (A1); the SSE providers do blocking Redis I/O on the event loop (A3)
 - one malformed roster row makes `/board` return `404` for the whole tenant (B14)
 - nothing bounds the size of anything a client can send or ask for (B8)
 - `Redis.from_url` yields zero connection retries — load-bearing, undocumented,
@@ -64,7 +64,7 @@ Fewer, and each one a claim in a document that is precisely wrong:
   and contradicted by a documented exception elsewhere
 - the session door corrupts non-ASCII terminal output
 - malformed `as` values produce 5xx despite the documented 422 contract
-- an example response omits the `vab` field that is implemented and advertised
+- an example response omits the `port_type` field that is implemented and advertised
 
 ## What this says about the exercise
 

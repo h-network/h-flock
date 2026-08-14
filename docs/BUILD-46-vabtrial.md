@@ -1,15 +1,15 @@
-# Build 46 — vabtrial: put one path on the h-vab shape
+# Build 46 — vabtrial: put one path on the h-port_type shape
 
-> ⚠ **A trial, like build 43.** It answers whether h-flock can sit on the h-vab
+> ⚠ **A trial, like build 43.** It answers whether h-flock can sit on the h-port_type
 > fabric without losing what makes it debuggable. **"No" is a successful
 > outcome**, and a half-migration nobody wants to throw away is the failure.
 >
 > **Base on `vabtrial`, NOT on `main`.** Branch `bus/vabtrial-<piece>`, push to
 > origin. ⚠ **Nothing here goes near `main`.**
 
-## 1. What h-vab is
+## 1. What h-port_type is
 
-A separate design (`github.com/h-network/h-vab`, branch `naming/vocabulary`),
+A separate design (`github.com/h-network/h-port_type`, branch `naming/vocabulary`),
 **not built** — a settled vocabulary and flow for a forwarding fabric. Read
 `docs/NAMING.md` and `docs/FLOW.md` there first. The parts that matter here:
 
@@ -32,7 +32,7 @@ A separate design (`github.com/h-network/h-vab`, branch `naming/vocabulary`),
 
 ## 2. Scope — adapt the design, not just swap a path
 
-**Adapt h-vab's design into h-flock** and report where it fits and where it
+**Adapt h-port_type's design into h-flock** and report where it fits and where it
 does not:
 
 - **the three programs.** Does h-flock's shape map onto `port` / `switch` /
@@ -52,7 +52,7 @@ paste, presence, boards, the `office` command keep doing exactly what they do.
 Their *interface to the fabric* may change; their behaviour may not. **If an
 agent can tell the difference, the adaptation has failed.**
 
-⚠ **One domain. No switch, no cross-domain, no policy** — that is h-vab phase 1,
+⚠ **One domain. No switch, no cross-domain, no policy** — that is h-port_type phase 1,
 and it is all this build implements. The switch is a station, later.
 
 ⚠ **Where the design does not fit, say so rather than bending h-flock to it.**
@@ -69,7 +69,7 @@ simulator 19/19, on a tenant built by `setup.sh` the ordinary way.
 
 **2. Custody is still answerable.** h-flock's five records exist so a lost
 envelope is *locatable rather than merely absent*, and that property found two
-defects last week that fifty audit rows missed. h-vab replaces them with a
+defects last week that fifty audit rows missed. h-port_type replaces them with a
 custody boundary and an observer off to the side. ⚠ **State plainly whether you
 can still answer "where did this packet stop", and how.** If the answer needs a
 bespoke observer as large as the thing it replaced, that is a fail — the same

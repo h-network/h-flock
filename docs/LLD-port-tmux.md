@@ -4,7 +4,7 @@
 >
 > Depends on [`LLD-bus-and-switch.md`](LLD-bus-and-switch.md) for the address
 > scheme, the envelope, and the two doors. One port binary (`flock.port`) per
-> delivery; handles agents in tmux windows (`vab: tmux`) and enrolled REST clients (`vab: api`).
+> delivery; handles agents in tmux windows (`port_type: tmux`) and enrolled REST clients (`port_type: api`).
 > Bringing tmux up — the server, the windows, sizing — is a separate module and out of scope here.
 
 ## 1. Purpose
@@ -23,8 +23,8 @@ library directly and is not part of `flock.port`:
   │  send      office command → bus library → own egress          │
   │                                                               │
   │  receive   blocks on ingress, woken by Redis on arrival       │
-  │            for vab=tmux: pops it, opens it, pastes into window │
-  │            for vab=api:  pops it, writes to client mailbox    │
+  │            for port_type=tmux: pops it, opens it, pastes into window │
+  │            for port_type=api:  pops it, writes to client mailbox    │
   │                                                               │
   └───────────────────────────────────────────────────────────────┘
 ```
@@ -48,8 +48,8 @@ kicks off delivery for that agent.
 ```
   switch  ──RPUSH──►  …:backend:ingress
      │
-     └──kick──►  port for backend ──► pop ──► open ──► paste into window (vab=tmux)
-                 (runs, delivers, exits)              or write mailbox Stream (vab=api)
+     └──kick──►  port for backend ──► pop ──► open ──► paste into window (port_type=tmux)
+                 (runs, delivers, exits)              or write mailbox Stream (port_type=api)
 
   backend's delivery already in flight?  the envelope stays in the queue
 ```
@@ -102,10 +102,10 @@ here.
 
 ## 3. Opening & Delivery Routines
 
-`flock.port` checks the recipient's VAB in the roster:
+`flock.port` checks the recipient's port_type in the roster:
 
-- **`vab: "tmux"` (`deliver_one`)**: dispatches on `kind` to select an opener (`Message`, `Command`, `AddTicket`) and pastes into the agent's window (or mutates the board for `AddTicket`).
-- **`vab: "api"` (`deliver_api`)**: pops the envelope from `ingress`, logs `received` and `opened`, and appends the envelope verbatim as JSON to the client's mailbox Redis Stream (`<prefix>:agent:<client>:inbox`) via `XADD MAXLEN ~ 1000 * envelope '<verbatim JSON>'`. Every kind is stored; nothing dead-letters for being uninteresting.
+- **`port_type: "tmux"` (`deliver_one`)**: dispatches on `kind` to select an opener (`Message`, `Command`, `AddTicket`) and pastes into the agent's window (or mutates the board for `AddTicket`).
+- **`port_type: "api"` (`deliver_api`)**: pops the envelope from `ingress`, logs `received` and `opened`, and appends the envelope verbatim as JSON to the client's mailbox Redis Stream (`<prefix>:agent:<client>:inbox`) via `XADD MAXLEN ~ 1000 * envelope '<verbatim JSON>'`. Every kind is stored; nothing dead-letters for being uninteresting.
 
 For a tmux message, the rendered line names the sender:
 
@@ -151,7 +151,7 @@ logs `board_write_failed` and raises `DeadLetter`.
 
 ### Verification Markers (`pending.verify`)
 
-Before pasting a `Message` or `Command` into a `vab: tmux` window, the port records a pending verification marker in Redis Stream `<prefix>:agent:<name>:pending.verify` via `XADD MAXLEN ~ 100`:
+Before pasting a `Message` or `Command` into a `port_type: tmux` window, the port records a pending verification marker in Redis Stream `<prefix>:agent:<name>:pending.verify` via `XADD MAXLEN ~ 100`:
 ```json
 { "stream_id": "<stream_id>", "ts": "<ts>" }
 ```
@@ -273,14 +273,14 @@ as PID 1, and unrelated to this choice.
 session service does read terminal output for human viewers, out of band from
 envelope delivery; it does not turn pane output into bus data.
 
-**Session endpoints** — implemented by the separate `flock.session` module; they
+**Session providers** — implemented by the separate `flock.session` module; they
 remain outside this port.
 
 ## 8. What this is not
 
 Not the tmux host — it does not create the server, the session or the windows,
 and it does not decide what runs in them. It attaches to what is already there,
-and if a window is missing for `vab: tmux`, that is a dead-letter, not something to repair.
+and if a window is missing for `port_type: tmux`, that is a dead-letter, not something to repair.
 
 Not the switch. It never resolves a recipient and never writes another agent's
 ingress.

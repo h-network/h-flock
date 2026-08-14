@@ -33,7 +33,7 @@ D wire compatibility.
 | roster | `src/flock/bus/roster.py:1` | doc term | A | Tenant hash whose fields are participant names and whose values are their VABs. | MAC/address table, although it also stores attachment type. |
 | members | `src/flock/bus/roster.py:6` | identifier | B | Returns only the participant names from the roster. | Enumerate learned/enrolled addresses. |
 | is_member | `src/flock/bus/roster.py:11` | identifier | B | Tests whether a participant name is enrolled in the tenant roster. | Address-table membership test. |
-| vab | `src/flock/bus/roster.py:15` | identifier | B | Returns the roster value used to choose the participant's delivery mechanism. The repository expands VAB as “virtual agent base,” but I could not tell what that phrase means for `api` or `control` without asking. | Port/attachment type is the behavior; the expansion has no clear analogue. |
+| port_type | `src/flock/bus/roster.py:15` | identifier | B | Returns the roster value used to choose the participant's delivery mechanism. The repository expands port_type as “virtual agent base,” but I could not tell what that phrase means for `api` or `control` without asking. | Port/attachment type is the behavior; the expansion has no clear analogue. |
 | resource | `src/flock/bus/keys.py:55` | identifier | B | Final Redis-key suffix naming stored state beneath tenant or participant scope. | Named table/queue at an address, not a routing level. |
 | AGENT_STATE_RESOURCES | `src/flock/bus/resources.py:6` | identifier | B | Redis resources deleted when a participant identity is retired. “State” does not reveal why activity and presence are disposable while inbox and board are not; I could not infer the boundary from the name alone. | Ephemeral control-plane state. |
 | AGENT_DATA_RESOURCES | `src/flock/bus/resources.py:21` | identifier | B | Redis resources retained when a participant identity is retired. “Data” does not reveal that these are specifically custody and work-history stores. | Durable traffic and application state. |
@@ -105,7 +105,7 @@ are tier C.
 | pod | `src/flock/bus/keys.py:58` | redis key | C | Outermost namespace value containing tenants; current deployment does not use it as an independent runtime boundary. I could not tell why this level is named pod, rather than installation or network, from code and docs alone. | Parent routing namespace; exact analogue unclear. |
 | tenant | `src/flock/bus/keys.py:58` | redis key | C | Routing and roster scope served by one switch. | Broadcast/routing domain. |
 | agent | `src/flock/bus/keys.py:60` | redis key | C | Participant-address scope; it also contains non-agent API and control participants. | Host/port address, not necessarily an autonomous agent. |
-| roster | `src/flock/bus/resources.py:36` | redis key | C | Tenant hash mapping participant names to VAB delivery types. | Address/MAC table with port type as value. |
+| roster | `src/flock/bus/resources.py:36` | redis key | C | Tenant hash mapping participant names to port_type delivery types. | Address/MAC table with port type as value. |
 | lead | `src/flock/bus/resources.py:36` | redis key | C | Tenant scalar naming the participant treated as office lead. | Designated controller address. |
 | window.log.offset | `src/flock/bus/resources.py:36` | redis key | C | Tenant byte cursor into the shared window log spool. | Telemetry collector cursor. |
 | delivering | `src/flock/bus/resources.py:36` | redis key | C | Tenant hash of participants currently holding delivery locks/leases; classification alone does not explain its value shape. | Port-busy/dispatch-lock table. |
@@ -122,7 +122,7 @@ are tier C.
 | blocked | `src/flock/bus/resources.py:8` | redis key | C | Hash recording the first unverified terminal delivery that currently marks the participant blocked. | Suspected receive fault state. |
 | launch | `src/flock/bus/resources.py:9` | redis key | C | Scalar CLI name desired for a tmux participant. | Port-driver type/configuration. |
 | profile | `src/flock/bus/resources.py:10` | redis key | C | Scalar configuration/account profile used to locate CLI state. | Port configuration profile. |
-| endpoint | `src/flock/bus/resources.py:11` | redis key | C | Scalar local-model endpoint name for one participant, not a network termination point despite the network model. | Model-service selection; collides with the ordinary network meaning of endpoint. |
+| provider | `src/flock/bus/resources.py:11` | redis key | C | Scalar local-model provider name for one participant, not a network termination point despite the network model. | Model-service selection; collides with the ordinary network meaning of provider. |
 | paused | `src/flock/bus/resources.py:12` | redis key | C | Marker that desired membership remains but the participant CLI should not run. | Administratively down while address remains enrolled. |
 | activity | `src/flock/bus/resources.py:13` | redis key | C | Redis stream of reduced CLI input/output/tool observations. | Activity telemetry stream. |
 | activity.offset | `src/flock/bus/resources.py:14` | redis key | C | JSON map of session-file paths to byte cursors for the activity tailer. | Telemetry ingestion cursors. |

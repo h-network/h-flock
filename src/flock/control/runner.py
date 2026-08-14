@@ -1,4 +1,4 @@
-"""One-envelope delivery routine for the control VAB."""
+"""One-envelope delivery routine for the control port_type."""
 
 import subprocess
 

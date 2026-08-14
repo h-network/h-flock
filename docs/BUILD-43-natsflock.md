@@ -65,7 +65,7 @@ ones:
 - **integrity**: `container/scenarios/` + the log audit — 1,285 envelopes,
   `popped/forwarded/received/opened` complete for 1,283, zero dead-letters
 - **the harness**: `bash container/accept.sh` — plumbing 25/25, simulator 19/19
-- **the load**: four agents on the local endpoint for at least 30 minutes, then
+- **the load**: four agents on the local provider for at least 30 minutes, then
   the same integrity audit
 
 ⚠ **Report the raw output.** A verdict without the numbers is not a result.

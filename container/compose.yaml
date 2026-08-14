@@ -15,13 +15,13 @@ services:
       dockerfile: container/Dockerfile
     image: h-flock:latest
     # Everything in container/.env reaches the container, so an operator can
-    # define any number of endpoints under any names without editing this file.
+    # define any number of providers under any names without editing this file.
     env_file:
       - .env
     environment:
       POD: "${POD:-acme}"
       TENANT: "${TENANT:-hq}"
-      # ⚠ name:vab pairs — the entrypoint rejects a bare name and the container
+      # ⚠ name:port_type pairs — the entrypoint rejects a bare name and the container
       # exits. This default was bare from the start and had never been used,
       # because setup.sh always writes a .env that overrides it.
       AGENTS: "${AGENTS:-architect:tmux,sme-2:tmux,sme-3:tmux}"
@@ -34,15 +34,15 @@ services:
       # reaches the container if it is named here as well.
       AGENT_CLIS: "${AGENT_CLIS:-}"
       AGENT_PROFILES: "${AGENT_PROFILES:-}"
-      # Which agents run against a model endpoint. The NAME is per agent; the
+      # Which agents run against a model provider. The NAME is per agent; the
       # address is tenant configuration, so an agent cannot read or change the
-      # endpoint it is pointed at.
+      # provider it is pointed at.
       #
-      # ⚠ The ENDPOINT_<NAME>_* variables are NOT listed here. Naming them would
-      # hardcode the endpoint name — only "local" would ever reach the container,
+      # ⚠ The PROVIDER_<NAME>_* variables are NOT listed here. Naming them would
+      # hardcode the provider name — only "local" would ever reach the container,
       # and a tenant with "gpu-a" and "gpu-b" could not work. env_file passes
       # whatever the operator named.
-      AGENT_ENDPOINTS: "${AGENT_ENDPOINTS:-}"
+      AGENT_PROVIDERS: "${AGENT_PROVIDERS:-}"
       # No default. The container refuses to start without it.
       API_TOKEN: "${API_TOKEN:?set API_TOKEN in container/.env}"
       # ⚠ The published host, passed in so the entrypoint can judge exposure —

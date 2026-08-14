@@ -101,7 +101,7 @@ ckc "task record file"   "$(dx bash -lc 'cat /home/ubuntu/.flock/tasks.jsonl 2>/
 dx bash -lc "cd /workdir/$AG2 && AGENT_NAME=$AG2 office done" >/dev/null 2>&1
 
 echo "== 4. app client =="
-cu -X POST -H 'Content-Type: application/json' -d '{"kind":"StartAgent","payload":{"agent":"telegram","vab":"api"}}' $A/agents/host/envelopes >/dev/null
+cu -X POST -H 'Content-Type: application/json' -d '{"kind":"StartAgent","payload":{"agent":"telegram","port_type":"api"}}' $A/agents/host/envelopes >/dev/null
 sleep 3
 ckc "client enrolled"    "$(dx redis-cli HGET $ROSTER telegram)" "api"
 ck  "no window made"     "$(dx bash -c "TMUX_TMPDIR=/home/ubuntu/.flock/tmux tmux list-windows -t $TENANT" | grep -c telegram)" "0"
@@ -130,7 +130,7 @@ ckc "only the new one" "$(cu "$A/agents/telegram/messages?after=$CUR")" "second-
 ck  "and only one"     "$(cu "$A/agents/telegram/messages?after=$CUR" | python3 -c 'import sys,json;print(len(json.load(sys.stdin)["messages"]))')" "1"
 
 echo "== 8. isolation between clients =="
-cu -X POST -H 'Content-Type: application/json' -d '{"kind":"StartAgent","payload":{"agent":"webapp","vab":"api"}}' $A/agents/host/envelopes >/dev/null
+cu -X POST -H 'Content-Type: application/json' -d '{"kind":"StartAgent","payload":{"agent":"webapp","port_type":"api"}}' $A/agents/host/envelopes >/dev/null
 sleep 3
 # ⚠ Isolation is "webapp did not get telegram's message", not "webapp's mailbox
 # is empty". A raw broadcast to `all` reaches app clients too — documented

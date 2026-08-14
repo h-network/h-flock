@@ -270,7 +270,7 @@ class OfficeHandler(SimpleHTTPRequestHandler):
             if len(parts) >= 3 and parts[0] == "api" and parts[1] == "recordings":
                 rec_id = parts[2]
             else:
-                self._json(400, {"detail": "invalid recording frames endpoint"})
+                self._json(400, {"detail": "invalid recording frames provider"})
                 return
             safe_id = "".join(c for c in rec_id if c.isalnum() or c in ("-", "_"))
             rec_file = rec_dir / f"{safe_id}.json"
@@ -954,25 +954,25 @@ class OfficeHandler(SimpleHTTPRequestHandler):
             self._json(200, {"agents": ["architect", "sme-2", "sme-3", "lab"]})
         elif clean_subpath == "/agents/architect":
             self._json(200, {
-                "agent": "architect", "vab": "tmux",
+                "agent": "architect", "port_type": "tmux",
                 "depths": {"ingress": 0, "egress": 0, "dead": 0},
                 "presence": {"state": "working", "since": "2026-08-10T02:00:00Z", "last_activity": "2026-08-10T02:45:00Z"},
             })
         elif clean_subpath == "/agents/sme-2":
             self._json(200, {
-                "agent": "sme-2", "vab": "tmux",
+                "agent": "sme-2", "port_type": "tmux",
                 "depths": {"ingress": 1, "egress": 0, "dead": 0},
                 "presence": {"state": "idle", "since": "2026-08-10T02:10:00Z", "last_activity": "2026-08-10T02:30:00Z"},
             })
         elif clean_subpath == "/agents/sme-3":
             self._json(200, {
-                "agent": "sme-3", "vab": "tmux",
+                "agent": "sme-3", "port_type": "tmux",
                 "depths": {"ingress": 2, "egress": 0, "dead": 0},
                 "presence": {"state": "blocked", "since": "2026-08-10T02:15:00Z", "last_activity": "2026-08-10T02:20:00Z"},
             })
         elif clean_subpath == "/agents/lab":
             self._json(200, {
-                "agent": "lab", "vab": "tmux",
+                "agent": "lab", "port_type": "tmux",
                 "depths": {"ingress": 0, "egress": 0, "dead": 0},
                 "presence": {"state": "unknown", "since": "", "last_activity": ""},
             })
@@ -1205,7 +1205,7 @@ class OfficeHandler(SimpleHTTPRequestHandler):
 
 def enrol(api_base: str, token: str, client: str) -> None:
     body = json.dumps(
-        {"kind": "StartAgent", "payload": {"agent": client, "vab": "api"}}
+        {"kind": "StartAgent", "payload": {"agent": client, "port_type": "api"}}
     ).encode()
     request = urllib.request.Request(
         f"{api_base}/agents/host/envelopes",

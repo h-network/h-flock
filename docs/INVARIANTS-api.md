@@ -7,7 +7,7 @@ Module invariants under real tenant conditions (`api-lab` on ports 8110 / 8111),
 ## 1. Module Invariants
 
 ### Invariant 1: Token Enforcement & Authentication Boundary
-- **Statement:** Every REST API route and WebSocket session endpoint requiring authorization rejects missing or invalid Bearer tokens with HTTP `401 Unauthorized` or WebSocket close code `4401` / `403`.
+- **Statement:** Every REST API route and WebSocket session provider requiring authorization rejects missing or invalid Bearer tokens with HTTP `401 Unauthorized` or WebSocket close code `4401` / `403`.
 - **Falsification Observation:** Any request without a valid `Authorization: Bearer <TOKEN>` or `?token=<TOKEN>` header returning HTTP `200 OK`, `202 Accepted`, or `404 Not Found`, or a WebSocket connection establishing cleanly with an invalid token.
 - **Verification Status:** **HELD.** Missing and invalid tokens rejected with HTTP 401 / HTTP 403 across all routes.
 
@@ -24,7 +24,7 @@ Module invariants under real tenant conditions (`api-lab` on ports 8110 / 8111),
 ### Invariant 4: Roster & Tenant Board Resilience
 - **Statement:** `GET /board` renders all valid agent boards cleanly even if corrupt, non-string, or malformed agent names exist in the Redis roster table. Unknown agent lookups return `404 Not Found`.
 - **Falsification Observation:** A single invalid roster key causing `GET /board` to fail with HTTP `404` or `500` for all legitimate agents in the tenant.
-- **Verification Status:** **HELD.** Inserting a corrupt non-JSON key into Redis `tenant:roster` did not crash `GET /board`. Unknown agent endpoints return HTTP 404 (`{"detail":"invalid agent"}`).
+- **Verification Status:** **HELD.** Inserting a corrupt non-JSON key into Redis `tenant:roster` did not crash `GET /board`. Unknown agent providers return HTTP 404 (`{"detail":"invalid agent"}`).
 
 ### Invariant 5: Non-Blocking Event Loop under I/O & SSE Streaming
 - **Statement:** Long-polling SSE streams (`/activity/stream`, `/alerts/stream`, `/messages/stream`) and Redis stream readers execute non-blocking I/O using worker threads (`asyncio.to_thread`), allowing concurrent HTTP requests to proceed without latency spikes or event loop starvation.
@@ -71,7 +71,7 @@ Body: {"agents":["api","architect","host","sme-2","sme-3"]}
 HTTP Status: 200
 
 [5] Testing POST /agents/architect/envelopes with malformed 'as' dict payload...
-Body: {"detail":"invalid 'as' client: must be an enrolled client with vab 'api'"}
+Body: {"detail":"invalid 'as' client: must be an enrolled client with port_type 'api'"}
 HTTP Status: 422
 
 [6] Testing POST /agents/architect/envelopes with oversized (>1MB) payload...
@@ -124,11 +124,11 @@ id: 1786483211377-0
 event: alert
 data: {"v": 1, "ts": "2026-08-11T21:20:11.157Z", "kind": "credential", "account": "default", "cli": "claude", "status": "absent", "expires_ts": null, "cursor": "1786483211377-0"}
 
-[3] Testing activity endpoints (/agents/architect/activity)...
+[3] Testing activity providers (/agents/architect/activity)...
 {"agent":"architect","activity":[],"next_cursor":null}
 HTTP Status: 200
 
-[4] Testing unknown agent endpoint (/agents/nonexistent_agent)...
+[4] Testing unknown agent provider (/agents/nonexistent_agent)...
 {"detail":"invalid agent"}
 HTTP Status: 404
 

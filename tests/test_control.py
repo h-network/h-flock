@@ -9,10 +9,10 @@ from flock.control import runner
 
 
 class RecordingRedis:
-    def __init__(self, events, ingress_depth=0, roster_vab=None):
+    def __init__(self, events, ingress_depth=0, roster_port_type=None):
         self.events = events
         self.ingress_depth = ingress_depth
-        self.roster_vab = roster_vab
+        self.roster_port_type = roster_port_type
 
     def hset(self, key, field, value):
         self.events.append(("hset", key, field, value))
@@ -25,7 +25,7 @@ class RecordingRedis:
 
     def hget(self, key, field):
         self.events.append(("hget", key, field))
-        return self.roster_vab
+        return self.roster_port_type
 
     def get(self, key):
         self.events.append(("get", key))
@@ -111,7 +111,7 @@ def test_start_api_client_only_writes_roster_row():
         RecordingRedis(events),
         pod="acme",
         tenant="hq",
-        envelope={"payload": {"agent": "telegram", "vab": "api"}},
+        envelope={"payload": {"agent": "telegram", "port_type": "api"}},
         replace_window=lambda agent: events.append(("replace_window", agent)),
     )
     assert events == [
@@ -119,7 +119,7 @@ def test_start_api_client_only_writes_roster_row():
     ]
 
 
-def test_start_agent_rejects_unknown_payload_key_before_defaulting_vab():
+def test_start_agent_rejects_unknown_payload_key_before_defaulting_port_type():
     events = []
     with pytest.raises(ValueError, match="unknown payload key 'port_typ'"):
         start_agent(
@@ -158,7 +158,7 @@ def test_target_only_lifecycle_openers_reject_unknown_payload_key(opener, callba
 
 def test_stop_agent_orders_roster_launch_then_window():
     events = []
-    r = RecordingRedis(events, roster_vab="tmux")
+    r = RecordingRedis(events, roster_port_type="tmux")
     stop_agent(
         r,
         pod="acme",
@@ -179,7 +179,7 @@ def test_stop_agent_orders_roster_launch_then_window():
 def test_stop_api_client_removes_roster_but_retains_mailbox_without_tmux():
     events = []
     stop_agent(
-        RecordingRedis(events, roster_vab="api"),
+        RecordingRedis(events, roster_port_type="api"),
         pod="acme",
         tenant="hq",
         envelope={"payload": {"agent": "telegram"}},
@@ -218,8 +218,8 @@ def test_stop_agent_rejects_fixed_participant_before_mutation(agent):
         {"agent": "BadName"},
         {"agent": "dave", "cli": ""},
         {"agent": "dave", "cli": 42},
-        {"agent": "dave", "vab": "control"},
-        {"agent": "dave", "vab": 42},
+        {"agent": "dave", "port_type": "control"},
+        {"agent": "dave", "port_type": 42},
         {"agent": "dave", "profile": "../client-b"},
         {"agent": "dave", "profile": "Client-B"},
         {"agent": "dave", "profile": 42},
@@ -346,7 +346,7 @@ def test_changed_existing_hire_retires_stale_window_after_desired_state(monkeypa
 
     class ExistingRedis(RecordingRedis):
         def __init__(self):
-            super().__init__(events, roster_vab="tmux")
+            super().__init__(events, roster_port_type="tmux")
 
         def get(self, key):
             self.events.append(("get", key))
@@ -367,7 +367,7 @@ def test_changed_existing_hire_retires_stale_window_after_desired_state(monkeypa
     ]
 
 
-def test_fresh_hire_with_profile_and_endpoint_leaves_creation_to_tmuxhost(monkeypatch):
+def test_fresh_hire_with_profile_and_provider_leaves_creation_to_tmuxhost(monkeypatch):
     events = []
     fake_tmux = types.ModuleType("flock.tmux")
     fake_tmux.kill_window = lambda session, agent, socket=None: (
@@ -378,7 +378,7 @@ def test_fresh_hire_with_profile_and_endpoint_leaves_creation_to_tmuxhost(monkey
 
     def fake_receive(r, **kwargs):
         kwargs["openers"]["StartAgent"]({
-            "payload": {"agent": "iris", "cli": "claude", "profile": "work", "endpoint": "gpu"}
+            "payload": {"agent": "iris", "cli": "claude", "profile": "work", "provider": "gpu"}
         })
 
     monkeypatch.setattr(runner, "receive", fake_receive)
@@ -391,5 +391,5 @@ def test_fresh_hire_with_profile_and_endpoint_leaves_creation_to_tmuxhost(monkey
         socket="/tmp/tmux.sock",
     )
     assert ("set", prefix("acme", "hq", "iris", "profile"), "work") in events
-    assert ("set", prefix("acme", "hq", "iris", "endpoint"), "gpu") in events
+    assert ("set", prefix("acme", "hq", "iris", "provider"), "gpu") in events
     assert not any(event[0] == "kill" for event in events)

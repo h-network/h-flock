@@ -24,8 +24,8 @@ is imported, never vendored.
     bus/         prefix, envelope, the two doors, roster reads   ← library
     tmux/        create/kill/list windows, the paste sequence   ← library
     switch/      the switch process
-    control/     the control VAB: StartAgent, StopAgent openers
-    port/     the port: invoked per delivery, dispatches on VAB
+    control/     the control port_type: StartAgent, StopAgent openers
+    port/     the port: invoked per delivery, dispatches on port_type
     tmuxhost/    the tmux host
     api/         the FastAPI app
   tests/
@@ -92,7 +92,7 @@ def receive(r, *, pod, tenant, agent, openers: dict[str, callable],
 # flock.bus.roster
 def members(r, *, pod, tenant) -> set[str]        # HKEYS  — fields only
 def is_member(r, *, pod, tenant, agent) -> bool   # HEXISTS
-def vab(r, *, pod, tenant, agent) -> str | None   # HGET   — port side only
+def port_type(r, *, pod, tenant, agent) -> str | None   # HGET   — port side only
     # the port dispatches on it, and control openers read it to know which
     # teardown they owe (build 12). ⚠ The switch still never reads a value —
     # that is invariant 8, and it is about the switch, not about this function.
@@ -102,7 +102,7 @@ The Redis wire is **hard v2**: flat v1 envelopes are rejected rather than
 upgraded. HTTP send request bodies are port input and keep their existing
 shape; mailbox consumers receive the layered frame and must read L2/L3.
 
-⚠ **The switch calls `members` and `is_member`, never `vab`.** Reading the value
+⚠ **The switch calls `members` and `is_member`, never `port_type`.** Reading the value
 is what would tell it how an agent is hosted, which invariant 8 forbids. That is
 the whole of the split: the switch reads the table's fields, an port reads its
 values.
@@ -116,7 +116,7 @@ implementation of one.
 ### `flock.tmux` — the shared window surface
 
 Frozen for the same reason as the bus library: the `tmux` lane implements it and
-the `control` VAB calls it.
+the `control` port_type calls it.
 
 ⚠ **Every tmux-driving entry point calls `require_isolated_tmux()` first.**
 `run_tmux` does it for you; anything invoking `tmux` by other means — a
@@ -197,16 +197,16 @@ def paste_text(session_name: str, agent_name: str, text: str,
 window-creation implementation. tmuxhost passes the resolved environment and
 `startAgent <cli>` command to `create_window`.
 
-### A delivery routine per VAB
+### A delivery routine per port_type
 
-`flock.port.runner` dispatches on the VAB and calls one of these. Both take
+`flock.port.runner` dispatches on the port_type and calls one of these. Both take
 the same shape, so adding a base is adding a module and a branch:
 
 ```python
 def deliver_one(r, *, pod, tenant, agent, session_name, socket=None) -> None
 ```
 
-| VAB | Module | Owner |
+| port_type | Module | Owner |
 |---|---|---|
 | `tmux` | `flock.port.runner` (inline) | `tmux` lane |
 | `control` | `flock.control` | `bus` lane |
@@ -348,7 +348,7 @@ nothing between deliveries. On start it:
    `HEXISTS` then `HSET`, which is racy: two adapters can both see the field
    absent and both write. `HSETNX` decides it atomically. Do not "simplify" it
    back into a check followed by a write.
-2. `HGET`s the roster for this agent's VAB, and dispatches to that base's
+2. `HGET`s the roster for this agent's port_type, and dispatches to that base's
    delivery routine
 3. delivers **the one envelope it was kicked for**
 4. `HDEL`s the busy tag and exits
@@ -401,11 +401,11 @@ bus does not validate payloads (`LLD-bus-and-switch` §5).
 and whoever *opens* it — never a bus concern, and never something the switch or
 the api validates.
 
-| `kind` | VAB that opens it | Payload | Does |
+| `kind` | port_type that opens it | Payload | Does |
 |---|---|---|---|
 | `Message` | `tmux` | `{"text": "..."}` | pastes `[message from <producer>] <text>` |
 | `Command` | `tmux` | `{"text": "..."}` | pastes `<text>` **bare** — it executes |
-| `StartAgent` | `control` | `{"agent": "networking", "cli": "claude", "vab": "tmux"}` | enrols, creates the window, starts the CLI |
+| `StartAgent` | `control` | `{"agent": "networking", "cli": "claude", "port_type": "tmux"}` | enrols, creates the window, starts the CLI |
 | `StopAgent` | `control` | `{"agent": "networking"}` | reverses all three |
 | `PauseAgent` | `control` | `{"agent": "networking"}` | stops the CLI, keeps the agent and its queues |
 | `ResumeAgent` | `control` | `{"agent": "networking"}` | starts the CLI again and kicks delivery for queued ingress |
@@ -429,16 +429,16 @@ logs `board_write_confirmed`. A failed or unconfirmed write logs
 `pending.verify` marker or a `blocked` state because no CLI consumption is
 expected for a board write.
 
-`vab` defaults to `tmux` and accepts `tmux` or `api`; `cli` defaults to `claude`.
+`port_type` defaults to `tmux` and accepts `tmux` or `api`; `cli` defaults to `claude`.
 
-⚠ **`vab: "api"` enrols a client, and creates no window.** A phone app, a web
+⚠ **`port_type: "api"` enrols a client, and creates no window.** A phone app, a web
 front end and a Telegram wrapper are each a roster row and a mailbox — nothing
 else. `StopAgent` on one removes the row and **purges the client's classified
 identity state**, retaining its mailbox and other data and touching no tmux.
 
 ⚠ **Clients are hidden from an agent's *view*, not from its inbox.** Precisely:
 
-- `office peers` and `office broadcast` select `vab == "tmux"`, so a client is in
+- `office peers` and `office broadcast` select `port_type == "tmux"`, so a client is in
   nobody's peer list and no agent-initiated broadcast reaches it. That filter
   predates clients — it was built to hide `api` and `host` — and it is why
   per-client addressing cost almost nothing.
@@ -446,7 +446,7 @@ identity state**, retaining its mailbox and other data and touching no tmux.
   with `as: "telegram"` arrives as `[message from telegram]`, and replying by
   that name is the whole point. "Agents never see clients" would be wrong.
 - **A raw `recipient: "all"` does reach clients**, unlike `office broadcast`.
-  The switch fans out over roster *fields* and by invariant 8 cannot read a VAB,
+  The switch fans out over roster *fields* and by invariant 8 cannot read a port_type,
   so it has no way to exclude them. Client-side filtering is what `office
   broadcast` does; the switch does not and structurally could not.
 
@@ -456,13 +456,13 @@ that one difference is the whole security boundary.
 
 ### `StartAgent` and `StopAgent` are the whole operation — for a tmux agent
 
-`StartAgent` publishes optional profile and endpoint state plus the launch key,
+`StartAgent` publishes optional profile and provider state plus the launch key,
 then enrols the agent; tmuxhost reconciliation creates its window and starts the
 CLI in it. Desired launch state is visible before the roster row that triggers
 reconciliation, while actual window creation still follows enrolment.
 `StopAgent` reverses all three. They are not enrolment alone.
 
-⚠ **For `vab: "api"` there is only enrolment.** A client enrolment writes a
+⚠ **For `port_type: "api"` there is only enrolment.** A client enrolment writes a
 roster row and stops: no launch key, no home, no window, no CLI. `StopAgent`
 removes the row and purges classified identity state, touching no tmux; retained
 data such as its inbox survives re-enrolment. Unqualified, the sentence above
@@ -482,7 +482,7 @@ restate it.
 ```
 
 **Desired state before its reconciliation trigger on start; roster before actual
-state on stop.** Launch/profile/endpoint values are written before the roster
+state on stop.** Launch/profile/provider values are written before the roster
 row, because that row can immediately trigger tmuxhost. On stop, the roster row
 is removed before the window. The roster is desired membership and tmux is
 actual state, so the host converges the second toward the first.
@@ -493,12 +493,12 @@ The agent you just killed comes back, one poll later, looking like the host
 working correctly.
 
 tmuxhost is the only creator. A repeated `StartAgent` with changed CLI, profile,
-or endpoint removes the stale window after publishing the new desired state;
+or provider removes the stale window after publishing the new desired state;
 tmuxhost then rebuilds it through the same path used at boot. An unchanged hire
 is idempotent and leaves the running window alone.
 
 ⚠ **`launch` is a separate key, not a roster value.** `LLD-bus-and-switch` §3.2
-is explicit that nothing beyond the VAB lives in the roster — *"what is started
+is explicit that nothing beyond the port_type lives in the roster — *"what is started
 in its window, its credentials, its configuration — belongs to whichever module
 starts it, not to membership."* Putting `cli` in the roster value would make
 every reader of the MAC table parse an agent's configuration.
@@ -506,9 +506,9 @@ every reader of the MAC table parse an agent's configuration.
 ## 7. Seeding the roster
 
 Roster ownership is now split deliberately: the container seeds boot members,
-and the control VAB owns runtime enrolment and retirement. The entrypoint writes
+and the control port_type owns runtime enrolment and retirement. The entrypoint writes
 the initial roster at start, from the environment, before any module runs. It
-is a `HASH` of `agent → VAB`
+is a `HASH` of `agent → port_type`
 (`LLD-bus-and-switch` §3.2) — the MAC table:
 
 ```bash
@@ -603,7 +603,7 @@ Response shapes, since every read is a fixed shape and a request can never name
 a key (`LLD-api` §5, §8):
 
 ```json
-GET /agents/backend           { "agent": "backend", "vab": "tmux",
+GET /agents/backend           { "agent": "backend", "port_type": "tmux",
                               "depths": { "ingress": 0, "egress": 0, "dead": 0 },
                               "presence": { "state": "idle", "since": "…",
                                             "last_activity": "…" } }
@@ -650,11 +650,11 @@ tails. Daemons do not set it and keep logging to the container's stdout. An agen
 read one of those records off its own screen and reasoned its way to Redis
 (`HLD` §10a).
 
-⚠ **An agent may run against a model endpoint of its own.** `<prefix>:agent:<n>:endpoint`
+⚠ **An agent may run against a model provider of its own.** `<prefix>:agent:<n>:provider`
 holds a **name**; the address lives in the tenant environment as
-`ENDPOINT_<NAME>_URL` / `_MODEL` / `_TOKEN` / `_SMALL_MODEL` / `_KIND`. A url in a
-Redis value would be an endpoint an agent could read and change, and the roster
-holds membership and VAB, nothing else. Written before roster visibility, like
+`PROVIDER_<NAME>_URL` / `_MODEL` / `_TOKEN` / `_SMALL_MODEL` / `_KIND`. A url in a
+Redis value would be an provider an agent could read and change, and the roster
+holds membership and port_type, nothing else. Written before roster visibility, like
 `launch` and `profile`, or the window is built against the wrong model.
 
 ⚠ **Such an agent uses no account credential** — the CLI talks to the server
@@ -716,7 +716,7 @@ GET /agents/telegram/messages   { "agent": "telegram",
 ```
 
 `GET /agents/{client}/messages/stream` is the same objects as SSE, resumable with
-`Last-Event-ID`. Both require the client to be enrolled with VAB `api` — `404`
+`Last-Event-ID`. Both require the client to be enrolled with port_type `api` — `404`
 otherwise, including for a tmux agent, which has no mailbox.
 
 ⚠ **`POST /agents/{agent}/envelopes` accepts `"as": "<client>"`**, checked against
@@ -733,7 +733,7 @@ or boot-only configuration must not reach agent windows (`LLD-container` §4).
 | | |
 |---|---|
 | `POD`, `TENANT` | the prefix every Redis key is built from |
-| `AGENTS` | comma-separated `name:vab` pairs; boot-only roster seed, unset before tmux starts |
+| `AGENTS` | comma-separated `name:port_type` pairs; boot-only roster seed, unset before tmux starts |
 | `ROSTER_POLL_SECONDS` | default `5`. Shared by the switch and tmuxhost |
 | `ACTIVITY_POLL_SECONDS` | default `2`. How often the switch tails CLI session files for the activity feed |
 | `VERIFY_AFTER_SECONDS` | default `10`. How long a delivery marker waits for a later `input` event before being reported unconfirmed |

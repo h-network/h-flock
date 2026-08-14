@@ -154,7 +154,7 @@ def test_empty_office_and_scaled_roster_are_deliberate_states():
     assert 'id="empty-office-hire"' in html
     assert '$("empty-office").hidden = summary.staffed !== 0' in app
     assert '$("empty-office-hire").onclick' in app
-    assert 'detail.vab === "tmux"' in agents
+    assert 'detail.port_type === "tmux"' in agents
     assert '["blocked", "unknown", "pending", "working", "idle"]' in agents
     assert 'presence === "blocked" ? " · action required"' in agents
     assert "position: sticky" in styles

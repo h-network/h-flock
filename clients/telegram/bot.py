@@ -62,11 +62,11 @@ class FlockClient:
             return 500, {"detail": str(exc)}
 
     def enrol(self) -> tuple[int, dict]:
-        """Enrol application client with host using StartAgent and vab: api."""
+        """Enrol application client with host using StartAgent and port_type: api."""
         return self.request(
             "POST",
             "/agents/host/envelopes",
-            {"kind": "StartAgent", "payload": {"agent": self.app_name, "vab": "api"}},
+            {"kind": "StartAgent", "payload": {"agent": self.app_name, "port_type": "api"}},
         )
 
     def send_message(self, recipient: str, text: str) -> tuple[int, dict]:

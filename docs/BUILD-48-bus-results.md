@@ -20,7 +20,7 @@ replies remain integers; Redis error replies raise `ResponseError`.
 The specified command surface is implemented. Two additional commands were
 required by the actual one-shot call graph: `SET` and `HSET`. The port
 delivers control envelopes, and `flock.control.openers` uses both to write
-launch, profile, endpoint, pause, and roster desired state. Omitting them would
+launch, profile, provider, pause, and roster desired state. Omitting them would
 make lifecycle acceptance fail even though they were absent from the spec's
 inventory.
 

@@ -10,7 +10,7 @@ disagreed.
 ## Description contradictions corrected in owned documents
 
 - `LLD-tmux-host.md:12-18` said one window per agent and that tmuxhost knew
-  nothing about the bus, while its own `:129-132` limits windows to `vab: tmux`
+  nothing about the bus, while its own `:129-132` limits windows to `port_type: tmux`
   roster members and `src/flock/tmuxhost/host.py` reads roster and launch state.
   It now qualifies the window population and distinguishes roster/config reads
   from envelope transport.
@@ -36,7 +36,7 @@ disagreed.
 - `LLD-port-tmux.md:192-198` cited “HLD invariant 7,” contradicting the HLD's
   `:420-423` instruction to cite invariants by name because numbering drifts.
   It now cites *nothing in the data path reads a terminal* by name.
-- `LLD-port-tmux.md:272-277` called pane reading and session endpoints
+- `LLD-port-tmux.md:272-277` called pane reading and session providers
   deferred even though `flock.session` is built. It now distinguishes the still
   absent pane-to-bus path from the implemented, out-of-band human session path.
 - `LLD-container.md:5-7,231-234` claimed the container owned no logic or
@@ -51,7 +51,7 @@ disagreed.
 
 - `HLD.md:337-338` says there is one window “per agent,” while its participant
   table at `HLD.md:36-40` includes `api` and `control` agents and gives only
-  `tmux` agents windows. Recommendation: say “one window per `vab: tmux`
+  `tmux` agents windows. Recommendation: say “one window per `port_type: tmux`
   agent.” This is description, not a design fork.
 - `HLD.md:79-80` says no non-library module imports another, while
   `CONTRACTS.md:203-208` and the implementation explicitly allow the port's

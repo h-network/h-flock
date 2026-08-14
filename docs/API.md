@@ -9,7 +9,7 @@ Documentation for external developers building web interfaces, mobile clients, d
 An **h-flock** tenant is a message bus for terminal agents and external applications. Every participant in a tenant is an **agent**, identified by a unique **name**.
 
 - **Addresses:** An agent's name (e.g. `backend`, `frontend`, `telegram`) is its sole address. All communication happens by addressing messages to names.
-- **Applications as Participants:** External applications enrol as named participants on the bus with an `api` environment (`vab: api`). Once enrolled, terminal agents can address replies to your app by name (e.g. `office send -a telegram hello`).
+- **Applications as Participants:** External applications enrol as named participants on the bus with an `api` environment (`port_type: api`). Once enrolled, terminal agents can address replies to your app by name (e.g. `office send -a telegram hello`).
 - **Envelopes & Kinds:** Messages travel inside structured **envelopes**. The **kind** indicates what sort of message it is (e.g. `Message`, `AddTicket`, `StartAgent`).
 - **Asynchronous Delivery:** `POST` operations return `202 Accepted` immediately. Agents process envelopes asynchronously over seconds to minutes. A reply, if generated, is delivered to your app's inbox stream.
 - **Pull-Based Task Boards:** Task boards are pulled by participants; adding a ticket writes to a board without interrupting or notifying the agent.
@@ -62,7 +62,7 @@ Authorization: Bearer <API_TOKEN>
 
 ### Step 1: Enrol Your Application
 
-Send a `StartAgent` envelope to `host` with `vab: "api"` to register your app on the roster without spawning a terminal window:
+Send a `StartAgent` envelope to `host` with `port_type: "api"` to register your app on the roster without spawning a terminal window:
 
 ```bash
 curl -X POST \
@@ -72,7 +72,7 @@ curl -X POST \
     "kind": "StartAgent",
     "payload": {
       "agent": "telegram",
-      "vab": "api"
+      "port_type": "api"
     }
   }' \
   http://HOST:8080/agents/host/envelopes
@@ -218,7 +218,7 @@ data: {"v": 2, "kind": "Message", "stream_id": "71d1dec5203c434c91df2af82e693637
 Reported by the lanes that built the console against this document.
 
 ⚠ **An office overview takes three calls, not one.** `GET /agents` returns names
-only. Presence, `blocked`, queue depths and `vab` come from `GET /agents/{agent}`,
+only. Presence, `blocked`, queue depths and `port_type` come from `GET /agents/{agent}`,
 one call per agent, and the boards from `GET /board`. There is no combined view,
 deliberately — but budget for it rather than discovering it mid-render.
 
@@ -304,7 +304,7 @@ you need a delivery guarantee, build it on your side.
 ```json
 {
   "agent": "sme-2",
-  "vab": "api",
+  "port_type": "api",
   "depths": {
     "ingress": 0,
     "egress": 0,
@@ -335,7 +335,7 @@ Post an envelope to a specific agent, or to `"all"` for broadcast messages.
 
 - **Request Body Fields:**
   - `text` (optional string): Text message shorthand (implies `kind: "Message"`).
-  - `as` (optional string): Enrolled application client name to declare as `producer`. Must name an enrolled `vab: "api"` client.
+  - `as` (optional string): Enrolled application client name to declare as `producer`. Must name an enrolled `port_type: "api"` client.
   - `kind` (optional string): Envelope kind (e.g. `"Message"`, `"AddTicket"`, `"StartAgent"`, `"StopAgent"`).
   - `payload` (optional object): Payload dictionary associated with the envelope kind.
 
@@ -366,10 +366,10 @@ Post an envelope to a specific agent, or to `"all"` for broadcast messages.
 }
 ```
 
-**Error Response (`422 Unprocessable Content` if `as` client is invalid or not enrolled as `vab: api`):**
+**Error Response (`422 Unprocessable Content` if `as` client is invalid or not enrolled as `port_type: api`):**
 ```json
 {
-  "detail": "invalid 'as' client: must be an enrolled client with vab 'api'"
+  "detail": "invalid 'as' client: must be an enrolled client with port_type 'api'"
 }
 ```
 
@@ -380,12 +380,12 @@ Post an envelope to a specific agent, or to `"all"` for broadcast messages.
 Lifecycle commands are sent as envelopes addressed to the `host` agent: `POST /agents/host/envelopes`.
 
 Lifecycle payloads have a fixed vocabulary. `StartAgent` accepts `agent`,
-`vab`, `cli`, `profile`, and `endpoint`; `StopAgent`, `PauseAgent`, and
+`port_type`, `cli`, `profile`, and `provider`; `StopAgent`, `PauseAgent`, and
 `ResumeAgent` accept only `agent`. An omitted optional key keeps its documented
 default, but any unknown key is refused with HTTP 422 and named in the error.
 This makes misspellings loud instead of silently selecting a default.
 
-#### Enrol Application Client (`StartAgent` with `vab: api`)
+#### Enrol Application Client (`StartAgent` with `port_type: api`)
 
 ⚠ **Enrolling a name that already exists is safe.** It re-registers and changes
 nothing else — no mailbox is cleared, no messages are lost. Clients are expected
@@ -398,12 +398,12 @@ Registers an external application client without creating a terminal window or s
   "kind": "StartAgent",
   "payload": {
     "agent": "telegram",
-    "vab": "api"
+    "port_type": "api"
   }
 }
 ```
 
-#### Enrol Terminal Agent (`StartAgent` with `vab: tmux`)
+#### Enrol Terminal Agent (`StartAgent` with `port_type: tmux`)
 
 Enrols a new terminal agent, creating its workspace window and starting its CLI:
 
@@ -413,7 +413,7 @@ Enrols a new terminal agent, creating its workspace window and starting its CLI:
   "payload": {
     "agent": "networking",
     "cli": "claude",
-    "vab": "tmux"
+    "port_type": "tmux"
   }
 }
 ```
@@ -502,7 +502,7 @@ Adds a ticket to an agent's board without interrupting or notifying the agent:
   "kind": "AddTicket",
   "payload": {
     "title": "Implement caching header",
-    "description": "Add Cache-Control headers to static endpoints",
+    "description": "Add Cache-Control headers to static providers",
     "priority": "normal"
   }
 }
@@ -512,7 +512,7 @@ Adds a ticket to an agent's board without interrupting or notifying the agent:
 
 ### Agent Activity Feed
 
-The activity feed streams real-time execution facts about what an agent is doing (e.g., executing commands, reading files, generating responses). It is available for any agent in the tenant roster (not only `vab: "api"` clients).
+The activity feed streams real-time execution facts about what an agent is doing (e.g., executing commands, reading files, generating responses). It is available for any agent in the tenant roster (not only `port_type: "api"` clients).
 
 - **Kinds Vocabulary (`kind`):**
   - `input`: User or incoming prompt input received.
@@ -636,7 +636,7 @@ immediately:
 
 1. **No CORS headers.** A browser refuses a cross-origin request to the api, so a
    page served from anywhere else is blocked before it starts.
-2. **`EventSource` cannot set headers.** The SSE endpoints require
+2. **`EventSource` cannot set headers.** The SSE providers require
    `Authorization: Bearer …`, and the browser's SSE client has no way to send
    one. There is no workaround in the browser.
 
@@ -707,12 +707,12 @@ Port `:8081` provides WebSocket terminal access for rendering live terminal wind
 | `202 Accepted` | Accepted | Envelope accepted for asynchronous routing | Poll/stream mailbox for reply |
 | `401 Unauthorized` | Unauthorized | Missing or invalid Bearer token | Check `Authorization: Bearer <TOKEN>` header |
 | `404 Not Found` | Not Found | Unknown route, invalid agent segment name, or reading `/messages` for a non-`api` agent | Verify agent name and roster enrolment |
-| `422 Unprocessable Content` | Validation Error | Invalid `"as"` client name (not enrolled or `vab != "api"`), payload exceeding 1MB limit, or malformed request payload | Correct request payload; do not retry identical request |
+| `422 Unprocessable Content` | Validation Error | Invalid `"as"` client name (not enrolled or `port_type != "api"`), payload exceeding 1MB limit, or malformed request payload | Correct request payload; do not retry identical request |
 | `5xx` | Server Error | Redis database or internal backend failure — not a fault in your request payload | **Retry with backoff.** The same request will succeed once the server/database recovers |
 
 **Request & Payload Size Limits:**
 - **Maximum Envelope Payload:** Envelopes posted to `POST /agents/{agent}/envelopes` are limited to **1 MB (1,048,576 bytes)**. Requests exceeding this limit return `422 Unprocessable Content`.
-- **Stream Query Bounds:** Pagination `limit` parameters on stream endpoints (`/messages`, `/activity`, `/alerts`) are bounded between `1` and `1000` entries (default `100`).
+- **Stream Query Bounds:** Pagination `limit` parameters on stream providers (`/messages`, `/activity`, `/alerts`) are bounded between `1` and `1000` entries (default `100`).
 
 **Streaming & Socket Error Handling:**
 - **SSE Streams (Mid-Flight):** Because HTTP headers (`200 OK`) are sent when an SSE connection opens, a mid-flight infrastructure error cannot alter the HTTP status code. Mid-flight failures emit an SSE `event: error` frame containing `{"error": "<reason>"}` before closing the stream.
@@ -756,7 +756,7 @@ def request(method, path, data=None):
 # 1. Enrol application client
 status, body = request("POST", "/agents/host/envelopes", {
     "kind": "StartAgent",
-    "payload": {"agent": "mybot", "vab": "api"}
+    "payload": {"agent": "mybot", "port_type": "api"}
 })
 print("Enrolled mybot:", status, body)
 

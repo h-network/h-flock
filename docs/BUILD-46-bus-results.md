@@ -1,4 +1,4 @@
-# Build 46 — h-vab adaptation trial results
+# Build 46 — h-port_type adaptation trial results
 
 Worked from `origin/vabtrial` at
 `51dcc5ac94da5138d9449eb860ef54aedf340472`. The implementation commit before
@@ -7,11 +7,11 @@ this report is `9b8de57` on `bus/build-46-vabtrial`. Nothing targets main.
 ## Verdict
 
 **No.** The design fits the forwarding seam and preserves locatable custody,
-but it cannot preserve the edge's behavior and also implement h-vab's custody
+but it cannot preserve the edge's behavior and also implement h-port_type's custody
 contract. A caller that previously appended without a capacity outcome can now
 receive synchronous `packet_too_large` or `port_congested`. An agent can tell
 that difference. Hiding either result would make the adaptation cease to be the
-h-vab design being tested.
+h-port_type design being tested.
 
 This is a successful negative trial, not a migration recommendation.
 
@@ -38,30 +38,30 @@ This is a successful negative trial, not a migration recommendation.
 
 ## Where the models disagree
 
-1. **Synchronous capacity failure changes the edge.** h-vab defines
+1. **Synchronous capacity failure changes the edge.** h-port_type defines
    `port_congested` as a real send failure and `packet_too_large` before
    custody. h-flock's office send previously offered neither outcome. This is
    the decisive failure under Build 46 §5.
-2. **A returned stream identity precedes h-vab's stamping point.** h-flock send
-   returns `stream_id` and logs `sent` synchronously. h-vab mints `id` after
+2. **A returned stream identity precedes h-port_type's stamping point.** h-flock send
+   returns `stream_id` and logs `sent` synchronously. h-port_type mints `id` after
    successful ingress append, when the arbiter knows the arrival port. The
    trial uses a fabric-owned receipt beside, not inside, the client grammar so
    the later stamp can preserve the returned id. That sidecar is additional
-   seam state absent from the settled h-vab flow.
+   seam state absent from the settled h-port_type flow.
 3. **The old send signature cannot structurally attest source.** A bound `Port`
-   makes source absent from the client grammar, as h-vab requires. The legacy
+   makes source absent from the client grammar, as h-port_type requires. The legacy
    `send(... producer=...)` compatibility wrapper binds a port from the same
    caller-provided name, so it does not strengthen callers that retain access
    to that signature. True attestation requires migrating callers to handles,
    which changes their interface.
 4. **Correction becomes rejection.** A raw v1 envelope written to an ingress
    port is now malformed client input and dead-letters. It is not corrected and
-   no `producer_stamped` event exists. This makes forgery non-routine, as h-vab
+   no `producer_stamped` event exists. This makes forgery non-routine, as h-port_type
    intends, but removes Build 36's correction behavior.
 5. **The eight fields carry h-flock semantics, but not perfectly.** Envelope
    `kind` maps directly to packet `type`; `correlation_id` maps to `flow`; and
    packet `id` maps to `stream_id` at the receive edge. The semantic mismatch is
-   that h-vab defaults flow to id, whereas h-flock independently mints a
+   that h-port_type defaults flow to id, whereas h-flock independently mints a
    correlation id for each initial send.
 6. **The three programs do not match current process boundaries.** h-flock's
    port name covers both the sending CLI edge and the receiving one-shot
@@ -69,10 +69,10 @@ This is a successful negative trial, not a migration recommendation.
    maintenance jobs. The trial isolates the two-header `Switch` decision in
    code, but a faithful three-program deployment would require a process split
    beyond this one-domain trial.
-7. **Addressing has one unmatched level.** Tenant maps cleanly to h-vab domain
+7. **Addressing has one unmatched level.** Tenant maps cleanly to h-port_type domain
    and agent/participant maps to station. Pod remains an outer Redis/deployment
    namespace with no packet-address analogue.
-8. **In-flight upgrade compatibility is not pure h-vab.** Receive accepts old
+8. **In-flight upgrade compatibility is not pure h-port_type.** Receive accepts old
    v1 entries already in ingress so an upgrade does not destroy custodied work.
    New sends never create that form. A pure packet-only receiver would reject
    them, making rollout behavior visible at the edge.
@@ -170,7 +170,7 @@ happen after selection, outside `Switch`.
 ## Recommendation
 
 Do not migrate h-flock to this fabric under a promise that its edge behavior is
-unchanged. If the operator wants h-vab custody semantics enough to version the
+unchanged. If the operator wants h-port_type custody semantics enough to version the
 send edge, the forwarding core, addressing, packet type/flow mapping, and
 existing observation records are a credible fit. Without that explicit edge
 version, stop at this trial branch.

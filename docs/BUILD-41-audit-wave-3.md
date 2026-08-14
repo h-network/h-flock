@@ -48,7 +48,7 @@ makes at-most-once true. Document why the obvious improvement is wrong.
 | 34 | the close-code vocabulary is undocumented and `4401` never reaches a client | `session/app.py:180-219` |
 | 35 | `/alerts` names a field the watchdog never writes; only a fallback saves it | `api/app.py:751`, `watchdog/service.py:103-107` |
 | 40 | the wire encoding of terminal bytes is documented only in a comment in the reference client | `session/control.py:197`, `LLD-session.md:176` |
-| 41 | an example response omits the `vab` field that is implemented and advertised | `api/app.py:584-598`, `docs/API.md:220-223` |
+| 41 | an example response omits the `port_type` field that is implemented and advertised | `api/app.py:584-598`, `docs/API.md:220-223` |
 | 45 | nothing bounds the size of anything a client can send or ask for | `api/app.py:600-639`, `bus/doors.py:28` |
 
 ⚠ **Row 33 is the one that costs users time.** A developer follows the

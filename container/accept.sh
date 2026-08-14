@@ -67,7 +67,7 @@ trap cleanup EXIT
 command -v docker >/dev/null || { echo "accept: docker is required" >&2; exit 2; }
 
 step "install — driving setup.sh as a person would"
-# pod, tenant, 2 agents and their names, no extra accounts, no endpoint,
+# pod, tenant, 2 agents and their names, no extra accounts, no provider,
 # reachable from another machine, no certificate, no self-signed.
 rm -f container/.env
 printf 'acme\n%s\n2\narchitect\nsme-2\nn\nn\ny\n\nn\n' "$TENANT" | ./setup.sh 2>&1 \

@@ -4,7 +4,7 @@ import time
 import redis
 from typing import Set
 
-from flock.bus import members, log_record, vab, prefix
+from flock.bus import members, log_record, port_type, prefix
 import flock.tmux.ops as tmux_ops
 from flock.tmux.ops import generate_agents_md, ensure_claude_project_trusted, write_agent_guide, window_env
 
@@ -42,15 +42,15 @@ class TmuxHost:
             return None
         return raw_prof.decode() if isinstance(raw_prof, bytes) else raw_prof
 
-    def get_agent_endpoint(self, r: redis.Redis, agent: str) -> dict | None:
-        """The model endpoint this agent runs against, or None for the vendor's.
+    def get_agent_provider(self, r: redis.Redis, agent: str) -> dict | None:
+        """The model provider this agent runs against, or None for the vendor's.
 
         ⚠ The NAME lives per agent; the address lives in the tenant's
-        environment. A url in a Redis value would be an endpoint an agent could
-        read and change, and the roster is a MAC table — membership and VAB,
+        environment. A url in a Redis value would be an provider an agent could
+        read and change, and the roster is a MAC table — membership and port_type,
         nothing else.
         """
-        key = prefix(self.pod, self.tenant, agent=agent, resource="endpoint")
+        key = prefix(self.pod, self.tenant, agent=agent, resource="provider")
         raw = r.get(key)
         if not raw:
             return None
@@ -58,17 +58,17 @@ class TmuxHost:
         if not name:
             return None
         upper = name.upper().replace("-", "_")
-        url = os.environ.get(f"ENDPOINT_{upper}_URL")
+        url = os.environ.get(f"PROVIDER_{upper}_URL")
         if not url:
             log_record("tmuxhost", "error", recipient=agent,
-                       reason=f"endpoint '{name}' has no ENDPOINT_{upper}_URL")
+                       reason=f"provider '{name}' has no PROVIDER_{upper}_URL")
             return None
         return {
             "name": name,
             "url": url,
-            "token": os.environ.get(f"ENDPOINT_{upper}_TOKEN"),
-            "model": os.environ.get(f"ENDPOINT_{upper}_MODEL"),
-            "small_model": os.environ.get(f"ENDPOINT_{upper}_SMALL_MODEL"),
+            "token": os.environ.get(f"PROVIDER_{upper}_TOKEN"),
+            "model": os.environ.get(f"PROVIDER_{upper}_MODEL"),
+            "small_model": os.environ.get(f"PROVIDER_{upper}_SMALL_MODEL"),
         }
 
     def get_lead(self, r: redis.Redis) -> str | None:
@@ -84,7 +84,7 @@ class TmuxHost:
         cli: str | None = None,
         profile: str | None = None,
         lead: str | None = None,
-        endpoint: dict | None = None,
+        provider: dict | None = None,
     ) -> None:
         ret, stdout, stderr = tmux_ops.run_tmux("has-session", "-t", self.session_name, socket=self.socket)
         if ret != 0:
@@ -104,7 +104,7 @@ class TmuxHost:
                 cmd_args = ["startAgent", cli] if cli else ["bash", "-il"]
                 cmd.extend(
                     window_env(
-                        initial_window, tenant=self.tenant, cwd=cwd, profile=profile, endpoint=endpoint
+                        initial_window, tenant=self.tenant, cwd=cwd, profile=profile, provider=provider
                     )
                     + cmd_args
                 )
@@ -130,10 +130,10 @@ class TmuxHost:
         profile: str | None = None,
         cwd: str | None = None,
         lead: str | None = None,
-        endpoint: dict | None = None,
+        provider: dict | None = None,
     ) -> bool:
         cwd = cwd or f"/workdir/{agent_name}"
-        env_args = window_env(agent_name, tenant=self.tenant, cwd=cwd, profile=profile, endpoint=endpoint)
+        env_args = window_env(agent_name, tenant=self.tenant, cwd=cwd, profile=profile, provider=provider)
 
         # ⚠ Not written here — tmux_ops.create_window below writes it for every
         # caller, and writing it twice is what dropped the lead sentence.
@@ -166,20 +166,20 @@ class TmuxHost:
         all_members = members(r, pod=self.pod, tenant=self.tenant)
         roster_agents = {
             a for a in all_members
-            if vab(r, pod=self.pod, tenant=self.tenant, agent=a) == "tmux"
+            if port_type(r, pod=self.pod, tenant=self.tenant, agent=a) == "tmux"
         }
         lead = self.get_lead(r)
         first_agent = sorted(list(roster_agents))[0] if roster_agents else "__init__"
         first_cli = self.get_agent_cli(r, first_agent) if first_agent != "__init__" else None
         first_profile = self.get_agent_profile(r, first_agent) if first_agent != "__init__" else None
-        first_endpoint = self.get_agent_endpoint(r, first_agent) if first_agent != "__init__" else None
+        first_provider = self.get_agent_provider(r, first_agent) if first_agent != "__init__" else None
 
         self.ensure_server_and_session(
             initial_window=first_agent,
             cli=first_cli,
             profile=first_profile,
             lead=lead,
-            endpoint=first_endpoint,
+            provider=first_provider,
         )
 
         existing_windows = self.get_windows()
@@ -189,8 +189,8 @@ class TmuxHost:
             if agent not in existing_windows:
                 cli = self.get_agent_cli(r, agent)
                 profile = self.get_agent_profile(r, agent)
-                endpoint = self.get_agent_endpoint(r, agent)
-                self.create_window(agent, cli=cli, profile=profile, lead=lead, endpoint=endpoint)
+                provider = self.get_agent_provider(r, agent)
+                self.create_window(agent, cli=cli, profile=profile, lead=lead, provider=provider)
 
         # Re-fetch after creations to decide cleanup
         existing_windows = self.get_windows()

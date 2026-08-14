@@ -136,28 +136,28 @@ done
 
 # ── seed the roster ───────────────────────────────────────────────────────────
 # Boot configuration, not the write path LLD-bus-and-switch §7 defers. The roster
-# is the MAC table: a HASH of agent -> VAB (§3.2). HSET is idempotent, so
+# is the MAC table: a HASH of agent -> port_type (§3.2). HSET is idempotent, so
 # bringing the container up twice converges (LLD-container §5).
 #
-# AGENTS is name:vab pairs — AGENTS=backend:tmux,frontend:tmux,systems:tmux
+# AGENTS is name:port_type pairs — AGENTS=backend:tmux,frontend:tmux,systems:tmux
 roster_key="pod:${POD}:tenant:${TENANT}:roster"
 IFS=',' read -ra entries <<< "$AGENTS"
 agents=()
 fields=()
 for entry in "${entries[@]}"; do
   name="${entry%%:*}"
-  vab="${entry#*:}"
-  if [ "$name" = "$entry" ] || [ -z "$vab" ]; then
-    echo "entrypoint: AGENTS entry '$entry' is not name:vab" >&2
+  port_type="${entry#*:}"
+  if [ "$name" = "$entry" ] || [ -z "$port_type" ]; then
+    echo "entrypoint: AGENTS entry '$entry' is not name:port_type" >&2
     exit 1
   fi
   agents+=("$name")
-  fields+=("$name" "$vab")
+  fields+=("$name" "$port_type")
 done
 
 # Fixed agents. Roster rows like any other — the switch special-cases nothing
 # (LLD-bus-and-switch §3.2). `host` is what StartAgent/StopAgent are addressed
-# to; its VAB routes delivery to flock.control rather than to a tmux window, so
+# to; its port_type routes delivery to flock.control rather than to a tmux window, so
 # it has no window and the tmux host filters it out.
 fields+=("api" "api")
 fields+=("host" "control")
@@ -170,7 +170,7 @@ echo "{\"module\":\"container\",\"event\":\"roster_seeded\",\"count\":$(( ${#fie
 
 # Per-agent CLI and account, as exceptions only — "backend=codex", "frontend=work".
 # Both land as agent resources rather than roster values: the roster is the MAC
-# table and holds membership plus VAB, nothing else (LLD-bus-and-switch §3.2).
+# table and holds membership plus port_type, nothing else (LLD-bus-and-switch §3.2).
 map_each() {   # $1=map  $2=resource ; SETs pod:…:agent:<name>:<resource>
   local pair name value
   IFS=',' read -ra pairs <<< "${1:-}"
@@ -194,7 +194,7 @@ done
 
 map_each "${AGENT_CLIS:-}"     launch
 map_each "${AGENT_PROFILES:-}" profile
-map_each "${AGENT_ENDPOINTS:-}" endpoint
+map_each "${AGENT_PROVIDERS:-}" provider
 
 # An account is a config dir, and a fresh one is not an empty one — unseeded, an
 # agent loses every default the image carries. Copy what the stock profile has
@@ -220,7 +220,7 @@ done
 
 # Held out of the environment for the same reason as AGENTS: the tmux server
 # inherits it and every window inherits that.
-unset AGENT_CLIS AGENT_PROFILES AGENT_ENDPOINTS
+unset AGENT_CLIS AGENT_PROFILES AGENT_PROVIDERS
 
 # Seeding is the only use of AGENTS. Hold it out of the environment from here:
 # the tmux server is started below and every agent window inherits its

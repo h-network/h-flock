@@ -382,7 +382,7 @@ def test_cli_send(mock_redis_cls, monkeypatch):
 
 
 @patch("flock.port.deliver.redis.Redis.from_url")
-def test_run_port_vab_api_pops_and_writes_mailbox(mock_redis_cls):
+def test_run_port_port_type_api_pops_and_writes_mailbox(mock_redis_cls):
     mock_r = MockRedis()
     mock_redis_cls.return_value = mock_r
 
@@ -408,12 +408,12 @@ def test_run_port_vab_api_pops_and_writes_mailbox(mock_redis_cls):
 
 
 @patch("flock.port.deliver.redis.Redis.from_url")
-def test_run_port_unroutable_vab_pops_and_dead_letters(mock_redis_cls):
+def test_run_port_unroutable_port_type_pops_and_dead_letters(mock_redis_cls):
     mock_r = MockRedis()
     mock_redis_cls.return_value = mock_r
 
     roster_key = "pod:acme:tenant:hq:roster"
-    mock_r.hset(roster_key, "host", "custom_vab")
+    mock_r.hset(roster_key, "host", "custom_port_type")
 
     ingress_key = "pod:acme:tenant:hq:agent:host:ingress"
     env = build_envelope(kind="Message", producer="alice", recipient="host", payload={"text": "test"})

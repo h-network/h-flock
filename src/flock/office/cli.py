@@ -10,7 +10,7 @@ from collections.abc import Sequence
 from datetime import datetime, timezone
 from pathlib import Path
 
-from flock.bus import is_member, log_record, members, prefix, record_task_event, resp as redis, send, vab
+from flock.bus import is_member, log_record, members, prefix, record_task_event, resp as redis, send, port_type
 
 # ⚠ A tenant with a Redis password exports REDIS_URL carrying it. Without one
 # this is unchanged, and an agent window still has no REDIS_URL to find.
@@ -129,7 +129,7 @@ def _broadcast_command(argv: list[str]) -> None:
     recipients = sorted(
         agent
         for agent in members(r, pod=pod, tenant=tenant)
-        if agent != producer and vab(r, pod=pod, tenant=tenant, agent=agent) == "tmux"
+        if agent != producer and port_type(r, pod=pod, tenant=tenant, agent=agent) == "tmux"
     )
     for recipient in recipients:
         print(_message(r, pod=pod, tenant=tenant, producer=producer, recipient=recipient, text=" ".join(argv)))
@@ -145,7 +145,7 @@ def _peers_command(argv: list[str]) -> None:
     peer_names = [
         agent
         for agent in all_agents
-        if agent != producer and vab(r, pod=pod, tenant=tenant, agent=agent) == "tmux"
+        if agent != producer and port_type(r, pod=pod, tenant=tenant, agent=agent) == "tmux"
     ]
     formatted = [f"{agent} (lead)" if agent == lead else agent for agent in peer_names]
     print(", ".join(formatted))
@@ -220,7 +220,7 @@ def _status_command(argv: list[str]) -> None:
     tmux_agents = sorted(
         agent
         for agent in members(r, pod=pod, tenant=tenant)
-        if vab(r, pod=pod, tenant=tenant, agent=agent) == "tmux"
+        if port_type(r, pod=pod, tenant=tenant, agent=agent) == "tmux"
     )
     if args.agent is not None:
         if args.agent not in tmux_agents:
@@ -369,7 +369,7 @@ def _list_command(argv: list[str]) -> None:
     args = parser.parse_args(argv)
     r, pod, tenant, producer = _context()
     if args.all:
-        agents = sorted(agent for agent in members(r, pod=pod, tenant=tenant) if vab(r, pod=pod, tenant=tenant, agent=agent) == "tmux")
+        agents = sorted(agent for agent in members(r, pod=pod, tenant=tenant) if port_type(r, pod=pod, tenant=tenant, agent=agent) == "tmux")
     else:
         agents = [args.agent or producer]
     for index, agent in enumerate(agents):
@@ -490,7 +490,7 @@ def _clone_agents(r, *, pod: str, tenant: str, requested: str | None) -> list[st
     tmux_agents = {
         agent
         for agent in members(r, pod=pod, tenant=tenant)
-        if vab(r, pod=pod, tenant=tenant, agent=agent) == "tmux"
+        if port_type(r, pod=pod, tenant=tenant, agent=agent) == "tmux"
     }
     if requested is None:
         return sorted(tmux_agents)

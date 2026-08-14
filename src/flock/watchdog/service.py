@@ -8,7 +8,7 @@ from pathlib import Path
 
 import redis
 
-from flock.bus import members, prefix, vab
+from flock.bus import members, prefix, port_type
 from flock.tmux import run_tmux
 
 
@@ -75,7 +75,7 @@ class Watchdog:
         return sorted(
             agent
             for agent in members(self.r, pod=self.pod, tenant=self.tenant)
-            if vab(self.r, pod=self.pod, tenant=self.tenant, agent=agent) == "tmux"
+            if port_type(self.r, pod=self.pod, tenant=self.tenant, agent=agent) == "tmux"
         )
 
     def _window_activity(self) -> dict[str, int]:
@@ -239,9 +239,9 @@ class Watchdog:
         """Return each CLI account used by an enrolled terminal agent once."""
         result = set()
         for agent in self._agents():
-            endpoint = _text(self.r.get(prefix(self.pod, self.tenant, agent, "endpoint")))
-            if endpoint:
-                # Local endpoint agents talk to the configured model server and
+            provider = _text(self.r.get(prefix(self.pod, self.tenant, agent, "provider")))
+            if provider:
+                # Local provider agents talk to the configured model server and
                 # intentionally use no vendor account credential.
                 continue
             cli = _text(self.r.get(prefix(self.pod, self.tenant, agent, "launch")))

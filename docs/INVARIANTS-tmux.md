@@ -5,8 +5,8 @@ Each claim names an observation that would disprove it.
 
 | invariant | falsifying observation |
 |---|---|
-| One rostered `vab=tmux` name converges to exactly one same-named window. | A settled rostered name has zero windows, or `list-windows -F '#{window_name}'` returns it more than once. |
-| tmuxhost is the sole creator after `StartAgent`; desired launch/profile/endpoint state is visible before the window. | A new window appears with a command or environment different from the Redis launch/profile/endpoint keys that preceded it. |
+| One rostered `port_type=tmux` name converges to exactly one same-named window. | A settled rostered name has zero windows, or `list-windows -F '#{window_name}'` returns it more than once. |
+| tmuxhost is the sole creator after `StartAgent`; desired launch/profile/provider state is visible before the window. | A new window appears with a command or environment different from the Redis launch/profile/provider keys that preceded it. |
 | A changed re-hire replaces stale actual state; an unchanged re-hire does not duplicate it. | The old CLI remains after a changed hire, or either hire leaves duplicate same-named windows. |
 | A failed window lookup or paste is observable and is not logged as `opened`. | The delivery log contains `opened` after tmux returned non-zero, with no port error/dead-letter evidence. |
 | Losing the last agent window does not destroy the tenant session permanently. | After reconciliation time, the session is absent or the retired/stale window is the only object preserving it. |

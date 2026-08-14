@@ -19,7 +19,7 @@ back the other way.
 
 **It is not an agent.** The api has an address because agents reply to it —
 *"not to be a peer, but to be reachable"* (`LLD-api` §1). Nothing ever replies to
-a terminal. So this module has no queue pair, no roster row, no VAB, and nothing
+a terminal. So this module has no queue pair, no roster row, no port_type, and nothing
 on the bus knows it exists. It never calls `send` or `receive`.
 
 The cleanest way to think about it: **it is the port for a human.** The tmux

@@ -53,7 +53,7 @@ def deliver_unroutable(
     pod: str,
     tenant: str,
     agent: str,
-    vab_name: str | None,
+    port_type_name: str | None,
     timeout: int = 1,
 ) -> None:
     ingress_key = prefix(pod, tenant, agent, "ingress")
@@ -69,7 +69,7 @@ def deliver_unroutable(
         return
     emit("adapter", "received", envelope)
     r.rpush(dead_key, raw)
-    reason = f"unroutable VAB: {vab_name!r}"
+    reason = f"unroutable port_type: {port_type_name!r}"
     emit("adapter", "dead_lettered", envelope, reason)
 
 
@@ -86,10 +86,10 @@ def deliver_one(
         return
 
     roster_key = prefix(pod, tenant, resource="roster")
-    raw_vab = r.hget(roster_key, agent)
-    agent_vab = raw_vab.decode() if isinstance(raw_vab, bytes) else raw_vab
+    raw_port_type = r.hget(roster_key, agent)
+    agent_port_type = raw_port_type.decode() if isinstance(raw_port_type, bytes) else raw_port_type
 
-    if agent_vab == "control":
+    if agent_port_type == "control":
         try:
             from flock.control import deliver_one as control_deliver_one
             control_deliver_one(
@@ -104,12 +104,12 @@ def deliver_one(
             log_record("adapter", "error", recipient=agent, reason="flock.control module not available")
         return
 
-    if agent_vab == "api":
+    if agent_port_type == "api":
         deliver_api(r, pod=pod, tenant=tenant, agent=agent)
         return
 
-    if agent_vab is not None and agent_vab != "tmux":
-        deliver_unroutable(r, pod=pod, tenant=tenant, agent=agent, vab_name=agent_vab)
+    if agent_port_type is not None and agent_port_type != "tmux":
+        deliver_unroutable(r, pod=pod, tenant=tenant, agent=agent, port_type_name=agent_port_type)
         return
 
     def handle_message(envelope: dict) -> None:

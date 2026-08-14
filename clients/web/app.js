@@ -64,7 +64,7 @@ function filterOffice(query) {
 }
 
 function populateTerminalAgents() {
-  const names = agents.names().filter((name) => agents.detail(name)?.vab === "tmux");
+  const names = agents.names().filter((name) => agents.detail(name)?.port_type === "tmux");
   for (let index = 1; index <= 4; index += 1) {
     const select = $(`cell-agent-${index}`);
     if (!select) continue;
@@ -111,7 +111,7 @@ async function selectAgent(agent) {
   preferences.rememberAgent(agent);
   const detail = agents.detail(agent);
   $("detail-title").textContent = agent;
-  $("detail-subtitle").textContent = `${detail?.vab || "unknown VAB"} · ${detail?.presence?.state || "unknown"}`;
+  $("detail-subtitle").textContent = `${detail?.port_type || "unknown port_type"} · ${detail?.presence?.state || "unknown"}`;
   $("detail-title").focus();
   agents.render();
   lifecycle.select(agent);
@@ -140,7 +140,7 @@ function commandList() {
     commands.push({ label: `Open ${agent}`, hint: "Agent", keywords: `${agents.detail(agent)?.presence?.state || "unknown"} terminal messages`, run: () => router.go(`agents/${encodeURIComponent(agent)}`) });
     commands.push({ label: `Open ${agent} board`, hint: "Task board", keywords: "tickets todo doing hold done", run: () => { $("global-search").value = agent; filterOffice(agent); router.go("boards"); } });
   }
-  if (state.selected && agents.detail(state.selected)?.vab === "tmux") {
+  if (state.selected && agents.detail(state.selected)?.port_type === "tmux") {
     commands.push(
       { label: `Pause ${state.selected}`, hint: "Lifecycle", keywords: "stop cli keep identity", run: () => lifecycle.control("PauseAgent", "Pause accepted · messages will queue until resume") },
       { label: `Resume ${state.selected}`, hint: "Lifecycle", keywords: "start cli drain", run: () => lifecycle.control("ResumeAgent", "Resume accepted · queued messages will drain") },
@@ -207,7 +207,7 @@ async function handleRoute(route) {
     }
   }
   if (route.section === "terminals") {
-    const names = agents.names().filter((name) => agents.detail(name)?.vab === "tmux");
+    const names = agents.names().filter((name) => agents.detail(name)?.port_type === "tmux");
     globalTerminalWorkspace.renderWorkspace($("terminals-workspace-mount"), names);
   }
   if (route.section === "recordings" && !loadedSections.has("recordings")) {
@@ -225,7 +225,7 @@ async function handleRoute(route) {
 async function start() {
   const config = await fetch("/client-config").then((response) => response.json());
   state.demo = Boolean(config.demo);
-  messages = new MessagesPanel({ client: config.client, isAgent: (producer) => agents.detail(producer)?.vab === "tmux" });
+  messages = new MessagesPanel({ client: config.client, isAgent: (producer) => agents.detail(producer)?.port_type === "tmux" });
   lifecycle = new LifecyclePanel({ agents });
   router = new HashRouter({ onRoute: handleRoute });
   $("empty-office-hire").onclick = () => $("hire-dialog").showModal();

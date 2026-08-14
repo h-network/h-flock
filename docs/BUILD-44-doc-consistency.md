@@ -12,7 +12,7 @@
 - **§7** — *"Not a separate component — a branch in the switch. When a
   `recipient` does not resolve inside the local tenant, look it up in a registry
   of enrolled tenants and write the envelope to that tenant's Redis."*
-- **§3.2 and line 169** — `gateway` is a reserved **VAB**, a participant; `pod`
+- **§3.2 and line 169** — `gateway` is a reserved **port_type**, a participant; `pod`
   is *"a gateway, when routing between tenants"*.
 
 A switch that holds remote tenants' Redis addresses contradicts the same
@@ -54,7 +54,7 @@ the line numbers in your report.
 **A contradiction about *design* — do NOT fix it. Report it and stop.** Where two
 documents describe different intended futures, picking one is an architecture
 decision, and it is mine and the operator's to make, not a lane's. The gateway
-fork is exactly this: choosing "branch in the switch" or "participant with a VAB"
+fork is exactly this: choosing "branch in the switch" or "participant with a port_type"
 sets what gets built next year.
 
 ⚠ **Guessing here is worse than leaving it.** A lane that quietly resolves a

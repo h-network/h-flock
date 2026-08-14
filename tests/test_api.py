@@ -346,7 +346,7 @@ def test_post_envelope_with_valid_as_client(client, monkeypatch):
 
 def test_post_envelope_with_invalid_as_client_rejected(client):
     app, _ = client
-    # bob has vab "tmux" (not "api")
+    # bob has port_type "tmux" (not "api")
     status_code_tmux, _ = request(
         app,
         "POST",
@@ -425,7 +425,7 @@ def test_get_messages_cursor_after(client):
 
 def test_get_messages_non_api_agent_returns_404(client):
     app, _ = client
-    # bob is vab "tmux", so GET /agents/bob/messages should return 404
+    # bob is port_type "tmux", so GET /agents/bob/messages should return 404
     status_code, _ = request(app, "GET", "/agents/bob/messages", token="secret")
     assert status_code == 404
 
@@ -440,7 +440,7 @@ def test_hyphenated_agent_names_with_digits(client):
     assert status_code == 200
     assert body == {
         "agent": "sme-2",
-        "vab": "api",
+        "port_type": "api",
         "depths": {"ingress": 0, "egress": 0, "dead": 0},
         "presence": {"state": "unknown", "since": "", "last_activity": ""},
     }
@@ -528,7 +528,7 @@ def test_get_agent_queues_and_presence_populated(client):
     assert status_code == 200
     assert body == {
         "agent": "sme-2",
-        "vab": "tmux",
+        "port_type": "tmux",
         "depths": {"ingress": 0, "egress": 0, "dead": 0},
         "presence": {
             "state": "working",
@@ -551,7 +551,7 @@ def test_unknown_agent_returns_404_enrolled_agent_returns_200(client):
     status, body = request(app, "GET", "/agents/sme-2", token="secret")
     assert status == 200
     assert body["agent"] == "sme-2"
-    assert body["vab"] == "tmux"
+    assert body["port_type"] == "tmux"
     assert body["depths"] == {"ingress": 0, "egress": 0, "dead": 0}
 
     status, body = request(app, "GET", "/agents/sme-2/board", token="secret")

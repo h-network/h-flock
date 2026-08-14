@@ -6,9 +6,9 @@
 ## 1. Purpose & layer
 
 A **participant** is anything that talks on the bus: a terminal agent, an app
-client, or a control endpoint. It is a roster row and a name. An port
+client, or a control provider. It is a roster row and a name. An port
 produces onto the participant's egress and consumes from its ingress on its
-behalf; its VAB says what is attached at the far end. The bus carries envelopes
+behalf; its port_type says what is attached at the far end. The bus carries envelopes
 and the switch forwards them between participants. What a participant *is* — a
 process, a session, a daemon, an HTTP handler — is not the bus's concern and is
 deliberately absent from this document.
@@ -41,9 +41,9 @@ reach the kind of agent that component knows how to drive.
 that cannot speak Redis — the rule for all of them. For registered VABs, `send`
 writes what its participant emits onto egress and `receive` takes what arrives
 on ingress and passes it to an opener. The switch owns the middle, where it pops
-egress and writes ingress. There is one explicit fallback: an unknown roster VAB
+egress and writes ingress. There is one explicit fallback: an unknown roster port_type
 uses `deliver_unroutable`, which directly pops one ingress item, validates it and
-parks it with an `unroutable VAB` reason because there is no opener table to
+parks it with an `unroutable port_type` reason because there is no opener table to
 dispatch to.
 
 What differs between participants is only the far end. One delivery routine
@@ -60,7 +60,7 @@ through.
 ### The two doors
 
 **Normal envelope traffic enters and leaves an edge through two tools.** The
-switch necessarily performs raw queue operations in the middle; the unknown-VAB
+switch necessarily performs raw queue operations in the middle; the unknown-port_type
 fallback above is the sole edge exception. The doors are the normal edge
 inspectors:
 
@@ -72,7 +72,7 @@ inspectors:
 For registered VABs, each check therefore has one home. An envelope built by
 `send` cannot be malformed because only one thing builds it, and `receive` owns
 normal ingress validation and terminal logging. `deliver_unroutable` duplicates
-that parse/park boundary for the exceptional VAB case. `send` does **not**,
+that parse/park boundary for the exceptional port_type case. `send` does **not**,
 however, authenticate its caller: its
 `producer` argument selects both the envelope field and the egress prefix. The
 agent CLI supplies that argument from `AGENT_NAME`. At the switch, the popped
@@ -240,18 +240,18 @@ its own container and Redis. The invariant must survive every change.
 Everything addressable is a participant. There is no separate addressing
 concept for terminal agents and app clients:
 
-| Participant | VAB | Notes |
+| Participant | port_type | Notes |
 |---|---|---|
 | terminal agents | `tmux` | dynamic; an enrolled name backed by a window and CLI |
 | app clients | `api` | dynamic; an enrolled name backed by a mailbox, with no window |
 | `api` | `api` | fixed default identity for the REST door |
-| `host` | `control` | fixed lifecycle-control endpoint |
+| `host` | `control` | fixed lifecycle-control provider |
 | `gateway` | deferred | future cross-tenant traffic (§7) |
 
 Named participants come from a roster that changes while the switch is running,
 so the subscribe set is **derived from the roster and rebuilt when it changes**,
 not read from a constant. Adding a kind of participant is adding a name and a
-VAB delivery routine, not altering the addressing scheme — that is what makes
+port_type delivery routine, not altering the addressing scheme — that is what makes
 the scheme scale.
 
 **The roster is live state, not boot configuration.** Participants join and
@@ -274,7 +274,7 @@ Since several modules read it, its shape is part of the contract:
 | **Key** | `pod:<pod>:tenant:<tenant>:roster` |
 | **Type** | `HASH` |
 | **Field** | a participant name, matching the segment rule |
-| **Value** | its **VAB** — the virtual agent base attached to it: `tmux`, `api`, `control` |
+| **Value** | its **port_type** — the virtual agent base attached to it: `tmux`, `api`, `control` |
 
 **This is the MAC address table.** A name resolves to a port and to what is
 attached to that port, and nothing else about the participant lives here.
@@ -295,17 +295,17 @@ switch never reads the column that says how an agent is hosted, so it cannot
 know. A hash answers both membership questions in a single command, exactly as a
 set did, so nothing is lost by carrying a value alongside.
 
-**Why the VAB is here and not in the address.** Putting it in the key —
-`…:vab:tmux:agent:frontend:ingress` — would make the queue self-describing, but
+**Why the port_type is here and not in the address.** Putting it in the key —
+`…:port_type:tmux:agent:frontend:ingress` — would make the queue self-describing, but
 moving an agent between bases would rename its entire keyspace: queues, board,
 dead-letter, everything, with in-flight envelopes stranded in the old queue.
 §3.1 already rejected exactly this trade — a marker segment lengthening every key
 to answer a question one lookup answers.
 
 **Why it is not in the envelope.** A producer knows its own name and the name it
-is addressing, and nothing else (§1). If an envelope carried `vab: tmux`, every
+is addressing, and nothing else (§1). If an envelope carried `port_type: tmux`, every
 producer would need to know how its recipient is hosted, and would be wrong the
-moment that changes. The VAB is a property of the recipient, not of the message.
+moment that changes. The port_type is a property of the recipient, not of the message.
 This holds regardless of the header-versus-payload line — reading a header is
 legitimate (§5), but the sender has no business knowing this in the first place.
 
@@ -336,18 +336,18 @@ addressed to it dead-letter at their senders. Neither is a race worth closing,
 and closing it — keyspace notifications, a watched version key — would add a
 write-side obligation to every roster mutation.
 
-Nothing else lives in the table. Whatever a participant *is* beyond its VAB —
+Nothing else lives in the table. Whatever a participant *is* beyond its port_type —
 what is started in its window, its credentials, its configuration — belongs to
 whichever module starts it, not to membership.
 
-Lifecycle branches on VAB. For `tmux`, desired state comes before actual state
-in both directions: `StartAgent` writes the optional profile, optional endpoint
+Lifecycle branches on port_type. For `tmux`, desired state comes before actual state
+in both directions: `StartAgent` writes the optional profile, optional provider
 name and launch key **before the roster row becomes visible**. That row is
 tmuxhost's reconciliation trigger, and tmuxhost is the sole window creator — so
-boot and hire cannot drift on lead, account, or endpoint resolution. Re-hiring
+boot and hire cannot drift on lead, account, or provider resolution. Re-hiring
 an existing name with changed configuration removes its stale window only after
 the new desired state is visible; the host recreates it canonically. `StopAgent`
-reads the VAB, removes the roster
+reads the port_type, removes the roster
 row, purges all classified identity state, and only then kills the window.
 Queues and board columns are retained data, so re-hiring the same name gets a
 clean identity and its old work. That ordering makes a crash recoverable through
@@ -549,7 +549,7 @@ invariants, not intentions:
    a roster value.**
 2. **The kick is one fixed command with an agent name.** Not a type, not a
    table of adapters, not a choice. The executor is ours, so it does its own
-   `HGET` to find the VAB and dispatches itself. The switch hands over a name.
+   `HGET` to find the port_type and dispatches itself. The switch hands over a name.
 3. **Fire and forget, exactly like the envelope.** No wait, no return code and no
    retry. Failure to start the process is logged and ignored; the envelope stays
    safely on ingress. The moment the switch tracks a kick outcome it is holding
@@ -660,8 +660,8 @@ popped egress key — a participant does not receive its own broadcast.
 That raw protocol broadcast includes every roster participant, so an enrolled
 app client receives a copy in its mailbox. `office broadcast` is deliberately a
 different, conversational surface: it sends N individual `Message` envelopes
-only to VAB `tmux`, excluding app clients and fixed plumbing. The switch still
-knows only the first form and never reads a VAB.
+only to port_type `tmux`, excluding app clients and fixed plumbing. The switch still
+knows only the first form and never reads a port_type.
 
 It has to be a value of `recipient` and not anything else, because routing is
 `recipient` and nothing else (§6.4) — a `kind` of `Broadcast` would make the
@@ -788,7 +788,7 @@ agent, another does something else entirely. Adding a kind means adding an
 opener, and nothing between the two ends changes.
 
 An envelope whose kind has no opener is **dead-lettered and logged**, not
-dropped. The `api` VAB deliberately registers a catch-all opener, so every kind
+dropped. The `api` port_type deliberately registers a catch-all opener, so every kind
 is mailbox data there; tmux and control still dead-letter kinds they cannot open.
 
 L2 `source` and `destination` are header fields, so reading them is not reading
@@ -830,7 +830,7 @@ colleagues inside one development office, using one reachable Redis.
    report, on its own schedule; it never changes the path an envelope travels.
 8. **The switch knows nothing about how a participant is implemented.** It reads
    the roster's *fields*, never its *values*, so it cannot know a participant's
-   VAB. It kicks one fixed command with a name. This is structural, not a
+   port_type. It kicks one fixed command with a name. This is structural, not a
    convention anyone has to remember.
 9. **One bad envelope never stops the loop.** Malformed JSON and an unresolvable
    recipient are logged and dead-lettered per envelope. Queue names are generated
@@ -866,13 +866,13 @@ roster write path, and it is reached over the bus like anything else:
         │
         ▼  api egress ──► switch ──► …:agent:host:ingress ──kick──► port host
                                                                         │
-                                            VAB `control` → StartAgent opener:
-                                            write profile/endpoint/launch state,
-                                            resolve endpoint, create the window
+                                            port_type `control` → StartAgent opener:
+                                            write profile/provider/launch state,
+                                            resolve provider, create the window
 ```
 
 Nothing in the switch or the bus changes to allow this, which is the point. The
-host becomes an addressable participant with its own VAB, so it needs a name and
+host becomes an addressable participant with its own port_type, so it needs a name and
 a queue pair and nothing else. `kind` stays
 opaque to the switch; the control opener reads it at the far edge, exactly as §5
 describes. All three rails in §3.3 hold untouched.
@@ -883,12 +883,12 @@ restarts the CLI and kicks once per queued ingress envelope. Runtime lifecycle
 writes remain in the control opener; container boot seeding is the other roster
 writer and establishes the initial fixed and tmux rows.
 
-`StartAgent` also accepts `vab: "api"`. That path writes the named client's
+`StartAgent` also accepts `port_type: "api"`. That path writes the named client's
 roster row and nothing tmux-related. Replies addressed to that name route through
 the same ingress and kick, then the API delivery routine appends the envelope to
 `…:agent:<client>:inbox`. `StopAgent` removes the row and every classified item
 of per-agent identity state; queues and board data remain. The switch
-does not change for any of this; it still routes a name without reading its VAB.
+does not change for any of this; it still routes a name without reading its port_type.
 
 **The agent-facing command is a deliberately narrow edge.** `office send` and
 `office broadcast` treat every token after the recipient as literal message

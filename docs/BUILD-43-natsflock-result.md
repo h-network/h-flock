@@ -96,7 +96,7 @@ the consumer-side observation window.
 ## Evidence deliberately not run
 
 The 1,285-envelope integrity comparison, accept.sh 25/25 and 19/19, and the
-four-agent 30-minute endpoint load were not run against NATS because there is no
+four-agent 30-minute provider load were not run against NATS because there is no
 candidate transport implementation to run them against. BUILD-43 §7 says to
 stop when the port lifecycle needs a daemon or the trace needs a bespoke
 observer. Both conditions were demonstrated before modifying h-flock.

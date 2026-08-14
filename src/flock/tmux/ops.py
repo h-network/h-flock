@@ -232,7 +232,7 @@ def window_env(
     tenant: str = "default",
     cwd: str | None = None,
     profile: str | None = None,
-    endpoint: dict | None = None,
+    provider: dict | None = None,
 ) -> list[str]:
     """Single place where a window environment is constructed for all execution paths."""
     cwd = cwd or f"/workdir/{agent_name}"
@@ -249,13 +249,13 @@ def window_env(
             f"CODEX_HOME=/home/ubuntu/.codex-{profile}",
         ])
     # A local model instead of the vendor's. claude reads these itself; nothing
-    # in h-flock talks to the model, so an agent on a local endpoint is an agent
+    # in h-flock talks to the model, so an agent on a local provider is an agent
     # like any other — same window, same paste, same activity file.
     #
     # ⚠ It uses NO account credential. The watchdog's credential check does not
     # apply to it, and a missing login is not a fault for this agent
     # (LLD-watchdog). Do not seed it a profile expecting one.
-    if endpoint:
+    if provider:
         # ⚠ A previous subscription's ANTHROPIC_* wins over what we set here, so
         # strip the inherited ones first. Stale vars in the environment are the
         # quietest way for this to appear misconfigured.
@@ -266,7 +266,7 @@ def window_env(
             "-u", "ANTHROPIC_BASE_URL",
             "-u", "ANTHROPIC_AUTH_TOKEN",
         ]
-        url = (endpoint.get("url") or "").rstrip("/")
+        url = (provider.get("url") or "").rstrip("/")
         # ⚠ NO /v1. claude appends /v1/messages itself; a base url carrying /v1
         # yields /v1/v1/messages, a 404, and empty output. codex is the opposite
         # and wants /v1, which is exactly how this gets copied in wrong.
@@ -276,8 +276,8 @@ def window_env(
             env_vars.append(f"ANTHROPIC_BASE_URL={url}")
         # A local server usually ignores the token, but claude refuses to start
         # without one — send a placeholder rather than nothing.
-        env_vars.append(f"ANTHROPIC_AUTH_TOKEN={endpoint.get('token') or 'local'}")
-        model = endpoint.get("model")
+        env_vars.append(f"ANTHROPIC_AUTH_TOKEN={provider.get('token') or 'local'}")
+        model = provider.get("model")
         if model:
             # ⚠ All three tiers, same id. claude picks a tier internally, so
             # setting one leaves the others falling back to real Anthropic names
@@ -288,7 +288,7 @@ def window_env(
             env_vars.extend([
                 f"ANTHROPIC_DEFAULT_OPUS_MODEL={model}",
                 f"ANTHROPIC_DEFAULT_SONNET_MODEL={model}",
-                f"ANTHROPIC_DEFAULT_HAIKU_MODEL={endpoint.get('small_model') or model}",
+                f"ANTHROPIC_DEFAULT_HAIKU_MODEL={provider.get('small_model') or model}",
             ])
     return env_vars
 

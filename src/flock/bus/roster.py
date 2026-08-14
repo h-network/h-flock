@@ -12,7 +12,7 @@ def is_member(r, *, pod: str, tenant: str, agent: str) -> bool:
     return bool(r.hexists(prefix(pod, tenant, resource="roster"), agent))
 
 
-def vab(r, *, pod: str, tenant: str, agent: str) -> str | None:
+def port_type(r, *, pod: str, tenant: str, agent: str) -> str | None:
     value = r.hget(prefix(pod, tenant, resource="roster"), agent)
     if isinstance(value, bytes):
         return value.decode()

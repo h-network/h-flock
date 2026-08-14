@@ -32,14 +32,14 @@ say so on the row and close it, rather than "fixing" something that was decided.
 | 1 | `.append()` called on the `set` that `list_windows` returns — the `__init__` placeholder path raises `AttributeError` | `tmuxhost/host.py:201`, `tmux/ops.py:56` | claude | ✅ **fixed — `set.add`; the path had no test because no case had a stale window with no roster members and no `__init__` yet**
 | 2 | `REDIS_PASSWORD` reaches **every agent window** via an exported `REDIS_URL`, never unset — the one thing `API_TOKEN` is unset at line 27 to prevent | `container/entrypoint.sh:108-114`, `:232` | claude | ✅ **fixed — the entrypoint unsets `REDIS_PASSWORD`/`REDISCLI_AUTH`/`REDIS_URL` before tmuxhost; **verified live: an agent pane has none of them****
 | 3 | `StopAgent` destroys an api client's **unread mailbox** — `inbox` is classified as identity state, while the docs promise queues are retained | `bus/resources.py:13` | claude | ✅ **fixed — `inbox` moved to data resources, so a retired client's unread mail survives**
-| 4 | Retiring `host` deletes the tenant's control endpoint, and the empty roster then turns the switch into a Redis-hammering spin loop — **one chain** | `bus/keys.py:8`, `control/openers.py:16`, `switch/service.py:38-40` | claude | ✅ **fixed — `StopAgent` rejects `api`/`host` before any mutation, and an empty roster sleeps instead of spinning**
+| 4 | Retiring `host` deletes the tenant's control provider, and the empty roster then turns the switch into a Redis-hammering spin loop — **one chain** | `bus/keys.py:8`, `control/openers.py:16`, `switch/service.py:38-40` | claude | ✅ **fixed — `StopAgent` rejects `api`/`host` before any mutation, and an empty roster sleeps instead of spinning**
 | 5 | ~~Two codex agents without profiles share one session directory, so the switch **attributes one agent's activity to the other**~~ **FIXED** — rollouts are now accepted only when the session's first `cwd` is `/workdir/<agent>` | `switch/activity.py:104-120` | claude | ✅ fixed |
 | 6 | A Redis interruption can lose an envelope silently: destructive `BLPOP` happens before `popped` is emitted | `switch/service.py:45`, `:48`, `:52-67` | codex | ✅ **resolved as documentation — the blind window is irreducible without a reserve/ack journal; at-most-once kept, the false guarantee removed**
 | 7 | The session door never recovers from a broken tmux stream, though the LLD says it does | `session/app.py:135`, `session/control.py:252-253` | claude | ✅ **fixed — the control client reconnects when a command runs after a break**
 | 8 | One oversized `%output` line kills the reader permanently | `session/control.py:220`, `:71-76` | claude | ✅ **fixed — 16 MiB line limit on the reader**
 | 9 | The session door corrupts non-ASCII terminal output | `session/control.py:193-203`, `session/app.py:159-164` | codex | ✅ **fixed — UTF-8 decode with replacement instead of latin-1**
 | 10 | One slow viewer grows the session process without bound | `session/control.py:40-45`, `session/app.py:159-167` | **both** | ✅ **fixed — bounded queue, oldest dropped**
-| 11 | The SSE endpoints do blocking Redis I/O on the event loop | `api/app.py:516`, `:659`, `:443` | claude | ✅ **fixed — the blocking read runs in a thread**
+| 11 | The SSE providers do blocking Redis I/O on the event loop | `api/app.py:516`, `:659`, `:443` | claude | ✅ **fixed — the blocking read runs in a thread**
 | 12 | One malformed roster row makes `/board` return `404` for the **entire tenant** | `api/app.py:705-712`, `bus/roster.py:6-8` | claude | ✅ **fixed — a malformed roster row is skipped, not fatal for the tenant**
 | 13 | The pane→agent map assumes one pane per window and nothing enforces it; duplicate window names silently merge two terminals | `session/control.py:128-139`, `:185-203` | **both** | ✅ **fixed — the first pane wins for a duplicated window name**
 | 14 | The activity tailer restarts from byte 0 when the newest session file changes, replaying a whole file into a capped stream | `switch/activity.py` | claude | ✅ **fixed — offsets are kept per path and migrate from the old shape**
@@ -69,14 +69,14 @@ synchronous creator is gone — `StartAgent` publishes desired state and
 |---|---|---|---|---|
 | 23 | A hired agent's guide names no lead, and its trust is seeded into the wrong account | `tmux/ops.py:311-319`, `control/runner.py:70-76` | claude | ✅ **fixed by deletion — trust now goes to the profile's own account. ⚠ **The simulator's case 4 had been passing because of this bug****
 | 24 | Hiring an existing name cannot apply changed launch configuration | `control/openers.py:43-69`, `tmux/ops.py:337-348` | codex | ✅ **fixed by deletion — `StartAgent` publishes desired state, kills a stale window, and `tmuxhost` recreates it**
-| 25 | A third window-creation path still ignores `endpoint` | `tmuxhost/host.py:167-170`, `control/runner.py:56-68` | claude | ✅ **fixed by deletion — one window-creation path remains, so there is nothing left to drift**
+| 25 | A third window-creation path still ignores `provider` | `tmuxhost/host.py:167-170`, `control/runner.py:56-68` | claude | ✅ **fixed by deletion — one window-creation path remains, so there is nothing left to drift**
 | 26 | A departed agent's egress is never drained, so re-hiring the name delivers it | `switch/service.py` | claude | ✅ ****REJECTED — deliberate.** `egress` is classified as data, so a re-enrolled name resumes its ingress, egress, inbox and board. Name continuity is the decision; nothing is drained. Recorded in `LLD-bus-and-switch`**
 
 ## 4. The watchdog
 
 | # | finding | evidence | source | status |
 |---|---|---|---|---|
-| 27 | The credential check has no idea what an endpoint agent is — a local-model agent needs no vendor login and is reported as missing one | `watchdog/service.py:208-228` | claude | ✅ **fixed — endpoint agents are excluded from vendor credential checks, and stale `credential.alerted` clears. ⚠ Live: this office runs agents on vLLM and ollama**
+| 27 | The credential check has no idea what an provider agent is — a local-model agent needs no vendor login and is reported as missing one | `watchdog/service.py:208-228` | claude | ✅ **fixed — provider agents are excluded from vendor credential checks, and stale `credential.alerted` clears. ⚠ Live: this office runs agents on vLLM and ollama**
 | 28 | A stalled agent whose window is gone is never reported | `watchdog/service.py:171-173`, `:90-91` | claude | ✅ **fixed — a missing window now reports `window_missing: true` instead of being read as no signal. `HLD` corrected: an agent that cannot be observed is not an agent that is fine**
 | 29 | One failing maintenance job silently disables the other four, and the log record names only the exception class | `watchdog/service.py` | claude | ✅ **fixed — window lookup, stalls, blocked verdicts and credentials have independent failure boundaries, and the record carries `type: message`**
 
@@ -104,7 +104,7 @@ that is missing, because it is acted on.
 | 38 | "The switch does not rewrite the envelope" is absolute in one place and contradicted by a documented exception elsewhere | `LLD-bus-and-switch.md:632-635`, `:743-747` | codex | ✅ **fixed — the no-rewrite claim now names port stamping as the exception**
 | 39 | `popped` is not emitted "before doing anything" and carries the corrected producer | `switch/service.py:52-67` | **both** | ✅ **fixed — `popped` follows pop, parse and stamping, and the LLD says so**
 | 40 | The wire encoding of terminal bytes is documented only in a comment in the reference client | `session/control.py:197`, `LLD-session.md:176` | claude | ✅ **fixed — the wire encoding is in `API.md` and `LLD-session`, not only a client comment**
-| 41 | An example response omits the `vab` field that is implemented and advertised | `api/app.py:584-598`, `docs/API.md:220-223` | codex | ✅ **fixed — the example carries `vab`**
+| 41 | An example response omits the `port_type` field that is implemented and advertised | `api/app.py:584-598`, `docs/API.md:220-223` | codex | ✅ **fixed — the example carries `port_type`**
 | 42 | `CONTRACTS` §9 omits several variables the container sets and modules read | `docs/CONTRACTS.md` | claude | ✅ **fixed — `CONTRACTS` §9 lists the variables the container sets**
 | 43 | Two smaller doc claims that are false today | `LLD-tmux-host.md:156`, `docs/TODO.md:54` | claude | ✅ **fixed — both claims corrected; the `TODO` line was flagged, not edited, and I corrected it**
 

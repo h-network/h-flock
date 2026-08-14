@@ -26,7 +26,7 @@
 | 18 | `list_windows` cannot distinguish "tmux failed" from "no windows" | `tmux/ops.py:56-60` |
 | 23 | a hired agent's guide names no lead, and its trust is seeded into the wrong account | `tmux/ops.py:311-319`, `control/runner.py:70-76` |
 | 24 | hiring an existing name cannot apply changed launch configuration | `control/openers.py:43-69`, `tmux/ops.py:337-348` |
-| 25 | a third window-creation path still ignores `endpoint` | `tmuxhost/host.py:167-170`, `control/runner.py:56-68` |
+| 25 | a third window-creation path still ignores `provider` | `tmuxhost/host.py:167-170`, `control/runner.py:56-68` |
 
 ⚠ **17 and 18 are one question**: what does this codebase do when tmux says no?
 Answer it once. ⚠ **Row 18 has a trap** — `list_windows` returning an empty set
@@ -58,7 +58,7 @@ just as incoherent.
 | # | finding | first lines to open |
 |---|---|---|
 | 26 | a departed agent's egress is never drained, so re-hiring the name delivers it | `switch/service.py` |
-| 27 | the credential check has no idea what an endpoint agent is — a local-model agent needs no vendor login and is reported as missing one | `watchdog/service.py:208-228` |
+| 27 | the credential check has no idea what an provider agent is — a local-model agent needs no vendor login and is reported as missing one | `watchdog/service.py:208-228` |
 | 28 | a stalled agent whose window is gone is never reported | `watchdog/service.py:171-173`, `:90-91` |
 | 29 | one failing maintenance job silently disables the other four, and the log record names only the exception class | `watchdog/service.py` |
 
@@ -67,7 +67,7 @@ this reason (a re-enrolled name gets its mail). Decide whether an *agent's*
 egress deserves the same treatment or the opposite, and say which.
 
 ⚠ **Row 27 is real and current:** this office runs agents on a local vLLM and an
-ollama endpoint, and the watchdog reports them as needing a vendor login.
+ollama provider, and the watchdog reports them as needing a vendor login.
 
 ## 4. Done when
 

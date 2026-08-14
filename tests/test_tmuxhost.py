@@ -7,12 +7,12 @@ from flock.tmuxhost.host import TmuxHost, generate_agents_md, write_agent_guide,
 
 
 class MockRedis:
-    def __init__(self, roster_agents, vab_map=None, launch_map=None, profile_map=None, endpoint_map=None):
+    def __init__(self, roster_agents, port_type_map=None, launch_map=None, profile_map=None, provider_map=None):
         self.roster_agents = set(roster_agents)
-        self.vab_map = vab_map or {a: "tmux" for a in roster_agents}
+        self.port_type_map = port_type_map or {a: "tmux" for a in roster_agents}
         self.launch_map = launch_map or {}
         self.profile_map = profile_map or {}
-        self.endpoint_map = endpoint_map or {}
+        self.provider_map = provider_map or {}
 
     def get(self, key):
         for agent, cli in self.launch_map.items():
@@ -21,16 +21,16 @@ class MockRedis:
         for agent, prof in self.profile_map.items():
             if f":agent:{agent}:profile" in key:
                 return prof.encode("utf-8") if isinstance(prof, str) else prof
-        for agent, endpoint in self.endpoint_map.items():
-            if f":agent:{agent}:endpoint" in key:
-                return endpoint.encode("utf-8") if isinstance(endpoint, str) else endpoint
+        for agent, provider in self.provider_map.items():
+            if f":agent:{agent}:provider" in key:
+                return provider.encode("utf-8") if isinstance(provider, str) else provider
         return None
 
     def hkeys(self, key):
         return {a.encode("utf-8") for a in self.roster_agents}
 
     def hget(self, key, field):
-        val = self.vab_map.get(field)
+        val = self.port_type_map.get(field)
         if val is None:
             return None
         return val.encode("utf-8") if isinstance(val, str) else val
@@ -83,7 +83,7 @@ def test_tmuxhost_ensure_session_with_roster_agent(mock_run_tmux):
 
 
 @patch("flock.tmux.ops.run_tmux")
-def test_tmuxhost_initial_session_resolves_agent_endpoint(mock_run_tmux, monkeypatch):
+def test_tmuxhost_initial_session_resolves_agent_provider(mock_run_tmux, monkeypatch):
     mock_run_tmux.side_effect = [
         (1, "", "no server running"),
         (0, "", ""),
@@ -93,12 +93,12 @@ def test_tmuxhost_initial_session_resolves_agent_endpoint(mock_run_tmux, monkeyp
         (0, "alice", ""),
         (0, "alice", ""),
     ]
-    monkeypatch.setenv("ENDPOINT_GPU_URL", "http://model.test:8000")
-    monkeypatch.setenv("ENDPOINT_GPU_MODEL", "served-model")
+    monkeypatch.setenv("PROVIDER_GPU_URL", "http://model.test:8000")
+    monkeypatch.setenv("PROVIDER_GPU_MODEL", "served-model")
     r = MockRedis(
         ["alice"],
         launch_map={"alice": "claude"},
-        endpoint_map={"alice": "gpu"},
+        provider_map={"alice": "gpu"},
     )
 
     TmuxHost(
@@ -112,7 +112,7 @@ def test_tmuxhost_initial_session_resolves_agent_endpoint(mock_run_tmux, monkeyp
 
 
 @patch("flock.tmux.ops.run_tmux")
-def test_tmuxhost_filters_non_tmux_vab(mock_run_tmux):
+def test_tmuxhost_filters_non_tmux_port_type(mock_run_tmux):
     mock_run_tmux.side_effect = [
         (0, "", ""),  # has-session
         (0, "", ""),  # exit-empty
@@ -122,7 +122,7 @@ def test_tmuxhost_filters_non_tmux_vab(mock_run_tmux):
         (0, "alice", ""),  # list-windows 2
     ]
 
-    r = MockRedis(["alice", "api"], vab_map={"alice": "tmux", "api": "api"})
+    r = MockRedis(["alice", "api"], port_type_map={"alice": "tmux", "api": "api"})
     host = TmuxHost(pod="acme", tenant="hq", redis_url="redis://127.0.0.1:6379/0", session_name="hq")
     host.reconcile_once(r)
 

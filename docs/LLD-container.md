@@ -54,12 +54,12 @@ tenant container instead.
 |---|---|---|
 | redis | — | the bus. Loopback, no persistence needed for a skeleton |
 | switch | `LLD-bus-and-switch` | one per tenant, therefore one per container |
-| tmux host | `LLD-tmux-host` | creates the server, session and windows for `vab: tmux` entries |
-| tmux port | `LLD-port-tmux` | kicked per delivery; pastes into windows (`vab: tmux`), appends to mailbox stream (`vab: api`), writes pending.verify marker, exits |
+| tmux host | `LLD-tmux-host` | creates the server, session and windows for `port_type: tmux` entries |
+| tmux port | `LLD-port-tmux` | kicked per delivery; pastes into windows (`port_type: tmux`), appends to mailbox stream (`port_type: api`), writes pending.verify marker, exits |
 | watchdog | `flock.watchdog` | background process; samples presence, tasks, activity; writes alerts for human operator |
 | api | `LLD-api` | envelopes in, state out, client mailbox polling & SSE streaming |
 | session | `LLD-session` | terminal output and keystrokes. Its own port |
-| agents | — | one per tmux window for `vab: tmux` roster entries |
+| agents | — | one per tmux window for `port_type: tmux` roster entries |
 
 ## 3. Only doors are published, and each one separately
 
@@ -124,7 +124,7 @@ forward traffic it has no business understanding.
 You may want the api reachable and terminals not, or terminals on a private
 network while data calls go out. One mapping each rather than one for both.
 
-A single external endpoint is still available later, as a **proxy in front of
+A single external provider is still available later, as a **proxy in front of
 both** rather than one module absorbing the other. Nothing here changes for it:
 neither process learns the proxy exists, and it is also where TLS belongs
 (`LLD-api` §7 — terminate it outside the process). Do it once there is something
@@ -195,7 +195,7 @@ an already-running container is a no-op, and every reconciliation pass converges
 rather than duplicating. A container restart is different: Redis persistence is
 disabled and tmux is restarted, so boot configuration reconstructs the office.
 
-Enrolling an external application client (`StartAgent` with `vab: "api"`) adds a roster row only, creating no window or CLI process.
+Enrolling an external application client (`StartAgent` with `port_type: "api"`) adds a roster row only, creating no window or CLI process.
 
 ### Entrypoint CLI Defaulting & Credential Verification
 

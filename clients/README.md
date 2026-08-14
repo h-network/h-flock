@@ -39,7 +39,7 @@ one. Nothing here may be imported by `flock.*`, ever.
 
 h-flock sends no CORS headers, so a browser page hosted on another origin is
 refused. Browser `EventSource` also cannot attach the Bearer header required by
-the SSE endpoints. `web/server.py` serves the page and proxies authenticated API
+the SSE providers. `web/server.py` serves the page and proxies authenticated API
 requests from the same origin, solving both without exposing the token to
 browser JavaScript. It is a standard-library server, not another framework
 service.

@@ -49,7 +49,7 @@ set    hset
 ⚠ **`set` and `hset` were missing from my first list.** I enumerated by grepping
 `r.<method>(` across `flock/bus`, `flock/port` and `flock/office`, which
 misses the **control openers** — the same one-shot port handles `launch`,
-`profile`, `endpoint`, `pause` and roster writes. Found by building it, not by
+`profile`, `provider`, `pause` and roster writes. Found by building it, not by
 reading it. Grep the openers too, or better, let the tests find it.
 
 Reply types needed: simple string, integer, bulk string (including nil `$-1`),

@@ -25,7 +25,7 @@ it neither receives nor sends envelopes.
 
 Each ordinary pass:
 
-1. reads roster fields and keeps participants whose VAB is `tmux`;
+1. reads roster fields and keeps participants whose port_type is `tmux`;
 2. obtains all window activity timestamps with one tmux `list-windows` call;
 3. evaluates ticket stalls; and
 4. reports retained `blocked` verdicts.
@@ -165,12 +165,12 @@ Alert records are facts, not diagnoses. Their common fields are `v`, `ts` and
 ## 5. Credential warnings
 
 Once an hour, the watchdog walks the `tmux` roster and reads each enrolled
-agent's `endpoint`, `launch` and `profile` keys. An agent with an endpoint name
+agent's `provider`, `launch` and `profile` keys. An agent with an provider name
 is skipped because it talks directly to the tenant's configured model server and
 uses no vendor account credential. For the remaining agents, the watchdog checks
 each distinct CLI account in use once; an unused profile directory is not
 evidence of a running account and is ignored. If an account ceases to require a
-credential because every user moved to endpoints, its stale
+credential because every user moved to providers, its stale
 `credential.alerted` field is cleared.
 
 | CLI | source | interpretation |

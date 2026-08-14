@@ -29,7 +29,7 @@ envelope, reading keys, and handing back what comes the other way.
 
 **It has addresses**, so agents can reply to clients by name. A reply is addressed to
 a named client (e.g. `telegram`, or default `api`), the switch delivers it to the
-VAB `api` port, and `deliver_api` writes it to that client's inbox stream. That is the
+port_type `api` port, and `deliver_api` writes it to that client's inbox stream. That is the
 only reason clients have roster rows — not to be terminal peers, but to be reachable.
 
 **It uses the same two doors as everything else** — `send` to put an envelope on
@@ -45,7 +45,7 @@ restarted and deployed without disturbing the others.
 |---|---|---|
 | `GET` | `/health` | liveness |
 | `GET` | `/agents` | enrolled agents, from the roster |
-| `GET` | `/agents/{agent}` | queue depths, presence state (`working`, `idle`, `unknown`, `blocked`), and VAB status (`vab`) |
+| `GET` | `/agents/{agent}` | queue depths, presence state (`working`, `idle`, `unknown`, `blocked`), and port_type status (`port_type`) |
 | `POST` | `/agents/{agent}/envelopes` | put an envelope on the bus, of any kind (optional `as`) |
 | `GET` | `/agents/{agent}/messages` | get stored inbox messages for an api client (`?after=<cursor>&limit=100`) |
 | `GET` | `/agents/{agent}/messages/stream` | live SSE stream of inbox messages (`?after=<cursor>`) |
@@ -77,13 +77,13 @@ POST /agents/frontend/envelopes     {"text": "hi"}          sugar — means kind
 POST /agents/frontend/envelopes     {"text": "hi", "as": "telegram"}   sending as an enrolled api client
 ```
 
-The endpoint is `/envelopes`, not `/messages`, because a message is one kind
+The provider is `/envelopes`, not `/messages`, because a message is one kind
 among several and naming the resource after it made the whole HTTP surface
 Message-shaped: the one thing the bus was built to make cheap — adding a kind —
 could not be reached over HTTP at all.
 
 A POST request can specify `"as": "<client>"` to declare its producer identity.
-`as` is validated against the roster — it must name an enrolled agent with VAB `api`.
+`as` is validated against the roster — it must name an enrolled agent with port_type `api`.
 When omitted, `producer` defaults to `"api"`.
 
 ⚠ **Payload size limit:** Envelopes submitted to `POST /agents/{agent}/envelopes` are bounded at **1 MB (1,048,576 bytes)**. Envelopes exceeding 1 MB are rejected immediately with HTTP `422 Unprocessable Content`.
@@ -101,9 +101,9 @@ to know what became of an envelope reads the log by `stream_id`.
 ## 4. Receiving
 
 **The api does not consume its own ingress, and holds no loop of its own.** It is
-an agent with a VAB of `api` (`LLD-bus-and-switch` §3.2), so when the switch
+an agent with a port_type of `api` (`LLD-bus-and-switch` §3.2), so when the switch
 writes its ingress it kicks the port exactly as it would for any window
-agent. The port reads the VAB, dispatches to the api delivery routine
+agent. The port reads the port_type, dispatches to the api delivery routine
 (`deliver_api`), which pops the envelope, logs `received` and `opened`, and
 writes the verbatim JSON envelope into the recipient client's Redis Stream inbox
 (`pod:<pod>:tenant:<tenant>:agent:<client>:inbox`, capped at `MAXLEN ~ 1000`) under
@@ -122,7 +122,7 @@ segment.
 - **Board reads** (`GET /agents/{agent}/board` and `GET /board`): Return four columns
   (`todo`, `doing`, `hold`, `done`). Entries are JSON-decoded ticket objects (or raw
   strings for backwards compatibility).
-- **Presence & Blocked Status** (`GET /agents/{agent}`): Reads queue depths and VAB (`vab`), alongside presence status hash
+- **Presence & Blocked Status** (`GET /agents/{agent}`): Reads queue depths and port_type (`port_type`), alongside presence status hash
   `<prefix>:agent:<name>:presence` (`state`: `working` | `idle` | `unknown`, `since`, `last_activity`).
   Folded over by the switch's `blocked` hash `<prefix>:agent:<name>:blocked` when set, so `presence.state` returns `"blocked"`
   when a delivery is judged unverified. An agent that has never produced activity (presence `"unknown"`) has its first delivery
@@ -178,7 +178,7 @@ two shapes originally considered (a correlation table vs. named clients), **name
 clients with per-client stream mailboxes** was chosen and built.
 
 The reason: every participant on the bus is a named agent, so an app client
-enrolling as a named agent (`StartAgent` with `vab: api`) stays consistent with
+enrolling as a named agent (`StartAgent` with `port_type: api`) stays consistent with
 the switch design (`LLD-bus-and-switch` §1).
 
 - **Mailbox:** `deliver_api` writes incoming envelopes into a per-client Redis Stream
@@ -188,11 +188,11 @@ the switch design (`LLD-bus-and-switch` §1).
   for catch-up, or `GET /agents/{client}/messages/stream?after=<cursor>` for a live
   Server-Sent Events (SSE) stream.
 - **Isolation:** `api` clients appear in the roster, but are filtered out of terminal
-  agent CLI operations (`office peers` and `office broadcast` select `vab == "tmux"`),
+  agent CLI operations (`office peers` and `office broadcast` select `port_type == "tmux"`),
   so terminal agents stay unaware of app clients while allowing replies by name
   (`office send -a telegram ...`).
 
-**Session endpoints.** Answered — it is a separate module, and it is
+**Session providers.** Answered — it is a separate module, and it is
 [`LLD-session.md`](LLD-session.md). The api carries envelopes and state reads;
 terminal output and keystrokes are a different transport on a different port,
 and nothing about the REST surface is designed around them.
@@ -204,6 +204,6 @@ and nothing about the REST surface is designed around them.
 ## 8. What this is not
 
 Not the switch — it forwards nothing. Not an agent runtime — it does not start,
-stop, watch or drive anything. Not a query interface over Redis — every endpoint
+stop, watch or drive anything. Not a query interface over Redis — every provider
 is a fixed shape, and a request can never name a key.
 
