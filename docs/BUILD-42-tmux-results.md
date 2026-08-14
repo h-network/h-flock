@@ -8,7 +8,7 @@ compose project on loopback ports 8120/8121. The project was removed with
 
 1. **A message accepted while a rostered window is briefly absent is lost to
    the dead-letter list, even though reconciliation recreates the window about
-   one second later.** Both injections returned HTTP 202, then the adapter
+   one second later.** Both injections returned HTTP 202, then the port
    recorded `window_missing`; neither envelope was replayed after the window
    returned. Reproduce with `tmux-window-loss.sh`.
 2. **Every agent can read ordinary files in every peer workdir.** The observer
@@ -47,12 +47,12 @@ http_status=202
 dead-letter tail after run=1:
 {"v":1,"kind":"Message","stream_id":"0b2cb6987de24c47a3557c48aaa24ba6","correlation_id":"68654fcc7218448f8b4d264985c28a83","ts":"2026-08-11T21:23:56.963Z","producer":"api","recipient":"observer","payload":{"text":"window-loss-1"}}
 delivery log tail after run=1:
-{"ts":"2026-08-11T21:23:56.964Z","module":"router","event":"popped","stream_id":"0b2cb6987de24c47a3557c48aaa24ba6","correlation_id":"68654fcc7218448f8b4d264985c28a83","producer":"api","recipient":"observer"}
+{"ts":"2026-08-11T21:23:56.964Z","module":"switch","event":"popped","stream_id":"0b2cb6987de24c47a3557c48aaa24ba6","correlation_id":"68654fcc7218448f8b4d264985c28a83","producer":"api","recipient":"observer"}
 {"ts":"2026-08-11T21:23:56.964Z","module":"api","event":"sent","stream_id":"0b2cb6987de24c47a3557c48aaa24ba6","correlation_id":"68654fcc7218448f8b4d264985c28a83","producer":"api","recipient":"observer"}
-{"ts":"2026-08-11T21:23:56.977Z","module":"router","event":"forwarded","stream_id":"0b2cb6987de24c47a3557c48aaa24ba6","correlation_id":"68654fcc7218448f8b4d264985c28a83","producer":"api","recipient":"observer"}
+{"ts":"2026-08-11T21:23:56.977Z","module":"switch","event":"forwarded","stream_id":"0b2cb6987de24c47a3557c48aaa24ba6","correlation_id":"68654fcc7218448f8b4d264985c28a83","producer":"api","recipient":"observer"}
 INFO:     172.20.0.1:54960 - "POST /agents/observer/envelopes HTTP/1.1" 202 Accepted
-{"ts":"2026-08-11T21:23:57.659Z","module":"adapter","event":"received","stream_id":"0b2cb6987de24c47a3557c48aaa24ba6","correlation_id":"68654fcc7218448f8b4d264985c28a83","producer":"api","recipient":"observer"}
-{"ts":"2026-08-11T21:23:57.673Z","module":"adapter","event":"dead_lettered","stream_id":"0b2cb6987de24c47a3557c48aaa24ba6","correlation_id":"68654fcc7218448f8b4d264985c28a83","producer":"api","recipient":"observer","reason":"window_missing"}
+{"ts":"2026-08-11T21:23:57.659Z","module":"port","event":"received","stream_id":"0b2cb6987de24c47a3557c48aaa24ba6","correlation_id":"68654fcc7218448f8b4d264985c28a83","producer":"api","recipient":"observer"}
+{"ts":"2026-08-11T21:23:57.673Z","module":"port","event":"dead_lettered","stream_id":"0b2cb6987de24c47a3557c48aaa24ba6","correlation_id":"68654fcc7218448f8b4d264985c28a83","producer":"api","recipient":"observer","reason":"window_missing"}
 {"ts":"2026-08-11T21:23:58.049Z","module":"tmuxhost","event":"window_created","recipient":"observer"}
 windows after reconciliation run=1:
 architect
@@ -64,12 +64,12 @@ dead-letter tail after run=2:
 {"v":1,"kind":"Message","stream_id":"0b2cb6987de24c47a3557c48aaa24ba6","correlation_id":"68654fcc7218448f8b4d264985c28a83","ts":"2026-08-11T21:23:56.963Z","producer":"api","recipient":"observer","payload":{"text":"window-loss-1"}}
 {"v":1,"kind":"Message","stream_id":"a592fef39753459b8e70beee46cca6dc","correlation_id":"e352275a82404a63aaad8847aa1a6965","ts":"2026-08-11T21:24:05.323Z","producer":"api","recipient":"observer","payload":{"text":"window-loss-2"}}
 delivery log tail after run=2:
-{"ts":"2026-08-11T21:24:05.324Z","module":"router","event":"popped","stream_id":"a592fef39753459b8e70beee46cca6dc","correlation_id":"e352275a82404a63aaad8847aa1a6965","producer":"api","recipient":"observer"}
+{"ts":"2026-08-11T21:24:05.324Z","module":"switch","event":"popped","stream_id":"a592fef39753459b8e70beee46cca6dc","correlation_id":"e352275a82404a63aaad8847aa1a6965","producer":"api","recipient":"observer"}
 {"ts":"2026-08-11T21:24:05.324Z","module":"api","event":"sent","stream_id":"a592fef39753459b8e70beee46cca6dc","correlation_id":"e352275a82404a63aaad8847aa1a6965","producer":"api","recipient":"observer"}
-{"ts":"2026-08-11T21:24:05.325Z","module":"router","event":"forwarded","stream_id":"a592fef39753459b8e70beee46cca6dc","correlation_id":"e352275a82404a63aaad8847aa1a6965","producer":"api","recipient":"observer"}
+{"ts":"2026-08-11T21:24:05.325Z","module":"switch","event":"forwarded","stream_id":"a592fef39753459b8e70beee46cca6dc","correlation_id":"e352275a82404a63aaad8847aa1a6965","producer":"api","recipient":"observer"}
 INFO:     172.20.0.1:36396 - "POST /agents/observer/envelopes HTTP/1.1" 202 Accepted
-{"ts":"2026-08-11T21:24:05.747Z","module":"adapter","event":"received","stream_id":"a592fef39753459b8e70beee46cca6dc","correlation_id":"e352275a82404a63aaad8847aa1a6965","producer":"api","recipient":"observer"}
-{"ts":"2026-08-11T21:24:05.756Z","module":"adapter","event":"dead_lettered","stream_id":"a592fef39753459b8e70beee46cca6dc","correlation_id":"e352275a82404a63aaad8847aa1a6965","producer":"api","recipient":"observer","reason":"window_missing"}
+{"ts":"2026-08-11T21:24:05.747Z","module":"port","event":"received","stream_id":"a592fef39753459b8e70beee46cca6dc","correlation_id":"e352275a82404a63aaad8847aa1a6965","producer":"api","recipient":"observer"}
+{"ts":"2026-08-11T21:24:05.756Z","module":"port","event":"dead_lettered","stream_id":"a592fef39753459b8e70beee46cca6dc","correlation_id":"e352275a82404a63aaad8847aa1a6965","producer":"api","recipient":"observer","reason":"window_missing"}
 windows after reconciliation run=2:
 architect
 observer

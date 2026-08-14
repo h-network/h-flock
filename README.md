@@ -31,11 +31,11 @@ payload.
 
 ## ✨ What it is
 
-- **🔀 A switch, not a framework.** Producers emit envelopes; the router forwards
+- **🔀 A switch, not a framework.** Producers emit envelopes; the switch forwards
   them by `recipient` and never opens one. Adding a new kind of participant is
-  writing **one delivery routine** — not changing the router, the bus, or any
+  writing **one delivery routine** — not changing the switch, the bus, or any
   command.
-- **🏢 One container = one tenant.** Redis, the router, a tmux server with one
+- **🏢 One container = one tenant.** Redis, the switch, a tmux server with one
   window per agent, and two doors to the outside. Bring it up twice and it
   converges.
 - **📱 Apps are participants, not spectators.** A Telegram bot or a web console
@@ -71,13 +71,13 @@ commands rather than trusting these.**
   backend's window                                          frontend's window
        │  office send -a frontend …                                  ▲
        ▼                                                        │ paste
-  …:backend:egress ──► ROUTER ──► …:frontend:ingress ──kick──► adapter ┘
+  …:backend:egress ──► SWITCH ──► …:frontend:ingress ──kick──► port ┘
                      the one daemon              runs, delivers, exits
 ```
 
-The router blocks on every egress queue because agents produce whenever they
-like. Nothing blocks on an ingress queue, because the router *writes* those and
-therefore already knows — so it kicks an adapter instead.
+The switch blocks on every egress queue because agents produce whenever they
+like. Nothing blocks on an ingress queue, because the switch *writes* those and
+therefore already knows — so it kicks an port instead.
 
 The L2 analogy is load-bearing rather than decorative:
 
@@ -87,7 +87,7 @@ The L2 analogy is load-bearing rather than decorative:
 | source MAC | `producer` — derived from the queue it was popped from, never from content |
 | MAC table | the **roster** — `name → VAB`, agent to the base it runs on |
 | port config | the **VAB** — a property of the port, not of the frame |
-| ethertype | `kind` — the router ignores it; an opener at the far edge reads it |
+| ethertype | `kind` — the switch ignores it; an opener at the far edge reads it |
 | L3 and above | `payload` — invisible to everything in the middle |
 
 The switch never learns what is plugged into a port. That ignorance is what lets
@@ -268,8 +268,8 @@ them they found eight things it did not say.
   src/flock/
     bus/         prefix, envelope, the two doors, roster reads   ← library
     tmux/        create/kill/list windows, the paste sequence    ← library
-    router/      the one daemon
-    adapter/     invoked per delivery, dispatches on VAB, exits
+    switch/      the one daemon
+    port/     invoked per delivery, dispatches on VAB, exits
     control/     StartAgent / StopAgent openers
     tmuxhost/    the tmux server, session and windows
     office/      the one agent-facing command
@@ -293,7 +293,7 @@ Measured, not assumed: 100 envelopes at 10/s with none lost, ordering preserved,
 3 KB messages intact, delivery into a busy window buffered rather than dropped,
 ~500 ms per delivery of which startup is the larger half.
 
-A **watchdog** runs beside the router: a ticket open too long, with no model
+A **watchdog** runs beside the switch: a ticket open too long, with no model
 activity and a silent window, raises one alert — to `GET /alerts` and the log,
 never to an agent. It also warns before a login expires, and marks an agent
 `blocked` when a delivery was not consumed — which catches a wedged CLI, and both
@@ -367,8 +367,8 @@ went the way it did rather than only what it was.
 |---|---|
 | [`HLD.md`](docs/HLD.md) | **start here** — how the pieces fit, and the invariants |
 | [`API.md`](docs/API.md) | **for app developers** — the whole HTTP surface, no repo needed |
-| [`LLD-bus-and-router.md`](docs/LLD-bus-and-router.md) | addressing, the envelope, the two doors, the invariants |
-| [`LLD-adapter-tmux.md`](docs/LLD-adapter-tmux.md) | how text actually gets into a terminal, and why each rule is load-bearing |
+| [`LLD-bus-and-switch.md`](docs/LLD-bus-and-switch.md) | addressing, the envelope, the two doors, the invariants |
+| [`LLD-port-tmux.md`](docs/LLD-port-tmux.md) | how text actually gets into a terminal, and why each rule is load-bearing |
 | [`LLD-tmux-host.md`](docs/LLD-tmux-host.md) | the server, windows, geometry, reconciliation |
 | [`LLD-api.md`](docs/LLD-api.md) · [`LLD-session.md`](docs/LLD-session.md) | the two doors — `:8080` envelopes and state, `:8081` terminal bytes |
 | [`LLD-container.md`](docs/LLD-container.md) | one container is one tenant |

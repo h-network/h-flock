@@ -7,15 +7,15 @@
 
 ## 1. The worked example, so nobody has to guess what a finding looks like
 
-`LLD-bus-and-router` describes cross-tenant routing twice, differently:
+`LLD-bus-and-switch` describes cross-tenant routing twice, differently:
 
-- **§7** — *"Not a separate component — a branch in the router. When a
+- **§7** — *"Not a separate component — a branch in the switch. When a
   `recipient` does not resolve inside the local tenant, look it up in a registry
   of enrolled tenants and write the envelope to that tenant's Redis."*
 - **§3.2 and line 169** — `gateway` is a reserved **VAB**, a participant; `pod`
   is *"a gateway, when routing between tenants"*.
 
-A router that holds remote tenants' Redis addresses contradicts the same
+A switch that holds remote tenants' Redis addresses contradicts the same
 document's own principle — *"keeping it there is what stops topology knowledge
 spreading"* — and has one tenant writing another's store. A participant
 addressed by name does not. **Both are written down; only one can be built.**
@@ -31,15 +31,15 @@ nobody read them side by side.
    quietly relaxes one is the dangerous case.
 3. **Your document against `CONTRACTS.md`.** Anything two modules depend on.
 4. **Your document against the other LLDs where they touch** — the seams:
-   adapter↔router, api↔session, container↔everything.
+   port↔switch, api↔session, container↔everything.
 
 ## 3. Ownership
 
 | lane | documents |
 |---|---|
-| `bus` | `LLD-bus-and-router.md`, `CONTRACTS.md` |
+| `bus` | `LLD-bus-and-switch.md`, `CONTRACTS.md` |
 | `api` | `LLD-api.md`, `LLD-session.md`, `API.md` |
-| `tmux` | `LLD-tmux-host.md`, `LLD-adapter-tmux.md`, `LLD-container.md` |
+| `tmux` | `LLD-tmux-host.md`, `LLD-port-tmux.md`, `LLD-container.md` |
 | `architect` | `HLD.md`, `TODO.md`, `README.md` |
 
 ⚠ **Do not edit a document you do not own.** Report the line and let the owner
@@ -54,7 +54,7 @@ the line numbers in your report.
 **A contradiction about *design* — do NOT fix it. Report it and stop.** Where two
 documents describe different intended futures, picking one is an architecture
 decision, and it is mine and the operator's to make, not a lane's. The gateway
-fork is exactly this: choosing "branch in the router" or "participant with a VAB"
+fork is exactly this: choosing "branch in the switch" or "participant with a VAB"
 sets what gets built next year.
 
 ⚠ **Guessing here is worse than leaving it.** A lane that quietly resolves a

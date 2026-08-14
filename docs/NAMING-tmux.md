@@ -44,27 +44,27 @@ Tier A is documentation, B internal code, C Redis/environment, and D wire.
 | `lead` | `src/flock/tmuxhost/host.py:75` | redis key | Tenant-level agent whose generated guide receives leadership instructions. | None. | C |
 | `__init__` | `src/flock/tmuxhost/host.py:83` | identifier | Non-agent placeholder window used to keep an empty session alive. | Null/management port, loosely. | B |
 
-## `flock.adapter`
+## `flock.port`
 
 | name | where it lives | kind | what it means, in one line | networking analogue, if any | tier |
 |---|---|---|---|---|---|
-| `adapter` | `src/flock/adapter/cli.py:10`, `src/flock/adapter/runner.py:149` | doc term | Names both outbound agent sending and inbound per-envelope delivery—opposite sides of the switch. | Two different NIC directions collapsed into one component name. | B |
-| `send` CLI | `src/flock/adapter/cli.py:20` | identifier | Agent-facing command that constructs an envelope and writes its own egress. | Transmit-side NIC operation. | B |
-| `run_adapter` | `src/flock/adapter/runner.py:149` | identifier | Acquires per-agent serialization, delivers one ingress envelope, and exits. | Receive-side port service. | B |
-| `deliver_one` | `src/flock/adapter/runner.py:69` | identifier | Dispatches one recipient ingress item according to its VAB. | Frame delivery to a selected port type. | B |
-| `deliver_api` | `src/flock/adapter/runner.py:26` | identifier | Moves one ingress envelope to an enrolled client's mailbox stream. | Delivery to a different port medium. | B |
-| `deliver_unroutable` | `src/flock/adapter/runner.py:43` | identifier | Pops and dead-letters an envelope whose VAB has no implementation. | Unsupported-port drop. | B |
-| `opener` | `src/flock/adapter/runner.py:141` | doc term | Kind-specific callable whose normal return means an envelope was opened. | Ethertype handler. | B |
-| `message_opener` / `command_opener` / `add_ticket_opener` | `src/flock/adapter/openers.py:55` | identifier | Terminal or board actions selected by envelope kind. | Protocol handlers. | B |
-| `opened` | `src/flock/adapter/runner.py:40` | doc term | Terminal outcome meaning an opener completed, not proof a human/CLI consumed it. | Accepted by destination handler, not delivery acknowledgement. | A |
-| `delivering` | `src/flock/adapter/runner.py:161` | redis key | Tenant hash serving as a per-agent mutual-exclusion/busy tag. | Per-port transmit lock. | C |
-| `paused` | `src/flock/adapter/runner.py:77` | redis key | Marker that leaves ingress queued rather than opening it. | Administratively down port. | C |
-| `pending.verify` | `src/flock/adapter/openers.py:43` | redis key | Stream of pasted deliveries awaiting out-of-band activity judgment. | Delivery telemetry awaiting observation. | C |
-| `VERIFIABLE_CLIS` | `src/flock/adapter/openers.py:15` | identifier | Allowlist of CLI implementations whose session files can confirm input. | Observable port types. | B |
-| `inbox` | `src/flock/adapter/runner.py:33` | redis key | Resumable mailbox stream for a `vab: api` participant. | Receive buffer on an application port. | C |
-| `dead` | `src/flock/adapter/runner.py:56` | redis key | Retained list of envelopes that could not be opened. | Dead-letter/drop queue. | C |
-| `ingress` | `src/flock/adapter/runner.py:51` | redis key | Recipient-side queue from which delivery pops. | Ingress queue. | C |
-| `_CatchAllDict` | `src/flock/adapter/runner.py:11` | identifier | Mapping facade that makes every kind openable for API mailboxes. | Promiscuous protocol handler. | B |
+| `port` | `src/flock/port/cli.py:10`, `src/flock/port/runner.py:149` | doc term | Names both outbound agent sending and inbound per-envelope delivery—opposite sides of the switch. | Two different NIC directions collapsed into one component name. | B |
+| `send` CLI | `src/flock/port/cli.py:20` | identifier | Agent-facing command that constructs an envelope and writes its own egress. | Transmit-side NIC operation. | B |
+| `run_adapter` | `src/flock/port/runner.py:149` | identifier | Acquires per-agent serialization, delivers one ingress envelope, and exits. | Receive-side port service. | B |
+| `deliver_one` | `src/flock/port/runner.py:69` | identifier | Dispatches one recipient ingress item according to its VAB. | Frame delivery to a selected port type. | B |
+| `deliver_api` | `src/flock/port/runner.py:26` | identifier | Moves one ingress envelope to an enrolled client's mailbox stream. | Delivery to a different port medium. | B |
+| `deliver_unroutable` | `src/flock/port/runner.py:43` | identifier | Pops and dead-letters an envelope whose VAB has no implementation. | Unsupported-port drop. | B |
+| `opener` | `src/flock/port/runner.py:141` | doc term | Kind-specific callable whose normal return means an envelope was opened. | Ethertype handler. | B |
+| `message_opener` / `command_opener` / `add_ticket_opener` | `src/flock/port/openers.py:55` | identifier | Terminal or board actions selected by envelope kind. | Protocol handlers. | B |
+| `opened` | `src/flock/port/runner.py:40` | doc term | Terminal outcome meaning an opener completed, not proof a human/CLI consumed it. | Accepted by destination handler, not delivery acknowledgement. | A |
+| `delivering` | `src/flock/port/runner.py:161` | redis key | Tenant hash serving as a per-agent mutual-exclusion/busy tag. | Per-port transmit lock. | C |
+| `paused` | `src/flock/port/runner.py:77` | redis key | Marker that leaves ingress queued rather than opening it. | Administratively down port. | C |
+| `pending.verify` | `src/flock/port/openers.py:43` | redis key | Stream of pasted deliveries awaiting out-of-band activity judgment. | Delivery telemetry awaiting observation. | C |
+| `VERIFIABLE_CLIS` | `src/flock/port/openers.py:15` | identifier | Allowlist of CLI implementations whose session files can confirm input. | Observable port types. | B |
+| `inbox` | `src/flock/port/runner.py:33` | redis key | Resumable mailbox stream for a `vab: api` participant. | Receive buffer on an application port. | C |
+| `dead` | `src/flock/port/runner.py:56` | redis key | Retained list of envelopes that could not be opened. | Dead-letter/drop queue. | C |
+| `ingress` | `src/flock/port/runner.py:51` | redis key | Recipient-side queue from which delivery pops. | Ingress queue. | C |
+| `_CatchAllDict` | `src/flock/port/runner.py:11` | identifier | Mapping facade that makes every kind openable for API mailboxes. | Promiscuous protocol handler. | B |
 
 ## `flock.control`
 
@@ -73,7 +73,7 @@ Tier A is documentation, B internal code, C Redis/environment, and D wire.
 | `control` | `src/flock/control/runner.py:1` | doc term | VAB that opens tenant lifecycle envelopes addressed to fixed participant `host`. | Control plane. | A |
 | `VAB` | `src/flock/control/openers.py:7` | doc term | Selects the receiving implementation (`tmux`, `api`, or `control`); its intended expansion is not recoverable here. | Port/media type, but the acronym does not convey it. | A |
 | `host` | `src/flock/control/openers.py:8` | identifier | Fixed roster participant/address for lifecycle operations, not tmuxhost. | Control-plane destination address. | B |
-| `deliver_one` | `src/flock/control/runner.py:23` | identifier | Pops and opens one lifecycle envelope; same name as adapter's VAB dispatcher. | Control-plane receive operation. | B |
+| `deliver_one` | `src/flock/control/runner.py:23` | identifier | Pops and opens one lifecycle envelope; same name as port's VAB dispatcher. | Control-plane receive operation. | B |
 | `StartAgent` / `StopAgent` | `src/flock/control/runner.py:102` | wire | Envelope kinds that add/remove participant desired state and VAB-specific state. | Provision/deprovision a port. | D |
 | `PauseAgent` / `ResumeAgent` | `src/flock/control/runner.py:104` | wire | Envelope kinds that stop/restart a tmux CLI while preserving membership and queues. | Administratively down/up a port. | D |
 | `start_agent` / `stop_agent` | `src/flock/control/openers.py:21` | identifier | Desired-state mutations implementing lifecycle kinds. | Port provisioning operations. | B |
@@ -105,7 +105,7 @@ Tier A is documentation, B internal code, C Redis/environment, and D wire.
 | `REDIS_BIND` / `REDIS_PASSWORD` | `container/entrypoint.sh:89` | env var | Redis listen address and credential required when widened beyond loopback. | Internal switch-store listener security. | C |
 | `REDIS_URL` | `container/entrypoint.sh:112` | env var | Connection string handed only to framework processes that need Redis. | Control-plane store address. | C |
 | `REDIS_READY_SECONDS` | `container/entrypoint.sh:128` | env var | Maximum boot wait for Redis readiness. | Dependency convergence timeout. | C |
-| `ROSTER_POLL_SECONDS` | `container/compose.yaml:28` | env var | Shared refresh interval for router and tmuxhost. | Control-plane refresh interval. | C |
+| `ROSTER_POLL_SECONDS` | `container/compose.yaml:28` | env var | Shared refresh interval for switch and tmuxhost. | Control-plane refresh interval. | C |
 | `WATCHDOG_ENABLED` | `container/entrypoint.sh:272` | env var | Enables the separate human-alerting observer. | Network monitor enable flag. | C |
 | `door` | `container/entrypoint.sh:61` | doc term | One externally published API or session process/port. | Network ingress door/listener. | A |
 | `start` | `container/entrypoint.sh:9` | identifier | Shell helper that launches a named child and records its PID. | Process supervisor launch, though it is not a supervisor. | B |
@@ -116,8 +116,8 @@ Tier A is documentation, B internal code, C Redis/environment, and D wire.
 
 ### One word, two meanings
 
-- **`adapter`** names the outbound `send` CLI (`adapter/cli.py`) and the inbound
-  one-envelope receiver (`adapter/runner.py`). They sit on opposite sides of the
+- **`port`** names the outbound `send` CLI (`port/cli.py`) and the inbound
+  one-envelope receiver (`port/runner.py`). They sit on opposite sides of the
   switch and have different lifecycles.
 - **`host`** means the tmux reconciliation module and the fixed control-plane
   roster participant.
@@ -150,7 +150,7 @@ Tier A is documentation, B internal code, C Redis/environment, and D wire.
 ### Names that fight the network model
 
 - `endpoint` denotes an upstream model service instead of a network participant.
-- `adapter` merges transmit and receive edges rather than naming one port-side
+- `port` merges transmit and receive edges rather than naming one port-side
   function.
 - `agent` labels application clients and the lifecycle control participant,
   neither of which is an AI agent.

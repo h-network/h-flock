@@ -23,13 +23,13 @@ development happens in this repository; the framework is the product.
 | **not ours: the model and the CLI** ⚠ *recorded so nobody spends time on it* | Two failure causes seen in the same run belong to neither h-flock nor its docs. **A rejected tool name** (`Error: No such tool available: bash` when the CLI was started with `--tools Bash …`) is between the model and claude-code's registry. **An agent deciding a conversation is finished** despite a standing instruction is model behaviour. Both produce the same visible symptom as the row above — a turn that yields no envelope — which is why they are listed here: **do not go looking for an h-flock bug when you see it** |
 | **delivery verification says nothing under real load** ⚠ *92% false negatives* | A three-hour, four-agent run on a local model logged `delivery_unverified` for **1,180 of 1,285 deliveries** — "not confirmed by a later input activity event". Every one of them was received and acted on; we watched the agents reply. So the mechanism that exists to catch a wedged agent or a login prompt produced a verdict of "unverified" for almost everything, blocked nothing and retried nothing. ⚠ **A check that is wrong 92% of the time is worse than no check** — it trains everyone to ignore it. Either the activity feed does not report input for these agents, or the verification window is far too short for turns that take minutes |
 | **the five-record contract has holes under load** | Same run: **2 envelopes carried `opened` with no `received`** (1,283 of 1,285 complete), and **`sent` (1,279) was lower than `popped` (1,285)** — six envelopes entered the bus with no send record. Small rates, but `CONTRACTS` §3 states the five records as an invariant, not a tendency. ⚠ **Find out whether the records are lost or never emitted** before weakening the claim |
-| **the two adapters have one name between them** ⚠ *operator's observation* | `adapter/cli.py` is the **outbound** path — the `office` command an agent runs to put an envelope on the bus. `adapter/runner.py` is the **inbound** path — it blpops an ingress queue and hands the envelope to its destination, pasting into a tmux pane or writing an api client's mailbox. Both are adapters *for a destination*, and calling them both "the adapter" hides that they sit on opposite sides of the switch. ⚠ **Names should say which direction and for which destination**, because the design's whole claim is that adding a participant is adding one delivery routine — and you cannot see that from the current names |
-| **a naming review** ⚠ *asked for by the operator* | Not just the adapters. The vocabulary has grown by accretion — `adapter`, `opener`, `door`, `runner`, `VAB`, `producer`/`recipient`, `egress`/`ingress`, `launch`, `board` — and some of it is precise while some is habit. ⚠ **Worth one pass across code and docs**, with the L2 model as the reference: a name that maps onto the analogy earns its place, and one that does not should say what it actually is |
-| **an ACL on `(producer, recipient)` in `send()`** ⚠ *design agreed, not built* | A src→dst allow-list as a Redis table beside the roster — **not** in `.env`, because policy is runtime state and should change without recreating the tenant. Enforce in `bus/doors.py:send()`: it is the **single choke point** onto the bus, with only two callers, `adapter/cli.py` (agents) and `api/app.py` (clients), so one check covers every path. Denied sends get a real error at the sender — non-zero exit in a pane, `422` from the door — **and a record**, which is what today's silent failures never produce. ⚠ **Keeps the router policy-free**: `(producer, recipient)` are the source and destination addresses, so this is an L2 port ACL, not payload inspection. ⚠ **Limit, per `LLD-bus-and-router:150`:** anything that writes an egress queue directly skips it — unreachable for agents since wave 2 removed their Redis credentials, but it is a guardrail against accidents, not a control against intent |
-| **a `gateway` participant is the L3 router** ⚠ *the model, extended* | `LLD-bus-and-router` §3.2 already reserves a `gateway` VAB as deferred, and today an unresolvable name is dead-lettered — a switch with no default route. The operator's framing: **we built the switch and the ports; the gateway is layer 3.** It is the participant that reads what the switch will not (`kind`, payload), applies policy, resolves cross-tenant names and re-addresses — reached **by name, like any other participant**, exactly as hosts reach a default gateway by MAC. ⚠ **This is why h-flock has no policy in the router and does not need one there** — a reviewer reading the absence as "doesn't want policy" has the layer wrong |
+| **the two adapters have one name between them** ⚠ *operator's observation* | `port/cli.py` is the **outbound** path — the `office` command an agent runs to put an envelope on the bus. `port/runner.py` is the **inbound** path — it blpops an ingress queue and hands the envelope to its destination, pasting into a tmux pane or writing an api client's mailbox. Both are adapters *for a destination*, and calling them both "the port" hides that they sit on opposite sides of the switch. ⚠ **Names should say which direction and for which destination**, because the design's whole claim is that adding a participant is adding one delivery routine — and you cannot see that from the current names |
+| **a naming review** ⚠ *asked for by the operator* | Not just the adapters. The vocabulary has grown by accretion — `port`, `opener`, `door`, `runner`, `VAB`, `producer`/`recipient`, `egress`/`ingress`, `launch`, `board` — and some of it is precise while some is habit. ⚠ **Worth one pass across code and docs**, with the L2 model as the reference: a name that maps onto the analogy earns its place, and one that does not should say what it actually is |
+| **an ACL on `(producer, recipient)` in `send()`** ⚠ *design agreed, not built* | A src→dst allow-list as a Redis table beside the roster — **not** in `.env`, because policy is runtime state and should change without recreating the tenant. Enforce in `bus/doors.py:send()`: it is the **single choke point** onto the bus, with only two callers, `port/cli.py` (agents) and `api/app.py` (clients), so one check covers every path. Denied sends get a real error at the sender — non-zero exit in a pane, `422` from the door — **and a record**, which is what today's silent failures never produce. ⚠ **Keeps the switch policy-free**: `(producer, recipient)` are the source and destination addresses, so this is an L2 port ACL, not payload inspection. ⚠ **Limit, per `LLD-bus-and-switch:150`:** anything that writes an egress queue directly skips it — unreachable for agents since wave 2 removed their Redis credentials, but it is a guardrail against accidents, not a control against intent |
+| **a `gateway` participant is the L3 switch** ⚠ *the model, extended* | `LLD-bus-and-switch` §3.2 already reserves a `gateway` VAB as deferred, and today an unresolvable name is dead-lettered — a switch with no default route. The operator's framing: **we built the switch and the ports; the gateway is layer 3.** It is the participant that reads what the switch will not (`kind`, payload), applies policy, resolves cross-tenant names and re-addresses — reached **by name, like any other participant**, exactly as hosts reach a default gateway by MAC. ⚠ **This is why h-flock has no policy in the switch and does not need one there** — a reviewer reading the absence as "doesn't want policy" has the layer wrong |
 | **signed envelopes — to discuss, not decided** ⚠ *external feedback, 2026-08-12* | Proposal: add `kid` and `sig` (HMAC-SHA256) to the envelope, e.g. `{"kind":"MessageReceived","producer":"telegram","recipient":"policy","kid":"telegram-2026-08","sig":"…"}`. ⚠ **Do not read this as "sign everything".** Assessment so far, to be argued properly later: **(a) intra-tenant it buys nothing** — any key an agent can sign with it can also read, same user and `sudo`, so it creates no boundary that `HLD` §10 does not already deny; **(b) at the door it fixes a real gap that exists today** — there is one shared bearer token for all clients and `post_envelope` validates `as` only by roster membership, so any token holder can post as any enrolled client; `as` is a declaration, not a credential; **(c) at the `gateway` it will be required**, because cross-tenant is the first genuine boundary. ⚠ **The narrow version is "per-client keys at the door"** — the general version invites signing everything and gaining nothing. Rotation is already implied by the `kid` date suffix and would need an answer |
-| **cross-tenant is designed twice, differently** ⚠ *design fork, needs a decision* | `LLD-bus-and-router` §7 says cross-tenant routing is *"not a separate component — a branch in the router"* that writes into the remote tenant's Redis. §3.2 and line 169 reserve a `gateway` **VAB** — a participant addressed by name, `pod` being *"a gateway, when routing between tenants"*. ⚠ **Only one can be built.** The router-branch version spreads remote topology into the router and has one tenant holding credentials for another's store, both of which the same document argues against elsewhere. The participant version keeps the router's only decision local and puts the crossing where the trust boundary actually is. ⚠ **This is an architecture decision, not a doc fix** — recorded so it is made deliberately rather than by whoever implements first |
-| **restart durability is one flag, if we want it** | Redis runs `--save '' --appendonly no --dir /tmp` by design. `docker restart` keeps the container filesystem, so `--appendonly yes` with a dir inside the container would make boards, roster and queues survive the restart `seed-home.sh` actively recommends — the finding from the four-agent run. Dataset was **1.62 MB** after 1,285 messages, so cost is negligible. ⚠ **The design question is not "can we" but "which keys should survive"**: boards are work and should; a half-delivered ingress replayed after a crash could re-deliver an envelope whose adapter already pasted it, which is the duplicate execution at-most-once exists to prevent |
+| **cross-tenant is designed twice, differently** ⚠ *design fork, needs a decision* | `LLD-bus-and-switch` §7 says cross-tenant routing is *"not a separate component — a branch in the switch"* that writes into the remote tenant's Redis. §3.2 and line 169 reserve a `gateway` **VAB** — a participant addressed by name, `pod` being *"a gateway, when routing between tenants"*. ⚠ **Only one can be built.** The switch-branch version spreads remote topology into the switch and has one tenant holding credentials for another's store, both of which the same document argues against elsewhere. The participant version keeps the switch's only decision local and puts the crossing where the trust boundary actually is. ⚠ **This is an architecture decision, not a doc fix** — recorded so it is made deliberately rather than by whoever implements first |
+| **restart durability is one flag, if we want it** | Redis runs `--save '' --appendonly no --dir /tmp` by design. `docker restart` keeps the container filesystem, so `--appendonly yes` with a dir inside the container would make boards, roster and queues survive the restart `seed-home.sh` actively recommends — the finding from the four-agent run. Dataset was **1.62 MB** after 1,285 messages, so cost is negligible. ⚠ **The design question is not "can we" but "which keys should survive"**: boards are work and should; a half-delivered ingress replayed after a crash could re-deliver an envelope whose port already pasted it, which is the duplicate execution at-most-once exists to prevent |
 | **envelopes have no TTL or hop count** ⚠ *demonstrated, not theoretical* | Four agents replied to each other for three hours and 1,252 envelopes with nothing in the envelope saying how many times it had been forwarded. It stopped because a human typed a line. In the networking model this is a packet with no TTL: a conversation loop cannot die on its own. ⚠ **Related: no loop detection and no rate limit on `recipient: all`** — a broadcast storm has nothing to stop it. An envelope field, a decrement at forward and a dead-letter at zero is the whole mechanism |
 | **an alert you can clear** ⚠ *asked for by the operator* | Alerts are an append-only stream with no acknowledgement. Clearing must be keyed by **cursor** — one instance — so it can never become "mute this kind". Spec: `BUILD-38-durable` §1 |
 | **credential alerts never clear** | Measured: `status=absent` raised at `01:00:42Z`, login completed at `01:07Z`, nothing ever retracted it, so the console correctly rendered a fact that had been false for an hour. ⚠ **It was only ever tested firing.** `BUILD-38-durable` §2 |
@@ -226,7 +226,7 @@ over 6 landed deliveries, and it catches the Enter-not-taken case below.
 
 ⚠ **The "misses a modal swallow" claim that stood here has been deleted**, along
 with the same claim in `HLD` §8 — it came from a test asserting an absence that
-passed whenever the router had not yet judged. A modal was never separately
+passed whenever the switch had not yet judged. A modal was never separately
 measured, so this file now claims nothing in either direction.
 
 **Retry decision — CLOSED in build 30: surface, do not re-paste.** An unverified
@@ -237,7 +237,7 @@ execute the instruction twice. We chose possible loss over possible duplication:
 retain `blocked`, alert the human, and put the no-retry reason in the structured
 `delivery_unverified` record. A human can resend when duplication is known safe.
 
-The original entry, for the reasoning: `LLD-adapter-tmux` §4 says "verify,
+The original entry, for the reasoning: `LLD-port-tmux` §4 says "verify,
 optionally" and we took the option. h-office enables it by default after *"roughly one delivery in
 ten left its message sitting in the recipient's input box, marked delivered and
 already popped off the queue"*. That is a silent loss path: `opened` is logged,
@@ -274,20 +274,20 @@ for a worse one. Documented accurately in `API.md` in the meantime.
 
 **Presence** is `working` / `idle` / `unknown` on `GET /agents/{agent}` and in
 `office status`, derived from the activity feed. **`blocked`** followed in build
-28, from the router's own delivery verdict. The **watchdog** shipped in build 27
+28, from the switch's own delivery verdict. The **watchdog** shipped in build 27
 and alerts a human, never an agent.
 
 ⚠ ~~One class remains open~~ — **closed in build 31, and it was never real.**
 The claim was that a CLI at a login prompt records input it never acts on, so
 verification passes. It came from a test asserting an *absence*, which passed
-whenever the router had not yet judged. With the verdict waited for
+whenever the switch had not yet judged. With the verdict waited for
 deterministically, claude and codex are **both caught**. Nothing here needs a
 screen.
 
 The original entry: **Presence.** No busy / idle / wedged / login-expired signal. h-office calls it
 *"the single most expensive gap in a long session"* — every state looks
 identical from outside. The signal is `window_activity` from one `list-windows`
-call, which `LLD-adapter-tmux` §5 already names.
+call, which `LLD-port-tmux` §5 already names.
 
 **Watchdog — both halves of the signal now exist.** It was blocked on boards, and
 boards shipped in build 11. A ticket in `doing` carries `started_ts`, so "took
@@ -297,7 +297,7 @@ stops it crying wolf at an agent that is thinking. Nothing else blocks it.
 **~~Boards~~ — SHIPPED in build 11.** Tickets, four columns, `office add`/`list`/`take`/`done`/`cancel`/`hold`/`delete`,
 and an append-only history in `$TASK_RECORD`. The rule the design turned on held
 all the way through: **the agent moves its own tasks, nothing infers them** — the
-adapter knows an envelope was delivered and cannot know whether the agent read
+port knows an envelope was delivered and cannot know whether the agent read
 it, started it, or disagreed with it.
 
 ⚠ It went further than that in the end: **nothing delivers a ticket at all.** A
@@ -317,27 +317,27 @@ all. ⚠ Still undecided: whether `POST /agents/all/envelopes` *should* reach th
 
 **Found by an agent during the first live run, then confirmed: `api` ingress was
 34 and climbing, `host` dead-letters were 34.** Every `send all` reaches both,
-because the router fans out to `_agents() - {sender}` and the fixed agents are
+because the switch fans out to `_agents() - {sender}` and the fixed agents are
 roster rows like any other.
 
 `host` handles it correctly — VAB `control`, no opener for `Message`,
 dead-lettered and logged. Noisy, but visible.
 
 `api` does not. VAB `api` dispatches to no delivery routine, so
-`flock.adapter.runner` logs `VAB is 'api', not 'tmux'` and **returns before
+`flock.port.runner` logs `VAB is 'api', not 'tmux'` and **returns before
 popping**. The envelope is never consumed and never dead-lettered: it just
 accumulates, one per broadcast, forever.
 
 Two faults meeting, and they can be fixed independently:
 
-1. **No `api` delivery routine.** The api-adapter opener — an envelope handed to
+1. **No `api` delivery routine.** The api-port opener — an envelope handed to
    a waiting HTTP client (`LLD-api` §7). Its absence should not be silent
    accumulation.
 2. **An unroutable VAB should dead-letter, not return.** Whatever else is true,
-   an adapter that cannot deliver must leave the envelope visible, the way an
+   an port that cannot deliver must leave the envelope visible, the way an
    unknown `kind` already does. §4: *nothing disappears silently.*
 3. **Whether broadcast should reach the fixed agents at all is still undecided.**
-   The old router excluded `api`; the current one includes it. Neither is written
+   The old switch excluded `api`; the current one includes it. Neither is written
    down — this is an architect loose end, noted at the time and not closed.
 
 </details>
@@ -376,7 +376,7 @@ leaves one source of truth instead of two that drift.
 
 ## ~~Log records from agent tools never reach the log~~ — SHIPPED in build 20
 
-`office` writes to a file the router tails into stdout, so `sent` reaches the
+`office` writes to a file the switch tails into stdout, so `sent` reaches the
 log. **A delivered unicast envelope leaves five records, not four.** ⚠ A broadcast leaves three plus two per recipient.
 
 The original entry: ⚠ **`office` runs in an agent's window, so its log records go
@@ -399,7 +399,7 @@ that the watchdog needed them.
 
 Two documented claims are therefore false as written:
 
-- `LLD-bus-and-router` §4 — *"four records across a delivered envelope's life"*.
+- `LLD-bus-and-switch` §4 — *"four records across a delivered envelope's life"*.
   ⚠ **Corrected in build 20: it is five**, and the four was arithmetic that only
   looked right because the missing one was the one nobody could see.
   True for api-sent envelopes; agent-sent ones have three centrally and one in a
@@ -583,11 +583,11 @@ enforced.
 ⚠ **Demonstrated, not theorised.** From inside an agent window, an `RPUSH`
 straight into a *peer's* ingress with `"producer": "architect"` was accepted by
 Redis. Invariant 2 — *the sender comes from the queue the envelope was popped
-from* — holds only for envelopes that reach the router via egress. **A direct
-ingress write bypasses the router entirely and forges identity.**
+from* — holds only for envelopes that reach the switch via egress. **A direct
+ingress write bypasses the switch entirely and forges identity.**
 
 That makes this the gate on the authority model above, and on `producer`-based
-policy for control kinds. `LLD-bus-and-router` §3.1 anticipated the fix: a
+policy for control kinds. `LLD-bus-and-switch` §3.1 anticipated the fix: a
 credential scoped to `~pod:<pod>:tenant:<tenant>:agent:<agent>:*`, which is why
 the agent sits in the address at all.
 

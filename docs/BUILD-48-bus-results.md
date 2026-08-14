@@ -7,7 +7,7 @@ Implementation commit `e218987` is pushed on `bus/build-48-resp-client`.
 
 **Not complete: the absolute latency gate failed.** The dependency removal
 improved both the measured command and the end-to-end fabric, but `office
-peers` and a real `flock.adapter` delivery did not measure under 200 ms on the
+peers` and a real `flock.port` delivery did not measure under 200 ms on the
 released lab host. The other acceptance criteria passed.
 
 ## Implementation
@@ -18,7 +18,7 @@ Bulk and array values remain bytes, matching redis-py without
 replies remain integers; Redis error replies raise `ResponseError`.
 
 The specified command surface is implemented. Two additional commands were
-required by the actual one-shot call graph: `SET` and `HSET`. The adapter
+required by the actual one-shot call graph: `SET` and `HSET`. The port
 delivers control envelopes, and `flock.control.openers` uses both to write
 launch, profile, endpoint, pause, and roster desired state. Omitting them would
 make lifecycle acceptance fail even though they were absent from the spec's

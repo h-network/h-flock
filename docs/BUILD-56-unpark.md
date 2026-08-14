@@ -7,7 +7,7 @@
 ## 1. Why now
 
 The parking condition was *"until the new frame works"*. Build 53 landed the
-frame: qualified addressing accepted, the adapter resolving, the switch reading
+frame: qualified addressing accepted, the port resolving, the switch reading
 L2 only. **The gate is met.**
 
 ⚠ **And the operator's reason is the better one: everyone understands the new

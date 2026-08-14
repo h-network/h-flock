@@ -2,14 +2,14 @@
 
 > **Status: built and running.**
 >
-> Depends on [`LLD-bus-and-router.md`](LLD-bus-and-router.md) for the address
+> Depends on [`LLD-bus-and-switch.md`](LLD-bus-and-switch.md) for the address
 > scheme and the envelope.
 
 ## 1. Purpose
 
 An HTTP front door to a running tenant. A user can already reach an agent by
 typing into its window; the api is the other way in — it puts a correctly formed
-envelope on the bus, and the router does what it always does.
+envelope on the bus, and the switch does what it always does.
 
 It also reads state that already exists in Redis: boards, rosters, queue depths, presence, activity feeds, and watchdog alerts.
 Terminal output and live driving are handled by the separate `flock.session`
@@ -19,17 +19,17 @@ That is the whole of it. It has no logic of its own beyond building a valid
 envelope, reading keys, and handing back what comes the other way.
 
 ```
-  HTTP ──► api ──send (with 'as')──► bus ──► router ──► agent
+  HTTP ──► api ──send (with 'as')──► bus ──► switch ──► agent
     ▲        │                                             │
     │        └──► Redis reads (boards, roster, depths,     │
     │                         presence, activity, alerts)  │
     │                                                      │
-    └──── receive ◄── client inbox ◄── deliver_api ◄─ router ◄─┘  agent replies to client name
+    └──── receive ◄── client inbox ◄── deliver_api ◄─ switch ◄─┘  agent replies to client name
 ```
 
 **It has addresses**, so agents can reply to clients by name. A reply is addressed to
-a named client (e.g. `telegram`, or default `api`), the router delivers it to the
-VAB `api` adapter, and `deliver_api` writes it to that client's inbox stream. That is the
+a named client (e.g. `telegram`, or default `api`), the switch delivers it to the
+VAB `api` port, and `deliver_api` writes it to that client's inbox stream. That is the
 only reason clients have roster rows — not to be terminal peers, but to be reachable.
 
 **It uses the same two doors as everything else** — `send` to put an envelope on
@@ -91,7 +91,7 @@ When omitted, `producer` defaults to `"api"`.
 ⚠ **The api must not know what kinds exist.** It builds an envelope and writes
 its own egress; which kinds are openable is a fact about adapters, discovered at
 the far edge. An api that rejects an unknown `kind` becomes a second place to
-update every time one is added, and `LLD-bus-and-router` §5 keeps that knowledge
+update every time one is added, and `LLD-bus-and-switch` §5 keeps that knowledge
 at exactly one end. An unopenable kind is a dead-letter with a reason, which is
 a better answer than a `400` from something that cannot actually know.
 
@@ -101,9 +101,9 @@ to know what became of an envelope reads the log by `stream_id`.
 ## 4. Receiving
 
 **The api does not consume its own ingress, and holds no loop of its own.** It is
-an agent with a VAB of `api` (`LLD-bus-and-router` §3.2), so when the router
-writes its ingress it kicks the adapter exactly as it would for any window
-agent. The adapter reads the VAB, dispatches to the api delivery routine
+an agent with a VAB of `api` (`LLD-bus-and-switch` §3.2), so when the switch
+writes its ingress it kicks the port exactly as it would for any window
+agent. The port reads the VAB, dispatches to the api delivery routine
 (`deliver_api`), which pops the envelope, logs `received` and `opened`, and
 writes the verbatim JSON envelope into the recipient client's Redis Stream inbox
 (`pod:<pod>:tenant:<tenant>:agent:<client>:inbox`, capped at `MAXLEN ~ 1000`) under
@@ -124,12 +124,12 @@ segment.
   strings for backwards compatibility).
 - **Presence & Blocked Status** (`GET /agents/{agent}`): Reads queue depths and VAB (`vab`), alongside presence status hash
   `<prefix>:agent:<name>:presence` (`state`: `working` | `idle` | `unknown`, `since`, `last_activity`).
-  Folded over by the router's `blocked` hash `<prefix>:agent:<name>:blocked` when set, so `presence.state` returns `"blocked"`
+  Folded over by the switch's `blocked` hash `<prefix>:agent:<name>:blocked` when set, so `presence.state` returns `"blocked"`
   when a delivery is judged unverified. An agent that has never produced activity (presence `"unknown"`) has its first delivery
   left **unjudged** (`delivery_unjudged`), so it will never report `"blocked"` until it has spoken at least once.
   Enrolled agents holding no presence hash return `200 OK` with state `"unknown"`.
 - **Activity Feed** (`GET /agents/{agent}/activity` and `GET /agents/{agent}/activity/stream`):
-  Served from stream key `<prefix>:agent:<name>:activity`, populated by the router tailing CLI session log files.
+  Served from stream key `<prefix>:agent:<name>:activity`, populated by the switch tailing CLI session log files.
   Structured events carry `{ "v": 1, "agent": "<name>", "ts": "<ISO>", "kind": "input" | "output" | "tool" [, "tool": "<Name>"] }`.
 - **Watchdog Alerts Feed** (`GET /alerts` and `GET /alerts/stream`): Served from tenant stream key
   `<prefix>:alerts`, populated by `flock.watchdog`. Alerts notify human operators (never agents) of stalled
@@ -169,7 +169,7 @@ is precisely what shipped, and the tenant crash-looped until the judgement moved
 to `entrypoint.sh`, which is told the published host. Outside a container
 nothing sets the variable and the bind is the exposure. See `LLD-container` §3.
 
-⚠ **Operator Action Log vs Direct API Token Traffic**: The web console server maintains `audit.jsonl` as an **Operator Action Log** recording operations performed through the web proxy. Requests hitting `flock.api` directly using an `API_TOKEN` bypass the web proxy and do not appear in `audit.jsonl`; direct API envelope submissions are tracked in bus/adapter stdout logs and agent activity streams (`GET /agents/{agent}/activity`).
+⚠ **Operator Action Log vs Direct API Token Traffic**: The web console server maintains `audit.jsonl` as an **Operator Action Log** recording operations performed through the web proxy. Requests hitting `flock.api` directly using an `API_TOKEN` bypass the web proxy and do not appear in `audit.jsonl`; direct API envelope submissions are tracked in bus/port stdout logs and agent activity streams (`GET /agents/{agent}/activity`).
 
 ## 7. Return path & deferred items
 
@@ -179,7 +179,7 @@ clients with per-client stream mailboxes** was chosen and built.
 
 The reason: every participant on the bus is a named agent, so an app client
 enrolling as a named agent (`StartAgent` with `vab: api`) stays consistent with
-the switch design (`LLD-bus-and-router` §1).
+the switch design (`LLD-bus-and-switch` §1).
 
 - **Mailbox:** `deliver_api` writes incoming envelopes into a per-client Redis Stream
   (`pod:<pod>:tenant:<tenant>:agent:<client>:inbox`, capped at `MAXLEN ~ 1000`) under the
@@ -203,7 +203,7 @@ and nothing about the REST surface is designed around them.
 
 ## 8. What this is not
 
-Not the router — it forwards nothing. Not an agent runtime — it does not start,
+Not the switch — it forwards nothing. Not an agent runtime — it does not start,
 stop, watch or drive anything. Not a query interface over Redis — every endpoint
 is a fixed shape, and a request can never name a key.
 

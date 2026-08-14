@@ -7,15 +7,15 @@ Tested commit `2412423` on `bus/build-53-frame`, after merging main at
 
 This is a **hard v2 Redis wire change**. Flat v1 envelopes are rejected rather
 than upgraded. All repository mailbox consumers were changed in this build.
-HTTP send bodies keep their existing shape because they are adapter input, not
+HTTP send bodies keep their existing shape because they are port input, not
 Redis wire frames.
 
-The implementation needed no router, tags, filtering, L4, or second pod.
+The implementation needed no switch, tags, filtering, L4, or second pod.
 
 ## Falsifiability
 
 The permanent test gives L2 and L3 contradictory destinations and requires the
-local router to follow L2. With the production L2 line it passed. I then changed
+local switch to follow L2. With the production L2 line it passed. I then changed
 the decision to `envelope["l3"]["destination"]` on purpose. The test failed:
 
 ```text

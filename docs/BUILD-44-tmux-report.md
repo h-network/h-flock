@@ -2,7 +2,7 @@
 
 Base: `main` at `564089f`.
 
-Read in full: `LLD-tmux-host.md`, `LLD-adapter-tmux.md`, and
+Read in full: `LLD-tmux-host.md`, `LLD-port-tmux.md`, and
 `LLD-container.md`. Compared their seams with `HLD.md` and `CONTRACTS.md`, and
 checked description claims against the implementation where the documents
 disagreed.
@@ -22,21 +22,21 @@ disagreed.
   nothing inside it is*). It now describes owner-only mode as host-user
   protection and explicitly rejects agent-to-agent isolation.
 - `LLD-tmux-host.md:147-152` and `LLD-container.md:172-176` gave
-  `ROSTER_POLL_SECONDS` three consumers including the adapter, contradicting
-  `LLD-adapter-tmux.md:96-101`. Code has only router and tmuxhost readers. Both
+  `ROSTER_POLL_SECONDS` three consumers including the port, contradicting
+  `LLD-port-tmux.md:96-101`. Code has only switch and tmuxhost readers. Both
   owned claims now name those two readers.
-- `LLD-adapter-tmux.md:16-36` placed the outgoing `office` command inside the
-  adapter, contradicting `HLD.md:72,75` and the adapter's own per-delivery
+- `LLD-port-tmux.md:16-36` placed the outgoing `office` command inside the
+  port, contradicting `HLD.md:72,75` and the port's own per-delivery
   receive lifecycle. It now identifies `office` plus the bus library as the
-  send side and the adapter as the receiving edge.
-- `LLD-adapter-tmux.md:68-72` called the Redis backlog durable while
+  send side and the port as the receiving edge.
+- `LLD-port-tmux.md:68-72` called the Redis backlog durable while
   `LLD-container.md:222-223` and `container/entrypoint.sh:107` disable all Redis
-  persistence. It now states the exact guarantee: the queue survives adapter
+  persistence. It now states the exact guarantee: the queue survives port
   processes and is inspectable, but not persistent across tenant restart.
-- `LLD-adapter-tmux.md:192-198` cited “HLD invariant 7,” contradicting the HLD's
+- `LLD-port-tmux.md:192-198` cited “HLD invariant 7,” contradicting the HLD's
   `:420-423` instruction to cite invariants by name because numbering drifts.
   It now cites *nothing in the data path reads a terminal* by name.
-- `LLD-adapter-tmux.md:272-277` called pane reading and session endpoints
+- `LLD-port-tmux.md:272-277` called pane reading and session endpoints
   deferred even though `flock.session` is built. It now distinguishes the still
   absent pane-to-bus path from the implemented, out-of-band human session path.
 - `LLD-container.md:5-7,231-234` claimed the container owned no logic or
@@ -54,19 +54,19 @@ disagreed.
   `tmux` agents windows. Recommendation: say “one window per `vab: tmux`
   agent.” This is description, not a design fork.
 - `HLD.md:79-80` says no non-library module imports another, while
-  `CONTRACTS.md:203-208` and the implementation explicitly allow the adapter's
+  `CONTRACTS.md:203-208` and the implementation explicitly allow the port's
   lazy import of `flock.control`. Recommendation: name that exception in the
   HLD. This is description, not a design fork.
 - `HLD.md:91-94` calls the in-Redis backlog a “durable queue,” while
   `LLD-container.md:222-223` deliberately disables persistence.
-  Recommendation: qualify it as durable across adapter lifetimes, not tenant
+  Recommendation: qualify it as durable across port lifetimes, not tenant
   restarts. This is description, not a persistence design decision.
-- `CONTRACTS.md:43-45` says adapter and other modules never import each other,
-  but its own `:203-208` records the adapter→control exception.
+- `CONTRACTS.md:43-45` says port and other modules never import each other,
+  but its own `:203-208` records the port→control exception.
   Recommendation: put the exception in the earlier absolute claim.
-- `CONTRACTS.md:710` says `ROSTER_POLL_SECONDS` has three readers; only router
-  and tmuxhost read it, and `LLD-adapter-tmux.md:96-101` explicitly says the
-  adapter does not poll. Recommendation: change “three” to “two.”
+- `CONTRACTS.md:710` says `ROSTER_POLL_SECONDS` has three readers; only switch
+  and tmuxhost read it, and `LLD-port-tmux.md:96-101` explicitly says the
+  port does not poll. Recommendation: change “three” to “two.”
 
 No unresolved design-level contradiction was found in the three owned LLDs;
 the contradictions above describe the built system and have code-decided

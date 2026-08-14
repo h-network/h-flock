@@ -64,8 +64,8 @@ This is a successful negative trial, not a migration recommendation.
    that h-vab defaults flow to id, whereas h-flock independently mints a
    correlation id for each initial send.
 6. **The three programs do not match current process boundaries.** h-flock's
-   adapter name covers both the sending CLI edge and the receiving one-shot
-   delivery edge. Its process named router performs local switching plus five
+   port name covers both the sending CLI edge and the receiving one-shot
+   delivery edge. Its process named switch performs local switching plus five
    maintenance jobs. The trial isolates the two-header `Switch` decision in
    code, but a faithful three-program deployment would require a process split
    beyond this one-domain trial.
@@ -142,16 +142,16 @@ Raw short multi-agent Nemotron trace, using only
 `http://172.16.0.11:8000`, includes this complete exchange:
 
 ```text
-{"module":"adapter","event":"sent","stream_id":"21ec57b6e7534e118bf74d0411a0e1c8","producer":"architect","recipient":"sme-2"}
-{"module":"router","event":"popped","stream_id":"21ec57b6e7534e118bf74d0411a0e1c8","producer":"architect","recipient":"sme-2"}
-{"module":"router","event":"forwarded","stream_id":"21ec57b6e7534e118bf74d0411a0e1c8","producer":"architect","recipient":"sme-2"}
-{"module":"adapter","event":"received","stream_id":"21ec57b6e7534e118bf74d0411a0e1c8","producer":"architect","recipient":"sme-2"}
-{"module":"adapter","event":"opened","stream_id":"21ec57b6e7534e118bf74d0411a0e1c8","producer":"architect","recipient":"sme-2"}
-{"module":"adapter","event":"sent","stream_id":"d543f5886aef4983b4bbf189cc6aa87a","producer":"sme-2","recipient":"architect"}
-{"module":"router","event":"popped","stream_id":"d543f5886aef4983b4bbf189cc6aa87a","producer":"sme-2","recipient":"architect"}
-{"module":"router","event":"forwarded","stream_id":"d543f5886aef4983b4bbf189cc6aa87a","producer":"sme-2","recipient":"architect"}
-{"module":"adapter","event":"received","stream_id":"d543f5886aef4983b4bbf189cc6aa87a","producer":"sme-2","recipient":"architect"}
-{"module":"adapter","event":"opened","stream_id":"d543f5886aef4983b4bbf189cc6aa87a","producer":"sme-2","recipient":"architect"}
+{"module":"port","event":"sent","stream_id":"21ec57b6e7534e118bf74d0411a0e1c8","producer":"architect","recipient":"sme-2"}
+{"module":"switch","event":"popped","stream_id":"21ec57b6e7534e118bf74d0411a0e1c8","producer":"architect","recipient":"sme-2"}
+{"module":"switch","event":"forwarded","stream_id":"21ec57b6e7534e118bf74d0411a0e1c8","producer":"architect","recipient":"sme-2"}
+{"module":"port","event":"received","stream_id":"21ec57b6e7534e118bf74d0411a0e1c8","producer":"architect","recipient":"sme-2"}
+{"module":"port","event":"opened","stream_id":"21ec57b6e7534e118bf74d0411a0e1c8","producer":"architect","recipient":"sme-2"}
+{"module":"port","event":"sent","stream_id":"d543f5886aef4983b4bbf189cc6aa87a","producer":"sme-2","recipient":"architect"}
+{"module":"switch","event":"popped","stream_id":"d543f5886aef4983b4bbf189cc6aa87a","producer":"sme-2","recipient":"architect"}
+{"module":"switch","event":"forwarded","stream_id":"d543f5886aef4983b4bbf189cc6aa87a","producer":"sme-2","recipient":"architect"}
+{"module":"port","event":"received","stream_id":"d543f5886aef4983b4bbf189cc6aa87a","producer":"sme-2","recipient":"architect"}
+{"module":"port","event":"opened","stream_id":"d543f5886aef4983b4bbf189cc6aa87a","producer":"sme-2","recipient":"architect"}
 ```
 
 The 60-second local-model run produced six inter-agent/API packets visible in

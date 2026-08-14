@@ -13,12 +13,12 @@ A separate design (`github.com/h-network/h-vab`, branch `naming/vocabulary`),
 **not built** — a settled vocabulary and flow for a forwarding fabric. Read
 `docs/NAMING.md` and `docs/FLOW.md` there first. The parts that matter here:
 
-- **three programs**: `adapter` (assembles the whole packet, filters before the
+- **three programs**: `port` (assembles the whole packet, filters before the
   switch), `switch` (two headers and a table, forwards or refuses, **never
-  mutates**), `router` (policy and other switches)
-- ⚠ **the router is a station attached to a port, not a mode of the switch** —
+  mutates**), `switch` (policy and other switches)
+- ⚠ **the switch is a station attached to a port, not a mode of the switch** —
   which is the same conclusion h-flock reached independently
-- **`attach` / `send` / `receive`** is the entire fabric API; the router uses it
+- **`attach` / `send` / `receive`** is the entire fabric API; the switch uses it
   like anything else
 - **packet header, eight fields**: `version` (wire), `destination` `type` `flow`
   (client), `source` `id` `arrived` `hops` (**fabric-stamped**)
@@ -35,8 +35,8 @@ A separate design (`github.com/h-network/h-vab`, branch `naming/vocabulary`),
 **Adapt h-vab's design into h-flock** and report where it fits and where it
 does not:
 
-- **the three programs.** Does h-flock's shape map onto `adapter` / `switch` /
-  `router`, and what does not fit?
+- **the three programs.** Does h-flock's shape map onto `port` / `switch` /
+  `switch`, and what does not fit?
 - **the fabric API.** `attach` / `send` / `receive` replacing
   `doors.send` + queue reads
 - **the packet header, eight fields**, replacing the v1 envelope — including
@@ -52,8 +52,8 @@ paste, presence, boards, the `office` command keep doing exactly what they do.
 Their *interface to the fabric* may change; their behaviour may not. **If an
 agent can tell the difference, the adaptation has failed.**
 
-⚠ **One domain. No router, no cross-domain, no policy** — that is h-vab phase 1,
-and it is all this build implements. The router is a station, later.
+⚠ **One domain. No switch, no cross-domain, no policy** — that is h-vab phase 1,
+and it is all this build implements. The switch is a station, later.
 
 ⚠ **Where the design does not fit, say so rather than bending h-flock to it.**
 The most useful output of this build is the list of places the two models

@@ -29,7 +29,7 @@ participants. Retired egress stayed at depth one for two seconds while its name
 was absent, then reached the api inbox exactly once after re-enrolment.
 
 The first broadcast authoring attempt used non-hex fixture stream IDs. The
-router rejected all fifty with stream_id must be non-empty lowercase hex. That
+switch rejected all fifty with stream_id must be non-empty lowercase hex. That
 is the documented parser boundary working, not a product defect; the committed
 scenario generates valid 32-character lowercase hex IDs.
 
@@ -60,10 +60,10 @@ Retained egress:
     while_absent egress=1 inbox_matches=0
     after_reenrol roster_value=[api] egress=0 inbox_matches=1
     matching_logs:
-    {"ts":"2026-08-11T21:25:33.179Z","module":"router","event":"popped","stream_id":"00000000000000000000000000385ecf","correlation_id":"00000000000000000000000000385ecf","producer":"retained-probe","recipient":"api"}
-    {"ts":"2026-08-11T21:25:33.180Z","module":"router","event":"forwarded","stream_id":"00000000000000000000000000385ecf","correlation_id":"00000000000000000000000000385ecf","producer":"retained-probe","recipient":"api"}
-    {"ts":"2026-08-11T21:25:33.861Z","module":"adapter","event":"received","stream_id":"00000000000000000000000000385ecf","correlation_id":"00000000000000000000000000385ecf","producer":"retained-probe","recipient":"api"}
-    {"ts":"2026-08-11T21:25:33.863Z","module":"adapter","event":"opened","stream_id":"00000000000000000000000000385ecf","correlation_id":"00000000000000000000000000385ecf","producer":"retained-probe","recipient":"api"}
+    {"ts":"2026-08-11T21:25:33.179Z","module":"switch","event":"popped","stream_id":"00000000000000000000000000385ecf","correlation_id":"00000000000000000000000000385ecf","producer":"retained-probe","recipient":"api"}
+    {"ts":"2026-08-11T21:25:33.180Z","module":"switch","event":"forwarded","stream_id":"00000000000000000000000000385ecf","correlation_id":"00000000000000000000000000385ecf","producer":"retained-probe","recipient":"api"}
+    {"ts":"2026-08-11T21:25:33.861Z","module":"port","event":"received","stream_id":"00000000000000000000000000385ecf","correlation_id":"00000000000000000000000000385ecf","producer":"retained-probe","recipient":"api"}
+    {"ts":"2026-08-11T21:25:33.863Z","module":"port","event":"opened","stream_id":"00000000000000000000000000385ecf","correlation_id":"00000000000000000000000000385ecf","producer":"retained-probe","recipient":"api"}
 
 Graceful restart, run one:
 
@@ -75,7 +75,7 @@ Graceful restart, run one:
     {"module":"container","event":"started","reason":"redis pid=12"}
     {"module":"container","event":"started","reason":"tmuxhost pid=26"}
     {"module":"container","event":"windows_ready","count":2}
-    {"module":"container","event":"started","reason":"router pid=64"}
+    {"module":"container","event":"started","reason":"switch pid=64"}
     {"module":"container","event":"started","reason":"watchdog pid=65"}
     {"module":"container","event":"started","reason":"api pid=66"}
     {"module":"container","event":"started","reason":"session pid=67"}
@@ -90,15 +90,15 @@ Graceful restart, run two:
 Parser rejection from the discarded invalid fixture run, repeated for all fifty
 envelopes:
 
-    {"ts":"2026-08-11T21:22:43.134Z","module":"router","event":"dead_lettered","stream_id":"unknown","reason":"stream_id must be non-empty lowercase hex"}
+    {"ts":"2026-08-11T21:22:43.134Z","module":"switch","event":"dead_lettered","stream_id":"unknown","reason":"stream_id must be non-empty lowercase hex"}
 
 ## Cross-read
 
-I read /tmp/tmux-window-loss.log. Its two runs show HTTP 202, then router
-forwarded, adapter received, adapter dead_lettered with reason window_missing,
+I read /tmp/tmux-window-loss.log. Its two runs show HTTP 202, then switch
+forwarded, port received, port dead_lettered with reason window_missing,
 and tmuxhost recreated the window. My reading is that the raw output proves
 visible at-most-once loss during the reconcile gap; it does not prove a false
-success inside the adapter because the terminal outcome is explicitly
+success inside the port because the terminal outcome is explicitly
 dead_lettered. The tmux lane ranks that as a high availability finding: ordinary
 reconciliation creates an at-most-once loss window despite rapid recovery, but
 does not falsify observability. I agree with that reading; there is no disputed

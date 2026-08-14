@@ -22,7 +22,7 @@
 
 | # | finding | first lines to open |
 |---|---|---|
-| 17 | `paste_text` discards every tmux return code, so a failed paste reports a successful open — **both offices found this** | `tmux/ops.py:364-378`, `adapter/openers.py:68-82` |
+| 17 | `paste_text` discards every tmux return code, so a failed paste reports a successful open — **both offices found this** | `tmux/ops.py:364-378`, `port/openers.py:68-82` |
 | 18 | `list_windows` cannot distinguish "tmux failed" from "no windows" | `tmux/ops.py:56-60` |
 | 23 | a hired agent's guide names no lead, and its trust is seeded into the wrong account | `tmux/ops.py:311-319`, `control/runner.py:70-76` |
 | 24 | hiring an existing name cannot apply changed launch configuration | `control/openers.py:43-69`, `tmux/ops.py:337-348` |
@@ -57,7 +57,7 @@ just as incoherent.
 
 | # | finding | first lines to open |
 |---|---|---|
-| 26 | a departed agent's egress is never drained, so re-hiring the name delivers it | `router/service.py` |
+| 26 | a departed agent's egress is never drained, so re-hiring the name delivers it | `switch/service.py` |
 | 27 | the credential check has no idea what an endpoint agent is — a local-model agent needs no vendor login and is reported as missing one | `watchdog/service.py:208-228` |
 | 28 | a stalled agent whose window is gone is never reported | `watchdog/service.py:171-173`, `:90-91` |
 | 29 | one failing maintenance job silently disables the other four, and the log record names only the exception class | `watchdog/service.py` |

@@ -85,7 +85,7 @@ Comprehensive inventory of names, identifiers, Redis keys, environment variables
 - **`vab` vs `Virtual Agent Base`**: In Redis and JSON wire responses, the field is `vab` (`"vab": "api"`). In docs, it is expanded as "Virtual Agent Base".
 
 ### 3. Undeterminable / Misleading Names
-- **`vab` ("Virtual Agent Base")**: Documented as "Virtual Agent Base", but for an `api` client (which has no base, no workspace, no window, and no process) or `control` (host opener), calling it an "agent base" contradicts what it actually is (a switch port encapsulation type / delivery adapter).
+- **`vab` ("Virtual Agent Base")**: Documented as "Virtual Agent Base", but for an `api` client (which has no base, no workspace, no window, and no process) or `control` (host opener), calling it an "agent base" contradicts what it actually is (a switch port encapsulation type / delivery port).
 - **`sugar`**: `POST /agents/{agent}/envelopes` accepting `{"text": "hi"}` without `kind` is called "sugar" in `LLD-api.md` and internal comments, but has no formal schema name in `API.md` or OpenAPI specifications.
 
 ### 4. Names Contradicting the Network Switch Model

@@ -10,22 +10,22 @@
 
 ## 1. The one idea
 
-**h-flock is a switch.** Producers emit envelopes; a router forwards them by
+**h-flock is a switch.** Producers emit envelopes; a switch forwards them by
 `recipient` and never opens one. Everything else follows from that, and the L2
 analogy is load-bearing rather than decorative:
 
 | L2 switch | h-flock |
 |---|---|
 | destination MAC | `recipient` — the only thing forwarding depends on |
-| source MAC | `producer` — **stamped from the egress queue** by the router before forwarding; a mismatch is corrected and logged |
+| source MAC | `producer` — **stamped from the egress queue** by the switch before forwarding; a mismatch is corrected and logged |
 | MAC table | the **roster** — `name → VAB` |
 | port config | the **VAB** — a property of the port, not of the frame |
-| ethertype | `kind` — the router ignores it; an opener at the far edge reads it |
+| ethertype | `kind` — the switch ignores it; an opener at the far edge reads it |
 | L3 and above | `payload` — invisible to everything in the middle |
 
 A switch never learns what is plugged into a port. That ignorance is the whole
 design: **adding a kind of participant is writing one delivery routine** — not
-changing the router, the bus, or any command. It is why an app became a
+changing the switch, the bus, or any command. It is why an app became a
 first-class participant in one build rather than a subsystem.
 
 ## 2. Participants
@@ -39,9 +39,9 @@ Everything addressable is a name in the roster. What is *behind* the name is its
 | `api` | an app — web, phone, Telegram bot | having it stored in a mailbox it reads |
 | `control` | the tenant's own lifecycle endpoint (`host`) | acting on it |
 
-⚠ **The router cannot see this column.** It reads roster *fields*, never values
+⚠ **The switch cannot see this column.** It reads roster *fields*, never values
 (the *roster fields, never values* invariant) — so it forwards to a name and something at the far edge decides
-what that means. This is structural rather than a convention: the router has no
+what that means. This is structural rather than a convention: the switch has no
 code path that could dispatch on VAB even if someone wanted it to.
 
 ## 3. The parts
@@ -52,11 +52,11 @@ code path that could dispatch on VAB even if someone wanted it to.
         ▼                     │ paste                    │        │ POST
    ┌─────────┐                │                     ┌────┴────────▼───┐
    │ egress  │            ┌───┴────┐                │   api  :8080    │
-   └────┬────┘            │adapter │                └────┬────────────┘
+   └────┬────┘            │port │                └────┬────────────┘
         │                 └───▲────┘                     │
         ▼                     │ kick                     ▼
    ╔═════════════════════════════════════════════════════════════════╗
-   ║  ROUTER — pops every egress, resolves the name, writes ingress  ║
+   ║  SWITCH — pops every egress, resolves the name, writes ingress  ║
    ╚═════════════════════════════════════════════════════════════════╝
                               │
                        ┌──────┴───────┐
@@ -68,8 +68,8 @@ code path that could dispatch on VAB even if someone wanted it to.
 |---|---|---|
 | `flock.bus` | library — keys, envelopes, `send`/`receive`, roster reads | shared |
 | `flock.tmux` | library — windows, and the paste sequence | shared |
-| `flock.router` | **the one daemon** | blocks on every egress; also runs the maintenance pass (§8b) |
-| `flock.adapter` | invoked per delivery, dispatches on VAB, exits | not a daemon |
+| `flock.switch` | **the one daemon** | blocks on every egress; also runs the maintenance pass (§8b) |
+| `flock.port` | invoked per delivery, dispatches on VAB, exits | not a daemon |
 | `flock.control` | `StartAgent` / `StopAgent` / pause / resume openers | reached only via the bus |
 | `flock.tmuxhost` | the tmux server, session, windows | |
 | `flock.office` | the one agent-facing command | imports `flock.bus` only |
@@ -78,22 +78,22 @@ code path that could dispatch on VAB even if someone wanted it to.
 
 `flock.bus` and `flock.tmux` are the only shared libraries. Nothing else imports
 anything else, which is what lets a lane own a module outright. ⚠ **One named
-exception:** the adapter lazily imports `flock.control` to open control kinds —
+exception:** the port lazily imports `flock.control` to open control kinds —
 recorded in `CONTRACTS` §5 rather than left as a rule everybody quietly breaks.
 
 ## 4. Why adapters are kicked, not running
 
-**The router blocks on egress queues; nothing blocks on an ingress queue.**
+**The switch blocks on egress queues; nothing blocks on an ingress queue.**
 Agents produce whenever they like, so something must wait on their output. But
-the router *writes* ingress — it already knows an envelope arrived, so waiting on
+the switch *writes* ingress — it already knows an envelope arrived, so waiting on
 it would be waiting to be told something it just did. Instead it `RPUSH`es and
-spawns `flock.adapter <agent>` fire-and-forget. The adapter delivers **one
+spawns `flock.port <agent>` fire-and-forget. The port delivers **one
 envelope** and exits.
 
 ⚠ **The alternative moves the backlog into RAM.** A long-running consumer per
 agent, popping eagerly, drains the Redis backlog into process memory: delivery
 takes hundreds of milliseconds, arrivals are not rate-limited, and nothing is
-inspectable when it goes wrong. Keeping the backlog in Redis is the point. ⚠ **Durable across adapter
+inspectable when it goes wrong. Keeping the backlog in Redis is the point. ⚠ **Durable across port
 lifetimes, not across a tenant restart** — Redis runs without persistence by
 design (`LLD-container` §7), so a restart empties it.
 
@@ -120,15 +120,15 @@ indices shift as windows are retired.
 ```
 office send -a frontend …        the agent's own command, its only surface
    → …:backend:egress         it writes its OWN queue, never frontend's
-   → router                 pops, resolves frontend in the roster, RPUSHes
-   → …:frontend:ingress          and kicks an adapter
-   → adapter                reads frontend's VAB, dispatches, exits
+   → switch                 pops, resolves frontend in the roster, RPUSHes
+   → …:frontend:ingress          and kicks an port
+   → port                reads frontend's VAB, dispatches, exits
    → opener                 tmux → paste · api → mailbox · control → act
 ```
 
 Five log records mark the path — `sent`, `popped`, `forwarded`, `received`,
 `opened` — so a lost envelope is locatable rather than merely absent. `sent` from
-an agent's own command reaches the log via a file the router tails, because
+an agent's own command reaches the log via a file the switch tails, because
 `office` runs in a window and its stdout is a pane.
 
 ⚠ **No *agent* writes another agent's keys.** Not a queue, not a board, not a
@@ -136,14 +136,14 @@ mailbox — it sends an envelope and the far edge writes its own. Build 12
 generalised this from queues to every per-agent key, and it is what keeps "who
 did this" answerable.
 
-⚠ **The router does, and that is its job** (`router/service.py:83`, `:93` push
-into a recipient's ingress), as does an adapter writing the board of the agent it
+⚠ **The switch does, and that is its job** (`switch/service.py:83`, `:93` push
+into a recipient's ingress), as does an port writing the board of the agent it
 is delivering for. The rule constrains *participants*, not the switch — an
 earlier wording said "nothing", which the code contradicts.
 
 ## 6. Kinds — the capability list
 
-`kind` says what sort of thing an envelope is. The router ignores it; an opener
+`kind` says what sort of thing an envelope is. The switch ignores it; an opener
 at the far edge reads it. **Adding a capability is adding an opener**, which is
 the same sentence as §1 from a different angle.
 
@@ -158,7 +158,7 @@ the same sentence as §1 from a different angle.
 | `ResumeAgent` | `control` | starts the CLI again and drains what queued while it was paused |
 
 ⚠ **An app client's mailbox takes every kind**, not just `Message`. The api does
-not decide which kinds are interesting — the same rule that stops the router
+not decide which kinds are interesting — the same rule that stops the switch
 reading payloads. A client filters on `kind` itself.
 
 ⚠ **Pause is not retire.** `PauseAgent` leaves the roster row, the queues and the
@@ -177,7 +177,7 @@ office broadcast standup in five                    # colleagues
 POST /agents/all/envelopes  {"text":"…"}            # everyone, clients included
 ```
 
-⚠ **The router cannot filter a broadcast by VAB and never will.** It fans out
+⚠ **The switch cannot filter a broadcast by VAB and never will.** It fans out
 over roster *fields*, and by that same invariant it cannot read a value — so `all` means
 all. `office broadcast` selects tmux agents *before* sending, which is why the
 two differ. If you want colleagues, use the command; if you address `all`, expect
@@ -248,7 +248,7 @@ landed deliveries, and it catches a paste whose `Enter` was swallowed.
 
 ### 8a. `blocked` — the delivery verdict, kept
 
-The router judges every delivery against a later `input` event. It used to log
+The switch judges every delivery against a later `input` event. It used to log
 that and throw it away; it now retains it as `<prefix>:agent:<n>:blocked` —
 **set on unverified, deleted on verified.**
 
@@ -266,7 +266,7 @@ deliberate: **the first delivery to a new agent is never judged.**
 ⚠ **This paragraph used to describe a gap that does not exist** — that a CLI
 records input it never acts on, so a login prompt verifies and `blocked` misses
 it. That came from a test asserting an *absence*, which passed whenever the
-router had not yet judged. Waiting for the verdict deterministically, both CLIs
+switch had not yet judged. Waiting for the verdict deterministically, both CLIs
 are caught. It was never a property of the system, and it was the only thing that
 ever argued for reading a screen.
 
@@ -282,20 +282,20 @@ marker and healthy deliveries read unverified. And the skip rule was a denylist
 whose activity cannot be tailed is skipped **by default**, not by having been
 remembered.
 
-### 8b. The router's maintenance pass
+### 8b. The switch's maintenance pass
 
 The one daemon does more than forward. On a timer, for the whole tenant in one
 pass: tail session files into activity, sample presence, judge verify markers,
 tail the window log to stdout, and trim what would otherwise grow.
 
 ⚠ **Cheap bounded reads only.** Anything that needs to *look* at a terminal is
-observation and belongs beside the system, not in it — the router is the data
+observation and belongs beside the system, not in it — the switch is the data
 path, and a `capture-pane` that hangs would stall forwarding for everyone.
 
 ### 8c. The watchdog, and who it tells
 
-Its own process, beside the router — not a step in the router's pass, because a
-`capture-pane` that hangs would stall forwarding, and the router is the data
+Its own process, beside the switch — not a step in the switch's pass, because a
+`capture-pane` that hangs would stall forwarding, and the switch is the data
 path. It reads the board, presence, window activity and the credential files.
 
 **It speaks only when a ticket is old *and* presence is not working *and* the
@@ -343,7 +343,7 @@ promises otherwise.
 
 ## 10. One container is one tenant
 
-Redis, the router, the tmux server, both doors, and one window per **`vab: tmux`**
+Redis, the switch, the tmux server, both doors, and one window per **`vab: tmux`**
 agent — in one image that converges when brought up twice. ⚠ **`api` clients and
 `host` have no window**, which is the point of the VAB. Redis is internal and
 unpublished.
@@ -359,20 +359,20 @@ A claude agent was asked who had sent it a message, found no answer at the CLI
 layer, and went looking. Its trail, in its own order:
 
 1. **`office send` printed a bus record into its pane** —
-   `{"module":"adapter","event":"sent","stream_id":…,"correlation_id":…}`. Its
+   `{"module":"port","event":"sent","stream_id":…,"correlation_id":…}`. Its
    reasoning: envelope ids and a named delivery module are not what a CLI that
    appends to a file emits; they imply a broker with persistent streams
 2. its environment named the log — `FLOCK_LOG_FILE`, `POD`, `TENANT`,
    `VIRTUAL_ENV=/opt/flock`
 3. `/opt/flock/bin/office` is a four-line console script, so the tool is an
    importable package whose source is on the box
-4. it searched for the one internal word we had handed it — `adapter`
-5. `adapter/runner.py`: `import redis`, and the url
+4. it searched for the one internal word we had handed it — `port`
+5. `port/runner.py`: `import redis`, and the url
 6. `ps` confirmed `redis-server` independently
 
 ⚠ **Step 1 was a reason, and it was ours.** Fixed: `office` sets
 `FLOCK_LOG_QUIET` for its own run, so the record reaches the window log the
-router tails (§5) and not the agent's screen. It was redundant output as well as
+switch tails (§5) and not the agent's screen. It was redundant output as well as
 a signpost.
 
 ⚠ **Steps 2 to 6 are the ability, and they are accepted.** An agent in this
@@ -385,10 +385,10 @@ it is only true while nothing hands an agent a thread to pull.
 
 The short list that everything else assumes:
 
-1. **The router forwards on `recipient` alone** — never on content.
+1. **The switch forwards on `recipient` alone** — never on content.
 2. **`producer` is stamped from the queue the envelope was popped from.**
    `send()` writes the header and picks the egress from the same argument, so an
-   honest sender always agrees. The router compares them and, on a mismatch,
+   honest sender always agrees. The switch compares them and, on a mismatch,
    overwrites the claim and logs `producer_stamped` with what was claimed.
 
    ⚠ **This is attribution, not authentication.** It guarantees the name matches
@@ -401,10 +401,10 @@ The short list that everything else assumes:
    able to write a queue destroy another agent's traffic.
 
 3. **No AGENT writes another agent's keys** — it sends an envelope. ⚠ The
-   router writes a recipient's ingress and `AddTicket` writes a recipient's
+   switch writes a recipient's ingress and `AddTicket` writes a recipient's
    board: that is the delivery mechanism, and it is what the rule exists to
    route work *through*.
-4. **The router reads roster fields, never values.** It cannot know a VAB.
+4. **The switch reads roster fields, never values.** It cannot know a VAB.
 5. **Adapters do not exist between deliveries.**
 6. **The api does not validate `kind`** — which kinds are openable is a fact
    about adapters, discovered at the far edge.
@@ -421,14 +421,14 @@ hands back a report. It can be as ugly as it needs to be, because nothing
 depends on it being right for a message to be delivered.
 
 That is what would make a screen scraper acceptable in a watchdog and
-unacceptable in an adapter. Not the technique — the position.
+unacceptable in an port. Not the technique — the position.
 
 ⚠ **And in the end nothing scrapes.** A scraping `blocked` was designed, built and
 abandoned: a consumed message stays visible in the transcript, so it marked
-*healthy* agents blocked. The verdict the router already computed turned out to
+*healthy* agents blocked. The verdict the switch already computed turned out to
 be the answer. The rule stands as a rule; it is not describing anything we do.
 
-⚠ **Cite these by name, never by number.** `LLD-bus-and-router` keeps its own,
+⚠ **Cite these by name, never by number.** `LLD-bus-and-switch` keeps its own,
 longer list — *roster fields, never values* is its **8** and this document's
 **4**. Two lists with two numberings drift the moment either gains an entry, and
 a stale citation reads as authoritative.
@@ -447,8 +447,8 @@ documentation audit went looking for exactly this kind of claim.
 | [`API.md`](API.md) | building an app against it — no repository needed |
 | [`../clients/`](../clients) | a Telegram bot and a browser UI, built from `API.md` alone |
 | [`CONTRACTS.md`](CONTRACTS.md) | what more than one module depends on |
-| [`LLD-bus-and-router.md`](LLD-bus-and-router.md) | addressing, the envelope, the invariants in full |
-| [`LLD-adapter-tmux.md`](LLD-adapter-tmux.md) | how text actually gets into a terminal |
+| [`LLD-bus-and-switch.md`](LLD-bus-and-switch.md) | addressing, the envelope, the invariants in full |
+| [`LLD-port-tmux.md`](LLD-port-tmux.md) | how text actually gets into a terminal |
 | [`LLD-tmux-host.md`](LLD-tmux-host.md) · [`LLD-container.md`](LLD-container.md) | windows, and the tenant |
 | [`LLD-api.md`](LLD-api.md) · [`LLD-session.md`](LLD-session.md) | the two doors |
 | [`TODO.md`](TODO.md) | what is parked, and why |
