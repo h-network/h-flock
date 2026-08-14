@@ -558,3 +558,37 @@ place to look, since they are how the system already tells busy from absent.
 ⚠ **Both of these were asserted in §8.2 without evidence and neither has been
 tested.** Recorded as objections, not as decisions.
 
+### 8.4 ⚠ The `delivering` tag: a THIRD watchdog job, and a worse failure than the strand
+
+Measured by `bus` during build 66's conservation run — **a real herd, not a
+theoretical one**: 8–17 concurrent `flock.port` processes, Redis at 136–308
+ops/s, container CPU **774%–1285%** (7.7–12.8 cores). ⚠ Throughput **held** at
+~8.7/s against a 6.45/s baseline, so this is load without loss. No pre-66
+process-count baseline exists, so no honest before/after can be given.
+
+**Two changes follow.**
+
+**1. A kicked port that loses `HSETNX` should EXIT, not spin.** Today it loops on
+`hsetnx` with `sleep(0.05)` forever. The holder is already draining, and any
+later write arrives with its own kick, so a waiter contributes nothing but 20 Hz
+of Redis load and a process. ⚠ **Draining made this worse** — the holder now
+holds for up to 32 frames instead of one, so waiters wait far longer.
+
+**2. ⚠ A holder killed after `HSETNX` wedges that destination permanently.**
+`finally: hdel` does not run on `SIGKILL`, and audit row 16 recorded non-expiry
+and non-takeover as **deliberate** — the tag prevents two ports delivering the
+same agent, which protects at-most-once. So the trade is deliberate: **safety
+over liveness**, consistent with everything else here.
+
+But the consequence was never stated: **every subsequent kick for that agent
+spawns a port that spins forever.** That is worse than a strand — a strand loses
+one frame, a stuck tag wedges the destination *and* accumulates processes.
+
+⚠ **So the watchdog has three jobs, not two**: stuck queues, climbing queues,
+and **stale `delivering` tags**. And the third is a precondition for the others —
+**re-kick cannot resume a wedged agent while the tag is held.**
+
+⚠ **Clearing a stale tag is the one watchdog action that can break at-most-once**
+if it is wrong: clear it while the holder is alive and two ports deliver the same
+agent. Liveness of the holder must be established before the tag is cleared, and
+that is exactly the *slow versus dead* problem §8.3 records as unsolved.
