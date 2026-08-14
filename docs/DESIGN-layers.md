@@ -452,9 +452,38 @@ cannot be parallelised. *We do not slow down the switch.*
   drains one, leaving the newest stranded instead. That is the permanent
   off-by-one build 58 measured
 
-**Have the port drain until empty** rather than take one and exit. Then a kick
-that dies costs nothing: the next port to run clears the backlog, including the
-frame the dead one was kicked for.
+⚠ **BUILT, MEASURED, AND REJECTED — build 66.** Draining works and is not worth
+it.
+
+| | |
+|---|---|
+| strands | **2 → 0**. The off-by-one is real and draining clears it |
+| delivery | 9997 → 9998 |
+| duplicates | 0, unchanged |
+| **throughput** | **6.45 → 5.54/s, −14.1%** |
+
+⚠ **The cost is structural, not tunable.** The `delivering` tag serialises
+delivery **per agent**. Before, 32 kicks meant 32 ports each handling one frame
+with their startup costs **overlapping in parallel**. Draining makes one port do
+32 frames **sequentially** while the rest exit. Startup dominates the path —
+~230 ms against ~20 ms of real work — so **overlapping 32 startups beats
+amortising one**. No cap value fixes that; it is the shape of the change.
+
+⚠ **And the trade is wrong on its merits.** The cost is **unconditional**: 14%
+on every delivery, forever. The benefit is **conditional on ports dying**, which
+only happened because we killed them. In a healthy system a strand is a lag of
+one frame that the next kick clears; it becomes a real loss only at end of
+traffic — and **that terminal case is the watchdog's, and draining does not solve
+it either**.
+
+⚠ **`exit-not-spin` is coupled to this and also does not ship.** Without
+draining, a kicked port that exits on losing the tag leaves its frame for the
+next kick — which *is* the strand mechanism. The two are one change, and neither
+lands.
+
+**So the port keeps taking one envelope per kick.** The off-by-one stays, and it
+is the watchdog's problem — which is blocked, honestly, rather than papered over
+with a 14% tax.
 
 ⚠ **This does not need an observer, a sweeper, or any switch change.** The cost
 is borne per delivery, in a process that is already running, and it is parallel.
