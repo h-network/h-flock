@@ -51,6 +51,29 @@ layers.**
 | **sending port** | RT export/import tags | freshness-sensitive, read per send | 28–46 µs, invisible against a ~233 ms send path |
 | **router's port** | L3 policy between domains | the router is a **station with a port like any other** | its own port's problem |
 
+### ⚠ Confirmed in-system, build 54
+
+The standalone model was reproduced **more strongly** on the lab, 600 samples
+per cell, cases interleaved in rotating order so Redis spikes cannot privilege
+a placement:
+
+| | measured |
+|---|---|
+| policy decision **at the port** | **1,036–3,523 µs** (284–965 decisions/s) |
+| the same check **from the switch's memory** | **1.9–5.0 µs** (198k–525k/s) |
+| forward-only vs **forward + policy from memory** | **within noise at every roster size** — 434.29 vs 420.35 (10/5), 774.80 vs 724.82 (100/5), 1521.21 vs 1562.10 (1000/5) |
+| port-side **parallelism** | 1 port 1,337/s → 16 ports **2,269/s**. Host contention saturates long before port count does |
+
+⚠ **Both halves of the original argument are refuted.** Switch-side policy is
+not merely affordable, it is **unmeasurable against forwarding alone**. And
+port-side parallelism does not rescue the port's cost — 16× the ports buys 1.7×
+the throughput.
+
+⚠ **Interaction with build 58's liveness finding:** policy is evaluated
+**synchronously before enqueue**, so a port killed in the kick/pop strand window
+cannot leave an ambiguous held decision. A stranded frame is always one that was
+already permitted. The strand window sits entirely *after* the policy decision.
+
 ⚠ **The switch can cache and a one-shot port cannot** — that asymmetry runs
 *opposite* to the argument this section used to make. From Redis the same check
 costs the switch 254% over forwarding-only; from memory it costs 10%. **The
