@@ -429,6 +429,33 @@ outside the switch, so noticing costs the forwarding path nothing.
 | **watchdog** | notice a queue that stopped moving | periodic, outside the hot path |
 | **switch** | ⚠ **nothing. It forwards.** | unchanged |
 
-⚠ **What the watchdog must NOT do is deliver.** It observes and alerts; a
-watchdog that re-kicks is a retry mechanism, and at-most-once with zero retries
-is deliberate. Whether it may re-kick is a separate decision and not this one.
+### ✅ The watchdog WATCHES the queue and CLEARS it — that is the name
+
+⚠ **An earlier version of this section said the watchdog must only alert, on the
+grounds that re-kicking is a retry. That was wrong.** A stranded frame is sitting
+in ingress **never popped and never delivered**. Kicking a port to pop it is a
+**resumption, not a retry** — at-most-once promises not to deliver twice, and
+nothing has been delivered once.
+
+⚠ **Watch the QUEUE, not the envelope.** Tracking individual frames runs into the
+finding from build 65 — exact post-pop loss attribution may need a durable
+custody ledger. Asking *"is this queue non-empty and not decreasing?"* needs no
+ledger, and it catches both failures at once:
+
+| | what it looks like | what the watchdog does |
+|---|---|---|
+| **A — strand** | depth stuck, not decreasing | **re-kick**; a port drains it. Recovery |
+| **B — destination cannot consume** | depth **climbing**; re-kicks change nothing | **dead-letter**; the queue is bounded and `dead_lettered` is the record |
+
+**The distinguisher is whether depth decreases after a kick.** For A it does; for
+B it does not, and further kicks only spawn doomed processes.
+
+⚠ **Case B is unbounded today and untested.** `retention` trims `dead` and
+`tasks.done` and **never touches ingress**; every `maxlen` in the tree is on a
+stream, never on the ingress list. So a destination that is enrolled, permitted,
+and permanently unable to consume grows its queue until the container runs out
+of memory, with **no cap, no dead-letter, and no alert**. Build 58 injected port
+*kills*, which is case A. **Nobody has ever run case B.**
+
+⚠ **Dead-lettering is what bounds it**, and it needs no new machinery: `dead` is
+already trimmed by retention and already has a record type.
