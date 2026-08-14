@@ -1,49 +1,116 @@
-"""Measure a run from its captured custody log. Nothing runs; nothing is polled."""
-import json, statistics, sys, collections, datetime
+#!/usr/bin/env python3
+"""Measure a captured run from its custody log. Nothing runs; nothing is polled.
+
+    analyse-run.py RUN.log [--expect N] [--source-prefix bench-]
+
+Two questions:
+  1. how fast, per stage
+  2. **is every step logged** — coverage, not averages
+
+⚠ **A stage whose sample does not cover the run is REFUSED, not averaged.** The
+first version of this script reported `sent → popped` from n=100 of 2,000 and I
+quoted the figure; it described enrolment traffic, not the run. `bus` caught it
+by using the output. Partial coverage is a finding about the LOG, and averaging
+it hides exactly what we are trying to see.
+
+⚠ **Control traffic is not workload.** Enrolment produces real deliveries with
+real records. `--source-prefix` keeps them out of the numbers.
+"""
+import argparse
+import collections
+import datetime
+import json
+import statistics
+import sys
 
 STAGES = ["sent", "popped", "forwarded", "received", "opened"]
 
-def t(s):
-    return datetime.datetime.fromisoformat(s.replace("Z", "+00:00")).timestamp()
 
-paths = collections.defaultdict(dict)
-opened = []
-bad = 0
-for line in open(sys.argv[1], errors="replace"):
-    line = line.strip()
-    if not line.startswith("{"):
-        continue
-    try:
-        d = json.loads(line)
-    except Exception:
-        bad += 1
-        continue
-    ev, sid = d.get("event"), d.get("stream_id")
-    if ev not in STAGES or not sid or sid == "unknown":
-        continue
-    key = (sid, d.get("destination") or "")
-    paths[key].setdefault(ev, d["ts"])
-    if ev == "opened":
-        opened.append(t(d["ts"]))
+def ts(value: str) -> float:
+    return datetime.datetime.fromisoformat(value.replace("Z", "+00:00")).timestamp()
 
-print(f"parse failures: {bad}   joined paths: {len(paths):,}   opened: {len(opened):,}")
 
-# steady state: middle 80% of the delivery window
-opened.sort()
-lo, hi = opened[len(opened)//10], opened[-max(1, len(opened)//10)]
-mid = [x for x in opened if lo <= x <= hi]
-print(f"\nsteady-state throughput (middle 80%): {len(mid)/(hi-lo):.2f}/s   window {hi-lo:.1f}s")
-print(f"wall-clock over all opened      : {len(opened)/(opened[-1]-opened[0]):.2f}/s")
+def main() -> int:
+    ap = argparse.ArgumentParser()
+    ap.add_argument("log")
+    ap.add_argument("--expect", type=int, default=None,
+                    help="envelopes the workload should have produced")
+    ap.add_argument("--source-prefix", default=None,
+                    help="only count envelopes whose source starts with this")
+    ap.add_argument("--coverage", type=float, default=0.99,
+                    help="a stage below this fraction of expect is REFUSED")
+    args = ap.parse_args()
 
-print("\nper-stage median latency, joined on (stream_id, recipient):")
-for a, b in zip(STAGES, STAGES[1:]):
-    d = [t(p[b]) - t(p[a]) for p in paths.values() if a in p and b in p]
-    if d:
-        d.sort()
-        print(f"  {a:>9} -> {b:<9} n={len(d):>6}  p50 {statistics.median(d)*1000:8.2f} ms"
+    paths: dict[tuple, dict] = collections.defaultdict(dict)
+    parse_failures = 0
+    dead = 0
+
+    for line in open(args.log, errors="replace"):
+        line = line.strip()
+        if not line.startswith("{"):
+            continue
+        try:
+            rec = json.loads(line)
+        except Exception:
+            parse_failures += 1
+            continue
+        event = rec.get("event")
+        if event == "dead_lettered":
+            dead += 1
+        if event not in STAGES:
+            continue
+        sid = rec.get("stream_id")
+        if not sid or sid == "unknown":
+            continue
+        if args.source_prefix and not str(rec.get("source", "")).startswith(args.source_prefix):
+            continue
+        paths[(sid, rec.get("destination") or "")].setdefault(event, rec["ts"])
+
+    # ⚠ Parse failures invalidate everything downstream: a dropped record becomes
+    # a phantom missing stage. Refuse before interpreting anything.
+    if parse_failures:
+        print(f"REFUSED: {parse_failures} unparseable JSON lines — the log is not trustworthy")
+        return 4
+
+    n = len(paths)
+    expect = args.expect or n
+    print(f"envelopes {n:,}   expected {expect:,}   dead-lettered {dead}   parse failures 0")
+
+    print("\n== every step logged? ==")
+    incomplete = False
+    for stage in STAGES:
+        have = sum(1 for p in paths.values() if stage in p)
+        frac = have / expect if expect else 0
+        if frac < args.coverage:
+            print(f"  {stage:<10} {have:>7,} / {expect:,}  {frac:6.1%}  ⚠ REFUSED — does not cover the run")
+            incomplete = True
+        else:
+            print(f"  {stage:<10} {have:>7,} / {expect:,}  {frac:6.1%}  ok")
+
+    print("\n== per-stage latency (median, p95) ==")
+    for a, b in zip(STAGES, STAGES[1:]):
+        d = sorted(ts(p[b]) - ts(p[a]) for p in paths.values() if a in p and b in p)
+        if len(d) < expect * args.coverage:
+            print(f"  {a:>9} -> {b:<10} REFUSED (n={len(d):,}, needs {int(expect*args.coverage):,})")
+            continue
+        print(f"  {a:>9} -> {b:<10} n={len(d):>7,}  p50 {statistics.median(d)*1000:8.2f} ms"
               f"  p95 {d[int(len(d)*0.95)]*1000:9.2f} ms")
 
-e2e = sorted(t(p["opened"]) - t(p["sent"]) for p in paths.values() if "sent" in p and "opened" in p)
-if e2e:
-    print(f"\nend to end  n={len(e2e)}  p50 {statistics.median(e2e)*1000:.1f} ms"
-          f"  p95 {e2e[int(len(e2e)*0.95)]*1000:.1f} ms  p99 {e2e[int(len(e2e)*0.99)]*1000:.1f} ms")
+    opened = sorted(ts(p["opened"]) for p in paths.values() if "opened" in p)
+    if len(opened) > 20:
+        # ⚠ Steady state, not wall clock. Wall clock keeps counting through a
+        # drain in which nothing arrives — 21% apart on the same run.
+        lo, hi = opened[len(opened) // 10], opened[-max(1, len(opened) // 10)]
+        mid = [x for x in opened if lo <= x <= hi]
+        print(f"\nsteady-state (middle 80%) {len(mid)/(hi-lo):8.2f}/s over {hi-lo:.1f}s")
+        print(f"wall-clock, all opened     {len(opened)/(opened[-1]-opened[0]):8.2f}/s")
+
+    if incomplete:
+        print("\n⚠ AT LEAST ONE STEP IS NOT FULLY LOGGED. Latency figures for refused"
+              "\n  stages are withheld; the rest describe only the envelopes that have them.")
+        return 1
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())
