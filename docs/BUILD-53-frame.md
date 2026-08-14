@@ -32,11 +32,11 @@ that consumes it.
 
 ## 2. The three changes
 
-**1. The address rule accepts a qualified form.** Today `bus/keys.py`'s
-`SEGMENT_REGEX = ^[a-z0-9][a-z0-9-]{0,62}$` rejects colons, so
-`envelope.py:19`'s `_agent_name` refuses `acme:hq:alice` outright. Relax it in
-**one place** — segments still cannot contain `:`, so splitting stays
-unambiguous.
+**1. The address rule accepts a qualified form.** `bus/keys.py`'s
+`SEGMENT_REGEX = ^[a-z0-9][a-z0-9-]{0,62}$` rejects colons, and
+`envelope.py:19`'s `_segment` deliberately retains that rule. Split a qualified
+address first and validate each segment — segments still cannot contain `:`, so
+splitting stays unambiguous.
 
 **2. The adapter resolves, once per send.**
 

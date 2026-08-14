@@ -239,7 +239,7 @@ transport paths for records, not competing lifecycle schemas.
 | `stream_id` | envelope events only | the join key; absent on lifecycle records |
 | `correlation_id` | when known | |
 | `source`, `destination` | when known | |
-| `reason` | on a failure | why it dead-lettered |
+| `reason` | on a failure | why it dead-lettered or was refused |
 | `count` | on a broadcast | how many copies were written |
 | `task_id` | on a board move | the entry's `id` |
 | `bytes` | on window-log truncation | consumed spool bytes removed |
@@ -271,6 +271,11 @@ easier. ⚠ **A broadcast leaves three shared records plus a `received`/`opened`
 pair per destination** — the pairs carry `destination: all` and cannot be told apart
 by that field; `forwarded.count` is the cardinality. `stream_id`
 is required on the six events above and absent on the rest.
+
+`send_refused` is **not a sixth custody record**. It says the sending port
+rejected a request before assembly and before any egress write, so there is no
+enqueued envelope whose custody could be joined to the five-record set. It
+carries `source`, `destination` and `reason`, but no `stream_id`.
 
 ⚠ **Never log a payload.** Invariant 4 says the switch does not read one; the
 same restraint applies to everything else, and a payload is the one field that
