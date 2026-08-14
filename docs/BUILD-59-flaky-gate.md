@@ -57,3 +57,45 @@ passes on a fast day.
 
 `jira done`, then message `architect` with the timestamps, the timing
 comparison, the count of fixed-sleep gates, and the negative-control proof.
+
+---
+
+## 6. ⚠ URGENT, same file, separable gate: accept.sh can destroy the office
+
+**It just did.** The office container was killed and had to be restarted by the
+operator.
+
+```bash
+PROJECT="h-flock-${TENANT}"                                   # accept.sh:52
+docker compose -p "$PROJECT" ... down -v                      # accept.sh:63
+```
+
+Our office is **`h-flock-office`**. `TENANT=office` — set deliberately, leaked
+from the environment, or defaulted — resolves `PROJECT` to the live office and
+`down -v` **destroys it and its volumes**.
+
+⚠ **`accept.sh:62` has the same shape in miniature:**
+`pkill -9 -f "[s]erver\.py --listen 0.0.0.0 --port $CONSOLE_PORT"` is an
+unscoped host-level `pkill -f`. That pattern killed my own SSH shell twice this
+week. It matches on any host, in any directory, owned by anyone.
+
+### The rule
+
+**Never destroy what you did not create in this run.** Record the project at
+creation; tear down only that. Belt and braces:
+
+1. **Refuse** if `$TENANT` names the live office (`$AGENT_OFFICE`), unless
+   `FORCE=1` — `soak.sh` already sets this precedent and its comment explains
+   why: *"the guard exists so it never happens to somebody's office by reflex."*
+2. **Refuse** to `down -v` a project this invocation did not `up`.
+3. **Scope the `pkill`** to the container, or drop it for a PID recorded at
+   start.
+
+### ⚠ Negative control
+
+Run `accept.sh` with `TENANT` set to the office name and **prove it refuses**.
+A guard that has never refused is not known to guard.
+
+⚠ **This is separable from §1–5 and must be its own commit** so the flaky-gate
+fix and the destructive-scope fix can be reviewed apart. It is in the same file
+only because two lanes editing `accept.sh` concurrently would be worse.
