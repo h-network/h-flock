@@ -86,7 +86,7 @@ AFTER_MEM=$(dx redis-cli INFO memory | awk -F: '/^used_memory:/{printf "%d", $2/
 
 DELIVERED=$(( AFTER_OPENED - BEFORE_OPENED ))
 echo "  expected $EXPECT, delivered $DELIVERED"
-awk -v d="$DELIVERED" -v ns="$TOTAL_NS" 'BEGIN{ if (ns>0) printf "  end to end: %.1fs  =  %.0f delivered/s\n", ns/1e9, d/(ns/1e9) }'
+awk -v d="$DELIVERED" -v ns="$TOTAL_NS" 'BEGIN{ if (ns>0) printf "  end to end: %.1fs  =  %.2f delivered/s\n", ns/1e9, d/(ns/1e9) }'
 echo "  redis memory: ${BEFORE_MEM} KiB -> ${AFTER_MEM} KiB"
 
 echo
