@@ -57,6 +57,26 @@ CREATED_PROJECT=""
 CONSOLE_PID=""
 step() { echo; echo "══ $* ══"; }
 fail() { echo "  ✗ $*" >&2; FAILED=$((FAILED+1)); }
+GATE_DEADLINE_SECONDS="${GATE_DEADLINE_SECONDS:-15}"
+NEGATIVE_GATE="${NEGATIVE_GATE:-}"
+poll_console() {
+  local deadline=$(( $(date +%s) + GATE_DEADLINE_SECONDS ))
+  CODE=""
+  while :; do
+    CODE="$(curl -s -o /dev/null -w '%{http_code}' "http://127.0.0.1:${CONSOLE_PORT}/" || true)"
+    [ "$CODE" = "200" ] && return 0
+    if [ "$(date +%s)" -ge "$deadline" ]; then
+      echo "  ✗ console deadline ${GATE_DEADLINE_SECONDS}s expected [http 200] got [${CODE:-no response}]" >&2
+      FAILED=$((FAILED+1))
+      if [ "$NEGATIVE_GATE" = "console-ready" ]; then
+        echo "NEGATIVE_CONTROL gate=console-ready deadline=${GATE_DEADLINE_SECONDS}s condition=absent"
+        exit 97
+      fi
+      return 1
+    fi
+    sleep 0.1
+  done
+}
 
 cleanup() {
   [ "$KEEP" = "1" ] && { echo; echo "kept: $CONTAINER (--keep)"; return 0; }
@@ -139,13 +159,14 @@ if [ "$CONSOLE" = "1" ]; then
   step "console"
   SECRET="$(openssl rand -hex 8 2>/dev/null || echo acceptsecret)"
   TOKEN="$(grep '^API_TOKEN=' container/.env | cut -d= -f2)"
-  CONSOLE_PID="$(cd clients/web && setsid python3 server.py --listen 0.0.0.0 --port "$CONSOLE_PORT" \
-      --api "http://127.0.0.1:${API_PORT}" --session "http://127.0.0.1:${SESSION_PORT}" \
-      --token "$TOKEN" --secret "$SECRET" > /tmp/accept-console.log 2>&1 & echo $!)"
-  sleep 8
-  CODE="$(curl -s -o /dev/null -w '%{http_code}' "http://127.0.0.1:${CONSOLE_PORT}/" || true)"
+  if [ "$NEGATIVE_GATE" != "console-ready" ]; then
+    CONSOLE_PID="$(cd clients/web && setsid python3 server.py --listen 0.0.0.0 --port "$CONSOLE_PORT" \
+        --api "http://127.0.0.1:${API_PORT}" --session "http://127.0.0.1:${SESSION_PORT}" \
+        --token "$TOKEN" --secret "$SECRET" > /tmp/accept-console.log 2>&1 & echo $!)"
+  fi
+  poll_console
   echo "  console http=${CODE}"
-  [ "$CODE" = "200" ] || { fail "console did not answer"; tail -3 /tmp/accept-console.log; }
+  [ "$CODE" = "200" ] || tail -3 /tmp/accept-console.log
   if python3 -c "import playwright" 2>/dev/null; then
     python3 clients/web/flow-check.py --console "http://127.0.0.1:${CONSOLE_PORT}" \
       --secret "$SECRET" --container "$CONTAINER" --tenant "$TENANT" 2>&1 | tail -12
