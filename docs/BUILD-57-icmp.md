@@ -1,7 +1,11 @@
 # Build 57 — there is no ICMP
 
-> **Base on `main`.** Branch `<lane>/build-57-icmp`, push to origin.
-> Owner: `bus`. Follows build 54.
+> ⚠ **PARKED, not filed. Do not start this.** The gap is real and recorded, but
+> building it now is feature work ahead of proof. **The framework has never been
+> shown to hold under duration, scale or injected failure** — that comes first,
+> in build 58. Revisit after.
+>
+> Base on `main` when it is unparked. Owner: `bus`.
 
 ## 1. The gap, verified
 
