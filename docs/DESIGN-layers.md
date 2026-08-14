@@ -47,7 +47,7 @@ layers.**
 
 | | what it checks | data | measured |
 |---|---|---|---|
-| **switch** | L2 port ACL — may these two ports talk inside this tenant | small, changes on hire/letGo, **cacheable in memory** | **0.2 µs**; +10% over forwarding-only |
+| **switch** | ⚠ **an L2 port ACL was DESCRIBED here and is NOT BUILT and NOT DECIDED.** §2.5 says switch policy is *none*, and the code has only a roster membership check. **The two sections contradicted each other; this is the open question, not a decision** | — | 0.2 µs *if* ever built |
 | **sending port** | RT export/import tags | freshness-sensitive, read per send | 28–46 µs, invisible against a ~233 ms send path |
 | **router's port** | L3 policy between domains | the router is a **station with a port like any other** | its own port's problem |
 
@@ -111,7 +111,12 @@ is the whole model: ports do the work, the switch moves frames.
 
 **Port, once per send — it builds and it filters:**
 
-1. **build** — stamp `source` from the port itself, not from a caller argument
+1. **build** — ⚠ **INTENDED, NOT BUILT.** `doors.send()` takes `source` from the
+   **caller** and `require_allowed()` at `doors.py:34` evaluates policy against
+   it; the switch only corrects `l2.source` at `service.py:90`, **after** policy
+   has run. Consistent with §2.3 (the port filters mistakes, not adversaries),
+   but the port does **not** stamp identity. Making it structural is h-vab's
+   bound-`Port` handle, recorded as *not taken* in `DECISION-h-vab`
 2. is `destination` local? → address it directly
 3. if not → is there a default route? → address the envelope to the **router**
 4. do my export tags meet its import tags? → fail fast, real error **at the
@@ -392,7 +397,34 @@ restarts.
 
 ---
 
-## 8. ⚠ The liveness fix belongs in the receiving PORT, not the switch
+## 8. ⚠⚠ BLOCKED — DO NOT BUILD. Three independent reviews found this design does not compose
+
+> ⚠ **`api`, `bus` and `tmux` reviewed this section separately and converged.**
+> The recovery design below **cannot be built as written**. Three structural
+> problems, each of which invalidates part of it:
+>
+> **1. The stale `delivering` tag defeats re-kick.** `run_port` loops on `HSETNX`
+> until success and only clears in `finally`, which `SIGKILL` skips. So a holder
+> killed after acquisition wedges that agent **permanently**, and re-kicking it
+> creates *more processes that wait forever* without restoring liveness.
+> `tmux`: *"Re-kick alone can turn one stranded frame into an unbounded set of
+> waiting port processes."* **Ownership must be solved first** — a lease with
+> expiry, or explicit stale-owner reconciliation.
+>
+> **2. `Ping`'s "the record is the reply" is false.** ⚠ Custody records go to
+> **PID 1 stdout**, and the watchdog reads neither `docker logs` nor any durable
+> ledger. **There is no path by which the watchdog observes the reply.** A probe
+> needs correlated, readable state — which is `bus`'s "durable custody ledger"
+> finding arriving from a second direction.
+>
+> **3. Depth cannot distinguish slow from dead.** All three said this
+> independently. A healthy agent running a long tmux command climbs for minutes.
+> Dead-lettering on climbing depth destroys legitimate work.
+>
+> ⚠ **§8.1–8.4 below are retained as the record of the reasoning, not as a
+> buildable design.** The parts that ARE settled: the fix belongs in the port and
+> the watchdog rather than the switch; ingress must be bounded at forward time
+> (§8.3); a kicked port losing `HSETNX` should exit rather than spin.
 
 > ⚠ **STATUS — read this before implementing anything below.** `api`'s design
 > review found that this section, §8.1, §8.2 and §3.1 **state intent in the

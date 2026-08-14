@@ -224,7 +224,7 @@ A document contradicting itself is the exact defect build 44 was written to
 catch, and it sat here for a week in the one document whose job is to settle
 what words mean.
 
-**All five are now decided, and none are executed** — see
+✅ **All five are decided AND EXECUTED** (build 56). ⚠ This line previously read *"none are executed"*, contradicting the ✅ rows above it and the code — caught by `bus` and `tmux` independently. See
 [`BUILD-49-vocabulary.md`](BUILD-49-vocabulary.md), which is parked on
 `rename/vocabulary` until the new frame works.
 
