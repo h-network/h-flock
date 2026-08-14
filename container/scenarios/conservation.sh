@@ -12,8 +12,10 @@ SEND_DELAY="${SEND_DELAY:-0.01}"
 WORK="${WORK:-/tmp/conservation-${TENANT}}"
 REDIS_URL="redis://127.0.0.1:6379/0"
 mkdir -p "$WORK"
-: >"$WORK/injections.tsv"
-: >"$WORK/samples.tsv"
+if [ "${RECONCILE_ONLY:-0}" != "1" ]; then
+  : >"$WORK/injections.tsv"
+  : >"$WORK/samples.tsv"
+fi
 
 dx() { docker exec -i "$CONTAINER" "$@"; }
 tmux_switch=""
@@ -58,12 +60,14 @@ PY
 }
 
 start_test_switch() {
-  dx sh -c "env REDIS_URL='$REDIS_URL' POD='$POD' TENANT='$TENANT' ROSTER_POLL_SECONDS=1 ACTIVITY_POLL_SECONDS=60 python3 -m flock.switch >/tmp/conservation-switch.log 2>&1 & echo \$!" | tr -d '\r'
+  # Reconciliation reads docker logs, so every custody emitter must inherit
+  # PID 1's stdout. A docker-exec session or a private file is not evidence.
+  dx sh -c "env REDIS_URL='$REDIS_URL' POD='$POD' TENANT='$TENANT' ROSTER_POLL_SECONDS=1 ACTIVITY_POLL_SECONDS=60 python3 -m flock.switch >>/proc/1/fd/1 2>&1 & echo \$!" | tr -d '\r'
 }
 
 wait_for_queues() {
-  local limit="${1:-2400}" depths
-  for _ in $(seq 1 "$limit"); do
+  local deadline=$((SECONDS + ${1:-2400})) depths
+  while [ "$SECONDS" -lt "$deadline" ]; do
     depths="$(dx python3 - "$POD" "$TENANT" <<'PY'
 import os, sys
 sys.path.insert(0, "/app/src")
