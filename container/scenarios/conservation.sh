@@ -267,14 +267,16 @@ for seq, (sid, source, dst, sent_ts) in sent.items():
         if sid in ingress:
             stranded.append((seq, sid))
             continue
-        cause = None
+        # A recordless switch loss is strongest when same-source FIFO
+        # neighbours bracket the kill. Prefer that direct ordering evidence to
+        # the deliberately padded timestamp-window fallback.
+        cause = switch_kill_bracket(seq, sid, source)
         times = event_times(sid)
-        for start, end, kind, detail in windows:
-            if start - 2 <= sent_ts <= end + 2 or any(start - 1 <= t <= end + 1 for t in times):
-                cause = f"{kind}:{detail}"
-                break
         if cause is None:
-            cause = switch_kill_bracket(seq, sid, source)
+            for start, end, kind, detail in windows:
+                if start - 2 <= sent_ts <= end + 2 or any(start - 1 <= t <= end + 1 for t in times):
+                    cause = f"{kind}:{detail}"
+                    break
         (attributed if cause else unexplained).append((seq, sid, cause or "none"))
 print(f"RECONCILE sent={len(sent)} delivered_once={sum(opened[sid] == 1 for sid, _, _, _ in sent.values())} duplicates={len(duplicates)} dead={len(dead_loss)} stranded={len(stranded)} lost_attributed={len(attributed)} lost_unexplained={len(unexplained)}")
 print(f"PARSE_FAILURES docker_json={log_parse_failures} dead_json={dead_parse_failures} ingress_json={ingress_parse_failures} event_ts={event_time_failures}")
@@ -475,6 +477,15 @@ time.sleep(1)
 PY
   # Stop production before the target exists, then enqueue target and successor.
   dx kill -STOP "$tmux_switch"
+  deadline=$((SECONDS + 10))
+  while [ "$SECONDS" -lt "$deadline" ]; do
+    case "$(dx sh -c "ps -o stat= -p $tmux_switch" | tr -d '\r ')" in T*) break ;; esac
+    sleep .05
+  done
+  case "$(dx sh -c "ps -o stat= -p $tmux_switch" | tr -d '\r ')" in
+    T*) ;;
+    *) echo "D SETUP RED: production switch did not stop"; return 3 ;;
+  esac
   build67_redis >>"$WORK/d-injected.tsv" <<'PY'
 import json, os, sys, time
 sys.path.insert(0,"/app/src"); import redis
