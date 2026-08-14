@@ -4,7 +4,7 @@ import unittest
 from contextlib import redirect_stdout
 from unittest.mock import patch
 
-from flock.bus import EnvelopeError, build, emit, is_member, members, parse, prefix, receive, send, port_type
+from flock.bus import EnvelopeError, build, emit, is_member, members, parse, prefix, receive, send, port_type, tags_key
 from flock.bus.envelope import parse_for_switch
 from flock.switch.service import Switch
 
@@ -189,6 +189,59 @@ class DoorsAndRouterTest(unittest.TestCase):
         self.assertEqual(record["event"], "send_refused")
         self.assertEqual(record["source"], "alice")
         self.assertEqual(record["destination"], "acme:sales:bob")
+
+    def test_policy_denial_refuses_before_assembly_and_emits_record(self):
+        self.r.hashes[tags_key("acme", "hq", "alice")] = {
+            "export": json.dumps(["engineering"])
+        }
+        self.r.hashes[tags_key("acme", "hq", "bob")] = {
+            "import": json.dumps(["finance"])
+        }
+        output = io.StringIO()
+        with patch("flock.bus.doors.build") as assemble, redirect_stdout(output):
+            with self.assertRaisesRegex(EnvelopeError, "policy denied"):
+                send(
+                    self.r,
+                    pod="acme",
+                    tenant="hq",
+                    source="alice",
+                    destination="bob",
+                    payload={},
+                )
+        assemble.assert_not_called()
+        self.assertNotIn(prefix("acme", "hq", "alice", "egress"), self.r.lists)
+        record = json.loads(output.getvalue())
+        self.assertEqual(record["event"], "send_refused")
+        self.assertEqual(record["source"], "alice")
+        self.assertEqual(record["destination"], "bob")
+        self.assertIn("no shared export/import tag", record["reason"])
+
+    def test_policy_permits_shared_tag_and_absent_policy(self):
+        # No policy is the switchport default: permit.
+        send(
+            self.r,
+            pod="acme",
+            tenant="hq",
+            source="alice",
+            destination="bob",
+            payload={},
+        )
+        self.r.lists.clear()
+        self.r.hashes[tags_key("acme", "hq", "alice")] = {
+            "export": json.dumps(["engineering", "reviewers"])
+        }
+        self.r.hashes[tags_key("acme", "hq", "bob")] = {
+            "import": json.dumps(["reviewers", "operations"])
+        }
+        send(
+            self.r,
+            pod="acme",
+            tenant="hq",
+            source="alice",
+            destination="bob",
+            payload={},
+        )
+        self.assertEqual(len(self.r.lists[prefix("acme", "hq", "alice", "egress")]), 1)
 
     def test_switch_forwards_on_l2_without_reading_l3_destination(self):
         frame = build(

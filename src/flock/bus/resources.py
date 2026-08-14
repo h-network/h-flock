@@ -15,6 +15,7 @@ AGENT_STATE_RESOURCES = frozenset(
         "alerted",
         "presence",
         "pending.verify",
+        "tags",
     }
 )
 

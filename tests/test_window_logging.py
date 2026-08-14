@@ -30,6 +30,9 @@ class LogRedis:
     def hexists(self, key, field):
         return field in self.hashes.get(key, {})
 
+    def hget(self, key, field):
+        return self.hashes.get(key, {}).get(field)
+
     def get(self, key):
         return self.values.get(key)
 
