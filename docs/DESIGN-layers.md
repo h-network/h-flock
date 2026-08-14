@@ -90,6 +90,38 @@ cost tracks tag-set size, not roster size — 30.6 / 28.3 / 29.5 µs at rosters 
 10 / 100 / 1000. Tags beat pairs because of how they are stored, wherever the
 check runs.
 
+### ⚠ 2.1b Where the time actually goes — measured in situ, two independent logs
+
+Every earlier cost claim here came from **microbenchmarks of isolated
+operations**. This is the whole path, reconstructed from custody records by
+joining on `stream_id` — the log we were already writing and discarding.
+
+| stage | base run (2,100) | build 69 (14,549) |
+|---|---|---|
+| `popped → forwarded` — **the switch's own work** | **7 ms** | **13 ms** |
+| **`forwarded → received`** — kick, spawn, port start, pop | **659 ms** | **911 ms** |
+| `received → opened` — the port's delivery work | **3 ms** | **6 ms** |
+
+⚠ **The switch is about 1% of the delivery path.** Two logs, captured hours
+apart under different loads, disagree on absolutes and agree exactly on shape:
+the switch and the delivery are single-digit milliseconds, and **kick-to-pop is
+two orders of magnitude larger.**
+
+⚠ **This recontextualises every optimisation argument in §2 and §3.1.** The FIB,
+the read-set discipline, where policy lives — all of it concerns a component
+that already costs ~1%. **Correct as design, negligible as performance.** The
+measured 0.2 µs versus 1.6 ms for a cached-versus-Redis lookup is a real
+difference inside a 7 ms stage inside a 930 ms path.
+
+⚠ **And process spawn is 4× worse in situ than in isolation.** Microbenchmarks
+gave ~230 ms; under real contention it is 659–911 ms. We reasoned from the
+smaller number for two days.
+
+⚠ **Wall-clock throughput was flattering the tail, not the work.** The same base
+run reads **6.47/s steady-state** and **5.36/s wall-clock** — 21% apart, because
+wall-clock keeps counting through a drain in which nothing arrives. Much of the
+"35% host variance" is this.
+
 ### 2.1a The router is a station, so it has a port
 
 Nothing about the switch changes when the router arrives, and nothing special
