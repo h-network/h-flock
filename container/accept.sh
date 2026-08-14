@@ -160,9 +160,10 @@ if [ "$CONSOLE" = "1" ]; then
   SECRET="$(openssl rand -hex 8 2>/dev/null || echo acceptsecret)"
   TOKEN="$(grep '^API_TOKEN=' container/.env | cut -d= -f2)"
   if [ "$NEGATIVE_GATE" != "console-ready" ]; then
-    CONSOLE_PID="$(cd clients/web && setsid python3 server.py --listen 0.0.0.0 --port "$CONSOLE_PORT" \
+    (cd clients/web && exec setsid python3 server.py --listen 0.0.0.0 --port "$CONSOLE_PORT" \
         --api "http://127.0.0.1:${API_PORT}" --session "http://127.0.0.1:${SESSION_PORT}" \
-        --token "$TOKEN" --secret "$SECRET" > /tmp/accept-console.log 2>&1 & echo $!)"
+        --token "$TOKEN" --secret "$SECRET") > /tmp/accept-console.log 2>&1 &
+    CONSOLE_PID="$!"
   fi
   poll_console
   echo "  console http=${CODE}"
