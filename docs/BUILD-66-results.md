@@ -117,4 +117,45 @@ theoretical, even though this interval's forwarding throughput held above the
 6.45/s baseline. A kicked port that loses the busy-tag acquisition should be
 considered for immediate exit: the holder is already draining, and later
 writes carry their own kicks. That is a separate design change and is not in
-this build.
+the original drain commit.
+
+## Exit-not-spin follow-up
+
+Commit `aaed71f` changes a redundant kicked port to exit immediately when
+`HSETNX` says another invocation owns that participant's delivery lock. Its
+unit gate proves that the loser does not call `deliver_one`, does not sleep,
+and does not alter the holder's tag. The rebased full suite passed:
+
+```text
+377 passed, 5 subtests passed in 14.79s
+```
+
+An instrumented benchmark was deliberately rejected as a throughput result.
+Repeated process-table scans and `docker stats` calls on the same host reduced
+it to 4.61/s. It did establish that total concurrent processes is the wrong
+metric: deliveries to different participants are intentionally parallel.
+Corrected per-participant sampling observed transient fork overlap up to six
+processes for one participant and at most two contended participants in one
+sample. Those losers exit rather than polling, but the sampler's own load means
+its CPU and throughput figures are not a baseline comparison.
+
+A second unsampled run was also rejected because it reused the instrumented
+tenant. `fabric-bench` scans the complete Docker log each second, so the prior
+4,300-record history changed the cost of its drain gate.
+
+The decisive run used a newly created tenant with fresh Redis and Docker logs,
+no samplers, and exactly one 100 by 20 benchmark:
+
+```text
+submitted 2000 packets in 19.5s = 102/s at the sender
+expected 2000, delivered 2000
+end to end: 360.9s = 5.54 delivered/s
+envelopes with the full record set: 2100 of 2100
+exit=0
+```
+
+The prediction that exit-not-spin would recover throughput to at least 6.45/s
+is false. The clean 5.54/s result is 14.1% below that baseline and 3.1% below
+the original drain run's 5.72/s. Removing persistent waiters is still the
+correct liveness/load behaviour, but the waiter herd was not the source of the
+measured throughput regression. Build 66 remains held for a merge decision.
