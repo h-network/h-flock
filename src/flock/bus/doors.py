@@ -13,6 +13,25 @@ class DeadLetter(Exception):
     """Signal that an opener rejected an envelope after receive took custody."""
 
 
+def _emit_for_recipient(
+    module: str,
+    event: str,
+    envelope: dict,
+    recipient: str,
+    reason: str | None = None,
+) -> None:
+    """Emit receive-side custody about the actual participant, not L2 fan-out."""
+    log_record(
+        module,
+        event,
+        stream_id=envelope.get("stream_id"),
+        correlation_id=envelope.get("correlation_id"),
+        source=envelope.get("l2", {}).get("source"),
+        destination=recipient,
+        reason=reason,
+    )
+
+
 def send(
     r,
     *,
@@ -85,22 +104,26 @@ def receive(
         envelope = parse(raw)
     except EnvelopeError as exc:
         r.rpush(prefix(pod, tenant, agent, "dead"), raw)
-        emit(module, "dead_lettered", {}, str(exc))
+        _emit_for_recipient(module, "dead_lettered", {}, agent, str(exc))
         return
-    emit(module, "received", envelope)
+    _emit_for_recipient(module, "received", envelope, agent)
     opener = openers.get(envelope["kind"])
     if opener is None:
         r.rpush(prefix(pod, tenant, agent, "dead"), raw)
-        emit(module, "dead_lettered", envelope, f"unknown kind: {envelope['kind']}")
+        _emit_for_recipient(
+            module, "dead_lettered", envelope, agent, f"unknown kind: {envelope['kind']}"
+        )
         return
     try:
         opener(envelope)
     except DeadLetter as exc:
         r.rpush(prefix(pod, tenant, agent, "dead"), raw)
-        emit(module, "dead_lettered", envelope, str(exc))
+        _emit_for_recipient(module, "dead_lettered", envelope, agent, str(exc))
         return
     except Exception as exc:
         r.rpush(prefix(pod, tenant, agent, "dead"), raw)
-        emit(module, "dead_lettered", envelope, f"opener failed: {exc}")
+        _emit_for_recipient(
+            module, "dead_lettered", envelope, agent, f"opener failed: {exc}"
+        )
         return
-    emit(module, "opened", envelope)
+    _emit_for_recipient(module, "opened", envelope, agent)

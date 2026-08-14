@@ -513,8 +513,135 @@ PY
   echo "WATCHDOG_OBSERVATION D=durable custody sequence around each source FIFO: sent/preceding-popped/following-popped plus switch-process generation; no frame-local record exists"
 }
 
+broadcast69_reconcile() {
+  local ledger="$1" label="$2"
+  docker logs "$CONTAINER" >"$WORK/${label}.docker.log" 2>&1
+  python3 - "$ledger" "$WORK/${label}.docker.log" <<'PY'
+import collections, json, sys
+ledger_path, log_path = sys.argv[1:]
+expected = set()
+with open(ledger_path) as handle:
+    for line in handle:
+        if line.strip():
+            stream_id, recipient = line.rstrip().split("\t")
+            expected.add((stream_id, recipient))
+opened = collections.Counter()
+parse_failures = 0
+with open(log_path, errors="replace") as handle:
+    for line in handle:
+        if not line.lstrip().startswith("{"):
+            continue
+        try:
+            record = json.loads(line)
+        except Exception:
+            parse_failures += 1
+            continue
+        if record.get("event") == "opened":
+            opened[(record.get("stream_id"), record.get("destination"))] += 1
+duplicates = [(key, count) for key, count in opened.items() if key in expected and count > 1]
+lost = [key for key in expected if opened[key] == 0]
+unexpected = [(key, count) for key, count in opened.items() if key not in expected and key[0] in {sid for sid, _ in expected}]
+delivered = sum(opened[key] == 1 for key in expected)
+print(f"BROADCAST_RECONCILE expected={len(expected)} delivered_once={delivered} duplicates={len(duplicates)} lost={len(lost)} unexpected_recipient={len(unexpected)} parse_failures={parse_failures}")
+for key, count in duplicates[:10]: print("BROADCAST_DUPLICATE", key[0], key[1], count)
+for key in lost[:10]: print("BROADCAST_LOST", key[0], key[1])
+for key, count in unexpected[:10]: print("BROADCAST_UNEXPECTED_RECIPIENT", key[0], key[1], count)
+sys.exit(4 if parse_failures else (2 if (duplicates or unexpected) else (1 if lost else 0)))
+PY
+}
+
+broadcast69_seed() {
+  dx redis-cli DEL "pod:$POD:tenant:$TENANT:roster" >/dev/null
+  seed_stations
+  clear_station_state
+  seed_stations
+}
+
+broadcast69_push() {
+  local broadcasts="$1" unicasts="$2" ledger="$3" duplicate="${4:-0}"
+  build67_redis "$STATIONS" "$broadcasts" "$unicasts" "$duplicate" >"$ledger" <<'PY'
+import json, os, sys, time
+sys.path.insert(0, "/app/src")
+import redis
+from flock.bus import build, prefix
+pod, tenant, stations, broadcasts, unicasts, duplicate = sys.argv[1], sys.argv[2], int(sys.argv[3]), int(sys.argv[4]), int(sys.argv[5]), int(sys.argv[6])
+r = redis.Redis.from_url(os.environ.get("REDIS_URL", "redis://127.0.0.1:6379/0"))
+key = prefix(pod, tenant, "cons-0", "egress")
+for sequence in range(broadcasts):
+    frame = build("Message", "cons-0", "all", {"broadcast_sequence": sequence}, pod=pod, tenant=tenant)
+    for i in range(1, stations): print(f"{frame['stream_id']}\tcons-{i}")
+    raw = json.dumps(frame, separators=(",", ":"))
+    r.rpush(key, raw, raw) if duplicate and sequence == 0 else r.rpush(key, raw)
+for sequence in range(unicasts):
+    recipient = f"cons-{1 + sequence % (stations - 1)}"
+    frame = build("Message", "cons-0", recipient, {"unicast_sequence": sequence}, pod=pod, tenant=tenant)
+    print(f"{frame['stream_id']}\t{recipient}")
+    r.rpush(key, json.dumps(frame, separators=(",", ":")))
+PY
+}
+
+broadcast69_sample() {
+  local label="$1"
+  while true; do
+    printf '%s\t' "$(date +%s.%N)" >>"$WORK/${label}.load.tsv"
+    dx sh -c "ps -eo args= | grep -c '[f]lock.port cons-' || true" | tr -d '\r\n' >>"$WORK/${label}.load.tsv"
+    printf '\t' >>"$WORK/${label}.load.tsv"
+    docker stats --no-stream --format '{{.CPUPerc}}' "$CONTAINER" 2>/dev/null | tr -d '\n' >>"$WORK/${label}.load.tsv" || true
+    printf '\n' >>"$WORK/${label}.load.tsv"
+    sleep .2
+  done
+}
+
+run_broadcast69() {
+  local broadcasts="${BROADCASTS:-20}" unicasts="${BROADCAST_UNICASTS:-100}" rc
+  echo "broadcast69 stations=$STATIONS broadcasts=$broadcasts mixed_unicasts=$unicasts"
+
+  echo "== broadcast negative control: duplicate =="
+  broadcast69_seed; broadcast69_push 1 0 "$WORK/broadcast-duplicate.tsv" 1
+  wait_for_queues 180 || return 3
+  broadcast69_reconcile "$WORK/broadcast-duplicate.tsv" broadcast-duplicate >"$WORK/broadcast-duplicate.result"
+  rc=$?; cat "$WORK/broadcast-duplicate.result"
+  [ "$rc" = 2 ] || { echo "BROADCAST HARNESS DEFECT: duplicate control rc=$rc"; return 3; }
+
+  echo "== broadcast negative control: one recipient lost =="
+  broadcast69_seed
+  dx redis-cli SET "pod:$POD:tenant:$TENANT:agent:cons-1:paused" 1 >/dev/null
+  broadcast69_push 1 0 "$WORK/broadcast-loss.tsv"
+  while [ "$(dx redis-cli LLEN "pod:$POD:tenant:$TENANT:agent:cons-0:egress" | tr -d '\r')" != 0 ]; do sleep .1; done
+  dx redis-cli LPOP "pod:$POD:tenant:$TENANT:agent:cons-1:ingress" >/dev/null
+  dx redis-cli DEL "pod:$POD:tenant:$TENANT:agent:cons-1:paused" >/dev/null
+  wait_for_queues 180 || return 3
+  broadcast69_reconcile "$WORK/broadcast-loss.tsv" broadcast-loss >"$WORK/broadcast-loss.result"
+  rc=$?; cat "$WORK/broadcast-loss.result"
+  [ "$rc" = 1 ] || { echo "BROADCAST HARNESS DEFECT: loss control rc=$rc"; return 3; }
+
+  echo "== fan-out baseline: 20 unicast sends =="
+  broadcast69_seed; : >"$WORK/unicast.load.tsv"
+  broadcast69_sample unicast & sampler=$!
+  broadcast69_push 0 20 "$WORK/unicast-baseline.tsv"
+  wait_for_queues 180 || return 3
+  kill "$sampler" 2>/dev/null || true; wait "$sampler" 2>/dev/null || true; sampler=""
+  broadcast69_reconcile "$WORK/unicast-baseline.tsv" unicast-baseline || return 3
+
+  echo "== broadcast mixed conservation =="
+  broadcast69_seed; : >"$WORK/broadcast.load.tsv"
+  broadcast69_sample broadcast & sampler=$!
+  broadcast69_push "$broadcasts" "$unicasts" "$WORK/broadcast-clean.tsv"
+  wait_for_queues 600 || return 3
+  kill "$sampler" 2>/dev/null || true; wait "$sampler" 2>/dev/null || true; sampler=""
+  broadcast69_reconcile "$WORK/broadcast-clean.tsv" broadcast-clean || return 3
+  echo "LOAD_SAMPLES format=timestamp,concurrent_ports,cpu_percent"
+  echo "UNICAST_LOAD"; cat "$WORK/unicast.load.tsv"
+  echo "BROADCAST_LOAD"; cat "$WORK/broadcast.load.tsv"
+}
+
 if [ "${BUILD67:-0}" = "1" ]; then
   run_build67
+  exit $?
+fi
+
+if [ "${BROADCAST69_ONLY:-0}" = "1" ]; then
+  run_broadcast69
   exit $?
 fi
 
@@ -641,3 +768,6 @@ echo "== growth samples: elapsed_s used_memory_bytes queue_depth pid1_rss_kib ==
 cat "$WORK/samples.tsv"
 echo "== reconciliation =="
 reconcile "$WORK/ledger.tsv" clean
+if [ "${BROADCAST69:-0}" = "1" ]; then
+  run_broadcast69
+fi

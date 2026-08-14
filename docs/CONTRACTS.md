@@ -238,7 +238,7 @@ transport paths for records, not competing lifecycle schemas.
 | `event` | required | see below |
 | `stream_id` | envelope events only | the join key; absent on lifecycle records |
 | `correlation_id` | when known | |
-| `source`, `destination` | when known | |
+| `source`, `destination` | when known | `destination` is the participant the record is about; receive-side broadcast records name the actual recipient, not literal L2 `all` |
 | `reason` | on a failure | why it dead-lettered or was refused |
 | `count` | on a broadcast | how many copies were written |
 | `task_id` | on a board move | the entry's `id` |
@@ -268,8 +268,12 @@ which is not about any envelope. Those carry no `stream_id`: it is the join key
 for one envelope's life, and a synthetic value like `"system"` in that field
 makes the five records of a real **unicast** envelope harder to find, not
 easier. ⚠ **A broadcast leaves three shared records plus a `received`/`opened`
-pair per destination** — the pairs carry `destination: all` and cannot be told apart
-by that field; `forwarded.count` is the cardinality. `stream_id`
+pair per recipient.** The pairs name the actual receiving participant even
+though the unchanged frame still carries L2 `destination: all`;
+`forwarded.count` is the cardinality. N receive-side pairs sharing one
+`stream_id` are correct for a broadcast. More than one record for the same
+`(stream_id, recipient)` is a duplicate; for unicast, more than one record for
+the `stream_id` is therefore still a defect. `stream_id`
 is required on the six events above and absent on the rest.
 
 `send_refused` is **not a sixth custody record**. It says the sending port
