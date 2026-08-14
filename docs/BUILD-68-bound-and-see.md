@@ -34,7 +34,7 @@ it is handed — no `LLEN`, no extra round trip, no new read.
 
 ## 2. Emit `popped` immediately after `BLPOP`
 
-`service.py:68` removes the frame from egress before any record exists, so a
+`switch/service.py:68` removes the frame from egress before any record exists, so a
 switch killed there loses it with **zero** records. Build 66 hit this twice;
 build 67 reproduced it deliberately.
 
