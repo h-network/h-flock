@@ -171,6 +171,40 @@ class DoorsAndRouterTest(unittest.TestCase):
         )
         self.assertEqual(opened[0]["stream_id"], stream_id)
 
+    def test_broadcast_receive_records_name_each_actual_recipient(self):
+        output = io.StringIO()
+        opened = {"bob": [], "carol": []}
+        with redirect_stdout(output):
+            stream_id = send(
+                self.r,
+                pod="acme",
+                tenant="hq",
+                source="alice",
+                destination="all",
+                payload={"text": "hello everyone"},
+            )
+            self.assertTrue(Switch(self.r, pod="acme", tenant="hq").step())
+            for recipient in opened:
+                receive(
+                    self.r,
+                    pod="acme",
+                    tenant="hq",
+                    agent=recipient,
+                    openers={"Message": opened[recipient].append},
+                    timeout=1,
+                )
+
+        records = [json.loads(line) for line in output.getvalue().splitlines()]
+        receive_records = [
+            record for record in records if record["event"] in {"received", "opened"}
+        ]
+        self.assertEqual(
+            [(record["event"], record["destination"]) for record in receive_records],
+            [("received", "bob"), ("opened", "bob"), ("received", "carol"), ("opened", "carol")],
+        )
+        self.assertEqual({record["stream_id"] for record in receive_records}, {stream_id})
+        self.assertTrue(all(items[0]["l2"]["destination"] == "all" for items in opened.values()))
+
     def test_non_local_destination_fails_at_sender_and_is_recorded(self):
         output = io.StringIO()
         with redirect_stdout(output), self.assertRaisesRegex(
