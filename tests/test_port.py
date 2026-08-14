@@ -39,6 +39,9 @@ class MockRedis:
         values = self.lists.get(key, [])
         return values.pop(0) if values else None
 
+    def llen(self, key):
+        return len(self.lists.get(key, []))
+
     def hset(self, key, field, value):
         if key not in self.hashes:
             self.hashes[key] = {}
@@ -307,7 +310,7 @@ def test_add_ticket_opener_appends_to_task_record(mock_run_tmux, mock_list_windo
 @patch("flock.port.deliver.redis.Redis.from_url")
 @patch("flock.port.openers.list_windows")
 @patch("flock.tmux.ops.run_tmux")
-def test_run_port_kicked_one_shot(mock_run_tmux, mock_list_windows, mock_redis_cls):
+def test_run_port_kicked_drains_two_envelopes_without_waiting(mock_run_tmux, mock_list_windows, mock_redis_cls):
     mock_r = MockRedis()
     mock_redis_cls.return_value = mock_r
     mock_list_windows.return_value = {"alice", "bob"}
@@ -317,8 +320,9 @@ def test_run_port_kicked_one_shot(mock_run_tmux, mock_list_windows, mock_redis_c
     mock_r.hset(roster_key, "bob", "tmux")
 
     ingress_key = "pod:acme:tenant:hq:agent:bob:ingress"
-    env = build_envelope(kind="Message", source="alice", destination="bob", payload={"text": "kicked message"})
-    mock_r.rpush(ingress_key, json.dumps(env))
+    for text in ("first queued message", "second queued message"):
+        env = build_envelope(kind="Message", source="alice", destination="bob", payload={"text": text})
+        mock_r.rpush(ingress_key, json.dumps(env))
 
     run_port(agent="bob", pod="acme", tenant="hq", session_name="hq")
 
@@ -328,7 +332,33 @@ def test_run_port_kicked_one_shot(mock_run_tmux, mock_list_windows, mock_redis_c
     assert not mock_r.hexists(delivering_key, "bob")
 
     cmd_args = [call[0] for call in mock_run_tmux.call_args_list]
-    assert any("paste-buffer" in cmd and "hq:bob" in cmd for cmd in cmd_args)
+    paste_calls = [cmd for cmd in cmd_args if "paste-buffer" in cmd and "hq:bob" in cmd]
+    assert len(paste_calls) == 2
+
+
+@patch("flock.port.deliver.DRAIN_LIMIT", 2)
+@patch("flock.port.deliver.redis.Redis.from_url")
+@patch("flock.port.openers.list_windows")
+@patch("flock.tmux.ops.run_tmux")
+def test_run_port_drain_stops_at_cap(mock_run_tmux, mock_list_windows, mock_redis_cls):
+    mock_r = MockRedis()
+    mock_redis_cls.return_value = mock_r
+    mock_list_windows.return_value = {"alice", "bob"}
+    mock_run_tmux.return_value = (0, "", "")
+    mock_r.hset("pod:acme:tenant:hq:roster", "bob", "tmux")
+    ingress_key = "pod:acme:tenant:hq:agent:bob:ingress"
+    for sequence in range(3):
+        envelope = build_envelope(
+            kind="Message",
+            source="alice",
+            destination="bob",
+            payload={"sequence": sequence},
+        )
+        mock_r.rpush(ingress_key, json.dumps(envelope))
+
+    run_port(agent="bob", pod="acme", tenant="hq", session_name="hq")
+
+    assert len(mock_r.lists[ingress_key]) == 1
 
 
 @patch("flock.port.deliver.redis.Redis.from_url")

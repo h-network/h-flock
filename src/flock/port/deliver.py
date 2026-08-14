@@ -6,6 +6,8 @@ from flock.bus import EnvelopeError, emit, log_record, parse, prefix, receive
 from flock.bus import resp as redis
 from .openers import add_ticket_opener, command_opener, message_opener
 
+DRAIN_LIMIT = 32
+
 
 class _CatchAllDict(dict):
     def __init__(self, default_factory):
@@ -184,13 +186,23 @@ def run_port(
         time.sleep(0.05)
 
     try:
-        deliver_one(
-            r,
-            pod=pod,
-            tenant=tenant,
-            agent=agent,
-            session_name=session_name,
-            socket=socket,
-        )
+        ingress_key = prefix(pod, tenant, agent, "ingress")
+        for _ in range(DRAIN_LIMIT):
+            depth_before = r.llen(ingress_key)
+            if depth_before == 0:
+                break
+            deliver_one(
+                r,
+                pod=pod,
+                tenant=tenant,
+                agent=agent,
+                session_name=session_name,
+                socket=socket,
+            )
+            # A paused or otherwise non-consuming port must not spin to the cap.
+            # If a producer replaced the popped frame concurrently, exiting is
+            # also safe: that write came with its own kick.
+            if r.llen(ingress_key) >= depth_before:
+                break
     finally:
         r.hdel(delivering_key, agent)
