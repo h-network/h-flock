@@ -640,6 +640,11 @@ if [ "${BUILD67:-0}" = "1" ]; then
   exit $?
 fi
 
+if [ "${BROADCAST69_ONLY:-0}" = "1" ]; then
+  run_broadcast69
+  exit $?
+fi
+
 if [ "${RECONCILE_ONLY:-0}" = "1" ]; then
   reconcile "${LEDGER:?set LEDGER}" "${LABEL:-clean}"
   exit $?
