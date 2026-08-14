@@ -2,7 +2,7 @@ import json
 from pathlib import Path
 
 from flock.bus import prefix
-from flock.router.activity import ActivityTailer
+from flock.switch.activity import ActivityTailer
 
 
 class ActivityRedis:

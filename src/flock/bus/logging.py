@@ -64,14 +64,14 @@ def log_record(
     # no use for. Measured: an agent read `{"module":"adapter",...}` out of its
     # own terminal, reasoned that envelope ids imply a broker, went looking, and
     # found Redis. HLD §5 already says these records reach the log through the
-    # window file the router tails — the print was redundant as well as a
+    # window file the switch tails — the print was redundant as well as a
     # signpost. A daemon has no FLOCK_LOG_FILE and still prints to its stdout.
     # ⚠ `office` sets FLOCK_LOG_QUIET because it runs in an agent's PANE: its
     # stdout is the agent's screen. Printing an envelope record there hands the
     # agent module names, stream ids and correlation ids it has no use for.
     # Measured: an agent read {"module":"adapter",...} out of its own terminal,
     # reasoned that envelope ids imply a broker, went looking and found Redis.
-    # The record still reaches the log through the window file the router tails
+    # The record still reaches the log through the window file the switch tails
     # (HLD §5), so nothing is lost. Daemons do not set this and keep printing.
     path = os.environ.get("FLOCK_LOG_FILE")
     if os.environ.get("FLOCK_LOG_QUIET") != "1":

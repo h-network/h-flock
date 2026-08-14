@@ -2,7 +2,7 @@ from unittest.mock import patch
 
 import pytest
 
-from flock.adapter.openers import message_opener
+from flock.port.openers import message_opener
 from flock.bus import build as build_envelope
 from flock.tmux import TmuxCommandError, create_window, list_windows
 
@@ -30,7 +30,7 @@ def test_create_window_does_not_create_when_window_listing_fails(mock_run_tmux, 
     assert [call.args[0] for call in mock_run_tmux.call_args_list] == ["list-windows"]
 
 
-@patch("flock.adapter.openers.list_windows")
+@patch("flock.port.openers.list_windows")
 @patch("flock.tmux.ops.run_tmux")
 def test_message_opener_raises_when_tmux_paste_fails_and_cleans_buffer(mock_run_tmux, mock_list_windows):
     mock_list_windows.return_value = {"bob"}

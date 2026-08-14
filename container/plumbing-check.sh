@@ -170,8 +170,8 @@ echo "== 10. dead-letter =="
 # ⚠ Written straight onto an egress queue, deliberately. Both supported doors
 # refuse an unknown recipient before an envelope exists — the api returns 404 and
 # `office send` errors with "unknown recipient agent" — so neither can reach the
-# router's dead-letter path. This is a test of the ROUTER, so the envelope is
-# placed where the router pops from. Nothing in the product may do this.
+# switch's dead-letter path. This is a test of the ROUTER, so the envelope is
+# placed where the switch pops from. Nothing in the product may do this.
 DEAD_ENV="{\"v\":2,\"kind\":\"Message\",\"stream_id\":\"plumbingdead1\",\"correlation_id\":\"plumbingdead1\",\"ts\":\"2026-01-01T00:00:00.000Z\",\"l2\":{\"source\":\"$AG1\",\"destination\":\"ghost\"},\"l3\":{\"source\":\"$POD:$TENANT:$AG1\",\"destination\":\"$POD:$TENANT:ghost\"},\"payload\":{\"text\":\"nobody home\"}}"
 dx redis-cli DEL "pod:$POD:tenant:$TENANT:agent:$AG1:dead" >/dev/null
 dx redis-cli RPUSH "pod:$POD:tenant:$TENANT:agent:$AG1:egress" "$DEAD_ENV" >/dev/null

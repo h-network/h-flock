@@ -4,9 +4,9 @@ import os
 import tempfile
 import pytest
 from unittest.mock import patch, MagicMock
-from flock.adapter.openers import add_ticket_opener, message_opener, command_opener, get_tmux_windows
-from flock.adapter.cli import main as cli_main
-from flock.adapter.runner import run_adapter
+from flock.port.openers import add_ticket_opener, message_opener, command_opener, get_tmux_windows
+from flock.port.send import main as cli_main
+from flock.port.deliver import run_port
 from flock.bus import DeadLetter, build as build_envelope, prefix, receive
 
 
@@ -72,7 +72,7 @@ class MockRedis:
         return stream_id
 
 
-@patch("flock.adapter.openers.list_windows")
+@patch("flock.port.openers.list_windows")
 @patch("flock.tmux.ops.run_tmux")
 def test_message_opener_window_exists(mock_run_tmux, mock_list_windows):
     mock_list_windows.return_value = {"alice", "bob"}
@@ -95,7 +95,7 @@ def test_message_opener_window_exists(mock_run_tmux, mock_list_windows):
     assert input_data == "[message from alice] hello\n"
 
 
-@patch("flock.adapter.openers.list_windows")
+@patch("flock.port.openers.list_windows")
 def test_message_opener_window_missing(mock_list_windows):
     mock_list_windows.return_value = {"alice"}
 
@@ -108,7 +108,7 @@ def test_message_opener_window_missing(mock_list_windows):
     assert "pod:acme:tenant:hq:agent:bob:dead" not in r.lists
 
 
-@patch("flock.adapter.openers.list_windows")
+@patch("flock.port.openers.list_windows")
 @patch("flock.tmux.ops.run_tmux")
 def test_message_opener_broadcast(mock_run_tmux, mock_list_windows):
     mock_list_windows.return_value = {"alice", "bob", "carol"}
@@ -123,7 +123,7 @@ def test_message_opener_broadcast(mock_run_tmux, mock_list_windows):
     assert any("paste-buffer" in cmd and "hq:bob" in cmd for cmd in cmd_args)
 
 
-@patch("flock.adapter.openers.list_windows")
+@patch("flock.port.openers.list_windows")
 @patch("flock.tmux.ops.run_tmux")
 def test_command_opener_bare_paste(mock_run_tmux, mock_list_windows):
     mock_list_windows.return_value = {"alice", "bob"}
@@ -141,7 +141,7 @@ def test_command_opener_bare_paste(mock_run_tmux, mock_list_windows):
     assert "[message from" not in input_data
 
 
-@patch("flock.adapter.openers.list_windows")
+@patch("flock.port.openers.list_windows")
 @patch("flock.tmux.ops.run_tmux")
 def test_add_ticket_opener_writes_v1_ticket(mock_run_tmux, mock_list_windows):
     mock_list_windows.return_value = {"architect", "backend"}
@@ -172,7 +172,7 @@ def test_add_ticket_opener_writes_v1_ticket(mock_run_tmux, mock_list_windows):
     assert len(load_buffer_calls) == 0
 
 
-@patch("flock.adapter.openers.list_windows")
+@patch("flock.port.openers.list_windows")
 def test_add_ticket_opener_writes_when_window_is_missing(mock_list_windows, capsys):
     mock_list_windows.return_value = {"architect"}
     r = MockRedis()
@@ -267,13 +267,13 @@ def test_assign_task_is_no_longer_a_kind():
     """The compatibility alias is gone. Build 11 said "remove it in the build
     after"; it survived four. An unknown kind now dead-letters with a reason,
     which is the correct answer and a visible one."""
-    from flock.adapter import runner
+    from flock.port import deliver
 
-    assert not hasattr(runner, "assign_task_opener")
-    assert "AssignTask" not in pathlib.Path(runner.__file__).read_text()
+    assert not hasattr(deliver, "assign_task_opener")
+    assert "AssignTask" not in pathlib.Path(deliver.__file__).read_text()
 
 
-@patch("flock.adapter.openers.list_windows")
+@patch("flock.port.openers.list_windows")
 @patch("flock.tmux.ops.run_tmux")
 def test_add_ticket_opener_appends_to_task_record(mock_run_tmux, mock_list_windows):
     mock_list_windows.return_value = {"architect", "backend"}
@@ -304,10 +304,10 @@ def test_add_ticket_opener_appends_to_task_record(mock_run_tmux, mock_list_windo
             assert "timestamp" in rec
 
 
-@patch("flock.adapter.runner.redis.Redis.from_url")
-@patch("flock.adapter.openers.list_windows")
+@patch("flock.port.deliver.redis.Redis.from_url")
+@patch("flock.port.openers.list_windows")
 @patch("flock.tmux.ops.run_tmux")
-def test_run_adapter_kicked_one_shot(mock_run_tmux, mock_list_windows, mock_redis_cls):
+def test_run_port_kicked_one_shot(mock_run_tmux, mock_list_windows, mock_redis_cls):
     mock_r = MockRedis()
     mock_redis_cls.return_value = mock_r
     mock_list_windows.return_value = {"alice", "bob"}
@@ -320,7 +320,7 @@ def test_run_adapter_kicked_one_shot(mock_run_tmux, mock_list_windows, mock_redi
     env = build_envelope(kind="Message", producer="alice", recipient="bob", payload={"text": "kicked message"})
     mock_r.rpush(ingress_key, json.dumps(env))
 
-    run_adapter(agent="bob", pod="acme", tenant="hq", session_name="hq")
+    run_port(agent="bob", pod="acme", tenant="hq", session_name="hq")
 
     assert len(mock_r.lists.get(ingress_key, [])) == 0
 
@@ -331,8 +331,8 @@ def test_run_adapter_kicked_one_shot(mock_run_tmux, mock_list_windows, mock_redi
     assert any("paste-buffer" in cmd and "hq:bob" in cmd for cmd in cmd_args)
 
 
-@patch("flock.adapter.runner.redis.Redis.from_url")
-def test_run_adapter_paused_leaves_envelope_in_ingress(mock_redis_cls):
+@patch("flock.port.deliver.redis.Redis.from_url")
+def test_run_port_paused_leaves_envelope_in_ingress(mock_redis_cls):
     mock_r = MockRedis()
     mock_redis_cls.return_value = mock_r
 
@@ -346,14 +346,14 @@ def test_run_adapter_paused_leaves_envelope_in_ingress(mock_redis_cls):
     env = build_envelope(kind="Message", producer="alice", recipient="bob", payload={"text": "paused message"})
     mock_r.rpush(ingress_key, json.dumps(env))
 
-    run_adapter(agent="bob", pod="acme", tenant="hq", session_name="hq")
+    run_port(agent="bob", pod="acme", tenant="hq", session_name="hq")
 
     assert len(mock_r.lists.get(ingress_key, [])) == 1
     delivering_key = "pod:acme:tenant:hq:delivering"
     assert not mock_r.hexists(delivering_key, "bob")
 
 
-@patch("flock.adapter.cli.redis.Redis.from_url")
+@patch("flock.port.send.redis.Redis.from_url")
 def test_cli_send(mock_redis_cls, monkeypatch):
     mock_r = MockRedis()
     mock_redis_cls.return_value = mock_r
@@ -381,8 +381,8 @@ def test_cli_send(mock_redis_cls, monkeypatch):
     assert pushed["payload"] == {"text": "hello world"}
 
 
-@patch("flock.adapter.runner.redis.Redis.from_url")
-def test_run_adapter_vab_api_pops_and_writes_mailbox(mock_redis_cls):
+@patch("flock.port.deliver.redis.Redis.from_url")
+def test_run_port_vab_api_pops_and_writes_mailbox(mock_redis_cls):
     mock_r = MockRedis()
     mock_redis_cls.return_value = mock_r
 
@@ -393,7 +393,7 @@ def test_run_adapter_vab_api_pops_and_writes_mailbox(mock_redis_cls):
     env = build_envelope(kind="Message", producer="alice", recipient="api", payload={"text": "reply"})
     mock_r.rpush(ingress_key, json.dumps(env))
 
-    run_adapter(agent="api", pod="acme", tenant="hq", session_name="hq")
+    run_port(agent="api", pod="acme", tenant="hq", session_name="hq")
 
     assert len(mock_r.lists.get(ingress_key, [])) == 0
     inbox_key = "pod:acme:tenant:hq:agent:api:inbox"
@@ -407,8 +407,8 @@ def test_run_adapter_vab_api_pops_and_writes_mailbox(mock_redis_cls):
     assert stored_env["payload"] == {"text": "reply"}
 
 
-@patch("flock.adapter.runner.redis.Redis.from_url")
-def test_run_adapter_unroutable_vab_pops_and_dead_letters(mock_redis_cls):
+@patch("flock.port.deliver.redis.Redis.from_url")
+def test_run_port_unroutable_vab_pops_and_dead_letters(mock_redis_cls):
     mock_r = MockRedis()
     mock_redis_cls.return_value = mock_r
 
@@ -419,14 +419,14 @@ def test_run_adapter_unroutable_vab_pops_and_dead_letters(mock_redis_cls):
     env = build_envelope(kind="Message", producer="alice", recipient="host", payload={"text": "test"})
     mock_r.rpush(ingress_key, json.dumps(env))
 
-    run_adapter(agent="host", pod="acme", tenant="hq", session_name="hq")
+    run_port(agent="host", pod="acme", tenant="hq", session_name="hq")
 
     assert len(mock_r.lists.get(ingress_key, [])) == 0
     dead_key = "pod:acme:tenant:hq:agent:host:dead"
     assert len(mock_r.lists.get(dead_key, [])) == 1
 
 
-@patch("flock.adapter.openers.list_windows")
+@patch("flock.port.openers.list_windows")
 @patch("flock.tmux.ops.run_tmux")
 def test_message_opener_writes_pending_verify_marker_for_claude(mock_run_tmux, mock_list_windows):
     mock_list_windows.return_value = {"alice", "bob"}
@@ -447,7 +447,7 @@ def test_message_opener_writes_pending_verify_marker_for_claude(mock_run_tmux, m
     assert "ts" in fields
 
 
-@patch("flock.adapter.openers.list_windows")
+@patch("flock.port.openers.list_windows")
 @patch("flock.tmux.ops.run_tmux")
 def test_message_opener_skips_pending_verify_marker_for_agy(mock_run_tmux, mock_list_windows):
     mock_list_windows.return_value = {"alice", "bob"}
@@ -465,7 +465,7 @@ def test_message_opener_skips_pending_verify_marker_for_agy(mock_run_tmux, mock_
     assert verify_key not in r.streams
 
 
-@patch("flock.adapter.openers.list_windows")
+@patch("flock.port.openers.list_windows")
 @patch("flock.tmux.ops.run_tmux")
 def test_add_ticket_opener_skips_pending_verify_marker(mock_run_tmux, mock_list_windows):
     mock_list_windows.return_value = {"architect", "backend"}
@@ -481,7 +481,7 @@ def test_add_ticket_opener_skips_pending_verify_marker(mock_run_tmux, mock_list_
     assert verify_key not in r.streams
 
 
-@patch("flock.adapter.openers.list_windows")
+@patch("flock.port.openers.list_windows")
 @patch("flock.tmux.ops.run_tmux")
 def test_mark_delivery_pending_swallows_redis_exceptions(mock_run_tmux, mock_list_windows):
     mock_list_windows.return_value = {"alice", "bob"}
@@ -500,7 +500,7 @@ def test_mark_delivery_pending_swallows_redis_exceptions(mock_run_tmux, mock_lis
 
 
 
-@patch("flock.adapter.openers.list_windows")
+@patch("flock.port.openers.list_windows")
 @patch("flock.tmux.ops.run_tmux")
 def test_no_marker_for_a_window_running_no_cli(mock_run_tmux, mock_list_windows):
     """A bare shell writes no session file, so a delivery to it can never be

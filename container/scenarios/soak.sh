@@ -33,7 +33,7 @@ r() { dx redis-cli "$@" 2>/dev/null | tr -d '\r'; }
 # Redis stream lengths and RSS — none of which needs a model at all.
 #
 # I started exactly that run before the operator stopped it. A duration test
-# belongs on a tenant of plain shells: the bus, router, adapter, spool, presence
+# belongs on a tenant of plain shells: the bus, switch, adapter, spool, presence
 # sampler and session door are all exercised identically, and the paste lands in
 # bash instead of a CLI.
 live=$(dx redis-cli --scan --pattern "$P:agent:*:launch" 2>/dev/null | tr -d '\r' | wc -l | tr -d ' ')

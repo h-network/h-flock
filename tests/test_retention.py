@@ -1,5 +1,5 @@
 from flock.bus import prefix
-from flock.router.retention import RetentionTrimmer
+from flock.switch.retention import RetentionTrimmer
 
 
 class RetentionRedis:
@@ -22,7 +22,7 @@ class RetentionRedis:
         return [True] * len(self.trimmed)
 
 
-def test_router_retention_keeps_newest_done_tickets_and_dead_letters():
+def test_switch_retention_keeps_newest_done_tickets_and_dead_letters():
     r = RetentionRedis()
     done = prefix("acme", "hq", "sme-2", "tasks.done")
     dead = prefix("acme", "hq", "sme-2", "dead")

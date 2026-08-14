@@ -162,7 +162,7 @@ def deliver_one(
     )
 
 
-def run_adapter(
+def run_port(
     agent: str,
     pod: str = "default",
     tenant: str = "default",

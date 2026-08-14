@@ -9,7 +9,7 @@ from flock.tmux import list_windows, paste_text, run_tmux
 # Backwards compatibility helper for existing tests
 get_tmux_windows = list_windows
 
-# The CLIs that write a session file the router can tail. An agent running
+# The CLIs that write a session file the switch can tail. An agent running
 # anything else — agy, a bare shell — produces no activity, so a delivery to it
 # can never be confirmed and must not be marked.
 VERIFIABLE_CLIS = frozenset({"claude", "codex"})

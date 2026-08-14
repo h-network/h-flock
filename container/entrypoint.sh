@@ -135,7 +135,7 @@ until [ "$(rcli ping 2>/dev/null)" = "PONG" ]; do
 done
 
 # ── seed the roster ───────────────────────────────────────────────────────────
-# Boot configuration, not the write path LLD-bus-and-router §7 defers. The roster
+# Boot configuration, not the write path LLD-bus-and-switch §7 defers. The roster
 # is the MAC table: a HASH of agent -> VAB (§3.2). HSET is idempotent, so
 # bringing the container up twice converges (LLD-container §5).
 #
@@ -155,8 +155,8 @@ for entry in "${entries[@]}"; do
   fields+=("$name" "$vab")
 done
 
-# Fixed agents. Roster rows like any other — the router special-cases nothing
-# (LLD-bus-and-router §3.2). `host` is what StartAgent/StopAgent are addressed
+# Fixed agents. Roster rows like any other — the switch special-cases nothing
+# (LLD-bus-and-switch §3.2). `host` is what StartAgent/StopAgent are addressed
 # to; its VAB routes delivery to flock.control rather than to a tmux window, so
 # it has no window and the tmux host filters it out.
 fields+=("api" "api")
@@ -170,7 +170,7 @@ echo "{\"module\":\"container\",\"event\":\"roster_seeded\",\"count\":$(( ${#fie
 
 # Per-agent CLI and account, as exceptions only — "backend=codex", "frontend=work".
 # Both land as agent resources rather than roster values: the roster is the MAC
-# table and holds membership plus VAB, nothing else (LLD-bus-and-router §3.2).
+# table and holds membership plus VAB, nothing else (LLD-bus-and-switch §3.2).
 map_each() {   # $1=map  $2=resource ; SETs pod:…:agent:<name>:<resource>
   local pair name value
   IFS=',' read -ra pairs <<< "${1:-}"
@@ -246,8 +246,8 @@ export FLOCK_LOG_FILE=/home/ubuntu/.flock/window.log.jsonl
 export FLOCK_LOG_FILE_AGENT_ONLY=1
 start tmuxhost env REDIS_URL="$redis_url" python3 -m flock.tmuxhost
 
-# Windows lead routes. LLD-bus-and-router §3.2 names the one roster case that is
-# not harmless: the router routing to an agent whose window does not exist yet,
+# Windows lead routes. LLD-bus-and-switch §3.2 names the one roster case that is
+# not harmless: the switch routing to an agent whose window does not exist yet,
 # whose first envelopes are then dead-lettered into nothing. Waiting here is the
 # cheapest possible answer — the host is already ahead, so nothing can race it.
 deadline=$((SECONDS + 30))
@@ -268,11 +268,11 @@ echo "{\"module\":\"container\",\"event\":\"windows_ready\",\"count\":${#agents[
 unset FLOCK_LOG_FILE FLOCK_LOG_FILE_AGENT_ONLY
 
 # ── the rest ──────────────────────────────────────────────────────────────────
-start router  env REDIS_URL="$redis_url" python3 -m flock.router
+start switch  env REDIS_URL="$redis_url" python3 -m flock.switch
 if [ "${WATCHDOG_ENABLED:-1}" != "0" ]; then
   start watchdog env REDIS_URL="$redis_url" python3 -m flock.watchdog
 fi
-# No adapter here. It is not a service — the router kicks `flock.adapter <agent>`
+# No adapter here. It is not a service — the switch kicks `flock.port <agent>`
 # per delivery and it exits (LLD-adapter-tmux §2). Starting one at boot would be
 # the daemon this build exists to remove.
 # The doors last, so neither is reachable before the tenant behind it is up

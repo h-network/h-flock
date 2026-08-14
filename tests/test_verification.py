@@ -4,8 +4,8 @@ from datetime import datetime, timezone
 import pytest
 
 from flock.bus import prefix
-from flock.router.service import Router
-from flock.router.verification import DeliveryVerifier
+from flock.switch.service import Switch
+from flock.switch.verification import DeliveryVerifier
 
 
 class VerifyRedis:
@@ -79,7 +79,7 @@ def test_missing_later_input_is_surfaced_and_not_retried(capsys):
     DeliveryVerifier(r, pod="acme", tenant="hq", verify_after_seconds=10).poll({"sme-2"}, now=NOW)
 
     record = json.loads(capsys.readouterr().out)
-    assert record["module"] == "router"
+    assert record["module"] == "switch"
     assert record["event"] == "delivery_unverified"
     assert record["stream_id"] == "not-confirmed"
     assert record["recipient"] == "sme-2"
@@ -119,7 +119,7 @@ def test_first_delivery_without_activity_history_is_dropped_unjudged(capsys):
     record = json.loads(capsys.readouterr().out)
     assert record == {
         "ts": record["ts"],
-        "module": "router",
+        "module": "switch",
         "event": "delivery_unjudged",
         "stream_id": "first",
         "recipient": "sme-2",
@@ -146,13 +146,13 @@ def test_marker_younger_than_threshold_remains_pending(capsys):
 def test_pending_verify_key_follows_the_dotted_resource_convention():
     """Resources compose with a dot, like tasks.todo and activity.offset.
 
-    Pinned here because the adapter writes this key and the router reads it —
+    Pinned here because the adapter writes this key and the switch reads it —
     two lanes, two files. They briefly disagreed, each with passing tests.
     """
     assert _key("pending.verify") == "pod:acme:tenant:hq:agent:sme-2:pending.verify"
 
 
-def test_router_tails_then_verifies_same_roster_in_existing_pass():
+def test_switch_tails_then_verifies_same_roster_in_existing_pass():
     events = []
     agents = {"architect", "sme-2"}
 
@@ -164,11 +164,11 @@ def test_router_tails_then_verifies_same_roster_in_existing_pass():
         def poll(self, observed_agents):
             events.append(("verify", observed_agents))
 
-    router = Router(object(), pod="acme", tenant="hq")
-    router._agents = lambda: agents
-    router.step = lambda timeout=None: (_ for _ in ()).throw(StopIteration)
+    switch = Switch(object(), pod="acme", tenant="hq")
+    switch._agents = lambda: agents
+    switch.step = lambda timeout=None: (_ for _ in ()).throw(StopIteration)
 
     with pytest.raises(StopIteration):
-        router.run(Tailer(), delivery_verifier=Verifier())
+        switch.run(Tailer(), delivery_verifier=Verifier())
 
     assert events == [("tail", agents), ("verify", agents)]

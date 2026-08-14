@@ -87,7 +87,7 @@ class DeliveryVerifier:
             if not self._has_activity_history(agent):
                 for entry_id, marker, marker_time in eligible:
                     log_record(
-                        "router",
+                        "switch",
                         "delivery_unjudged",
                         stream_id=marker.get("stream_id"),
                         recipient=agent,
@@ -112,7 +112,7 @@ class DeliveryVerifier:
                             },
                         )
                     log_record(
-                        "router",
+                        "switch",
                         "delivery_unverified",
                         stream_id=marker.get("stream_id"),
                         recipient=agent,

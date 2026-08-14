@@ -370,7 +370,7 @@ def _render_restdoc_html(app: FastAPI) -> str:
 
     <div class="warning-box">
       <strong>⚠ Notice: This list of kinds is current, not authoritative.</strong><br>
-      The API server does NOT validate <code>kind</code> or <code>payload</code>. An unknown <code>kind</code> is accepted with HTTP <code>202 Accepted</code> and dead-letters at the far edge if unopenable. An application MUST NOT treat this list as a whitelist. Adding new kinds is a capability of adapters and openers, not an API schema change.
+      The API server does NOT validate <code>kind</code> or <code>payload</code>. An unknown <code>kind</code> is accepted with HTTP <code>202 Accepted</code> and dead-letters at the far edge if unopenable. An application MUST NOT treat this list as a whitelist. Adding new kinds is a capability of ports and openers, not an API schema change.
     </div>
 
     <h2>3. Meaning of HTTP 202 Accepted</h2>
@@ -378,7 +378,7 @@ def _render_restdoc_html(app: FastAPI) -> str:
       An HTTP <code>202 Accepted</code> response from <code>POST /agents/{{agent}}/envelopes</code> means the envelope was successfully validated structurally, assigned a <code>stream_id</code> and <code>correlation_id</code>, and written to Redis on the producer's egress queue.
     </p>
     <p>
-      It does <strong>NOT</strong> mean the envelope has been delivered to the recipient or executed. Delivery is asynchronous: the router moves envelopes from egress to recipient ingress queues and kicks the corresponding adapter process. If delivery fails (e.g. unknown recipient or opener failure), the envelope dead-letters asynchronously. To trace envelope progress, inspect log output using the returned <code>stream_id</code>.
+      It does <strong>NOT</strong> mean the envelope has been delivered to the recipient or executed. Delivery is asynchronous: the switch moves envelopes from egress to recipient ingress queues and kicks the corresponding port process. If delivery fails (e.g. unknown recipient or opener failure), the envelope dead-letters asynchronously. To trace envelope progress, inspect log output using the returned <code>stream_id</code>.
     </p>
 
     <h2>4. Live Terminal Session Protocol</h2>

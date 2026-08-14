@@ -112,7 +112,7 @@ def test_send_and_receive(capsys):
     egress_key = prefix("acme", "hq", agent="alice", resource="egress")
     assert len(r.lists[egress_key]) == 1
 
-    # Simulate router moving egress -> ingress
+    # Simulate switch moving egress -> ingress
     ingress_key = prefix("acme", "hq", agent="bob", resource="ingress")
     r.lists[ingress_key] = r.lists.pop(egress_key)
 

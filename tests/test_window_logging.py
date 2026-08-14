@@ -4,8 +4,8 @@ from contextlib import redirect_stdout
 from unittest.mock import patch
 
 from flock.bus import log_record, prefix, receive, send
-from flock.router.service import Router
-from flock.router.windowlog import WindowLogTailer
+from flock.switch.service import Switch
+from flock.switch.windowlog import WindowLogTailer
 
 
 class LogRedis:
@@ -56,7 +56,7 @@ def test_stdout_record_and_newline_are_one_write(monkeypatch):
     output = WriteCountingStdout()
     monkeypatch.setattr("sys.stdout", output)
 
-    log_record("router", "forwarded", stream_id="abc")
+    log_record("switch", "forwarded", stream_id="abc")
 
     assert len(output.writes) == 1
     assert output.writes[0].endswith("\n")
@@ -85,9 +85,9 @@ def test_agent_sent_envelope_is_observed_end_to_end_in_central_log(monkeypatch, 
 
     monkeypatch.delenv("FLOCK_LOG_FILE")
     central = io.StringIO()
-    with patch("flock.router.service.subprocess.Popen"), redirect_stdout(central):
+    with patch("flock.switch.service.subprocess.Popen"), redirect_stdout(central):
         WindowLogTailer(r, pod="acme", tenant="hq", path=path).poll()
-        assert Router(r, pod="acme", tenant="hq").step(timeout=0)
+        assert Switch(r, pod="acme", tenant="hq").step(timeout=0)
         receive(
             r,
             pod="acme",
@@ -100,7 +100,7 @@ def test_agent_sent_envelope_is_observed_end_to_end_in_central_log(monkeypatch, 
     records = [json.loads(line) for line in central.getvalue().splitlines()]
     joined = [record for record in records if record.get("stream_id") == stream_id]
     assert [record["event"] for record in joined] == ["sent", "popped", "forwarded", "received", "opened"]
-    assert [record["module"] for record in joined] == ["adapter", "router", "router", "adapter", "adapter"]
+    assert [record["module"] for record in joined] == ["adapter", "switch", "switch", "adapter", "adapter"]
 
 
 def test_unwritable_window_log_never_breaks_send(monkeypatch, tmp_path, capsys):
@@ -153,7 +153,7 @@ def test_window_log_truncates_only_at_consumed_end_and_later_record_still_arrive
     lines = capsys.readouterr().out.splitlines()
     assert lines[:2] == ['{"event":"first"}', '{"event":"second"}']
     truncation = json.loads(lines[2])
-    assert truncation["module"] == "router"
+    assert truncation["module"] == "switch"
     assert truncation["event"] == "window_log_truncated"
     assert truncation["bytes"] == len(initial)
     assert path.read_bytes() == b""

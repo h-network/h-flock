@@ -1,4 +1,4 @@
-"""Apply count-based retention in the router's existing tenant pass."""
+"""Apply count-based retention in the switch's existing tenant pass."""
 
 from flock.bus import prefix
 
