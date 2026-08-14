@@ -178,12 +178,12 @@ def run_port(
 
     delivering_key = prefix(pod, tenant, resource="delivering")
 
-    # Atomic busy tag acquisition using hsetnx
-    while True:
-        now_iso = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.%f")[:-3] + "Z"
-        if r.hsetnx(delivering_key, agent, now_iso):
-            break
-        time.sleep(0.05)
+    # The current holder drains the queue. A redundant kick waiting for that
+    # holder adds only a polling process; later writes arrive with their own
+    # kicks, so losing this atomic acquisition is safe to exit immediately.
+    now_iso = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.%f")[:-3] + "Z"
+    if not r.hsetnx(delivering_key, agent, now_iso):
+        return
 
     try:
         ingress_key = prefix(pod, tenant, agent, "ingress")

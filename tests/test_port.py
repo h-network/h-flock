@@ -361,6 +361,24 @@ def test_run_port_drain_stops_at_cap(mock_run_tmux, mock_list_windows, mock_redi
     assert len(mock_r.lists[ingress_key]) == 1
 
 
+@patch("flock.port.deliver.time.sleep")
+@patch("flock.port.deliver.deliver_one")
+@patch("flock.port.deliver.redis.Redis.from_url")
+def test_run_port_exits_when_another_delivery_holds_lock(
+    mock_redis_cls, mock_deliver_one, mock_sleep
+):
+    mock_r = MockRedis()
+    mock_redis_cls.return_value = mock_r
+    delivering_key = "pod:acme:tenant:hq:delivering"
+    mock_r.hset(delivering_key, "bob", "existing-holder")
+
+    run_port(agent="bob", pod="acme", tenant="hq", session_name="hq")
+
+    mock_deliver_one.assert_not_called()
+    mock_sleep.assert_not_called()
+    assert mock_r.hget(delivering_key, "bob") == "existing-holder"
+
+
 @patch("flock.port.deliver.redis.Redis.from_url")
 def test_run_port_paused_leaves_envelope_in_ingress(mock_redis_cls):
     mock_r = MockRedis()
