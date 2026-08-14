@@ -20,14 +20,22 @@ ROSTERS = (10, 100, 1000)
 TAG_SIZES = (1, 5, 20)
 
 
-def median_us(fn):
-    samples = []
-    fn()
-    for _ in range(ITERATIONS):
-        started = time.perf_counter_ns()
+def interleaved_us(cases):
+    """Measure competing placements in rotating order against the same Redis."""
+    samples = {name: [] for name in cases}
+    names = list(cases)
+    for fn in cases.values():
         fn()
-        samples.append(time.perf_counter_ns() - started)
-    return statistics.median(samples) / 1000
+    for iteration in range(ITERATIONS):
+        offset = iteration % len(names)
+        for name in names[offset:] + names[:offset]:
+            started = time.perf_counter_ns()
+            cases[name]()
+            samples[name].append(time.perf_counter_ns() - started)
+    return {
+        name: statistics.median(values) / 1000
+        for name, values in samples.items()
+    }
 
 
 def main():
@@ -43,7 +51,7 @@ def main():
     for size in ROSTERS:
         agents = [f"policy-{i}" for i in range(size)]
         r.hset(roster, mapping={agent: "api" for agent in agents})
-        source, destination = agents[0], agents[-1]
+        source, destination, denied_destination = agents[0], agents[-1], agents[-2]
         for tag_size in TAG_SIZES:
             shared = [f"tag-{i}" for i in range(tag_size)]
             r.hset(
@@ -54,38 +62,42 @@ def main():
                 tags_key(POD, TENANT, destination),
                 mapping={"import": json.dumps(shared, separators=(",", ":"))},
             )
-            cached_export = set(shared)
-            cached_import = set(shared)
-            port_allow = median_us(
-                lambda: allows(
-                    r,
-                    pod=POD,
-                    tenant=TENANT,
-                    source=source,
-                    destination=destination,
-                )
-            )
-            switch_memory = median_us(lambda: bool(cached_export & cached_import))
-            forward_only = median_us(lambda: r.hexists(roster, destination))
-            forward_plus = median_us(
-                lambda: (r.hexists(roster, destination), bool(cached_export & cached_import))
-            )
-
             denied_import = [f"denied-{i}" for i in range(tag_size)]
             r.hset(
-                tags_key(POD, TENANT, destination),
-                "import",
-                json.dumps(denied_import, separators=(",", ":")),
+                tags_key(POD, TENANT, denied_destination),
+                mapping={"import": json.dumps(denied_import, separators=(",", ":"))},
             )
-            port_deny = median_us(
-                lambda: allows(
-                    r,
-                    pod=POD,
-                    tenant=TENANT,
-                    source=source,
-                    destination=destination,
-                )
+            cached_export = set(shared)
+            cached_import = set(shared)
+            measured = interleaved_us(
+                {
+                    "port_allow": lambda: allows(
+                        r,
+                        pod=POD,
+                        tenant=TENANT,
+                        source=source,
+                        destination=destination,
+                    ),
+                    "port_deny": lambda: allows(
+                        r,
+                        pod=POD,
+                        tenant=TENANT,
+                        source=source,
+                        destination=denied_destination,
+                    ),
+                    "switch_memory": lambda: bool(cached_export & cached_import),
+                    "forward_only": lambda: r.hexists(roster, destination),
+                    "forward_plus": lambda: (
+                        r.hexists(roster, destination),
+                        bool(cached_export & cached_import),
+                    ),
+                }
             )
+            port_allow = measured["port_allow"]
+            port_deny = measured["port_deny"]
+            switch_memory = measured["switch_memory"]
+            forward_only = measured["forward_only"]
+            forward_plus = measured["forward_plus"]
             row = (
                 size,
                 tag_size,
@@ -101,7 +113,11 @@ def main():
                 f"{switch_memory:.3f} {forward_only:.2f} {forward_plus:.2f} "
                 f"{1e6/port_allow:.0f} {1e6/port_deny:.0f} {1e6/switch_memory:.0f}"
             )
-            r.delete(tags_key(POD, TENANT, source), tags_key(POD, TENANT, destination))
+            r.delete(
+                tags_key(POD, TENANT, source),
+                tags_key(POD, TENANT, destination),
+                tags_key(POD, TENANT, denied_destination),
+            )
         r.hdel(roster, *agents)
 
     # Dependency-free SVG: achievable decisions/s at the representative five-tag
