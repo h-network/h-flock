@@ -61,6 +61,13 @@ falsifiability, not on volume.
   empty and exits 0 — silently, successfully, having done nothing. Also three
   occurrences
 - **one h-flock tenant at a time** on the lab
+- ⚠ **to attribute an INVISIBLE loss, bracket it by FIFO position.** A frame that
+  vanished with no records cannot be attributed by its own timestamps — it has
+  none. But a per-source queue is FIFO, so the frames **before and after it from
+  the same source** bound when it must have been at the head. If an injection
+  window falls between those two pops and the frame has no `popped` record, it is
+  attributable. `bus` used this on build 66's two vanished frames where
+  "sent before a kill" would have proved nothing
 - ⚠ **state the prediction before measuring.** Four claims were retracted in one
   day because a measurement was read as confirming what was expected
 
