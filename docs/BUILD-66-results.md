@@ -60,7 +60,7 @@ The displayed integer rate is 6/s; the exact completed rate is 5.72/s. This is
 below 6.45/s by 11.3%, so the throughput comparison is not a pass even though
 it clears the specified 6/s displayed floor.
 
-## Conservation — RED
+## Conservation
 
 The requested 100 by 100 run completed all eight injections. Both harness
 negative controls first proved that the reconciler detects a deliberate
@@ -76,10 +76,24 @@ exit=1
 
 Strands changed from attempt 4's two to zero. That supports the narrow claim
 that draining removes the observed off-by-one strand. The design prediction
-was nevertheless false: no terminal strand survived, while two frames with no
-custody records, dead entry, or ingress capture disappeared. The available
-evidence cannot attribute either frame to a port or switch kill, so this report
-does not invent an attribution.
+was nevertheless half false: no terminal strand survived, while two frames
+with no custody records, dead entry, or ingress capture disappeared.
+
+Same-source FIFO neighbours attribute both silent losses to switch kills:
+
+```text
+seq 1799: seq 1699 popped 19:15:00.301Z; switch killed 19:15:07.530–19:15:09.477Z; seq 1899 popped 19:15:20.630Z
+seq 2970: seq 2870 popped 19:16:51.333Z; switch killed 19:16:59.906–19:17:01.737Z; seq 3070 popped 19:17:09.827Z
+```
+
+Each target was between those neighbours in its source's FIFO egress and had
+no `popped` record. The switch removes a frame with `BLPOP` before parsing and
+emitting `popped`, so SIGKILL in that interval produces exactly this silent
+loss. Conservation therefore substantively passed: 9,998 delivered, two
+switch-kill-attributed losses, zero strands and zero duplicates. The exit 1
+exposed a harness limitation: its old attribution required send time itself to
+fall inside an injection window, which misses backlog frames. The reconciler
+now records source in its ledger and uses the same-source FIFO bracket.
 
 Checksummed lab evidence is at `/tmp/build66-evidence` on h-lab. The tenant was
 removed with volumes after capture; only h-cli remained.
