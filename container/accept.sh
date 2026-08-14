@@ -182,7 +182,9 @@ fi
 
 step "result"
 if [ "$FAILED" = "0" ]; then
-  echo "  passed: install, health, plumbing, simulator${CONSOLE:+, console reachable}"
+  RESULT="  passed: install, health, plumbing, simulator"
+  [ "$CONSOLE" = "1" ] && RESULT="$RESULT, console reachable"
+  echo "$RESULT"
 else
   echo "  NOT accepted: $FAILED step(s) failed"
 fi
