@@ -229,10 +229,9 @@ r = redis.Redis.from_url(os.environ.get("REDIS_URL", "redis://127.0.0.1:6379/0")
 frame = build("Message", "cons-0", "cons-1", {"sequence": "negative-duplicate"}, pod=pod, tenant=tenant)
 raw = json.dumps(frame, separators=(",", ":"))
 print(f"negative-duplicate\t{frame['stream_id']}\tcons-1\t{time.time()}")
-r.rpush(prefix(pod, tenant, "cons-1", "ingress"), raw, raw)
+r.rpush(prefix(pod, tenant, "cons-0", "egress"), raw, raw)
 PY
-dx env REDIS_URL="$REDIS_URL" POD="$POD" TENANT="$TENANT" flock.port cons-1
-dx env REDIS_URL="$REDIS_URL" POD="$POD" TENANT="$TENANT" flock.port cons-1
+wait_for_queues
 if reconcile "$WORK/negative-duplicate.tsv" negative-duplicate >"$WORK/negative-duplicate.result"; then
   cat "$WORK/negative-duplicate.result"
   echo "HARNESS DEFECT: intentional duplicate passed silently"
