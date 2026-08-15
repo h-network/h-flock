@@ -43,7 +43,7 @@
 > stranding costs). A serialized spawner can simply wait.
 >
 > **This is not resilience.** The switch already survives a failed or hung spawn:
-> `_kick` catches `OSError` and logs `kick_failed` (`switch/service.py:87`), and
+> `_kick` catches `OSError` and logs `kick_failed` (`switch/service.py:91`), and
 > `SIGCHLD = SIG_IGN` (`:232`) keeps the process table from filling. Those close
 > the failure path. What is open is the *resource* path.
 >
