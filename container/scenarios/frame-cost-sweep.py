@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Decompose v3 header parsing, source stamping and Redis-write cost."""
+"""Decompose fixed-header parsing, source stamping and Redis-write cost."""
 
 import json
 import math
