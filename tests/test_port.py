@@ -408,7 +408,7 @@ def test_run_port_port_type_api_pops_and_writes_mailbox(mock_redis_cls):
 
 
 @patch("flock.port.deliver.redis.Redis.from_url")
-def test_run_port_unroutable_port_type_pops_and_dead_letters(mock_redis_cls):
+def test_run_port_unroutable_broadcast_records_actual_recipient(mock_redis_cls, capsys):
     mock_r = MockRedis()
     mock_redis_cls.return_value = mock_r
 
@@ -416,7 +416,7 @@ def test_run_port_unroutable_port_type_pops_and_dead_letters(mock_redis_cls):
     mock_r.hset(roster_key, "host", "custom_port_type")
 
     ingress_key = "pod:acme:tenant:hq:agent:host:ingress"
-    env = build_envelope(kind="Message", source="alice", destination="host", payload={"text": "test"})
+    env = build_envelope(kind="Message", source="alice", destination="all", payload={"text": "test"})
     mock_r.rpush(ingress_key, encode(env))
 
     run_port(agent="host", pod="acme", tenant="hq", session_name="hq")
@@ -424,6 +424,10 @@ def test_run_port_unroutable_port_type_pops_and_dead_letters(mock_redis_cls):
     assert len(mock_r.lists.get(ingress_key, [])) == 0
     dead_key = "pod:acme:tenant:hq:agent:host:dead"
     assert len(mock_r.lists.get(dead_key, [])) == 1
+    records = [json.loads(line) for line in capsys.readouterr().out.splitlines()]
+    assert [record["event"] for record in records] == ["received", "dead_lettered"]
+    assert [record["destination"] for record in records] == ["host", "host"]
+    assert records[-1]["stream_id"] == env["stream_id"]
 
 
 @patch("flock.port.openers.list_windows")

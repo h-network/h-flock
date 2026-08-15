@@ -2,7 +2,8 @@ import json
 import os
 import time
 from datetime import datetime, timezone
-from flock.bus import EnvelopeError, emit, log_record, parse, prefix, receive
+from flock.bus import EnvelopeError, log_record, parse, prefix, receive
+from flock.bus.doors import _emit_for_recipient
 from flock.bus import resp as redis
 from .openers import add_ticket_opener, command_opener, message_opener
 
@@ -65,12 +66,12 @@ def deliver_unroutable(
         envelope = parse(raw)
     except EnvelopeError as exc:
         r.rpush(dead_key, raw)
-        emit("port", "dead_lettered", {}, str(exc))
+        _emit_for_recipient("port", "dead_lettered", {}, agent, str(exc))
         return
-    emit("port", "received", envelope)
+    _emit_for_recipient("port", "received", envelope, agent)
     r.rpush(dead_key, raw)
     reason = f"unroutable port_type: {port_type_name!r}"
-    emit("port", "dead_lettered", envelope, reason)
+    _emit_for_recipient("port", "dead_lettered", envelope, agent, reason)
 
 
 def deliver_one(
