@@ -147,6 +147,40 @@ total.** If `RPUSH` dominates, the correct outcome is **"no", and the switch is
 payload-independent in practice** — which the 16 B–64 KiB rows already suggest,
 since 64 KiB covers essentially all real traffic.
 
+### 5.1c Decomposition result — trigger MET, and the honest magnitude
+
+`bus`, in-container on h-oracle, `perf_counter`, n=200, p50 µs.
+
+⚠ **`json.dumps` runs ONLY on the source-stamp path** (`switch/service.py:142`,
+inside `if claimed_producer != sender`) — a forgery correction, not normal
+traffic. The normal switch cost is **`loads` + `rpush`**, so the table below
+excludes `dumps`. Including it overstates the win.
+
+| shape | size | `loads` µs | `rpush` µs | normal µs | `loads` share | **switch ceiling** |
+|---|---:|---:|---:|---:|---:|---:|
+| string | 16 B | 1.73 | 16.61 | 18.34 | 9% | 54,526/s |
+| string | 64 KiB | 40.12 | 33.84 | 73.96 | 54% | 13,521/s |
+| string | 1 MiB | 478.06 | 237.44 | 715.50 | 67% | 1,398/s |
+| nested | 16 B | 1.42 | 12.01 | 13.43 | 11% | 74,460/s |
+| nested | 64 KiB | 209.28 | 25.44 | 234.72 | **89%** | 4,260/s |
+| nested | 1 MiB | 4381.72 | 264.62 | 4646.34 | **94%** | **215/s** |
+
+⚠ **Measured system throughput is 832/s** (h-oracle, build 71 results). Compare
+that against the last column, because that is the only comparison that decides
+anything:
+
+- **At every realistic size the switch is 5× to 90× above system throughput.**
+  It is not the constraint, and framing would not make it one less.
+- **One cell inverts: 1 MiB nested, at 215/s — below 832/s.** There, and only
+  there, the switch becomes the bottleneck, and `json.loads` is 94% of it.
+- ⚠ **Small frames are `rpush`-bound, not parse-bound** (9–11%). Framing does
+  nothing for the traffic we actually carry today.
+
+**So the trigger is met as written** — `loads` alone is 89% at 64 KiB nested —
+**but the win is confined to large, structured frames.** Proceed, and report the
+ceiling column again after implementing; that is the number that says whether
+this was worth a wire break.
+
 ### 5.2 If and only if the parse — not the byte movement — is the cost
 
 Then implement §2–3 and re-run the identical sweep. Expect:
