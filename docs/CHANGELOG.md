@@ -90,6 +90,36 @@ still never reads or decodes the body.
 
 ---
 
+## 2026-08-15 — v4 verified against real model output (no code change)
+
+**Build 74.** Recorded because it **discharges a claim**, not because anything
+moved. Three tmux agents on Nemotron, 13 model-originated frames, bytes compared
+at egress and ingress out of the captured Redis AOF.
+
+**v4's claim was that the body is opaque bytes nothing between sender and port
+interprets.** Now evidenced from a source we do not control: newlines, code
+fences, quotes, backslashes, Unicode, JSON-inside-JSON and **the empty string**
+all arrived byte-identical across all 17 forwarded frames. `ttl`/`hops` correct
+17/17; the source-stamp control passed with the body unchanged through the splice.
+
+### ⚠ Two findings that are NOT closed
+
+- **`delivery_unverified` fired on 4 of 13, all four to one agent** (30.8%). This
+  is the **first real reading** of `switch/verification.py`, which only applies to
+  `tmux` ports and was never exercised by an api or synthetic run. A
+  concentration on one agent is a signal, not noise — **it is unknown whether
+  that agent failed to process or the heuristic false-positives.** ⚠ Relevant
+  before the watchdog leans on any progress signal.
+- **One model send produced an exact empty-text payload** and traversed every
+  stage successfully. Counterexample to reading "one send command" as "one
+  non-empty message" — anything counting messages must not assume content.
+
+**`received -> opened` p50 507 ms**, against 506 ms on the failed first run. That
+is `PASTE_ENTER_DELAY` landing where it should, on the path real agents use — the
+first in-situ confirmation rather than an inference.
+
+---
+
 ## 2026-08-15 — custody `destination` is always the real recipient
 
 `port/deliver.py:deliver_unroutable` emitted `received` and `dead_lettered`
