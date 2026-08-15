@@ -40,6 +40,30 @@ falsifiability, not on volume.
 
 ## 3. ⚠ Measurement, if the build claims a number
 
+### 3.0 ⚠ The two hosts, and which question each answers
+
+We all run as unix user `ubuntu` with a shared `HOME=/home/ubuntu`, so
+`~/.ssh/id_ed25519` already reaches both. **Only the username differs, and it is
+neither `ubuntu` nor the host name.**
+
+| host | target | what it is | use it for |
+|---|---|---|---|
+| lab | `ssh h-lab@172.16.0.14` | **4-vCPU QEMU VM**, 7 GB | ⚠ **CORRECTNESS ONLY** |
+| perf | `ssh halil@h-oracle` | 32-core Ryzen 9950X3D, 93 GB | ⚠ **PERFORMANCE ONLY** |
+
+⚠ **Never quote a throughput number from the lab.** Identical scripts measured
+6.5/s there and **832/s** on h-oracle; `popped -> forwarded` was 7–9 ms there and
+**0 ms** here. Build 71 was specified, held and cancelled because an 11 ms kick
+turned out to be four-vCPU contention. Every throughput figure in `BUILD-*.md`
+older than 2026-08-14 describes the constrained host.
+
+⚠ **The lab is still the better place to find races** — contention surfaces them.
+Correctness there, numbers on h-oracle.
+
+⚠ **Do not touch `h-cli` on the lab, or `h-flock-office` on h-oracle** — the
+office runs in that container, and killing it kills the whole team. Name your own
+tenant and project; one per run, fresh each time.
+
 - **medians, not means.** The lab's loopback Redis averages 1.7 ms with 26 ms
   spikes; a mean measures the spikes
 - **interleave A/B per iteration**, or drift measures the drift
