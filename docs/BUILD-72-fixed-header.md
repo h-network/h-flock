@@ -99,7 +99,55 @@ vCPUs turned an 11 ms artefact into a build we cancelled.
 
 ⚠ **Paired, same session** (`BUILD-CONVENTION` §3). Fresh tenant per run.
 
-### 5.2 If and only if the sweep shows a real slope
+### 5.1b ⚠ The §5.1 trigger as written was WRONG — decompose before believing it
+
+**Result of §5.1** (`bus`, h-oracle, 2000/2000 per run, zero dead/parse):
+
+| payload | `popped -> forwarded` p50 / p95 |
+|---|---|
+| 16 B | 0 / 1 ms |
+| 4 KiB | 0 / 1 ms |
+| 64 KiB | 0 / 1 ms |
+| 1 MiB | **1 / 2 ms** |
+
+⚠ **This does not establish a slope, for three reasons, and all three are my
+spec's fault rather than the measurement's.**
+
+1. ⚠ **The instrument's floor is 1 ms.** `bus/logging.py:46` stamps `ts` with
+   `timespec="milliseconds"`. Three of the four points read **0**, meaning
+   "below what the log can see". A slope cannot be computed from censored data —
+   `0 → 1` is one quantisation bucket and is consistent with anything from
+   0.51 ms to 1.49 ms. **This is build 70's lesson again: the variance was the
+   instrument.**
+
+2. ⚠ **`popped -> forwarded` is not the parse.** It contains `json.loads`, the
+   `json.dumps` on a source stamp, **and the `RPUSH` of the full bytes**.
+   Framing removes the first two and **cannot remove the third** — moving a
+   megabyte is what forwarding *is*. If the +1 ms is Redis carrying 1 MiB, this
+   build buys nothing.
+
+3. ⚠ **Payload shape matters as much as size.** `{"text": "<1 MiB of one
+   string>"}` is a scan; 1 MiB of nested objects is allocation. They differ by
+   an order of magnitude in `json.loads`, and only the second is what framing
+   avoids. **State which was measured.**
+
+**Do this before §5.2** — in-container, `time.perf_counter()`, n≥200, medians,
+each operation timed *alone* at 16 B / 64 KiB / 1 MiB:
+
+| | what it tells us |
+|---|---|
+| `json.loads(raw)` | **removable by framing** |
+| `json.dumps(frame)` | **removable** (source-stamp path only) |
+| `r.rpush(key, raw)` | ⚠ **NOT removable** — the floor this build cannot beat |
+
+Repeat with **both** payload shapes: one long string, and nested objects.
+
+⚠ **§5.2 proceeds only if `json.loads` alone is a material fraction of the
+total.** If `RPUSH` dominates, the correct outcome is **"no", and the switch is
+payload-independent in practice** — which the 16 B–64 KiB rows already suggest,
+since 64 KiB covers essentially all real traffic.
+
+### 5.2 If and only if the parse — not the byte movement — is the cost
 
 Then implement §2–3 and re-run the identical sweep. Expect:
 
