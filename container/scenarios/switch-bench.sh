@@ -63,10 +63,17 @@ sleep 5
 echo "  roster: $(dx redis-cli HLEN "pod:$POD:tenant:$TENANT:roster" | tr -d '\r')"
 
 echo "== synthetic port =="
-dx bash -lc "PATH=/tmp/shim:\$PATH nohup python3 /app/container/scenarios/bench-port.py \
+# ⚠ The image contains /app/src only — `container/scenarios/` is NOT baked in.
+# Copy the port in rather than assuming a path that does not exist. (Caught on
+# the first run of this script, before it could report anything.)
+docker cp "$(dirname "$0")/bench-port.py" "$CONTAINER:/tmp/bench-port.py" >/dev/null
+dx bash -lc "PATH=/tmp/shim:\$PATH nohup python3 /tmp/bench-port.py \
   --pod '$POD' --tenant '$TENANT' --prefix bench- --count $STATIONS \
   >>/proc/1/fd/1 2>&1 & echo started" >/dev/null 2>&1
-sleep 2
+sleep 3
+dx pgrep -f bench-port.py >/dev/null 2>&1 \
+  && echo "  synthetic port running" \
+  || { echo "  ⚠ synthetic port DID NOT START — aborting rather than measuring a real-port run" >&2; exit 3; }
 
 echo "== send =="
 docker exec -i "$CONTAINER" python3 - <<PY >"$SEND_LOG"
