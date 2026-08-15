@@ -47,8 +47,8 @@ that is how `BUILD-46` got its dead URL.
 
 ## 2. ✅ FIXED — the switch no longer parses the frame
 
-**Code:** `parse_for_switch` (`bus/envelope.py:190`) slices `raw[:191]` and
-decodes only those bytes; `_header_text` (`:162`) does `raw[:HEADER_WIDTH].decode`
+**Code:** `parse_for_switch` (`bus/envelope.py:217`) slices `raw[:191]` and
+decodes only those bytes; `_header_text` (`:189`) does `raw[:HEADER_WIDTH].decode`
 **before** any other decode. Verify:
 
 ```bash

@@ -168,7 +168,7 @@ is the whole model: ports do the work, the switch moves frames.
 
 1. **build** — ⚠ **INTENDED, NOT BUILT.** `doors.send()` takes `source` from the
    **caller** and `require_allowed()` at `doors.py:34` evaluates policy against
-   it; the switch only corrects `l2.source` at `switch/service.py:90`, **after** policy
+   it; the switch only corrects `l2.source` at `switch/service.py:129`, **after** policy
    has run. Consistent with §2.3 (the port filters mistakes, not adversaries),
    but the port does **not** stamp identity. Making it structural is h-vab's
    bound-`Port` handle, recorded as *not taken* in `DECISION-h-vab`
@@ -451,8 +451,8 @@ JSON the switch's read cost **4,381 µs** — 3,086× its cost at 16 B. So the �
 above was published on a measurement taken at +77 bytes, where the effect was
 correctly invisible.
 
-**v3 applied the fix it named.** `_header_text` (`bus/envelope.py:162`) slices
-`raw[:191]` and decodes only those bytes; `parse_for_switch` (`:190`) reads the
+**v3 applied the fix it named.** `_header_text` (`bus/envelope.py:189`) slices
+`raw[:191]` and decodes only those bytes; `parse_for_switch` (`:217`) reads the
 header and nothing else. ⚠ **The switch is now payload-independent by
 construction, not by measurement** — `rg 'json\.' src/flock/switch/service.py` is
 empty.
