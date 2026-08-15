@@ -3,6 +3,7 @@ import pytest
 from flock.bus import (
     prefix,
     build as build_envelope,
+    encode,
     parse as parse_envelope,
     EnvelopeError,
     DeadLetter,
@@ -81,7 +82,7 @@ def test_prefix_invalid():
 
 def test_envelope_build_and_parse():
     env = build_envelope(kind="Message", source="alice", destination="bob", payload={"text": "hello"})
-    assert env["v"] == 2
+    assert env["v"] == 3
     assert env["l2"] == {"source": "alice", "destination": "bob"}
     assert env["l3"] == {
         "source": "default:default:alice",
@@ -93,7 +94,7 @@ def test_envelope_build_and_parse():
     assert "correlation_id" in env
     assert "ts" in env
 
-    raw = json.dumps(env)
+    raw = encode(env)
     parsed = parse_envelope(raw)
     assert parsed["stream_id"] == env["stream_id"]
 
@@ -130,7 +131,8 @@ def test_opener_dead_letter_is_terminal_and_never_opened(capsys):
     r = MockRedis()
     envelope = build_envelope(kind="Message", source="alice", destination="bob", payload={"text": "hi"})
     ingress_key = prefix("acme", "hq", agent="bob", resource="ingress")
-    r.rpush(ingress_key, json.dumps(envelope))
+    from flock.bus import encode
+    r.rpush(ingress_key, encode(envelope))
 
     def reject(_envelope):
         raise DeadLetter("window_missing")

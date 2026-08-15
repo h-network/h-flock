@@ -37,6 +37,7 @@ POD="${POD:-acme}"
 TENANT="${TENANT:?set TENANT}"
 STATIONS="${STATIONS:-100}"
 ROUNDS="${ROUNDS:-20}"
+PAYLOAD_BYTES="${PAYLOAD_BYTES:-default}"
 OUT="${OUT:-/tmp/switch-bench-$(date +%s).log}"
 SEND_LOG=$(mktemp)
 trap 'rm -f "$SEND_LOG"' EXIT
@@ -46,7 +47,7 @@ T=$(dx printenv API_TOKEN)
 A="http://127.0.0.1:8080"
 EXPECT=$(( STATIONS * ROUNDS ))
 
-echo "switch-bench: $STATIONS x $ROUNDS = $EXPECT envelopes -> $OUT"
+echo "switch-bench: $STATIONS x $ROUNDS = $EXPECT envelopes, payload=$PAYLOAD_BYTES -> $OUT"
 
 echo "== kick shim =="
 dx bash -lc 'mkdir -p /tmp/shim && printf "#!/bin/sh\nexit 0\n" > /tmp/shim/flock.port && chmod +x /tmp/shim/flock.port'
@@ -83,12 +84,15 @@ import redis
 from flock.bus.doors import send
 r = redis.Redis.from_url(os.environ.get("REDIS_URL", "redis://127.0.0.1:6379/0"))
 n, rounds = $STATIONS, $ROUNDS
+payload_bytes = "$PAYLOAD_BYTES"
+fixed_payload = None if payload_bytes == "default" else {"text": "x" * int(payload_bytes)}
 t0 = time.time()
 for rnd in range(rounds):
     for i in range(1, n + 1):
+        payload = {"text": f"r{rnd}"} if fixed_payload is None else fixed_payload
         send(r, pod="$POD", tenant="$TENANT", source=f"bench-{i}",
              destination=f"bench-{(i % n) + 1}", kind="Message",
-             payload={"text": f"r{rnd}"})
+             payload=payload)
 print(f"  submitted {n*rounds} in {time.time()-t0:.1f}s")
 PY
 grep '^  submitted ' "$SEND_LOG"

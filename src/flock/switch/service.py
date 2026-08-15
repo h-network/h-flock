@@ -1,6 +1,5 @@
 """Forward tenant egress queues without interpreting payloads."""
 
-import json
 import os
 import signal
 import subprocess
@@ -9,7 +8,7 @@ import time
 import redis
 
 from flock.bus import EnvelopeError, emit, is_member, log_record, members, prefix
-from flock.bus.envelope import parse_for_switch
+from flock.bus.envelope import header_record_fields, parse_for_switch, stamp_source
 from .activity import ActivityTailer
 from .presence import PresenceSampler
 from .retention import RetentionTrimmer
@@ -42,18 +41,10 @@ class Switch:
     @staticmethod
     def _record_popped(raw, sender: str) -> None:
         """Record removal before validating the untrusted frame."""
-        try:
-            candidate = json.loads(raw)
-        except (json.JSONDecodeError, TypeError, UnicodeDecodeError):
-            candidate = {}
-        if not isinstance(candidate, dict):
-            candidate = {}
-        l2 = candidate.get("l2")
-        if not isinstance(l2, dict):
-            l2 = {}
+        candidate = header_record_fields(raw)
         stream_id = candidate.get("stream_id")
         correlation_id = candidate.get("correlation_id")
-        destination = l2.get("destination")
+        destination = candidate.get("destination")
         log_record(
             "switch",
             "popped",
@@ -141,7 +132,7 @@ class Switch:
             # source of truth. Correct rather than reject: rejecting a mismatch
             # would let a raw queue writer destroy another participant's traffic.
             envelope["l2"]["source"] = sender
-            raw = json.dumps(envelope, separators=(",", ":"))
+            raw = stamp_source(raw, sender)
         if claimed_producer != sender:
             emit(
                 "switch",

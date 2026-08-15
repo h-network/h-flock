@@ -72,6 +72,7 @@ wait_for_queues() {
 import os, sys
 sys.path.insert(0, "/app/src")
 import redis
+from flock.bus import parse
 pod, tenant = sys.argv[1:3]
 r = redis.Redis.from_url(os.environ.get("REDIS_URL", "redis://127.0.0.1:6379/0"))
 total = 0
@@ -124,18 +125,19 @@ pod, tenant = sys.argv[1:3]
 r = redis.Redis.from_url(os.environ.get("REDIS_URL", "redis://127.0.0.1:6379/0"))
 for key in r.scan_iter(match=f"pod:{pod}:tenant:{tenant}:agent:*:dead"):
     for raw in r.lrange(key, 0, -1):
-        try: print(json.dumps(json.loads(raw)))
+        try: print(json.dumps(parse(raw)))
         except Exception: print("__CONSERVATION_DEAD_JSON_PARSE_FAILURE__")
 PY
   dx python3 - "$POD" "$TENANT" >"$WORK/${label}.ingress.jsonl" <<'PY'
 import json, os, sys
 sys.path.insert(0, "/app/src")
 import redis
+from flock.bus import parse
 pod, tenant = sys.argv[1:3]
 r = redis.Redis.from_url(os.environ.get("REDIS_URL", "redis://127.0.0.1:6379/0"))
 for key in r.scan_iter(match=f"pod:{pod}:tenant:{tenant}:agent:*:ingress"):
     for raw in r.lrange(key, 0, -1):
-        try: print(json.dumps(json.loads(raw)))
+        try: print(json.dumps(parse(raw)))
         except Exception: print("__CONSERVATION_INGRESS_JSON_PARSE_FAILURE__")
 PY
   python3 - "$ledger" "$WORK/${label}.docker.log" "$WORK/${label}.dead.jsonl" "$WORK/${label}.ingress.jsonl" "$WORK/injections.tsv" <<'PY'
@@ -320,14 +322,14 @@ build67_push() {
 import json, os, sys, time
 sys.path.insert(0, "/app/src")
 import redis
-from flock.bus import build, prefix
+from flock.bus import build, encode, prefix
 pod, tenant, destination, count, label = sys.argv[1], sys.argv[2], sys.argv[3], int(sys.argv[4]), sys.argv[5]
 r = redis.Redis.from_url(os.environ.get("REDIS_URL", "redis://127.0.0.1:6379/0"))
 key = prefix(pod, tenant, "stress-src", "egress")
 started = time.time()
 for sequence in range(count):
     frame = build("Message", "stress-src", destination, {"sequence": sequence, "fault": label}, pod=pod, tenant=tenant)
-    r.rpush(key, json.dumps(frame, separators=(",", ":")))
+    r.rpush(key, encode(frame))
 print(f"PUSH label={label} count={count} elapsed_s={time.time()-started:.6f}")
 PY
 }
@@ -433,12 +435,12 @@ PY
 import json, os, sys
 sys.path.insert(0, "/app/src")
 import redis
-from flock.bus import build, prefix
+from flock.bus import build, encode, prefix
 from flock.watchdog.service import Watchdog
 pod, tenant=sys.argv[1:3]; r=redis.Redis.from_url(os.environ.get("REDIS_URL", "redis://127.0.0.1:6379/0"))
 for dst in ("stress-api", "host"):
     frame=build("Message", "stress-src", dst, {"fault":"C-injected"}, pod=pod, tenant=tenant)
-    r.rpush(prefix(pod, tenant, dst, "ingress"), json.dumps(frame, separators=(",", ":")))
+    r.rpush(prefix(pod, tenant, dst, "ingress"), encode(frame))
 w=Watchdog(r,pod=pod,tenant=tenant,session_name=tenant)
 observed=w._agents()
 print(f"C_INJECTED api_depth={r.llen(prefix(pod,tenant,'stress-api','ingress'))} control_depth={r.llen(prefix(pod,tenant,'host','ingress'))} watchdog_agents={observed}")
@@ -452,10 +454,10 @@ PY
   build67_redis >"$WORK/d-control.tsv" <<'PY'
 import json, os, sys, time
 sys.path.insert(0,"/app/src"); import redis
-from flock.bus import build,prefix
+from flock.bus import build,encode,prefix
 pod,tenant=sys.argv[1:3]; r=redis.Redis.from_url(os.environ.get("REDIS_URL","redis://127.0.0.1:6379/0"))
 for seq in range(3):
- f=build("Message","stress-src","stress-clean",{"sequence":seq,"fault":"D-control"},pod=pod,tenant=tenant); print(f"{seq}\t{f['stream_id']}\tstress-src\tstress-clean\t{time.time()}",flush=True); r.rpush(prefix(pod,tenant,"stress-src","egress"),json.dumps(f,separators=(",",":")))
+ f=build("Message","stress-src","stress-clean",{"sequence":seq,"fault":"D-control"},pod=pod,tenant=tenant); print(f"{seq}\t{f['stream_id']}\tstress-src\tstress-clean\t{time.time()}",flush=True); r.rpush(prefix(pod,tenant,"stress-src","egress"),encode(f))
 PY
   wait_for_queues 120 || return 3
   : >"$WORK/injections.tsv"
@@ -469,9 +471,9 @@ PY
   build67_redis >"$WORK/d-injected.tsv" <<'PY'
 import json, os, sys, time
 sys.path.insert(0,"/app/src"); import redis
-from flock.bus import build,prefix
+from flock.bus import build,encode,prefix
 pod,tenant=sys.argv[1:3]; r=redis.Redis.from_url(os.environ.get("REDIS_URL","redis://127.0.0.1:6379/0")); key=prefix(pod,tenant,"stress-src","egress")
-f=build("Message","stress-src","stress-clean",{"sequence":0,"fault":"D-injected"},pod=pod,tenant=tenant); print(f"0\t{f['stream_id']}\tstress-src\tstress-clean\t{time.time()}",flush=True); r.rpush(key,json.dumps(f,separators=(",",":")))
+f=build("Message","stress-src","stress-clean",{"sequence":0,"fault":"D-injected"},pod=pod,tenant=tenant); print(f"0\t{f['stream_id']}\tstress-src\tstress-clean\t{time.time()}",flush=True); r.rpush(key,encode(f))
 while r.llen(key): time.sleep(.01)
 time.sleep(1)
 PY
@@ -489,10 +491,10 @@ PY
   build67_redis >>"$WORK/d-injected.tsv" <<'PY'
 import json, os, sys, time
 sys.path.insert(0,"/app/src"); import redis
-from flock.bus import build,prefix
+from flock.bus import build,encode,prefix
 pod,tenant=sys.argv[1:3]; r=redis.Redis.from_url(os.environ.get("REDIS_URL","redis://127.0.0.1:6379/0")); key=prefix(pod,tenant,"stress-src","egress")
 for seq in (1,2):
- f=build("Message","stress-src","stress-clean",{"sequence":seq,"fault":"D-injected"},pod=pod,tenant=tenant); print(f"{seq}\t{f['stream_id']}\tstress-src\tstress-clean\t{time.time()}",flush=True); r.rpush(key,json.dumps(f,separators=(",",":")))
+ f=build("Message","stress-src","stress-clean",{"sequence":seq,"fault":"D-injected"},pod=pod,tenant=tenant); print(f"{seq}\t{f['stream_id']}\tstress-src\tstress-clean\t{time.time()}",flush=True); r.rpush(key,encode(f))
 PY
   # Make a controlled switch expose the exact BLPOP-before-emit gap.
   marker="pod:$POD:tenant:$TENANT:build67:blpop-gap"; dx redis-cli DEL "$marker" >/dev/null
@@ -563,20 +565,20 @@ broadcast69_push() {
 import json, os, sys, time
 sys.path.insert(0, "/app/src")
 import redis
-from flock.bus import build, prefix
+from flock.bus import build, encode, prefix
 pod, tenant, stations, broadcasts, unicasts, duplicate = sys.argv[1], sys.argv[2], int(sys.argv[3]), int(sys.argv[4]), int(sys.argv[5]), int(sys.argv[6])
 r = redis.Redis.from_url(os.environ.get("REDIS_URL", "redis://127.0.0.1:6379/0"))
 key = prefix(pod, tenant, "cons-0", "egress")
 for sequence in range(broadcasts):
     frame = build("Message", "cons-0", "all", {"broadcast_sequence": sequence}, pod=pod, tenant=tenant)
     for i in range(1, stations): print(f"{frame['stream_id']}\tcons-{i}")
-    raw = json.dumps(frame, separators=(",", ":"))
+    raw = encode(frame)
     r.rpush(key, raw, raw) if duplicate and sequence == 0 else r.rpush(key, raw)
 for sequence in range(unicasts):
     recipient = f"cons-{1 + sequence % (stations - 1)}"
     frame = build("Message", "cons-0", recipient, {"unicast_sequence": sequence}, pod=pod, tenant=tenant)
     print(f"{frame['stream_id']}\t{recipient}")
-    r.rpush(key, json.dumps(frame, separators=(",", ":")))
+    r.rpush(key, encode(frame))
 PY
 }
 
@@ -661,11 +663,11 @@ dx python3 - "$POD" "$TENANT" >"$WORK/negative-duplicate.tsv" <<'PY'
 import json, os, sys, time
 sys.path.insert(0, "/app/src")
 import redis
-from flock.bus import build, prefix
+from flock.bus import build, encode, prefix
 pod, tenant = sys.argv[1:3]
 r = redis.Redis.from_url(os.environ.get("REDIS_URL", "redis://127.0.0.1:6379/0"))
 frame = build("Message", "cons-0", "cons-1", {"sequence": "negative-duplicate"}, pod=pod, tenant=tenant)
-raw = json.dumps(frame, separators=(",", ":"))
+raw = encode(frame)
 print(f"negative-duplicate\t{frame['stream_id']}\tcons-1\t{time.time()}")
 r.rpush(prefix(pod, tenant, "cons-0", "egress"), raw, raw)
 PY
@@ -688,12 +690,12 @@ dx python3 - "$POD" "$TENANT" >"$WORK/negative-loss.tsv" <<'PY'
 import json, os, sys, time
 sys.path.insert(0, "/app/src")
 import redis
-from flock.bus import build, prefix
+from flock.bus import build, encode, prefix
 pod, tenant = sys.argv[1:3]
 r = redis.Redis.from_url(os.environ.get("REDIS_URL", "redis://127.0.0.1:6379/0"))
 frame = build("Message", "cons-0", "cons-1", {"sequence": "negative-loss"}, pod=pod, tenant=tenant)
 print(f"negative-loss\t{frame['stream_id']}\tcons-1\t{time.time()}")
-r.rpush(prefix(pod, tenant, "cons-0", "egress"), json.dumps(frame, separators=(",", ":")))
+r.rpush(prefix(pod, tenant, "cons-0", "egress"), encode(frame))
 r.lpop(prefix(pod, tenant, "cons-0", "egress"))
 PY
 if reconcile "$WORK/negative-loss.tsv" negative-loss >"$WORK/negative-loss.result"; then
@@ -722,7 +724,7 @@ docker exec -i "$CONTAINER" python3 -u - "$POD" "$TENANT" "$STATIONS" "$ROUNDS" 
 import json, os, sys, time
 sys.path.insert(0, "/app/src")
 import redis
-from flock.bus import build, prefix
+from flock.bus import build, encode, prefix
 pod, tenant, stations, rounds, delay = sys.argv[1], sys.argv[2], int(sys.argv[3]), int(sys.argv[4]), float(sys.argv[5])
 r = redis.Redis.from_url(os.environ.get("REDIS_URL", "redis://127.0.0.1:6379/0"))
 for rnd in range(rounds):
@@ -731,7 +733,7 @@ for rnd in range(rounds):
         dst = f"cons-{(i + 1) % stations}"
         frame = build("Message", f"cons-{i}", dst, {"sequence": seq}, pod=pod, tenant=tenant)
         print(f"{seq}\t{frame['stream_id']}\tcons-{i}\t{dst}\t{time.time()}", flush=True)
-        r.rpush(prefix(pod, tenant, f"cons-{i}", "egress"), json.dumps(frame, separators=(",", ":")))
+        r.rpush(prefix(pod, tenant, f"cons-{i}", "egress"), encode(frame))
         if delay: time.sleep(delay)
 PY
 producer=$!
