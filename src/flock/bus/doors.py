@@ -112,7 +112,7 @@ def receive(
         envelope = parse(raw)
     except EnvelopeError as exc:
         r.rpush(prefix(pod, tenant, agent, "dead"), raw)
-        # A valid v3 header remains joinable when its corrupt body is rejected
+        # A valid v4 header remains joinable when its corrupt body is rejected
         # here. A malformed header has no trustworthy custody identifiers.
         try:
             header = parse_for_switch(raw)

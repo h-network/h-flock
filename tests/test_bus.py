@@ -5,7 +5,7 @@ from contextlib import redirect_stdout
 from unittest.mock import patch
 
 from flock.bus import EnvelopeError, build, emit, encode, is_member, members, parse, prefix, receive, send, port_type, tags_key
-from flock.bus.envelope import parse_for_switch
+from flock.bus.envelope import HEADER_WIDTH, RESERVED_START, parse_for_switch
 from flock.switch.service import Switch
 
 
@@ -109,23 +109,23 @@ class EnvelopeTest(unittest.TestCase):
         self.assertEqual(bare["l2"], qualified["l2"])
         self.assertEqual(qualified["l3"]["destination"], "acme:hq:bob")
 
-    def test_flat_v1_is_not_accepted_on_v3_wire(self):
+    def test_flat_v1_is_not_accepted_on_v4_wire(self):
         with self.assertRaises(EnvelopeError):
             parse(json.dumps({"v": 1, "source": "alice", "destination": "bob"}))
 
     def test_switch_parser_does_not_validate_or_read_l3(self):
         frame = build("Message", "alice", "bob", {})
         raw = encode(frame)
-        body = json.loads(raw[191:])
+        body = json.loads(raw[HEADER_WIDTH:])
         body["l3"] = "opaque-to-the-switch"
-        raw = raw[:191] + json.dumps(body)
+        raw = raw[:HEADER_WIDTH] + json.dumps(body)
         self.assertEqual(parse_for_switch(raw)["l2"]["destination"], "bob")
         with self.assertRaisesRegex(EnvelopeError, "l3 must be an object"):
             parse(raw)
 
     def test_switch_parser_does_not_decode_body_bytes(self):
         raw = encode(build("Message", "alice", "bob", {})).encode("ascii")
-        corrupt = raw[:191] + b"\xffnot-json"
+        corrupt = raw[:HEADER_WIDTH] + b"\xffnot-json"
         self.assertEqual(parse_for_switch(corrupt)["l2"]["destination"], "bob")
         with self.assertRaisesRegex(EnvelopeError, "frame is not UTF-8"):
             parse(corrupt)
@@ -135,10 +135,17 @@ class EnvelopeTest(unittest.TestCase):
             parse("not-json")
         envelope = build("Message", "alice", "bob", {})
         raw = encode(envelope)
-        body = json.loads(raw[191:])
+        body = json.loads(raw[HEADER_WIDTH:])
         del body["payload"]
         with self.assertRaises(EnvelopeError):
-            parse(raw[:191] + json.dumps(body))
+            parse(raw[:HEADER_WIDTH] + json.dumps(body))
+
+    def test_unknown_reserved_bytes_are_ignored(self):
+        raw = encode(build("Message", "alice", "bob", {}))
+        future = raw[:RESERVED_START] + "x" * (HEADER_WIDTH - RESERVED_START) + raw[HEADER_WIDTH:]
+        parsed = parse(future)
+        self.assertEqual(parsed["ttl"], 16)
+        self.assertEqual(parsed["hops"], 0)
 
     def test_lifecycle_log_omits_stream_id(self):
         output = io.StringIO()
@@ -513,7 +520,9 @@ class DoorsAndRouterTest(unittest.TestCase):
 
         raw = self.r.lists[prefix("acme", "hq", "bob", "ingress")][0]
         self.assertEqual(parse(raw)["l2"]["source"], "alice")
-        self.assertEqual(raw[191:], original[191:])
+        self.assertEqual(raw[HEADER_WIDTH:], original[HEADER_WIDTH:])
+        self.assertEqual(parse(raw)["ttl"], 15)
+        self.assertEqual(parse(raw)["hops"], 1)
         records = [json.loads(line) for line in output.getvalue().splitlines()]
         self.assertEqual(
             [record["event"] for record in records],
@@ -543,7 +552,7 @@ class DoorsAndRouterTest(unittest.TestCase):
 
     def test_bad_body_forwards_then_dead_letters_at_port_with_join_key(self):
         frame = build("Message", "alice", "bob", {})
-        raw = encode(frame)[:191] + "{not-json"
+        raw = encode(frame)[:HEADER_WIDTH] + "{not-json"
         self.r.rpush(prefix("acme", "hq", "alice", "egress"), raw)
         output = io.StringIO()
 
@@ -568,6 +577,23 @@ class DoorsAndRouterTest(unittest.TestCase):
         self.assertEqual(dead["module"], "port")
         self.assertEqual(dead["stream_id"], frame["stream_id"])
         self.assertEqual(dead["destination"], "bob")
+
+    def test_ttl_one_dead_letters_without_kick(self):
+        frame = build("Message", "alice", "bob", {})
+        frame["ttl"] = 1
+        self.r.rpush(prefix("acme", "hq", "alice", "egress"), encode(frame))
+        output = io.StringIO()
+
+        with redirect_stdout(output):
+            self.assertTrue(Switch(self.r, pod="acme", tenant="hq").step())
+
+        records = [json.loads(line) for line in output.getvalue().splitlines()]
+        self.assertEqual([record["event"] for record in records], ["popped", "dead_lettered"])
+        self.assertEqual(records[-1]["reason"], "ttl expired at forward")
+        dead = self.r.lists[prefix("acme", "hq", "alice", "dead")][0]
+        self.assertEqual(parse(dead)["ttl"], 0)
+        self.assertEqual(parse(dead)["hops"], 1)
+        self.popen.assert_not_called()
 
     def test_switch_does_not_log_stamp_when_producer_matches_queue(self):
         send(

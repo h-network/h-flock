@@ -1,4 +1,4 @@
-"""Version-three frames with a fixed-width L2 header and opaque JSON body."""
+"""Version-four frames with a reserved fixed-width header and opaque JSON body."""
 
 import json
 from datetime import datetime, timezone
@@ -6,12 +6,16 @@ from uuid import uuid4
 
 from .keys import prefix
 
-VERSION = "3"
+VERSION = "4"
 IDENTIFIER_WIDTH = 32
 NAME_WIDTH = 63
 SOURCE_START = 65
 DESTINATION_START = 128
-HEADER_WIDTH = 191
+TTL_START = 191
+HOPS_START = 194
+RESERVED_START = 197
+HEADER_WIDTH = 256
+DEFAULT_TTL = 16
 
 
 class EnvelopeError(ValueError):
@@ -77,6 +81,22 @@ def _identifier(value: object, field: str) -> str:
     return value
 
 
+def _counter(value: object, field: str) -> int:
+    if isinstance(value, bool) or not isinstance(value, int) or not 0 <= value <= 999:
+        raise EnvelopeError(f"{field} must be an integer from 0 through 999")
+    return value
+
+
+def _parse_counter(text: str, field: str, default: int) -> int:
+    # All spaces means absent, allowing an older sender with the same frozen
+    # header width to leave a field unallocated.
+    if text == "   ":
+        return default
+    if len(text) != 3 or not text.isascii() or not text.isdigit():
+        raise EnvelopeError(f"{field} must be three ASCII digits or spaces")
+    return int(text)
+
+
 def build(
     kind: str,
     source: str,
@@ -87,7 +107,7 @@ def build(
     pod: str = "default",
     tenant: str = "default",
 ) -> dict:
-    """Construct a valid v3 frame after resolving its destination locally."""
+    """Construct a valid v4 frame after resolving its destination locally."""
     if not isinstance(kind, str) or not kind:
         raise EnvelopeError("kind must be a non-empty string")
     l3_source, source = resolve_source(pod=pod, tenant=tenant, source=source)
@@ -98,12 +118,14 @@ def build(
         raise EnvelopeError("payload must be an object")
     correlation_id = uuid4().hex if correlation_id is None else _identifier(correlation_id, "correlation_id")
     return {
-        "v": 3,
+        "v": 4,
         "kind": kind,
         "stream_id": uuid4().hex,
         "correlation_id": correlation_id,
         "ts": _timestamp(),
         "l2": {"source": source, "destination": l2_destination},
+        "ttl": DEFAULT_TTL,
+        "hops": 0,
         "l3": {"source": l3_source, "destination": l3_destination},
         "payload": payload,
     }
@@ -125,7 +147,7 @@ def _validate_body(frame: dict) -> None:
 
 def encode(frame: dict) -> str:
     """Serialize a validated frame into the fixed header plus compact JSON body."""
-    if not isinstance(frame, dict) or frame.get("v") != 3:
+    if not isinstance(frame, dict) or frame.get("v") != 4:
         raise EnvelopeError("unsupported frame version")
     stream_id = _identifier(frame.get("stream_id"), "stream_id")
     correlation_id = _identifier(frame.get("correlation_id"), "correlation_id")
@@ -136,6 +158,8 @@ def encode(frame: dict) -> str:
     destination = l2.get("destination")
     if destination != "all":
         destination = _segment(destination, "L2 destination")
+    ttl = _counter(frame.get("ttl", DEFAULT_TTL), "ttl")
+    hops = _counter(frame.get("hops", 0), "hops")
     _validate_body(frame)
     body = {field: frame[field] for field in ("kind", "ts", "l3", "payload")}
     return (
@@ -144,6 +168,9 @@ def encode(frame: dict) -> str:
         + correlation_id
         + source.ljust(NAME_WIDTH)
         + destination.ljust(NAME_WIDTH)
+        + f"{ttl:03d}"
+        + f"{hops:03d}"
+        + " " * (HEADER_WIDTH - RESERVED_START)
         + json.dumps(body, separators=(",", ":"))
     )
 
@@ -183,7 +210,7 @@ def header_record_fields(raw: str | bytes) -> dict:
         "stream_id": text[1:33],
         "correlation_id": text[33:65],
         "source": text[SOURCE_START:DESTINATION_START].rstrip(),
-        "destination": text[DESTINATION_START:HEADER_WIDTH].rstrip(),
+        "destination": text[DESTINATION_START:TTL_START].rstrip(),
     }
 
 
@@ -191,20 +218,24 @@ def parse_for_switch(raw: str | bytes) -> dict:
     """Validate and return only the fixed header used for local forwarding."""
     text = _header_text(raw)
     if len(text) < HEADER_WIDTH:
-        raise EnvelopeError("frame is shorter than the v3 header")
+        raise EnvelopeError("frame is shorter than the v4 header")
     if text[0] != VERSION:
         raise EnvelopeError("unsupported frame version")
     stream_id = _identifier(text[1:33], "stream_id")
     correlation_id = _identifier(text[33:65], "correlation_id")
     source = _segment(text[SOURCE_START:DESTINATION_START].rstrip(), "L2 source")
-    destination = text[DESTINATION_START:HEADER_WIDTH].rstrip()
+    destination = text[DESTINATION_START:TTL_START].rstrip()
     if destination != "all":
         destination = _segment(destination, "L2 destination")
+    ttl = _parse_counter(text[TTL_START:HOPS_START], "ttl", DEFAULT_TTL)
+    hops = _parse_counter(text[HOPS_START:RESERVED_START], "hops", 0)
     return {
-        "v": 3,
+        "v": 4,
         "stream_id": stream_id,
         "correlation_id": correlation_id,
         "l2": {"source": source, "destination": destination},
+        "ttl": ttl,
+        "hops": hops,
     }
 
 
@@ -215,6 +246,23 @@ def stamp_source(raw: str | bytes, source: str) -> str | bytes:
         return raw[:SOURCE_START] + padded.encode("ascii") + raw[DESTINATION_START:]
     text = _wire_text(raw)
     return text[:SOURCE_START] + padded + text[DESTINATION_START:]
+
+
+def advance_hop(raw: str | bytes, envelope: dict) -> str | bytes:
+    """Decrement TTL and increment hops by fixed-offset splices only."""
+    ttl = _counter(envelope.get("ttl"), "ttl")
+    hops = _counter(envelope.get("hops"), "hops")
+    if hops == 999:
+        raise EnvelopeError("hops cannot exceed 999")
+    ttl = max(0, ttl - 1)
+    hops += 1
+    envelope["ttl"] = ttl
+    envelope["hops"] = hops
+    counters = f"{ttl:03d}{hops:03d}"
+    if isinstance(raw, bytes):
+        return raw[:TTL_START] + counters.encode("ascii") + raw[RESERVED_START:]
+    text = _wire_text(raw)
+    return text[:TTL_START] + counters + text[RESERVED_START:]
 
 
 def parse(raw: str | bytes) -> dict:

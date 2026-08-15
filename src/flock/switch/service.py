@@ -8,7 +8,7 @@ import time
 import redis
 
 from flock.bus import EnvelopeError, emit, is_member, log_record, members, prefix
-from flock.bus.envelope import header_record_fields, parse_for_switch, stamp_source
+from flock.bus.envelope import advance_hop, header_record_fields, parse_for_switch, stamp_source
 from .activity import ActivityTailer
 from .presence import PresenceSampler
 from .retention import RetentionTrimmer
@@ -140,6 +140,16 @@ class Switch:
                 envelope,
                 reason=f"claimed source {claimed_producer!r} stamped from egress sender {sender!r}",
             )
+        try:
+            raw = advance_hop(raw, envelope)
+        except EnvelopeError as exc:
+            self.r.rpush(prefix(self.pod, self.tenant, sender, "dead"), raw)
+            emit("switch", "dead_lettered", envelope, str(exc))
+            return True
+        if envelope["ttl"] == 0:
+            self.r.rpush(prefix(self.pod, self.tenant, sender, "dead"), raw)
+            emit("switch", "dead_lettered", envelope, "ttl expired at forward")
+            return True
         destination = envelope["l2"]["destination"]
         if destination == "all":
             recipients = sorted(self._agents() - {sender})
