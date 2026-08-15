@@ -66,26 +66,44 @@ start_test_switch() {
 }
 
 wait_for_queues() {
-  local deadline=$((SECONDS + ${1:-2400})) depths
+  local deadline=$((SECONDS + ${1:-2400})) egress ingress delivering ports
+  local stable_seconds="${STRAND_STABLE_SECONDS:-15}" candidate_since=-1 candidate_ingress=-1
   while [ "$SECONDS" -lt "$deadline" ]; do
-    depths="$(dx python3 - "$POD" "$TENANT" <<'PY'
+    read -r egress ingress < <(dx python3 - "$POD" "$TENANT" <<'PY'
 import os, sys
 sys.path.insert(0, "/app/src")
 import redis
-from flock.bus import parse
 pod, tenant = sys.argv[1:3]
 r = redis.Redis.from_url(os.environ.get("REDIS_URL", "redis://127.0.0.1:6379/0"))
-total = 0
-for pattern in (f"pod:{pod}:tenant:{tenant}:agent:*:egress", f"pod:{pod}:tenant:{tenant}:agent:*:ingress"):
-    for key in r.scan_iter(match=pattern):
-        total += r.llen(key)
-print(total)
+def depth(resource):
+    return sum(r.llen(key) for key in r.scan_iter(
+        match=f"pod:{pod}:tenant:{tenant}:agent:*:{resource}"))
+print(depth("egress"), depth("ingress"))
 PY
-)"
-    [ "$depths" = "0" ] && [ "$(dx redis-cli HLEN "pod:$POD:tenant:$TENANT:delivering" | tr -d '\r')" = "0" ] && return 0
+)
+    delivering="$(dx redis-cli HLEN "pod:$POD:tenant:$TENANT:delivering" | tr -d '\r')"
+    [ "$egress" = "0" ] && [ "$ingress" = "0" ] && [ "$delivering" = "0" ] && return 0
+
+    # Once production has ended, an ingress queue that is stable with no
+    # delivering owner and no port process has no remaining consumer. Waiting
+    # 2,400 seconds cannot change that; return so reconciliation can classify
+    # the terminal strand while preserving it in Redis as evidence.
+    ports="$(dx sh -c "ps -eo args= | grep -c '[f]lock.port cons-' || true" | tr -d '\r')"
+    if [ "$egress" = "0" ] && [ "$ingress" -gt 0 ] && [ "$delivering" = "0" ] && [ "$ports" = "0" ]; then
+      if [ "$candidate_ingress" = "$ingress" ] && [ "$candidate_since" -ge 0 ] \
+          && [ $((SECONDS - candidate_since)) -ge "$stable_seconds" ]; then
+        echo "terminal strand candidate stable=${stable_seconds}s ingress=$ingress"
+        return 0
+      fi
+      candidate_since=$SECONDS
+      candidate_ingress=$ingress
+    else
+      candidate_since=-1
+      candidate_ingress=-1
+    fi
     sleep 1
   done
-  echo "queue drain timeout remaining=$depths"
+  echo "queue drain timeout egress=$egress ingress=$ingress delivering=$delivering ports=$ports"
   return 1
 }
 
@@ -656,6 +674,31 @@ echo "conservation container=$CONTAINER stations=$STATIONS rounds=$ROUNDS work=$
 seed_stations
 clear_station_state
 seed_stations
+
+echo "== negative control: terminal strand is classified promptly =="
+dx python3 - "$POD" "$TENANT" <<'PY'
+import os, sys
+sys.path.insert(0, "/app/src")
+import redis
+from flock.bus import build, encode, prefix
+pod, tenant = sys.argv[1:3]
+r = redis.Redis.from_url(os.environ.get("REDIS_URL", "redis://127.0.0.1:6379/0"))
+frame = build("Message", "cons-0", "cons-1", {"sequence": "negative-strand"}, pod=pod, tenant=tenant)
+r.rpush(prefix(pod, tenant, "cons-1", "ingress"), encode(frame))
+PY
+strand_started=$SECONDS
+strand_control_stable="${STRAND_CONTROL_STABLE_SECONDS:-3}"
+strand_control_timeout="${STRAND_CONTROL_TIMEOUT:-12}"
+STRAND_STABLE_SECONDS="$strand_control_stable" wait_for_queues "$strand_control_timeout" \
+  || { echo "HARNESS DEFECT: terminal strand was not classified promptly"; exit 3; }
+strand_elapsed=$((SECONDS - strand_started))
+strand_depth="$(dx redis-cli LLEN "pod:$POD:tenant:$TENANT:agent:cons-1:ingress" | tr -d '\r')"
+[ "$strand_depth" = "1" ] && [ "$strand_elapsed" -ge "$strand_control_stable" ] \
+    && [ "$strand_elapsed" -lt "$strand_control_timeout" ] \
+  || { echo "HARNESS DEFECT: strand gate elapsed=${strand_elapsed}s depth=$strand_depth"; exit 3; }
+echo "TERMINAL STRAND DETECTED elapsed=${strand_elapsed}s depth=$strand_depth"
+clear_station_state; seed_stations
+[ "${STRAND_CONTROL_ONLY:-0}" = "1" ] && exit 0
 
 echo "== negative control: duplicate =="
 : >"$WORK/negative-duplicate.tsv"
