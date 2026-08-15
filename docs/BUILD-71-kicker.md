@@ -24,12 +24,34 @@
 > raises a ceiling we never reach, and adds a fifth long-lived component to
 > supervise to do it.
 >
-> **What would revive it:** end-to-end throughput approaching the switch's
-> serialized ceiling. That needs spawn to get much cheaper — i.e. long-lived
-> ports. ⚠ **But long-lived ports remove the kick outright** (the switch only
-> kicks when no port is running), which is a better fix than moving it. So this
-> build is dominated either way: unnecessary now, and superseded by the change
-> that would otherwise justify it.
+> **What would revive it on latency:** end-to-end throughput approaching the
+> switch's serialized ceiling. That needs spawn to get much cheaper — i.e.
+> long-lived ports. ⚠ **But long-lived ports remove the kick outright** (the
+> switch only kicks when no port is running), which is a better fix than moving
+> it. On latency this build is dominated in both directions.
+>
+> ## ⚠ A different argument for a kicker, which this build did NOT make
+>
+> **Backpressure, not latency.** Nothing bounds how many ports exist at once —
+> `INGRESS_MAX` bounds queue *depth*, not process *count*. At 100s of agents a
+> burst is an unbounded fan-out of interpreters.
+>
+> ⚠ **The switch cannot fix this itself, and the reason is structural:** to bound
+> concurrency you need somewhere that may *block*, and the switch may not — it is
+> single-threaded and blocking it stops forwarding for the whole tenant. Refusing
+> a kick instead of blocking strands the envelope (build 66 measured what
+> stranding costs). A serialized spawner can simply wait.
+>
+> **This is not resilience.** The switch already survives a failed or hung spawn:
+> `_kick` catches `OSError` and logs `kick_failed` (`switch/service.py:87`), and
+> `SIGCHLD = SIG_IGN` (`:232`) keeps the process table from filling. Those close
+> the failure path. What is open is the *resource* path.
+>
+> ⚠ **UNMEASURED — do not act on this yet.** `conservation.sh:633` already
+> samples `concurrent_ports`, and **no build doc has ever quoted the peak**. Get
+> that number at 100 agents on h-oracle before building anything: if the peak is
+> comfortable this stays theoretical, and if it climbs, it justifies a kicker on
+> grounds this build never claimed.
 >
 > **What survives:** `bus`'s finding that a pipelined ingress+kick rollback races
 > an active consumer and needs one atomic Lua operation. That is correct
