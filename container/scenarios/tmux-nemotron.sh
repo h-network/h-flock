@@ -40,7 +40,7 @@ done
 echo "participants_done=${done_count:-0}/${#list[@]}"
 
 # One deliberately misclaimed source proves fixed-offset stamping preserves body.
-dx python3 - "$POD" "$TENANT" "${list[0]}" "${list[1]}" <<'PY'
+docker exec -i "$CONTAINER" python3 - "$POD" "$TENANT" "${list[0]}" "${list[1]}" <<'PY'
 import os, sys
 sys.path.insert(0, "/app/src")
 import redis

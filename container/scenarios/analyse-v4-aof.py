@@ -76,6 +76,7 @@ def main() -> int:
                     ingress[sid].append(row)
 
     compared = body_mismatch = counter_mismatch = source_mismatch = missing = 0
+    counterexamples = []
     stamped = []
     for sid, sent in egress.items():
         sender = sent[0].split(":")[-2]
@@ -85,7 +86,9 @@ def main() -> int:
             continue
         for arrived in received:
             compared += 1
-            body_mismatch += sent[5] != arrived[5]
+            if sent[5] != arrived[5]:
+                body_mismatch += 1
+                counterexamples.append((sid, sent[5], arrived[5]))
             counter_mismatch += (arrived[3], arrived[4]) != (max(0, sent[3] - 1), sent[4] + 1)
             expected_source = sender
             source_mismatch += arrived[1] != expected_source
@@ -95,7 +98,8 @@ def main() -> int:
     print(
         f"V4_AOF egress={len(egress)} compared={compared} missing_ingress={missing} "
         f"body_mismatch={body_mismatch} counter_mismatch={counter_mismatch} "
-        f"source_mismatch={source_mismatch} parse_failures={len(parse_failures)}"
+        f"source_mismatch={source_mismatch} source_stamps={len(stamped)} "
+        f"parse_failures={len(parse_failures)}"
     )
     for sid, claimed, stamped_source, body_ok in stamped:
         print(
@@ -104,7 +108,14 @@ def main() -> int:
         )
     for key, reason in parse_failures[:10]:
         print(f"PARSE_FAILURE key={key} reason={reason}")
-    return 1 if (body_mismatch or counter_mismatch or source_mismatch or parse_failures) else 0
+    for sid, sent_body, arrived_body in counterexamples[:10]:
+        print(
+            f"BODY_MISMATCH stream_id={sid} sent={sent_body!r} "
+            f"arrived={arrived_body!r}"
+        )
+    if not stamped:
+        print("REFUSED: source-stamp control absent from the captured AOF")
+    return 1 if (body_mismatch or counter_mismatch or source_mismatch or parse_failures or not stamped) else 0
 
 
 if __name__ == "__main__":
