@@ -46,7 +46,9 @@ def main() -> None:
                 "sme-2",
                 payload(shape, size),
                 pod="acme",
-                tenant="cost-sweep",
+                # Keep the qualified L3 addresses the same length as the bus72
+                # baseline so frame-size deltas describe the header, not names.
+                tenant="bench",
             )
             cases.append((shape, size, encode(frame)))
 
