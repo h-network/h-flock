@@ -1,0 +1,9 @@
+{"ts":"2026-08-15T00:00:01.000Z","module":"bus","event":"sent","stream_id":"complete","source":"bench-1","destination":"bench-2"}
+{"ts":"2026-08-15T00:00:01.010Z","module":"switch","event":"popped","stream_id":"complete","source":"bench-1","destination":"bench-2"}
+{"ts":"2026-08-15T00:00:01.020Z","module":"switch","event":"forwarded","stream_id":"complete","source":"bench-1","destination":"bench-2"}
+{"ts":"2026-08-15T00:00:01.030Z","module":"port","event":"received","stream_id":"complete","source":"bench-1","destination":"bench-2"}
+{"ts":"2026-08-15T00:00:01.040Z","module":"port","event":"opened","stream_id":"complete","source":"bench-1","destination":"bench-2"}
+{"ts":"2026-08-15T00:00:02.000Z","module":"bus","event":"sent","stream_id":"missing","source":"bench-1","destination":"bench-2"}
+{"ts":"2026-08-15T00:00:02.010Z","module":"switch","event":"popped","stream_id":"missing","source":"bench-1","destination":"bench-2"}
+{"ts":"2026-08-15T00:00:02.020Z","module":"switch","event":"forwarded","stream_id":"missing","source":"bench-1","destination":"bench-2"}
+{"ts":"2026-08-15T00:00:02.040Z","module":"port","event":"opened","stream_id":"missing","source":"bench-1","destination":"bench-2"}
