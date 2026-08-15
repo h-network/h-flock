@@ -121,7 +121,7 @@ it is a cost of citing lines, not a failure of the docs.
 
 `port/deliver.py:51 deliver_unroutable` emits `received` and `dead_lettered` via
 `emit()`, which takes `destination` from `envelope.l2.destination`. Every other
-custody site uses `_emit_for_recipient` (`bus/doors.py:16`), which pins
+custody site uses `_emit_for_recipient` (`bus/doors.py:24`), which pins
 `destination` to the **recipient**.
 
 For a broadcast those differ: the record lands under `(stream_id, "all")` instead
