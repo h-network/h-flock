@@ -56,6 +56,27 @@ decoding the whole frame to reach two fields — 4,381 µs at 1 MiB nested, agai
 
 ---
 
+## 2026-08-15 — custody `destination` is always the real recipient
+
+`port/deliver.py:deliver_unroutable` emitted `received` and `dead_lettered`
+through `emit()`, which takes `destination` from the envelope's **L2
+destination**. For a broadcast that is `"all"`, so those records landed under
+`(stream_id, "all")` instead of `(stream_id, agent)`.
+
+**Contract:** every custody record's `destination` names the **receiving agent**,
+never the envelope's L2 destination. `analyse-run.py` joins on
+`(stream_id, recipient)` and depends on it.
+
+### ⚠ What this made false
+
+- **Nothing in the docs** — this was code disagreeing with itself, not with a
+  document. Found while reviewing for [`DRIFT.md`](DRIFT.md) §6.
+- ⚠ **Any broadcast custody analysis run before this date** on a tenant with an
+  unroutable `port_type` under-counted that agent's `received`/`dead_lettered`.
+  Narrow path; no published figure is known to depend on it.
+
+---
+
 ## 2026-08-14 — the performance host, and what it invalidated
 
 Not a code change. Recorded because it **falsified published numbers**.

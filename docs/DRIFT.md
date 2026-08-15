@@ -99,7 +99,7 @@ and name no host.
 figure is quoted as a *current capability* rather than as that build's evidence.
 Everything else is correctly dated. Build 71's header is the model.
 
-## 5. Citation drift — 30 near misses, mechanical
+## 5. ✅ FIXED (partly) — citation drift, was 30 near misses, now 15
 
 `tools/check_citations.py` finds `file:line` references whose symbol has moved
 more than 3 lines. **0 hard failures** (no dead paths); 30 near misses:
@@ -121,7 +121,7 @@ it is a cost of citing lines, not a failure of the docs.
 
 ---
 
-## 6. Not drift — one real code inconsistency found while reviewing
+## 6. ✅ FIXED — one real code inconsistency found while reviewing
 
 ⚠ **This is the one row where the fix is in the code, not the doc.**
 
