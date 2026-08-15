@@ -24,7 +24,11 @@ import math
 import statistics
 import sys
 
-STAGES = ["sent", "popped", "forwarded", "received", "opened"]
+# ⚠ Every handover the system logs, in order. `kick_started` (build 65) splits
+# the largest gap in the path: `forwarded -> kick_started` is the switch issuing
+# the spawn, `kick_started -> received` is the process actually starting and
+# popping. Without it the two are one 669 ms number and indistinguishable.
+STAGES = ["sent", "popped", "forwarded", "kick_started", "received", "opened"]
 
 
 def ts(value: str) -> float:
@@ -83,10 +87,16 @@ def main() -> int:
         have = sum(1 for p in paths.values() if stage in p)
         frac = have / expect if expect else 0
         if frac < args.coverage:
-            print(f"  {stage:<10} {have:>7,} / {expect:,}  {frac:6.1%}  ⚠ REFUSED — does not cover the run")
+            print(f"  {stage:<12} {have:>7,} / {expect:,}  {frac:7.1%}  ⚠ REFUSED — does not cover the run")
+            incomplete = True
+        elif frac > 1.01:
+            # ⚠ MORE records than expected is not success. It means the log holds
+            # traffic this run did not produce — a stale tenant, a leftover
+            # process, or the wrong filter — and every figure below is mixed.
+            print(f"  {stage:<12} {have:>7,} / {expect:,}  {frac:7.1%}  ⚠ REFUSED — log holds traffic this run did not produce")
             incomplete = True
         else:
-            print(f"  {stage:<10} {have:>7,} / {expect:,}  {frac:6.1%}  ok")
+            print(f"  {stage:<12} {have:>7,} / {expect:,}  {frac:7.1%}  ok")
 
     print("\n== per-stage latency (median, p95) ==")
     for a, b in zip(STAGES, STAGES[1:]):
