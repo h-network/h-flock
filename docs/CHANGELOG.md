@@ -56,6 +56,40 @@ decoding the whole frame to reach two fields — 4,381 µs at 1 MiB nested, agai
 
 ---
 
+## 2026-08-15 — wire v3 → v4: frozen reserved header, TTL and hops
+
+**Build 73.** A frame is now **256 ASCII header bytes** followed by the same
+opaque JSON body. Bytes 191–193 are a three-digit TTL (default 016), bytes
+194–196 are a three-digit hop count (starting 000), and bytes 197–255 are
+reserved. Reserved bytes are ignored; future allocated fields may use them
+without moving the body boundary. An allocated three-byte field containing
+spaces is absent.
+
+Every forward decrements TTL and increments hops using fixed-offset splices.
+TTL reaching zero dead-letters at the switch and issues no kick. The switch
+still never reads or decodes the body.
+
+### ⚠ What this made false
+
+- **Wire v3 and a 191-byte header.** Version 4 is a hard break; transport queues
+  are purged at boot, while durable boards and streams survive.
+- **HEADER_WIDTH may move for each new L2 field.** It is frozen at 256. A future
+  field consumes the 59 reserved bytes or requires a new wire version.
+- **Frames grew 65 bytes** (351 → 416 at the same small-payload fixture).
+- **API-delivered frames have eight keys.** They now also expose integer `ttl`
+  and `hops`; the JSON body fields themselves are unchanged.
+
+### Unchanged, deliberately
+
+- ⚠ **This does not close the autonomous-agent reply loop at `TODO.md:33`.** A
+  reply is a new frame with a fresh correlation ID and a fresh TTL because the
+  pane receives no lineage. TTL bounds forwarding of the same frame; it does
+  not bound a conversation that creates new frames.
+- The switch's payload-independence invariant. Interleaved h-oracle measurement
+  was flat at 3.35–3.36 µs from 16 B through 1 MiB across both payload shapes.
+
+---
+
 ## 2026-08-15 — custody `destination` is always the real recipient
 
 `port/deliver.py:deliver_unroutable` emitted `received` and `dead_lettered`
