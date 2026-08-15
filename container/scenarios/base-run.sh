@@ -20,8 +20,6 @@ TENANT="${TENANT:?set TENANT}"
 STATIONS="${STATIONS:-100}"
 ROUNDS="${ROUNDS:-20}"
 OUT="${1:?usage: base-run.sh OUTPUT.log}"
-SEND_LOG=$(mktemp)
-trap 'rm -f "$SEND_LOG"' EXIT
 
 dx() { docker exec "$CONTAINER" "$@"; }
 T=$(dx printenv API_TOKEN)
@@ -38,23 +36,9 @@ done
 sleep 5
 echo "  enrolled: $(dx redis-cli HLEN "pod:$POD:tenant:$TENANT:roster" | tr -d '\r')"
 
-# ⚠ `-i` is load-bearing: without it python reads an empty program and exits 0.
-docker exec -i "$CONTAINER" python3 - <<PY >"$SEND_LOG"
-import os, sys, time
-sys.path.insert(0, "/app/src")
-import redis
-from flock.bus.doors import send
-r = redis.Redis.from_url(os.environ.get("REDIS_URL", "redis://127.0.0.1:6379/0"))
-pod, tenant, n, rounds = "$POD", "$TENANT", $STATIONS, $ROUNDS
-t0 = time.time()
-for rnd in range(rounds):
-    for i in range(1, n + 1):
-        send(r, pod=pod, tenant=tenant, source=f"bench-{i}",
-             destination=f"bench-{(i % n) + 1}", kind="Message",
-             payload={"text": f"r{rnd}"})
-print(f"  submitted {n*rounds} in {time.time()-t0:.1f}s")
-PY
-grep '^  submitted ' "$SEND_LOG"
+docker cp "$(dirname "$0")/bench-send.py" "$CONTAINER:/tmp/bench-send.py" >/dev/null
+dx sh -c "python3 /tmp/bench-send.py --pod '$POD' --tenant '$TENANT' \
+  --prefix bench- --count '$STATIONS' --rounds '$ROUNDS' >>/proc/1/fd/1"
 
 # Completion by queue depth: one Redis call per poll, constant cost.
 echo "  draining"
@@ -71,10 +55,6 @@ done
 
 sleep 3
 docker logs "$CONTAINER" > "$OUT" 2>&1
-# `send` ran through docker exec, so its custody records went to the exec
-# session rather than PID 1. Add that captured stream only after the run; the
-# resulting static artifact is complete without anything reading it live.
-grep '^{' "$SEND_LOG" >> "$OUT"
 echo "  captured $(wc -l < "$OUT") lines to $OUT"
 
 for i in $(seq 1 "$STATIONS"); do

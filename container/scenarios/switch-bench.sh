@@ -39,8 +39,6 @@ STATIONS="${STATIONS:-100}"
 ROUNDS="${ROUNDS:-20}"
 PAYLOAD_BYTES="${PAYLOAD_BYTES:-default}"
 OUT="${OUT:-/tmp/switch-bench-$(date +%s).log}"
-SEND_LOG=$(mktemp)
-trap 'rm -f "$SEND_LOG"' EXIT
 
 dx() { docker exec "$CONTAINER" "$@"; }
 T=$(dx printenv API_TOKEN)
@@ -77,25 +75,11 @@ dx pgrep -f bench-port.py >/dev/null 2>&1 \
   || { echo "  ⚠ synthetic port DID NOT START — aborting rather than measuring a real-port run" >&2; exit 3; }
 
 echo "== send =="
-docker exec -i "$CONTAINER" python3 - <<PY >"$SEND_LOG"
-import os, sys, time
-sys.path.insert(0, "/app/src")
-import redis
-from flock.bus.doors import send
-r = redis.Redis.from_url(os.environ.get("REDIS_URL", "redis://127.0.0.1:6379/0"))
-n, rounds = $STATIONS, $ROUNDS
-payload_bytes = "$PAYLOAD_BYTES"
-fixed_payload = None if payload_bytes == "default" else {"text": "x" * int(payload_bytes)}
-t0 = time.time()
-for rnd in range(rounds):
-    for i in range(1, n + 1):
-        payload = {"text": f"r{rnd}"} if fixed_payload is None else fixed_payload
-        send(r, pod="$POD", tenant="$TENANT", source=f"bench-{i}",
-             destination=f"bench-{(i % n) + 1}", kind="Message",
-             payload=payload)
-print(f"  submitted {n*rounds} in {time.time()-t0:.1f}s")
-PY
-grep '^  submitted ' "$SEND_LOG"
+docker cp "$(dirname "$0")/bench-send.py" "$CONTAINER:/tmp/bench-send.py" >/dev/null
+PAYLOAD_ARG=""
+[ "$PAYLOAD_BYTES" = default ] || PAYLOAD_ARG="--payload-bytes $PAYLOAD_BYTES"
+dx sh -c "python3 /tmp/bench-send.py --pod '$POD' --tenant '$TENANT' \
+  --prefix bench- --count '$STATIONS' --rounds '$ROUNDS' $PAYLOAD_ARG >>/proc/1/fd/1"
 
 echo "== drain (LLEN, constant cost per poll) =="
 for _ in $(seq 1 1800); do
@@ -111,7 +95,6 @@ done
 sleep 3
 
 docker logs "$CONTAINER" > "$OUT" 2>&1
-grep '^{' "$SEND_LOG" >> "$OUT"
 echo "  captured $(wc -l < "$OUT") lines"
 
 echo
