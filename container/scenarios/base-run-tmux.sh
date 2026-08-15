@@ -25,8 +25,6 @@ TENANT="${TENANT:?set TENANT}"
 AGENTS="${AGENTS:?set AGENTS, space separated}"
 ROUNDS="${ROUNDS:-20}"
 OUT="${1:?usage: base-run-tmux.sh OUTPUT.log}"
-SEND_LOG=$(mktemp)
-trap 'rm -f "$SEND_LOG"' EXIT
 
 dx() { docker exec "$CONTAINER" "$@"; }
 read -r -a LIST <<< "$AGENTS"
@@ -42,24 +40,9 @@ dx bash -lc 'export TMUX_TMPDIR=/home/ubuntu/.flock/tmux; for w in $(tmux list-w
 sleep 20
 echo "  windows: $(dx bash -lc 'export TMUX_TMPDIR=/home/ubuntu/.flock/tmux; tmux list-windows -t '"$TENANT"' 2>/dev/null | wc -l' | tr -d '\r')"
 
-docker exec -i "$CONTAINER" python3 - <<PY >"$SEND_LOG"
-import os, sys, time
-sys.path.insert(0, "/app/src")
-import redis
-from flock.bus.doors import send
-r = redis.Redis.from_url(os.environ.get("REDIS_URL", "redis://127.0.0.1:6379/0"))
-agents = "$AGENTS".split()
-t0 = time.time()
-n = 0
-for rnd in range($ROUNDS):
-    for i, a in enumerate(agents):
-        send(r, pod="$POD", tenant="$TENANT", source=a,
-             destination=agents[(i + 1) % len(agents)],
-             kind="Message", payload={"text": f"r{rnd}"})
-        n += 1
-print(f"  submitted {n} in {time.time()-t0:.1f}s")
-PY
-grep '^  submitted ' "$SEND_LOG"
+docker cp "$(dirname "$0")/bench-send.py" "$CONTAINER:/tmp/bench-send.py" >/dev/null
+dx sh -c "python3 /tmp/bench-send.py --pod '$POD' --tenant '$TENANT' \
+  --count '$N' --rounds '$ROUNDS' --names '$AGENTS' >>/proc/1/fd/1"
 
 echo "  draining"
 for _ in $(seq 1 1800); do
@@ -75,6 +58,5 @@ done
 
 sleep 3
 docker logs "$CONTAINER" > "$OUT" 2>&1
-grep '^{' "$SEND_LOG" >> "$OUT"
 echo "  captured $(wc -l < "$OUT") lines"
 echo "  ⚠ compare received->opened against the api baseline: that is where the paste delay lives"

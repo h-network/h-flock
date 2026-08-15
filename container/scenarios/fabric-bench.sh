@@ -47,26 +47,9 @@ BEFORE_MEM=$(dx redis-cli INFO memory | awk -F: '/^used_memory:/{printf "%d", $2
 echo
 echo "== sending =="
 START=$(date +%s%N)
-# ⚠ `-i` is load-bearing: without it docker exec attaches no stdin, python reads
-# an empty program, and the run reports zero sends with no error anywhere.
-docker exec -i "$CONTAINER" python3 - <<PY
-import os, sys, time, json
-sys.path.insert(0, "/app/src")
-import redis
-from flock.bus.doors import send
-r = redis.Redis.from_url(os.environ.get("REDIS_URL", "redis://127.0.0.1:6379/0"))
-pod, tenant, n, rounds = "$POD", "$TENANT", $STATIONS, $ROUNDS
-t0 = time.time()
-sent = 0
-for rnd in range(rounds):
-    for i in range(1, n + 1):
-        dst = f"bench-{(i % n) + 1}"
-        send(r, pod=pod, tenant=tenant, source=f"bench-{i}", destination=dst,
-             kind="Message", payload={"text": f"r{rnd}"})
-        sent += 1
-dt = time.time() - t0
-print(f"  submitted {sent} packets in {dt:.1f}s  =  {sent/dt:,.0f}/s at the sender")
-PY
+docker cp "$(dirname "$0")/bench-send.py" "$CONTAINER:/tmp/bench-send.py" >/dev/null
+dx sh -c "python3 /tmp/bench-send.py --pod '$POD' --tenant '$TENANT' \
+  --prefix bench- --count '$STATIONS' --rounds '$ROUNDS' >>/proc/1/fd/1"
 SUBMIT_NS=$(( $(date +%s%N) - START ))
 
 echo
