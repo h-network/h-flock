@@ -25,6 +25,8 @@ TENANT="${TENANT:?set TENANT}"
 AGENTS="${AGENTS:?set AGENTS, space separated}"
 ROUNDS="${ROUNDS:-20}"
 OUT="${1:?usage: base-run-tmux.sh OUTPUT.log}"
+SEND_LOG=$(mktemp)
+trap 'rm -f "$SEND_LOG"' EXIT
 
 dx() { docker exec "$CONTAINER" "$@"; }
 read -r -a LIST <<< "$AGENTS"
@@ -40,7 +42,7 @@ dx bash -lc 'export TMUX_TMPDIR=/home/ubuntu/.flock/tmux; for w in $(tmux list-w
 sleep 20
 echo "  windows: $(dx bash -lc 'export TMUX_TMPDIR=/home/ubuntu/.flock/tmux; tmux list-windows -t '"$TENANT"' 2>/dev/null | wc -l' | tr -d '\r')"
 
-docker exec -i "$CONTAINER" python3 - <<PY
+docker exec -i "$CONTAINER" python3 - <<PY >"$SEND_LOG"
 import os, sys, time
 sys.path.insert(0, "/app/src")
 import redis
@@ -57,6 +59,7 @@ for rnd in range($ROUNDS):
         n += 1
 print(f"  submitted {n} in {time.time()-t0:.1f}s")
 PY
+grep '^  submitted ' "$SEND_LOG"
 
 echo "  draining"
 for _ in $(seq 1 1800); do
@@ -72,5 +75,6 @@ done
 
 sleep 3
 docker logs "$CONTAINER" > "$OUT" 2>&1
+grep '^{' "$SEND_LOG" >> "$OUT"
 echo "  captured $(wc -l < "$OUT") lines"
 echo "  ⚠ compare received->opened against the api baseline: that is where the paste delay lives"

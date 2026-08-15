@@ -38,6 +38,8 @@ TENANT="${TENANT:?set TENANT}"
 STATIONS="${STATIONS:-100}"
 ROUNDS="${ROUNDS:-20}"
 OUT="${OUT:-/tmp/switch-bench-$(date +%s).log}"
+SEND_LOG=$(mktemp)
+trap 'rm -f "$SEND_LOG"' EXIT
 
 dx() { docker exec "$CONTAINER" "$@"; }
 T=$(dx printenv API_TOKEN)
@@ -67,7 +69,7 @@ dx bash -lc "PATH=/tmp/shim:\$PATH nohup python3 /app/container/scenarios/bench-
 sleep 2
 
 echo "== send =="
-docker exec -i "$CONTAINER" python3 - <<PY
+docker exec -i "$CONTAINER" python3 - <<PY >"$SEND_LOG"
 import os, sys, time
 sys.path.insert(0, "/app/src")
 import redis
@@ -82,6 +84,7 @@ for rnd in range(rounds):
              payload={"text": f"r{rnd}"})
 print(f"  submitted {n*rounds} in {time.time()-t0:.1f}s")
 PY
+grep '^  submitted ' "$SEND_LOG"
 
 echo "== drain (LLEN, constant cost per poll) =="
 for _ in $(seq 1 1800); do
@@ -97,6 +100,7 @@ done
 sleep 3
 
 docker logs "$CONTAINER" > "$OUT" 2>&1
+grep '^{' "$SEND_LOG" >> "$OUT"
 echo "  captured $(wc -l < "$OUT") lines"
 
 echo

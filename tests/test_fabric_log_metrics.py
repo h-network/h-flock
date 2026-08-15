@@ -1,14 +1,11 @@
-import importlib.util
 import json
+import subprocess
+import sys
 from pathlib import Path
 
-import pytest
 
-
-PATH = Path(__file__).parents[1] / "container" / "scenarios" / "analyse-run.py"
-SPEC = importlib.util.spec_from_file_location("fabric_log_metrics", PATH)
-metrics = importlib.util.module_from_spec(SPEC)
-SPEC.loader.exec_module(metrics)
+ROOT = Path(__file__).parents[1]
+SCRIPT = ROOT / "container" / "scenarios" / "analyse-run.py"
 
 
 def _line(stream_id, event, seconds, *, source="bench-1"):
@@ -24,47 +21,68 @@ def _line(stream_id, event, seconds, *, source="bench-1"):
     )
 
 
-def _complete(stream_id, offset):
+def _complete(stream_id, offset, *, source="bench-1"):
     return [
-        _line(stream_id, "sent", offset),
-        _line(stream_id, "popped", offset + 0.010),
-        _line(stream_id, "forwarded", offset + 0.020),
-        _line(stream_id, "received", offset + 0.030),
-        _line(stream_id, "opened", offset + 0.040),
+        _line(stream_id, "sent", offset, source=source),
+        _line(stream_id, "popped", offset + 0.010, source=source),
+        _line(stream_id, "forwarded", offset + 0.020, source=source),
+        _line(stream_id, "received", offset + 0.030, source=source),
+        _line(stream_id, "opened", offset + 0.040, source=source),
     ]
 
 
-def test_analyse_joins_stages_and_reports_middle_window():
+def _run(path, expected):
+    return subprocess.run(
+        [
+            sys.executable,
+            str(SCRIPT),
+            str(path),
+            "--expect",
+            str(expected),
+            "--source-prefix",
+            "bench-",
+        ],
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+
+
+def test_complete_log_reports_every_stage_and_timing(tmp_path):
     lines = []
-    for index in range(11):
+    for index in range(21):
         lines.extend(_complete(f"s-{index}", index))
-    result = metrics.analyse(lines, expected=11, source_prefix="bench-")
-    assert result["delivered"] == 11
-    assert result["dead_lettered"] == 0
-    assert result["steady_count"] == 9
-    assert result["steady_seconds"] == pytest.approx(8.0)
-    assert result["steady_rate"] == pytest.approx(1.125)
-    for values in result["stage_ms"].values():
-        assert values["n"] == 11
-        assert values["p50"] == pytest.approx(10.0)
-        assert values["p95"] == pytest.approx(10.0)
-    assert result["end_to_end_ms"]["n"] == 11
-    assert result["end_to_end_ms"]["p50"] == pytest.approx(40)
-    assert result["end_to_end_ms"]["p95"] == pytest.approx(40)
-    assert result["end_to_end_ms"]["p99"] == pytest.approx(40)
+    log = tmp_path / "complete.jsonl"
+    log.write_text("\n".join(lines) + "\n")
+
+    result = _run(log, 21)
+
+    assert result.returncode == 0
+    assert "envelopes 21   expected 21" in result.stdout
+    assert "sent            21 / 21" in result.stdout
+    assert "sent -> popped" in result.stdout
+    assert "n=     21" in result.stdout
+    assert "steady-state (middle 80%)" in result.stdout
 
 
-def test_missing_stage_refuses_metrics_instead_of_averaging():
-    lines = _complete("complete", 1)
-    lines.extend(_complete("missing", 2))
-    lines = [line for line in lines if not ('"stream_id": "missing"' in line and '"event": "received"' in line)]
-    with pytest.raises(ValueError, match=r"refusing stage metrics: 1 stream\(s\) incomplete.*received"):
-        metrics.analyse(lines, expected=2, source_prefix="bench-")
+def test_missing_stage_refuses_instead_of_averaging_fixture():
+    fixture = ROOT / "tests" / "fixtures" / "fabric-log-missing-stage.jsonl"
+
+    result = _run(fixture, 2)
+
+    assert result.returncode == 1
+    assert "received         1 / 2" in result.stdout
+    assert "forwarded -> received   REFUSED (n=1, needs 2)" in result.stdout
+    assert "received -> opened     REFUSED" in result.stdout
 
 
-def test_source_filter_excludes_control_paths():
+def test_source_filter_excludes_control_paths(tmp_path):
     lines = _complete("bench-1", 1) + _complete("bench-2", 2)
-    lines.extend(_complete("control", 3))
-    lines = [line.replace('"source": "bench-1"', '"source": "api"') if '"stream_id": "control"' in line else line for line in lines]
-    result = metrics.analyse(lines, expected=2, source_prefix="bench-")
-    assert result["joined_paths"] == 2
+    lines.extend(_complete("control", 3, source="api"))
+    log = tmp_path / "control.jsonl"
+    log.write_text("\n".join(lines) + "\n")
+
+    result = _run(log, 2)
+
+    assert result.returncode == 0
+    assert "envelopes 2   expected 2" in result.stdout

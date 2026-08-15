@@ -20,6 +20,7 @@ import argparse
 import collections
 import datetime
 import json
+import math
 import statistics
 import sys
 
@@ -91,7 +92,8 @@ def main() -> int:
     for a, b in zip(STAGES, STAGES[1:]):
         d = sorted(ts(p[b]) - ts(p[a]) for p in paths.values() if a in p and b in p)
         if len(d) < expect * args.coverage:
-            print(f"  {a:>9} -> {b:<10} REFUSED (n={len(d):,}, needs {int(expect*args.coverage):,})")
+            needed = math.ceil(expect * args.coverage)
+            print(f"  {a:>9} -> {b:<10} REFUSED (n={len(d):,}, needs {needed:,})")
             continue
         print(f"  {a:>9} -> {b:<10} n={len(d):>7,}  p50 {statistics.median(d)*1000:8.2f} ms"
               f"  p95 {d[int(len(d)*0.95)]*1000:9.2f} ms")
