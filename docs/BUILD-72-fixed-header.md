@@ -67,7 +67,7 @@ full `json.dumps` of a frame it never read. It becomes a 63-byte in-place write.
 
 ## 4. ⚠ One behaviour change, and it must be reported not hidden
 
-Today the switch dead-letters an unparseable frame at `service.py:134`. In v3 it
+Today the switch dead-letters an unparseable frame at `switch/service.py:134`. In v3 it
 can only judge the **header**. A frame with a valid header and a corrupt body
 will be forwarded and dead-lettered at the **port** instead.
 
