@@ -420,10 +420,10 @@ whole network.
    and it was quoted as an open thread in status reports on the strength of the
    doc rather than the code.
 
-   ⚠ **What is genuinely open is the ENCODING, not the addressing.** §6 records
-   that the switch still decodes the whole frame to reach L2, and names framing
-   as the fix. That is [`BUILD-72`](BUILD-72-fixed-header.md) — a v3 wire, fixed
-   width, measured before it is built.
+   ✅ **The ENCODING was the genuinely open part, and it is now closed too.**
+   [`BUILD-72`](BUILD-72-fixed-header.md) shipped the v3 wire on 2026-08-15: a
+   fixed 191-byte ASCII header then an opaque JSON body, so the switch forwards
+   without parsing. §6 has the measurement.
 
 ⚠ **1–3 were listed open here after being decided, exactly as `GLOSSARY`'s table
 was.** Renames 1–3 are executed and parked on `rename/vocabulary`.
@@ -437,14 +437,40 @@ forwarding decision is 795.85 µs → 791.47 µs at roster 100, unchanged, becau
 it reads L2 and is invariant to headers it does not touch. L4 will cost it
 nothing either.
 
-⚠ **It is *approximately* header-independent, not truly so.**
-`parse_for_switch` decodes the whole JSON — L3 and payload included — to read
-L2. A real switch reads fixed-offset bytes and never touches the payload. At
-+77 bytes that is invisible against a 1.7 ms Redis round trip, which is why the
-number did not move. **If frames grow substantially the switch starts paying for
-headers it does not read**, and the fix is framing that exposes L2 without
-parsing the rest. That, not throughput, is what would falsify "the switch is
-done".
+✅ **RESOLVED 2026-08-15 by build 72 — it is now truly header-independent.**
+
+This paragraph used to read: *"It is approximately header-independent, not truly
+so. `parse_for_switch` decodes the whole JSON — L3 and payload included — to read
+L2. A real switch reads fixed-offset bytes and never touches the payload… If
+frames grow substantially the switch starts paying for headers it does not read,
+and the fix is framing that exposes L2 without parsing the rest. That, not
+throughput, is what would falsify 'the switch is done'."*
+
+**The test it named was run, and it falsified the claim.** At 1 MiB of nested
+JSON the switch's read cost **4,381 µs** — 3,086× its cost at 16 B. So the ✅
+above was published on a measurement taken at +77 bytes, where the effect was
+correctly invisible.
+
+**v3 applied the fix it named.** `_header_text` (`bus/envelope.py:162`) slices
+`raw[:191]` and decodes only those bytes; `parse_for_switch` (`:190`) reads the
+header and nothing else. ⚠ **The switch is now payload-independent by
+construction, not by measurement** — `rg 'json\.' src/flock/switch/service.py` is
+empty.
+
+| switch read, p50 | before | after |
+|---|---|---|
+| 16 B nested | 1.42 µs | 3.01 µs |
+| 1 MiB nested | **4,381.72 µs** | **3.15 µs** |
+| spread over a 65,536× payload range | **3,086×** | **1.05×** |
+
+⚠ **`RPUSH` still scales with payload and that is correct.** The line is **read
+versus carry**: a switch may carry any payload and must interpret none. Carrying
+bytes is what forwarding is.
+
+⚠ **This is why the ✅ was safe to publish and still wrong to trust.** The
+measurement was honest and the caveat was written down; nobody ran the test the
+caveat named for nineteen builds. See [`DRIFT.md`](DRIFT.md) for what else is in
+that state.
 
 ⚠ **A consequence discovered by build 53 and resolved by build 63:** the frame
 is a **hard v2** — flat v1 is rejected. That was initially free because Redis ran

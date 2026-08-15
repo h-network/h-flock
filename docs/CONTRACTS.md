@@ -69,7 +69,7 @@ def prefix(pod: str, tenant: str, agent: str | None = None,
 def build(kind: str, source: str, destination: str, payload: dict,
           correlation_id: str | None = None, *, pod="default",
           tenant="default") -> dict
-    # returns a v2 frame with L2 source/destination and qualified L3 addresses;
+    # returns a v3 frame with L2 source/destination and qualified L3 addresses;
     # mints stream_id and mints correlation_id when not given (propagate-or-mint)
 def parse(raw: str) -> dict          # validates the full frame at the port
 def parse_for_switch(raw: str) -> dict
@@ -98,8 +98,9 @@ def port_type(r, *, pod, tenant, agent) -> str | None   # HGET   — port side o
     # that is invariant 8, and it is about the switch, not about this function.
 ```
 
-The Redis wire is **hard v2**: flat v1 envelopes are rejected rather than
-upgraded. HTTP send request bodies are port input and keep their existing
+The Redis wire is **hard v3**: a frame is a fixed 191-byte ASCII header then an
+opaque JSON body (`bus/envelope.py:14`), and anything else is rejected rather
+than upgraded — as v2 rejected flat v1. HTTP send request bodies are port input and keep their existing
 shape; mailbox consumers receive the layered frame and must read L2/L3.
 
 ⚠ **The switch calls `members` and `is_member`, never `port_type`.** Reading the value
@@ -222,8 +223,16 @@ stops meaning anything.
 
 ## 3. What a log record is
 
-`LLD-bus-and-switch` §4 promises two records per component and five across a
-delivered envelope's life, and that a crash shows up as "popped, no outcome".
+`LLD-bus-and-switch` §4 promises two records per component and **six** across a
+delivered envelope's life — `sent, popped, forwarded, kick_started, received,
+opened`. ⚠ **`kick_started` (build 65) made it six**; this line said five until
+2026-08-15, as did three other docs.
+
+⚠ **A broadcast does not have six**: `forwarded` is emitted once with `count=N`
+and `destination:"all"` (`switch/service.py:169`), so it cannot be joined per
+recipient. `analyse-run.py`'s `STAGES` is the operative list.
+
+The contract is and that a crash shows up as "popped, no outcome".
 That only works if the records join, so the shape is a contract.
 
 **One JSON object per line.** Daemons write records to stdout for the container

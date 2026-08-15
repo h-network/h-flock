@@ -5,6 +5,12 @@
 > separate finding and belongs in [`TODO.md`](TODO.md) — do not "fix" the code to
 > match a sentence.
 
+⚠ **STATUS: §1 and §2 were the blocking rows and BOTH ARE FIXED (2026-08-15).**
+§3 fixed in `CONTRACTS.md` and `LLD-bus-and-switch.md`. §4, §5 and §6 remain open
+and are ticketed. Contract changes are now tracked forward in
+[`CHANGELOG.md`](CHANGELOG.md), which is the thing that would have prevented most
+of this.
+
 **Generated 2026-08-15, against `main` at the v3 merge.** This file goes stale the
 moment code moves; **re-derive it, do not trust it.** Every row states how to
 re-check it in one command.
@@ -18,7 +24,7 @@ greps actually found, ranked by whether someone can be misled into wrong work.
 
 ---
 
-## 1. ⚠ BLOCKING — the wire is v3, seven docs say v2
+## 1. ✅ FIXED — the wire is v3, seven docs said v2
 
 **Code:** `bus/envelope.py` — `VERSION = "3"`, `HEADER_WIDTH = 191`. `build()`
 returns `{"v": 3, …}`. Verify:
@@ -39,7 +45,7 @@ python3 -c "import sys;sys.path.insert(0,'src');from flock.bus.envelope import V
 build 53 is not drift; it is a dated record. **Do not rewrite history docs** —
 that is how `BUILD-46` got its dead URL.
 
-## 2. ⚠ BLOCKING — the switch no longer parses the frame
+## 2. ✅ FIXED — the switch no longer parses the frame
 
 **Code:** `parse_for_switch` (`bus/envelope.py:190`) slices `raw[:191]` and
 decodes only those bytes; `_header_text` (`:162`) does `raw[:HEADER_WIDTH].decode`
@@ -58,7 +64,7 @@ rg 'json\.' src/flock/switch/service.py      # must be empty
 not truly so."** The caveat is now discharged — say so, and record that the test
 it named (frames growing substantially) was run and is what produced v3.
 
-## 3. Three different custody-record counts, and the code says neither
+## 3. ✅ FIXED — three different custody-record counts, and the code said neither
 
 **Code:** 13 envelope events; a delivered unicast leaves **six** stages —
 `sent, popped, forwarded, kick_started, received, opened`. Verify:

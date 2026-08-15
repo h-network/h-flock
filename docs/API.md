@@ -10,7 +10,8 @@ An **h-flock** tenant is a message bus for terminal agents and external applicat
 
 - **Addresses:** An agent's name (e.g. `backend`, `frontend`, `telegram`) is its sole address. All communication happens by addressing messages to names. Local names can be addressed directly (e.g. `backend`), or qualified with tenant and pod (`acme:hq:backend`).
 - **Applications as Participants:** External applications enrol as named participants on the bus with an `api` environment (`port_type: api`). Once enrolled, terminal agents can address replies to your app by name (e.g. `office send -a telegram hello`).
-- **Layered Wire Frames (v2):** Messages travel across the bus as version 2 layered wire frames (`v: 2`). A frame encapsulates Layer 2 local forwarding addresses (`l2`), Layer 3 qualified fabric addresses (`l3`), lifecycle correlation headers (`stream_id`, `correlation_id`), and an application `payload`.
+- **Layered Wire Frames (v3):** Messages travel across the bus as version 3 layered wire frames (`v: 3`). A frame encapsulates Layer 2 local forwarding addresses (`l2`), Layer 3 qualified fabric addresses (`l3`), lifecycle correlation headers (`stream_id`, `correlation_id`), and an application `payload`.
+- ⚠ **The JSON you receive is unchanged from v2 — same eight keys, only `v` differs.** v3 changed how a frame is *encoded on the Redis wire* (a fixed 191-byte ASCII header followed by an opaque JSON body) so the switch can forward without parsing the payload. API clients never see the wire form.
 - **Envelopes & Kinds:** The **kind** indicates what sort of message it is (e.g. `Message`, `AddTicket`, `StartAgent`).
 - **Tag-Based Policy & Access Control:** Senders and recipients can declare `export` and `import` policy tags. Senders are filtered at the port before enqueuing; an unshared tag set results in an immediate, synchronous `422 Unprocessable Content` refusal.
 - **Asynchronous Delivery:** `POST` operations return `202 Accepted` immediately upon successful queueing. Agents process envelopes asynchronously over seconds to minutes. A reply, if generated, is delivered to your app's inbox stream.
@@ -18,11 +19,11 @@ An **h-flock** tenant is a message bus for terminal agents and external applicat
 
 ### The v2 Wire Frame Specification
 
-Every envelope moving across the bus or read from `/messages` conforms to the version 2 frame schema:
+Every envelope moving across the bus or read from `/messages` conforms to the version 3 frame schema:
 
 ```json
 {
-  "v": 2,
+  "v": 3,
   "kind": "Message",
   "stream_id": "d03d60148843438cbafac93615646951",
   "correlation_id": "d3cec61c5c7049519920f433b325bf10",
@@ -163,7 +164,7 @@ curl -H "Authorization: Bearer $API_TOKEN" \
   "agent": "telegram",
   "messages": [
     {
-      "v": 2,
+      "v": 3,
       "kind": "Message",
       "stream_id": "edd534563cdd46209f0f63924c5e0497",
       "correlation_id": "4ba8e30ce8354109901d7b09c3a01bb4",
@@ -246,7 +247,7 @@ X-Accel-Buffering: no
 ```text
 id: 1786231898811-0
 event: message
-data: {"v": 2, "kind": "Message", "stream_id": "71d1dec5203c434c91df2af82e693637", "correlation_id": "da93ce7c8ce84ba6a26e9f338a989ee5", "ts": "2026-08-08T23:31:38.290Z", "l2": {"source": "frontend", "destination": "telegram"}, "l3": {"source": "acme:hq:frontend", "destination": "acme:hq:telegram"}, "payload": {"text": "hello from frontend"}, "cursor": "1786231898811-0"}
+data: {"v": 3, "kind": "Message", "stream_id": "71d1dec5203c434c91df2af82e693637", "correlation_id": "da93ce7c8ce84ba6a26e9f338a989ee5", "ts": "2026-08-08T23:31:38.290Z", "l2": {"source": "frontend", "destination": "telegram"}, "l3": {"source": "acme:hq:frontend", "destination": "acme:hq:telegram"}, "payload": {"text": "hello from frontend"}, "cursor": "1786231898811-0"}
 
 ```
 
@@ -797,7 +798,7 @@ Port `:8081` provides WebSocket terminal access for rendering live terminal wind
 | **Policy Denial** | `"policy denied '<source>' -> '<destination>': no shared export/import tag"` | Senders and recipients have disjoint policy tags. **Nothing was sent or enqueued.** Verify and update `export` / `import` tags via `StartAgent`. |
 | **Non-Local Route** | `"no route to non-local destination '<destination>'"` | Destination specifies a qualified pod/tenant outside this tenant. Intra-tenant local routing cannot reach foreign nodes without a gateway. |
 | **Invalid Client Identity** | `"invalid 'as' client: must be an enrolled client with port_type 'api'"` | The declared `"as"` client is not enrolled in the tenant roster as an `api` participant. Enrol with `StartAgent` first. |
-| **Malformed Address / Payload** | `"destination must be a qualified pod:tenant:agent address"` or `"payload must be an object"` | Request envelope structure does not conform to the v2 frame specification. |
+| **Malformed Address / Payload** | `"destination must be a qualified pod:tenant:agent address"` or `"payload must be an object"` | Request envelope structure does not conform to the v3 frame specification. |
 | **Payload Too Large** | `"request body too large (max 1MB)"` | Envelope payload exceeded the 1MB limit. |
 
 ### Custody Records & Observability
@@ -805,7 +806,7 @@ Port `:8081` provides WebSocket terminal access for rendering live terminal wind
 When an envelope is posted to the door or delivered across the bus, the platform emits structured custody records. Join them across system logs by `stream_id`:
 
 - **`send_refused`** *(pre-queue refusal)*: Emitted synchronously by the sender door/port when a send is rejected (e.g. policy denial, unrouted non-local destination, or validation failure). **No frame is minted and nothing is enqueued to egress.**
-- **`sent`**: Emitted when the envelope is assembled into a v2 frame and enqueued to the sender's `egress` list.
+- **`sent`**: Emitted when the envelope is assembled into a v3 frame and enqueued to the sender's `egress` list.
 - **`popped`**: Emitted by the switch when taking the frame off egress.
 - **`forwarded`**: Emitted by the switch when delivering the frame to the recipient's `ingress` list.
 - **`dead_lettered`**: Emitted if the switch or port fails to deliver or parse the frame.

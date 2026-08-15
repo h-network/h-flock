@@ -704,7 +704,7 @@ iteration may reconnect for later work, but the failed pop itself is never
 reissued automatically.
 
 `send` and `receive` log at their own ends too, so a delivered **unicast**
-envelope leaves five transport records across its life:
+envelope leaves six transport records across its life:
 
 ```
   sent        the source's own end            (flock.bus.doors)
@@ -750,7 +750,7 @@ message means becomes a change to the switch.
 
 ```json
 {
-  "v": 2,
+  "v": 3,
   "kind": "Message",
   "stream_id": "<hex>",
   "correlation_id": "<hex>",
