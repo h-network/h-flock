@@ -1,22 +1,22 @@
-# Build 46 — vabtrial: put one path on the h-port_type shape
+# Build 46 — vabtrial: put one path on the h-vab shape
 
-> ⚠ **A trial, like build 43.** It answers whether h-flock can sit on the h-port_type
+> ⚠ **A trial, like build 43.** It answers whether h-flock can sit on the h-vab
 > fabric without losing what makes it debuggable. **"No" is a successful
 > outcome**, and a half-migration nobody wants to throw away is the failure.
 >
 > **Base on `vabtrial`, NOT on `main`.** Branch `bus/vabtrial-<piece>`, push to
 > origin. ⚠ **Nothing here goes near `main`.**
 
-## 1. What h-port_type is
+## 1. What h-vab is
 
-A separate design (`github.com/h-network/h-port_type`, branch `naming/vocabulary`),
+A separate design (`github.com/h-network/h-vab`, branch `naming/vocabulary`),
 **not built** — a settled vocabulary and flow for a forwarding fabric. Read
 `docs/NAMING.md` and `docs/FLOW.md` there first. The parts that matter here:
 
-- **three programs**: `port` (assembles the whole packet, filters before the
+- **three programs**: `adapter` (assembles the whole packet, filters before the
   switch), `switch` (two headers and a table, forwards or refuses, **never
-  mutates**), `switch` (policy and other switches)
-- ⚠ **the switch is a station attached to a port, not a mode of the switch** —
+  mutates**), `router` (policy and other switches)
+- ⚠ **the router is a station attached to an adapter, not a mode of the switch** —
   which is the same conclusion h-flock reached independently
 - **`attach` / `send` / `receive`** is the entire fabric API; the switch uses it
   like anything else
@@ -32,11 +32,11 @@ A separate design (`github.com/h-network/h-port_type`, branch `naming/vocabulary
 
 ## 2. Scope — adapt the design, not just swap a path
 
-**Adapt h-port_type's design into h-flock** and report where it fits and where it
+**Adapt h-vab's design into h-flock** and report where it fits and where it
 does not:
 
-- **the three programs.** Does h-flock's shape map onto `port` / `switch` /
-  `switch`, and what does not fit?
+- **the three programs.** Does h-flock's shape map onto `adapter` / `switch` /
+  `router`, and what does not fit?
 - **the fabric API.** `attach` / `send` / `receive` replacing
   `doors.send` + queue reads
 - **the packet header, eight fields**, replacing the v1 envelope — including
@@ -52,8 +52,8 @@ paste, presence, boards, the `office` command keep doing exactly what they do.
 Their *interface to the fabric* may change; their behaviour may not. **If an
 agent can tell the difference, the adaptation has failed.**
 
-⚠ **One domain. No switch, no cross-domain, no policy** — that is h-port_type phase 1,
-and it is all this build implements. The switch is a station, later.
+⚠ **One domain. No router, no cross-domain, no policy** — that is h-vab phase 1,
+and it is all this build implements. The router is a station, later.
 
 ⚠ **Where the design does not fit, say so rather than bending h-flock to it.**
 The most useful output of this build is the list of places the two models
@@ -69,7 +69,7 @@ simulator 19/19, on a tenant built by `setup.sh` the ordinary way.
 
 **2. Custody is still answerable.** h-flock's five records exist so a lost
 envelope is *locatable rather than merely absent*, and that property found two
-defects last week that fifty audit rows missed. h-port_type replaces them with a
+defects last week that fifty audit rows missed. h-vab replaces them with a
 custody boundary and an observer off to the side. ⚠ **State plainly whether you
 can still answer "where did this packet stop", and how.** If the answer needs a
 bespoke observer as large as the thing it replaced, that is a fail — the same
@@ -106,3 +106,10 @@ evidence, your answers to §3, and a plain recommendation.
 
 ⚠ **This is a trial for one build. It is expected to end in a recommendation,
 not a migration.**
+
+> ⚠ **This doc describes h-vab, a SEPARATE project.** `adapter` / `switch` /
+> `router` above are **h-vab's** vocabulary, not h-flock's, and `h-vab` is a
+> proper noun. The vocabulary rename swept this file and turned them into
+> h-flock terms — producing a dead URL (`h-network/h-port_type`) and the
+> sentence "`switch` (policy and other switches)". Restored 2026-08-15.
+> **Do not run a bulk rename over this file or `BUILD-46-bus-results.md`.**
