@@ -18,7 +18,8 @@ Three recurring costs, all one root cause:
   74's source-stamp control.
 - ⚠ **The `sent`-capture workaround is duplicated four times.** The generator
   runs under `docker exec`, so its records never reach `docker logs`; each script
-  separately remembers to append `$SEND_LOG` afterwards (`base-run.sh:77`). When
+  separately remembered to append `$SEND_LOG` afterwards — at `base-run.sh` line
+  77, which this build deleted, so the citation is deliberately not live. When
   one did not, `sent -> popped` read **n=100 of 2,000** and was quoted as a
   result.
 - **No payload-size knob**, so build 72 could not add one in a single place.
