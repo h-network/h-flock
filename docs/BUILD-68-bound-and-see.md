@@ -10,7 +10,7 @@
 | case B, measured | |
 |---|---|
 | 1 GiB of Redis | **82.3 hours** / 2,929,238 frames |
-| CPU | **median 1084%, peak 1366%** |
+| CPU | ⚠ **1084%/1366% — INVALID.** Impossible above 400% on 4 vCPUs; the raw `cpu_stats` counters were not retained so it cannot be reconstructed. `bus` audited nproc, lscpu, `docker info` and sysfs: all say 4 |
 
 ⚠ **Memory was never the problem — three and a half days is not an outage. The
 CPU is.** Ten to thirteen cores burn continuously on ports spawned for a
@@ -19,7 +19,7 @@ forward that should not have happened.**
 
 **So bounding ingress stops the spawns, not just the growth.** A full queue
 means the switch dead-letters instead of forwarding — and a dead-letter issues
-**no kick**, so no port spawns. That is the fix for 1084% CPU.
+**no kick**, so no port spawns. ⚠ The CPU *magnitude* claim is withdrawn; what survives is the **count** evidence — 500 popped, 300 forwarded and kicked, **200 dead-lettered with no kick issued**.
 
 ⚠ **And it is free.** `RPUSH` **returns the new list length**. The switch already
 calls it (`switch/service.py:105,120`), so the bound is a comparison on a value

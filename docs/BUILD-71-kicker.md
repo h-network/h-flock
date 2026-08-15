@@ -1,5 +1,25 @@
 # Build 71 — the switch forwards and moves on; a kicker spawns
 
+> ⚠⚠ **CANCELLED. DO NOT BUILD. The cost it exists to remove is ZERO on real
+> hardware.** Measured on `h-oracle` (32-core Ryzen 9950X3D) against the lab
+> (4-vCPU QEMU VM), same workload, same scripts:
+>
+> | stage | lab, 4 vCPU | h-oracle, 32 core |
+> |---|---|---|
+> | `popped → forwarded` — the switch | 7–9 ms | **0 ms** |
+> | `forwarded → kick_started` — **the kick this build removes** | 11 ms | **0 ms** |
+> | `kick_started → received` — spawn | 622–677 ms | **23 ms** |
+> | throughput | 6.5/s | **832/s** |
+>
+> ⚠ **The 11 ms kick was CPU contention on four vCPUs, not a syscall cost.** So
+> was the 659 ms spawn, and so was every "unexplained ~500 ms" I attached to
+> three separate code paths today. This build would have moved 0 ms into a new
+> long-lived component.
+>
+> **What survives:** `bus`'s finding that a pipelined ingress+kick rollback races
+> an active consumer and needs one atomic Lua operation. That is correct
+> independent of whether this is ever built.
+
 > **Base on `main`.** Branch `bus/build-71-kicker`, push to origin.
 > Owner: `bus` (`flock/switch`, `flock/bus`, `container/entrypoint.sh`).
 
