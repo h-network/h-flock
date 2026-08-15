@@ -165,34 +165,44 @@ excludes `dumps`. Including it overstates the win.
 | nested | 64 KiB | 209.28 | 25.44 | 234.72 | **89%** | 4,260/s |
 | nested | 1 MiB | 4381.72 | 264.62 | 4646.34 | **94%** | **215/s** |
 
-⚠ **Measured system throughput is 832/s** (h-oracle, build 71 results). Compare
-that against the last column, because that is the only comparison that decides
-anything:
+⚠⚠ **DO NOT READ THIS TABLE AS A COST/BENEFIT.** An earlier revision of this
+section did, and asked whether the win was "big enough to justify a wire break".
+**That is the wrong question and it was mine.**
 
-- **At every realistic size the switch is 5× to 90× above system throughput.**
-  It is not the constraint, and framing would not make it one less.
-- **One cell inverts: 1 MiB nested, at 215/s — below 832/s.** There, and only
-  there, the switch becomes the bottleneck, and `json.loads` is 94% of it.
-- ⚠ **Small frames are `rpush`-bound, not parse-bound** (9–11%). Framing does
-  nothing for the traffic we actually carry today.
+**The requirement is an invariant, not an optimisation: the switch must not read
+the payload.** It is an L2 device; `kind`, `l3` and `payload` are none of its
+business. The table does not decide *whether* to do this — it confirms **why the
+switch is payload-dependent today**, and the answer is `json.loads`, at 89% of
+the cost at 64 KiB nested and 94% at 1 MiB. Framing removes exactly that.
 
-**So the trigger is met as written** — `loads` alone is 89% at 64 KiB nested —
-**but the win is confined to large, structured frames.** Proceed, and report the
-ceiling column again after implementing; that is the number that says whether
-this was worth a wire break.
+⚠ **`rpush` scaling with payload is NOT a violation.** Carrying bytes is what
+forwarding is; a real store-and-forward switch has serialisation delay too. The
+line is **read vs carry** — the switch may carry any payload and must interpret
+none.
 
-### 5.2 If and only if the parse — not the byte movement — is the cost
+So the ceilings above are context, not a gate. The gate is §5.2.
 
-Then implement §2–3 and re-run the identical sweep. Expect:
+### 5.2 Implement — the gate is the invariant, not a throughput number
+
+Implement §2–3, then prove the invariant. **The pass condition is a flat line,
+not a faster one.**
 
 | | expect |
 |---|---|
-| `popped -> forwarded` | **flat across all four payload sizes** |
+| ⚠ **`json.loads` on the forwarding path** | **GONE — zero calls.** This is the gate; everything else is evidence |
+| **switch cost minus `rpush`** | ⚠ **FLAT** from 16 B to 1 MiB, and flat across string vs nested. Re-run §5.1b's `perf_counter` decomposition — that is the instrument that can see it, the custody log cannot |
+| `rpush` | still scales with size — **expected and correct**, the switch carries what it must not read |
 | end-to-end throughput at ~16 B | ⚠ **UNCHANGED** — the switch is ~1% of the path |
 | frame size at ~16 B payload | **grows ~60 B** (191 fixed vs ~130 packed) — state it, do not bury it |
 
 ⚠ **If end-to-end throughput moves at small payloads, something unexpected
-happened — report it, do not celebrate it.**
+happened — report it, do not celebrate it.** A speed-up is not what this build
+is for and would mean something else changed.
+
+⚠ **The failure this build must not produce** is a switch that still touches the
+body on *some* path — a validation, a re-serialise, an error branch that decodes
+to build a message. Grep the forwarding path for `json.` and show it is empty
+below the header.
 
 ## 6. ⚠ v3 is a hard break, and that is already handled
 
