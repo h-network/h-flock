@@ -7,7 +7,7 @@ Tier A is documentation, B internal code, C Redis/environment, and D wire.
 
 | name | where it lives | kind | what it means, in one line | networking analogue, if any | tier |
 |---|---|---|---|---|---|
-| `tmux` | `src/flock/tmux/ops.py:4` | doc term | Shared library for driving a tenant's terminal multiplexer, plus guide/trust setup. | Physical terminal fabric behind a port. | B |
+| `tmux` | `src/flock/tmux/ops.py:56` | doc term | Shared library for driving a tenant's terminal multiplexer, plus guide/trust setup. | Physical terminal fabric behind a port. | B |
 | `run_tmux` | `src/flock/tmux/ops.py:56` | identifier | Checked entry point for one tmux subprocess invocation. | Device-driver operation. | B |
 | `require_isolated_tmux` | `src/flock/tmux/ops.py:33` | identifier | Refuses ambient tmux unless an explicit socket namespace exists. | Refusing an unspecified network namespace. | B |
 | `socket` | `src/flock/tmux/ops.py:33` | identifier | Optional explicit tmux server socket path, not a network socket. | None; collision with network sockets. | B |
@@ -16,7 +16,7 @@ Tier A is documentation, B internal code, C Redis/environment, and D wire.
 | `AmbientTmuxError` | `src/flock/tmux/ops.py:19` | identifier | Attempt to drive whichever tmux server happens to be ambient. | Accidental use of the default routing domain. | B |
 | `TmuxCommandError` | `src/flock/tmux/ops.py:23` | identifier | Non-zero tmux command result, distinct from empty success. | Link-operation failure. | B |
 | `window` | `src/flock/tmux/ops.py:66` | doc term | One named terminal hosting one `port_type: tmux` agent. | A switch port's attached terminal. | A |
-| `create_window` / `kill_window` / `list_windows` | `src/flock/tmux/ops.py:321` | identifier | Idempotent named-window lifecycle operations. | Port provisioning and inventory. | B |
+| `create_window` / `kill_window` / `list_windows` | `src/flock/tmux/ops.py:66`, `src/flock/tmux/ops.py:321`, `src/flock/tmux/ops.py:367` | identifier | Idempotent named-window lifecycle operations. | Port provisioning and inventory. | B |
 | `window_env` | `src/flock/tmux/ops.py:229` | identifier | Builds the command-scoped environment inherited by an agent pane. | Port attachment configuration. | B |
 | `paste_text` | `src/flock/tmux/ops.py:371` | identifier | Performs the complete bracketed paste, delay, and Enter delivery sequence. | Frame transmission onto a terminal link. | B |
 | `PASTE_ENTER_DELAY` | `src/flock/tmux/ops.py:15` | env var | Delay separating paste from Enter to prevent CLI input coalescing. | Inter-frame gap, loosely. | C |
@@ -30,7 +30,7 @@ Tier A is documentation, B internal code, C Redis/environment, and D wire.
 | name | where it lives | kind | what it means, in one line | networking analogue, if any | tier |
 |---|---|---|---|---|---|
 | `tmuxhost` / `TmuxHost` | `src/flock/tmuxhost/host.py:14` | identifier | Long-running reconciler that makes tmux windows match desired roster state. | Port manager/controller. | B |
-| `host` | `src/flock/tmuxhost/host.py:14` | doc term | Here means the tmux reconciler, while roster name `host` means lifecycle control. | Collision between physical host and control-plane address. | A |
+| `host` | `container/entrypoint.sh:264` | doc term | Here means the tmux reconciler, while roster name `host` means lifecycle control. | Collision between physical host and control-plane address. | A |
 | `reconcile_once` | `src/flock/tmuxhost/host.py:165` | identifier | One desired-versus-actual window convergence pass. | Control-plane reconciliation. | B |
 | `ensure_server_and_session` | `src/flock/tmuxhost/host.py:80` | identifier | Creates missing tmux server/session and applies global options. | Ensuring a switching fabric exists. | B |
 | `session_name` | `src/flock/tmuxhost/host.py:21` | identifier | Tmux session target, normally identical to tenant name. | Routing-domain instance name. | B |
@@ -49,14 +49,14 @@ Tier A is documentation, B internal code, C Redis/environment, and D wire.
 | name | where it lives | kind | what it means, in one line | networking analogue, if any | tier |
 |---|---|---|---|---|---|
 | `port` | `src/flock/port/send.py:9`, `src/flock/port/deliver.py:165` | doc term | Names both outbound agent sending and inbound per-envelope delivery—opposite sides of the switch. | Two different NIC directions collapsed into one component name. | B |
-| `send` CLI | `src/flock/port/send.py:9` | identifier | Agent-facing command that constructs an envelope and writes its own egress. | Transmit-side NIC operation. | B |
+| `send` CLI | `src/flock/port/send.py:5` | identifier | Agent-facing command that constructs an envelope and writes its own egress. | Transmit-side NIC operation. | B |
 | `run_port` | `src/flock/port/deliver.py:165` | identifier | Acquires per-agent serialization, delivers one ingress envelope, and exits. | Receive-side port service. | B |
 | `deliver_one` | `src/flock/port/deliver.py:76` | identifier | Dispatches one destination ingress item according to its port_type. | Frame delivery to a selected port type. | B |
 | `deliver_api` | `src/flock/port/deliver.py:25` | identifier | Moves one ingress envelope to an enrolled client's mailbox stream. | Delivery to a different port medium. | B |
 | `deliver_unroutable` | `src/flock/port/deliver.py:51` | identifier | Pops and dead-letters an envelope whose port_type has no implementation. | Unsupported-port drop. | B |
 | `opener` | `src/flock/port/deliver.py:148` | doc term | Kind-specific callable whose normal return means an envelope was opened. | Ethertype handler. | B |
-| `message_opener` / `command_opener` / `add_ticket_opener` | `src/flock/port/openers.py:55` | identifier | Terminal or board actions selected by envelope kind. | Protocol handlers. | B |
-| `opened` | `src/flock/port/deliver.py:153` | doc term | Terminal outcome meaning an opener completed, not proof a human/CLI consumed it. | Accepted by destination handler, not delivery acknowledgement. | A |
+| `message_opener` / `command_opener` / `add_ticket_opener` | `src/flock/port/openers.py:115`, `src/flock/port/openers.py:55`, `src/flock/port/openers.py:85` | identifier | Terminal or board actions selected by envelope kind. | Protocol handlers. | B |
+| `opened` | `src/flock/bus/doors.py:143` | doc term | Terminal outcome meaning an opener completed, not proof a human/CLI consumed it. | Accepted by destination handler, not delivery acknowledgement. | A |
 | `delivering` | `src/flock/port/deliver.py:177` | redis key | Tenant hash serving as a per-agent mutual-exclusion/busy tag. | Per-port transmit lock. | C |
 | `paused` | `src/flock/port/deliver.py:84` | redis key | Marker that leaves ingress queued rather than opening it. | Administratively down port. | C |
 | `pending.verify` | `src/flock/port/openers.py:43` | redis key | Stream of pasted deliveries awaiting out-of-band activity judgment. | Delivery telemetry awaiting observation. | C |
@@ -76,14 +76,14 @@ Tier A is documentation, B internal code, C Redis/environment, and D wire.
 | `deliver_one` | `src/flock/control/runner.py:23` | identifier | Pops and opens one lifecycle envelope; same name as port's port_type dispatcher. | Control-plane receive operation. | B |
 | `StartAgent` / `StopAgent` | `src/flock/control/runner.py:102` | wire | Envelope kinds that add/remove participant desired state and port_type-specific state. | Provision/deprovision a port. | D |
 | `PauseAgent` / `ResumeAgent` | `src/flock/control/runner.py:104` | wire | Envelope kinds that stop/restart a tmux CLI while preserving membership and queues. | Administratively down/up a port. | D |
-| `start_agent` / `stop_agent` | `src/flock/control/openers.py:21` | identifier | Desired-state mutations implementing lifecycle kinds. | Port provisioning operations. | B |
-| `pause_agent` / `resume_agent` | `src/flock/control/openers.py:111` | identifier | Pause-marker and tmux-process operations implementing temporary suspension. | Port admin-state operations. | B |
-| `replace_window` | `src/flock/control/openers.py:27` | identifier | Callback that kills stale actual state so tmuxhost recreates it. | Rebind a port attachment. | B |
+| `start_agent` / `stop_agent` | `src/flock/control/openers.py:123`, `src/flock/control/openers.py:30` | identifier | Desired-state mutations implementing lifecycle kinds. | Port provisioning operations. | B |
+| `pause_agent` / `resume_agent` | `src/flock/control/openers.py:157`, `src/flock/control/openers.py:143` | identifier | Pause-marker and tmux-process operations implementing temporary suspension. | Port admin-state operations. | B |
+| `replace_window` | `src/flock/control/openers.py:36` | identifier | Callback that kills stale actual state so tmuxhost recreates it. | Rebind a port attachment. | B |
 | `_STARTABLE_VABS` | `src/flock/control/openers.py:7` | identifier | port_type values lifecycle control accepts for new participants. | Supported port/media types. | B |
 | `_FIXED_PARTICIPANTS` | `src/flock/control/openers.py:8` | identifier | Built-in addresses that `StopAgent` cannot remove. | Reserved control-plane addresses. | B |
-| `provider` | `src/flock/control/openers.py:50` | wire | `StartAgent` payload field selecting a named model service. | Model uplink selection, not participant provider. | D |
-| `cli` | `src/flock/control/openers.py:40` | wire | `StartAgent` payload name for the desired agent program. | Attachment implementation. | D |
-| `launch` | `src/flock/control/openers.py:80` | redis key | Stored name for the same desired agent program called `cli` on the wire. | Attachment implementation. | C |
+| `provider` | `src/flock/control/openers.py:77` | wire | `StartAgent` payload field selecting a named model service. | Model uplink selection, not participant provider. | D |
+| `cli` | `src/flock/control/openers.py:67` | wire | `StartAgent` payload name for the desired agent program. | Attachment implementation. | D |
+| `launch` | `src/flock/control/openers.py:107` | redis key | Stored name for the same desired agent program called `cli` on the wire. | Attachment implementation. | C |
 | `agent` | `src/flock/control/openers.py:13` | wire | Lifecycle target participant name, even when the participant is an API client. | Address/port identity; “agent” is narrower than the set. | D |
 
 ## `container/`
@@ -95,7 +95,7 @@ Tier A is documentation, B internal code, C Redis/environment, and D wire.
 | `POD` | `container/compose.yaml:22` | env var | Namespace above tenant in every Redis key. | I could not tell what distinct network concept this means without asking. | C |
 | `TENANT` | `container/compose.yaml:23` | env var | Tenant identity and default tmux session name. | Routing domain. | C |
 | `AGENTS` | `container/compose.yaml:27` | env var | Boot roster seed encoded as comma-separated `name:port_type` pairs. | Static MAC/port table seed. | C |
-| `AGENT_CLIS` / `AGENT_PROFILES` / `AGENT_PROVIDERS` | `container/compose.yaml:35` | env var | Comma-separated per-agent exceptions for launch, account config, and model service. | Port configuration maps. | C |
+| `AGENT_CLIS` / `AGENT_PROFILES` / `AGENT_PROVIDERS` | `container/compose.yaml:46`, `container/compose.yaml:36`, `container/compose.yaml:37` | env var | Comma-separated per-agent exceptions for launch, account config, and model service. | Port configuration maps. | C |
 | `API_TOKEN` | `container/compose.yaml:47` | env var | Shared bearer credential for both published doors. | Network access credential. | C |
 | `API_HOST` / `SESSION_HOST` | `container/compose.yaml:60` | env var | Host-side publish addresses, not application bind addresses. | Listen/publish address. | C |
 | `API_PORT` / `SESSION_PORT` | `container/compose.yaml:58` | env var | Host-side published ports; container-side ports remain 8080/8081. | Port mapping. | C |
@@ -106,9 +106,9 @@ Tier A is documentation, B internal code, C Redis/environment, and D wire.
 | `REDIS_URL` | `container/entrypoint.sh:112` | env var | Connection string handed only to framework processes that need Redis. | Control-plane store address. | C |
 | `REDIS_READY_SECONDS` | `container/entrypoint.sh:128` | env var | Maximum boot wait for Redis readiness. | Dependency convergence timeout. | C |
 | `ROSTER_POLL_SECONDS` | `container/compose.yaml:28` | env var | Shared refresh interval for switch and tmuxhost. | Control-plane refresh interval. | C |
-| `WATCHDOG_ENABLED` | `container/entrypoint.sh:272` | env var | Enables the separate human-alerting observer. | Network monitor enable flag. | C |
+| `WATCHDOG_ENABLED` | `container/entrypoint.sh:295` | env var | Enables the separate human-alerting observer. | Network monitor enable flag. | C |
 | `door` | `container/entrypoint.sh:61` | doc term | One externally published API or session process/port. | Network ingress door/listener. | A |
-| `start` | `container/entrypoint.sh:9` | identifier | Shell helper that launches a named child and records its PID. | Process supervisor launch, though it is not a supervisor. | B |
+| `start` | `container/entrypoint.sh:37` | identifier | Shell helper that launches a named child and records its PID. | Process supervisor launch, though it is not a supervisor. | B |
 | `rcli` | `container/entrypoint.sh:119` | identifier | Auth-aware wrapper around `redis-cli` used during boot seeding. | Control-plane configuration client. | B |
 | `startAgent` | `src/flock/tmuxhost/host.py:104` | identifier | CLI launcher applying office-specific approval and model settings; not lifecycle `StartAgent`. | Port-attached process launcher. | B |
 
