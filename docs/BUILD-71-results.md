@@ -1,7 +1,8 @@
-# Build 71 hold report — kicker premise and bound race
+# Build 71 negative result — kicker cancelled, bound race retained
 
 Worked from main at 2065931. Build 71 was held before implementation because
-direct measurement changed its premise. No production code was changed.
+direct measurement changed its premise, then cancelled after the same code was
+measured on the performance host. No production code was changed.
 
 ## Premise no longer supports the component
 
@@ -16,10 +17,20 @@ about eight times below. End-to-end delivery is dominated by the hundreds of
 milliseconds between kick_started and received. The architectural exchange no
 longer has the cost/benefit claimed by the build premise.
 
-The kicker also remains finite. Serial Popen at 3.3–3.7 ms gives its spawn loop
-an ideal syscall ceiling of roughly 270–303 kicks/s before Python, BLPOP and log
-costs. That revises the specification's estimate of roughly 90/s; neither
-ceiling is exercised by the current 6–7 deliveries/s workload.
+The decisive comparison ran identical scripts on the four-vCPU lab VM and on
+h-oracle, a 32-core Ryzen 9950X3D:
+
+| metric | four-vCPU lab | h-oracle |
+|---|---:|---:|
+| popped→forwarded | 7–9 ms | 0 ms at log resolution |
+| forwarded→kick_started | 11 ms | 0 ms at log resolution |
+| kick_started→received | 622–677 ms | 23 ms |
+| throughput | about 6.5/s | 832/s |
+
+The 11 ms attributed to the kick was CPU contention, not syscall cost. The
+component proposed by Build 71 would optimize a cost that disappears on the
+performance host. The 128-fold throughput difference also confirms that lab
+throughput describes a constrained correctness host, not framework capacity.
 
 ## The specified queue bound races its consumer
 
@@ -71,5 +82,8 @@ stopped. What does not stand is the claimed magnitude of the CPU reduction.
 
 ## Status
 
-Held before implementation pending the operator's decision. No lab tenant was
-created and no acceptance or performance gate was run for Build 71.
+Cancelled as a negative result before implementation. No Build 71 tenant was
+created and no acceptance gate was run. The lab remains the correctness host
+for conservation, fault injection and races; performance claims belong on
+h-oracle. The active-consumer rollback race above remains valid independent of
+the cancellation.
