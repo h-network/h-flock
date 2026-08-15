@@ -16,6 +16,21 @@
 > three separate code paths today. This build would have moved 0 ms into a new
 > long-lived component.
 >
+> ⚠ **And it would not have helped on the slow host either** — which is the
+> argument that actually settles it, because it does not depend on which machine
+> you run. On the lab the switch's serialized cost (~20 ms) implies a ~50/s
+> ceiling while end-to-end runs at **6.5/s: eight times below it**. The switch is
+> not the constraint on *either* host; spawn is, at 60× the kick. This build
+> raises a ceiling we never reach, and adds a fifth long-lived component to
+> supervise to do it.
+>
+> **What would revive it:** end-to-end throughput approaching the switch's
+> serialized ceiling. That needs spawn to get much cheaper — i.e. long-lived
+> ports. ⚠ **But long-lived ports remove the kick outright** (the switch only
+> kicks when no port is running), which is a better fix than moving it. So this
+> build is dominated either way: unnecessary now, and superseded by the change
+> that would otherwise justify it.
+>
 > **What survives:** `bus`'s finding that a pipelined ingress+kick rollback races
 > an active consumer and needs one atomic Lua operation. That is correct
 > independent of whether this is ever built.
