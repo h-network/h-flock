@@ -7,7 +7,7 @@ from unittest.mock import patch, MagicMock
 from flock.port.openers import add_ticket_opener, message_opener, command_opener, get_tmux_windows
 from flock.port.send import main as cli_main
 from flock.port.deliver import run_port
-from flock.bus import DeadLetter, build as build_envelope, prefix, receive
+from flock.bus import DeadLetter, build as build_envelope, encode, parse, prefix, receive
 
 
 class MockRedis:
@@ -236,7 +236,7 @@ def test_failed_board_write_is_parked_once_by_receive(capsys):
         payload={"title": "cannot land"},
     )
     ingress_key = prefix("acme", "hq", agent="backend", resource="ingress")
-    r.rpush(ingress_key, json.dumps(env))
+    r.rpush(ingress_key, encode(env))
 
     receive(
         r,
@@ -318,7 +318,7 @@ def test_run_port_kicked_one_shot(mock_run_tmux, mock_list_windows, mock_redis_c
 
     ingress_key = "pod:acme:tenant:hq:agent:bob:ingress"
     env = build_envelope(kind="Message", source="alice", destination="bob", payload={"text": "kicked message"})
-    mock_r.rpush(ingress_key, json.dumps(env))
+    mock_r.rpush(ingress_key, encode(env))
 
     run_port(agent="bob", pod="acme", tenant="hq", session_name="hq")
 
@@ -344,7 +344,7 @@ def test_run_port_paused_leaves_envelope_in_ingress(mock_redis_cls):
 
     ingress_key = "pod:acme:tenant:hq:agent:bob:ingress"
     env = build_envelope(kind="Message", source="alice", destination="bob", payload={"text": "paused message"})
-    mock_r.rpush(ingress_key, json.dumps(env))
+    mock_r.rpush(ingress_key, encode(env))
 
     run_port(agent="bob", pod="acme", tenant="hq", session_name="hq")
 
@@ -372,7 +372,7 @@ def test_cli_send(mock_redis_cls, monkeypatch):
     egress_key = "pod:acme:tenant:hq:agent:alice:egress"
     assert egress_key in mock_r.lists
     assert len(mock_r.lists[egress_key]) == 1
-    pushed = json.loads(mock_r.lists[egress_key][0])
+    pushed = parse(mock_r.lists[egress_key][0])
     assert pushed["l2"] == {"source": "alice", "destination": "bob"}
     assert pushed["l3"] == {
         "source": "acme:hq:alice",
@@ -391,7 +391,7 @@ def test_run_port_port_type_api_pops_and_writes_mailbox(mock_redis_cls):
 
     ingress_key = "pod:acme:tenant:hq:agent:api:ingress"
     env = build_envelope(kind="Message", source="alice", destination="api", payload={"text": "reply"})
-    mock_r.rpush(ingress_key, json.dumps(env))
+    mock_r.rpush(ingress_key, encode(env))
 
     run_port(agent="api", pod="acme", tenant="hq", session_name="hq")
 
@@ -417,7 +417,7 @@ def test_run_port_unroutable_port_type_pops_and_dead_letters(mock_redis_cls):
 
     ingress_key = "pod:acme:tenant:hq:agent:host:ingress"
     env = build_envelope(kind="Message", source="alice", destination="host", payload={"text": "test"})
-    mock_r.rpush(ingress_key, json.dumps(env))
+    mock_r.rpush(ingress_key, encode(env))
 
     run_port(agent="host", pod="acme", tenant="hq", session_name="hq")
 

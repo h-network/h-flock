@@ -3,7 +3,15 @@
 import json
 from collections.abc import Callable
 
-from .envelope import EnvelopeError, build, parse, resolve_destination, resolve_source
+from .envelope import (
+    EnvelopeError,
+    build,
+    encode,
+    parse,
+    parse_for_switch,
+    resolve_destination,
+    resolve_source,
+)
 from .keys import prefix
 from .logging import emit, log_record
 from .policy import require_allowed
@@ -72,7 +80,7 @@ def send(
     try:
         r.rpush(
             prefix(pod, tenant, source, "egress"),
-            json.dumps(envelope, separators=(",", ":")),
+            encode(envelope),
         )
     except Exception as exc:
         emit(module, "send_failed", envelope, f"egress write failed: {exc}")
@@ -104,7 +112,13 @@ def receive(
         envelope = parse(raw)
     except EnvelopeError as exc:
         r.rpush(prefix(pod, tenant, agent, "dead"), raw)
-        _emit_for_recipient(module, "dead_lettered", {}, agent, str(exc))
+        # A valid v3 header remains joinable when its corrupt body is rejected
+        # here. A malformed header has no trustworthy custody identifiers.
+        try:
+            header = parse_for_switch(raw)
+        except EnvelopeError:
+            header = {}
+        _emit_for_recipient(module, "dead_lettered", header, agent, str(exc))
         return
     _emit_for_recipient(module, "received", envelope, agent)
     opener = openers.get(envelope["kind"])

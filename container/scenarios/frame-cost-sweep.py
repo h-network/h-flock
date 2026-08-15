@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Decompose v2 parse, re-encode and Redis-write cost by payload size/shape."""
+"""Decompose v3 header parsing, source stamping and Redis-write cost."""
 
 import json
 import math
@@ -9,7 +9,7 @@ import time
 
 import redis
 
-from flock.bus.envelope import build
+from flock.bus.envelope import build, encode, parse_for_switch, stamp_source
 
 
 SIZES = (16, 65_536, 1_048_576)
@@ -56,10 +56,10 @@ def main() -> None:
                 pod="acme",
                 tenant="bus72",
             )
-            raw = json.dumps(frame, separators=(",", ":"))
+            raw = encode(frame)
             operations = (
-                ("json.loads", lambda: json.loads(raw), lambda: None),
-                ("json.dumps", lambda: json.dumps(frame, separators=(",", ":")), lambda: None),
+                ("parse_for_switch", lambda: parse_for_switch(raw), lambda: None),
+                ("stamp_source", lambda: stamp_source(raw, "architect"), lambda: None),
                 ("redis.rpush", lambda: r.rpush(key, raw), lambda: r.lpop(key)),
             )
             for name, operation, cleanup in operations:

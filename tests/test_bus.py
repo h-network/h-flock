@@ -4,7 +4,7 @@ import unittest
 from contextlib import redirect_stdout
 from unittest.mock import patch
 
-from flock.bus import EnvelopeError, build, emit, is_member, members, parse, prefix, receive, send, port_type, tags_key
+from flock.bus import EnvelopeError, build, emit, encode, is_member, members, parse, prefix, receive, send, port_type, tags_key
 from flock.bus.envelope import parse_for_switch
 from flock.switch.service import Switch
 
@@ -93,7 +93,7 @@ class KeysTest(unittest.TestCase):
 class EnvelopeTest(unittest.TestCase):
     def test_build_and_parse(self):
         envelope = build("Message", "alice", "bob", {"text": "private"})
-        self.assertEqual(parse(json.dumps(envelope)), envelope)
+        self.assertEqual(parse(encode(envelope)), envelope)
         self.assertRegex(envelope["stream_id"], "^[0-9a-f]+$")
         self.assertEqual(len(envelope["correlation_id"]), 32)
 
@@ -109,24 +109,36 @@ class EnvelopeTest(unittest.TestCase):
         self.assertEqual(bare["l2"], qualified["l2"])
         self.assertEqual(qualified["l3"]["destination"], "acme:hq:bob")
 
-    def test_flat_v1_is_not_accepted_on_v2_wire(self):
-        with self.assertRaisesRegex(EnvelopeError, "unsupported frame version"):
+    def test_flat_v1_is_not_accepted_on_v3_wire(self):
+        with self.assertRaises(EnvelopeError):
             parse(json.dumps({"v": 1, "source": "alice", "destination": "bob"}))
 
     def test_switch_parser_does_not_validate_or_read_l3(self):
         frame = build("Message", "alice", "bob", {})
-        frame["l3"] = "opaque-to-the-switch"
-        self.assertEqual(parse_for_switch(json.dumps(frame))["l2"]["destination"], "bob")
+        raw = encode(frame)
+        body = json.loads(raw[191:])
+        body["l3"] = "opaque-to-the-switch"
+        raw = raw[:191] + json.dumps(body)
+        self.assertEqual(parse_for_switch(raw)["l2"]["destination"], "bob")
         with self.assertRaisesRegex(EnvelopeError, "l3 must be an object"):
-            parse(json.dumps(frame))
+            parse(raw)
+
+    def test_switch_parser_does_not_decode_body_bytes(self):
+        raw = encode(build("Message", "alice", "bob", {})).encode("ascii")
+        corrupt = raw[:191] + b"\xffnot-json"
+        self.assertEqual(parse_for_switch(corrupt)["l2"]["destination"], "bob")
+        with self.assertRaisesRegex(EnvelopeError, "frame is not UTF-8"):
+            parse(corrupt)
 
     def test_parse_rejects_malformed(self):
         with self.assertRaises(EnvelopeError):
             parse("not-json")
         envelope = build("Message", "alice", "bob", {})
-        del envelope["payload"]
+        raw = encode(envelope)
+        body = json.loads(raw[191:])
+        del body["payload"]
         with self.assertRaises(EnvelopeError):
-            parse(json.dumps(envelope))
+            parse(raw[:191] + json.dumps(body))
 
     def test_lifecycle_log_omits_stream_id(self):
         output = io.StringIO()
@@ -332,7 +344,7 @@ class DoorsAndRouterTest(unittest.TestCase):
         # If the local switch consults L3, this contradictory address sends the
         # frame to carol. L3 is deliberately opaque at this layer.
         frame["l3"]["destination"] = "acme:hq:carol"
-        self.r.rpush(prefix("acme", "hq", "alice", "egress"), json.dumps(frame))
+        self.r.rpush(prefix("acme", "hq", "alice", "egress"), encode(frame))
 
         self.assertTrue(Switch(self.r, pod="acme", tenant="hq").step())
 
@@ -402,7 +414,7 @@ class DoorsAndRouterTest(unittest.TestCase):
         self.assertTrue(Switch(self.r, pod="acme", tenant="hq").step())
         self.popen.assert_called_once_with(["flock.port", "sme-2"])
         raw = self.r.lists[prefix("acme", "hq", "sme-2", "ingress")][0]
-        envelope = json.loads(raw)
+        envelope = parse(raw)
         self.assertEqual(envelope["stream_id"], stream_id)
         self.assertEqual(envelope["l2"]["destination"], "sme-2")
 
@@ -473,7 +485,7 @@ class DoorsAndRouterTest(unittest.TestCase):
 
     def test_popped_is_recorded_before_frame_validation(self):
         frame = build("Message", "alice", "bob", {"text": "visible pop"})
-        self.r.rpush(prefix("acme", "hq", "alice", "egress"), json.dumps(frame))
+        self.r.rpush(prefix("acme", "hq", "alice", "egress"), encode(frame))
         output = io.StringIO()
 
         def reject_after_observing(_raw):
@@ -492,14 +504,16 @@ class DoorsAndRouterTest(unittest.TestCase):
 
     def test_switch_stamps_forged_producer_from_egress_queue(self):
         envelope = build("Message", "carol", "bob", {"text": "forged"})
-        self.r.rpush(prefix("acme", "hq", "alice", "egress"), json.dumps(envelope))
+        original = encode(envelope)
+        self.r.rpush(prefix("acme", "hq", "alice", "egress"), original)
 
         output = io.StringIO()
         with redirect_stdout(output):
             self.assertTrue(Switch(self.r, pod="acme", tenant="hq").step())
 
         raw = self.r.lists[prefix("acme", "hq", "bob", "ingress")][0]
-        self.assertEqual(json.loads(raw)["l2"]["source"], "alice")
+        self.assertEqual(parse(raw)["l2"]["source"], "alice")
+        self.assertEqual(raw[191:], original[191:])
         records = [json.loads(line) for line in output.getvalue().splitlines()]
         self.assertEqual(
             [record["event"] for record in records],
@@ -512,6 +526,48 @@ class DoorsAndRouterTest(unittest.TestCase):
             stamped["reason"],
             "claimed source 'carol' stamped from egress sender 'alice'",
         )
+
+    def test_bad_header_dead_letters_at_switch(self):
+        raw = encode(build("Message", "alice", "bob", {}))
+        malformed = raw[:65] + "Upper".ljust(63) + raw[128:]
+        self.r.rpush(prefix("acme", "hq", "alice", "egress"), malformed)
+        output = io.StringIO()
+
+        with redirect_stdout(output):
+            self.assertTrue(Switch(self.r, pod="acme", tenant="hq").step())
+
+        events = [json.loads(line) for line in output.getvalue().splitlines()]
+        self.assertEqual([record["event"] for record in events], ["popped", "dead_lettered"])
+        self.assertEqual(len(self.r.lists[prefix("acme", "hq", "alice", "dead")]), 1)
+        self.popen.assert_not_called()
+
+    def test_bad_body_forwards_then_dead_letters_at_port_with_join_key(self):
+        frame = build("Message", "alice", "bob", {})
+        raw = encode(frame)[:191] + "{not-json"
+        self.r.rpush(prefix("acme", "hq", "alice", "egress"), raw)
+        output = io.StringIO()
+
+        with redirect_stdout(output):
+            self.assertTrue(Switch(self.r, pod="acme", tenant="hq").step())
+            receive(
+                self.r,
+                pod="acme",
+                tenant="hq",
+                agent="bob",
+                openers={},
+                timeout=0,
+                blocking=False,
+            )
+
+        records = [json.loads(line) for line in output.getvalue().splitlines()]
+        self.assertEqual(
+            [record["event"] for record in records],
+            ["popped", "forwarded", "kick_started", "dead_lettered"],
+        )
+        dead = records[-1]
+        self.assertEqual(dead["module"], "port")
+        self.assertEqual(dead["stream_id"], frame["stream_id"])
+        self.assertEqual(dead["destination"], "bob")
 
     def test_switch_does_not_log_stamp_when_producer_matches_queue(self):
         send(
@@ -532,18 +588,18 @@ class DoorsAndRouterTest(unittest.TestCase):
 
     def test_forged_broadcast_is_stamped_and_excludes_queue_sender(self):
         envelope = build("Message", "carol", "all", {"text": "forged broadcast"})
-        self.r.rpush(prefix("acme", "hq", "alice", "egress"), json.dumps(envelope))
+        self.r.rpush(prefix("acme", "hq", "alice", "egress"), encode(envelope))
 
         self.assertTrue(Switch(self.r, pod="acme", tenant="hq").step())
 
         self.assertNotIn(prefix("acme", "hq", "alice", "ingress"), self.r.lists)
         for agent in ("bob", "carol"):
             raw = self.r.lists[prefix("acme", "hq", agent, "ingress")][0]
-            self.assertEqual(json.loads(raw)["l2"]["source"], "alice")
+            self.assertEqual(parse(raw)["l2"]["source"], "alice")
 
     def test_unknown_kind_dead_letters_under_receiver(self):
         envelope = build("Mystery", "alice", "bob", {})
-        self.r.rpush(prefix("acme", "hq", "bob", "ingress"), json.dumps(envelope))
+        self.r.rpush(prefix("acme", "hq", "bob", "ingress"), encode(envelope))
         receive(
             self.r,
             pod="acme",
@@ -602,7 +658,7 @@ class DoorsAndRouterTest(unittest.TestCase):
         self.assertNotIn(prefix("acme", "hq", "alice", "ingress"), self.r.lists)
         for agent in ("api", "bob", "carol"):
             raw = self.r.lists[prefix("acme", "hq", agent, "ingress")][0]
-            self.assertEqual(json.loads(raw)["l2"]["destination"], "all")
+            self.assertEqual(parse(raw)["l2"]["destination"], "all")
         self.assertEqual(
             sorted(call.args[0][1] for call in self.popen.call_args_list),
             ["api", "bob", "carol"],

@@ -1,7 +1,7 @@
 """The stable bus library surface."""
 
 from .doors import DeadLetter, receive, send
-from .envelope import EnvelopeError, build, parse
+from .envelope import EnvelopeError, build, encode, parse
 from .keys import RESERVED, SEGMENT_REGEX, prefix
 from .logging import emit, log_record, record_task_event
 from .policy import allows, require_allowed, tags_key
@@ -24,6 +24,7 @@ __all__ = [
     "RESERVED",
     "SEGMENT_REGEX",
     "build",
+    "encode",
     "emit",
     "log_record",
     "record_task_event",
@@ -47,4 +48,3 @@ __all__ = [
     "purge_agent",
     "purge_transport",
 ]
-
