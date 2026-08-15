@@ -46,23 +46,70 @@ code path that could dispatch on port_type even if someone wanted it to.
 
 ## 3. The parts
 
+⚠ **Diagram corrected 2026-08-15.** The build-56 rename turned `adapter` into
+`port` inside the box and left the borders the old width, so it had been drawn
+wrong since. It also predated the v4 wire.
+
 ```
-   agent window          agent window              app (web / phone / bot)
-        │  office send        ▲                          ▲   GET /messages
-        ▼                     │ paste                    │        │ POST
-   ┌─────────┐                │                     ┌────┴────────▼───┐
-   │ egress  │            ┌───┴────┐                │   api  :8080    │
-   └────┬────┘            │port │                └────┬────────────┘
-        │                 └───▲────┘                     │
-        ▼                     │ kick                     ▼
-   ╔═════════════════════════════════════════════════════════════════╗
-   ║  SWITCH — pops every egress, resolves the name, writes ingress  ║
-   ╚═════════════════════════════════════════════════════════════════╝
-                              │
-                       ┌──────┴───────┐
-                  ingress          mailbox            board
-                  (a queue)        (a stream)         (four lists)
+  agent window                agent window            app (web / phone / bot)
+       │ office send               ▲                    ▲  GET /messages
+       │                           │ paste              │  POST /envelopes
+       ▼                           │                    ▼
+  ┌─────────────────────────────────────────────────────────────────────────┐
+  │  flock.bus.doors.send()   —   builds the v4 frame                       │
+  │      256 header bytes  +  opaque JSON body                              │
+  └───────────────────────────────────┬─────────────────────────────────────┘
+                                      │  ① sent
+                                      ▼
+                        pod:…:agent:<source>:egress          (list)
+                                      │
+                                      │  BLPOP across every egress
+                                      ▼
+  ╔═════════════════════════════════════════════════════════════════════════╗
+  ║  SWITCH — reads bytes 0‥255 ONLY.  Never decodes the body.              ║
+  ║                                                                         ║
+  ║    ② popped         header_record_fields(raw)  — header only            ║
+  ║       ttl − 1, hops + 1                        — a splice, body intact  ║
+  ║    ③ forwarded      RPUSH ingress                                       ║
+  ║    ④ kick_started   Popen flock.port — fire and forget, never waits     ║
+  ╚═══════════════════════════════════╤═════════════════════════════════════╝
+                                      ▼
+                        pod:…:agent:<dest>:ingress           (list)
+                                      │  LPOP
+                                      ▼
+  ┌─────────────────────────────────────────────────────────────────────────┐
+  │  flock.port — the FIRST component that parses the body                  │
+  │                                                                         │
+  │    ⑤ received       HSETNX delivering   ← the ownership tag             │
+  │       opener dispatched on port_type                                    │
+  │    ⑥ opened         HDEL   delivering                                   │
+  └───────────────────────────────┬─────────────────────────────────────────┘
+                                  │
+                    ┌─────────────┼──────────────┐
+                 tmux pane      mailbox        board
+                 (paste)        (a stream)     (four lists)
 ```
+
+**The v4 frame on the wire** — `bus/envelope.py:9‥17`:
+
+```
+ byte  0    1              33              65        128     191 194 197      256
+       ┌────┬───────────────┬───────────────┬─────────┬───────┬───┬───┬────────┬──────────
+       │ v  │ stream_id     │ correlation_id│ source  │ dest  │ttl│hop│reserved│ body …
+       │"4" │ 32 hex        │ 32 hex        │ 63 sp   │ 63 sp │ 3 │ 3 │ 59 sp  │ JSON
+       └────┴───────────────┴───────────────┴─────────┴───────┴───┴───┴────────┴──────────
+       └──────────────── the switch reads ONLY this ────────────────────────┘
+                                                                            └── opaque ──
+```
+
+⚠ **`reserved` is why the next L2 field is free** — it consumes reserved space,
+so `HEADER_WIDTH` stays 256, the body offset does not move, and older readers
+still parse the fields they know. Build 73.
+
+⚠ **The six circled records are the whole custody chain**, joined on
+`(stream_id, recipient)`. A crash shows up as a stage present with no successor.
+⚠ **Broadcast is the exception:** ③ is emitted **once** with `count=N` and
+`destination:"all"`, so ③→④ cannot be joined per recipient.
 
 | module | what it is | notes |
 |---|---|---|
