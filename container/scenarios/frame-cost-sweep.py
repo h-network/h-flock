@@ -28,24 +28,16 @@ def payload(shape: str, size: int) -> dict:
     return {"items": [{"value": "xxxxxxxx"} for _ in range(count)]}
 
 
-def samples(operation, cleanup=lambda: None):
-    for _ in range(WARMUP):
-        operation()
-        cleanup()
-    observed = []
-    for _ in range(SAMPLES):
-        started = time.perf_counter()
-        operation()
-        observed.append((time.perf_counter() - started) * 1_000_000)
-        cleanup()
-    return statistics.median(observed), sorted(observed)[math.ceil(SAMPLES * 0.95) - 1]
+def rotate(values, offset):
+    offset %= len(values)
+    return values[offset:] + values[:offset]
 
 
 def main() -> None:
     r = redis.Redis.from_url(os.environ.get("REDIS_URL", "redis://127.0.0.1:6379/0"))
-    key = "build72:frame-cost"
+    key = "frame-cost-sweep"
     r.delete(key)
-    print("shape,payload_target,frame_bytes,operation,n,p50_us,p95_us")
+    cases = []
     for shape in ("string", "nested"):
         for size in SIZES:
             frame = build(
@@ -54,17 +46,35 @@ def main() -> None:
                 "sme-2",
                 payload(shape, size),
                 pod="acme",
-                tenant="bus72",
+                tenant="cost-sweep",
             )
-            raw = encode(frame)
-            operations = (
-                ("parse_for_switch", lambda: parse_for_switch(raw), lambda: None),
-                ("stamp_source", lambda: stamp_source(raw, "architect"), lambda: None),
-                ("redis.rpush", lambda: r.rpush(key, raw), lambda: r.lpop(key)),
-            )
-            for name, operation, cleanup in operations:
-                p50, p95 = samples(operation, cleanup)
-                print(f"{shape},{size},{len(raw.encode())},{name},{SAMPLES},{p50:.3f},{p95:.3f}")
+            cases.append((shape, size, encode(frame)))
+
+    print("shape,payload_target,frame_bytes,operation,n,p50_us,p95_us")
+    for name in ("parse_for_switch", "stamp_source", "redis.rpush"):
+        observed = {(shape, size): [] for shape, size, _raw in cases}
+        for repetition in range(WARMUP + SAMPLES):
+            # Rotate all six cases through every position. Measuring one shape
+            # in a block produced a 3.3 versus 4.3 us split on identical header
+            # work solely because CPU state drifted between the blocks.
+            for shape, size, raw in rotate(cases, repetition):
+                started = time.perf_counter()
+                if name == "parse_for_switch":
+                    parse_for_switch(raw)
+                elif name == "stamp_source":
+                    stamp_source(raw, "architect")
+                else:
+                    r.rpush(key, raw)
+                elapsed = (time.perf_counter() - started) * 1_000_000
+                if name == "redis.rpush":
+                    r.lpop(key)
+                if repetition >= WARMUP:
+                    observed[(shape, size)].append(elapsed)
+        for shape, size, raw in cases:
+            values = sorted(observed[(shape, size)])
+            p50 = statistics.median(values)
+            p95 = values[math.ceil(SAMPLES * 0.95) - 1]
+            print(f"{shape},{size},{len(raw.encode())},{name},{SAMPLES},{p50:.3f},{p95:.3f}")
     r.delete(key)
 
 
