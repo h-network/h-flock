@@ -69,6 +69,11 @@ Version 4 is a hard break. Container entrypoint still invokes purge_transport;
 its transport set includes ingress, egress and dead, and it separately deletes
 delivering. Durable boards and streams remain outside that purge.
 
+Live negative check on h-lab: seeded v3-stale-frame into architect egress and
+durable-ticket into architect tasks.todo, then restarted the container. After
+health returned, egress length was 0, the board still contained durable-ticket,
+and the container emitted transport_purged with count 1.
+
 - python3 -m pytest -q: 388 passed, 5 subtests passed.
 - accept.sh on h-lab: PASS=26 FAIL=0; sim-blocked 19/0; exit 0; clean teardown.
 - Conservation on h-lab: 10,000 sent, 9,998 delivered once, zero duplicates,
