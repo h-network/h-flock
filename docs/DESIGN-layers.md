@@ -412,11 +412,18 @@ whole network.
    whether the filter spans a boundary that can be enforced. Inside the
    container nothing can be, so a deny-default there buys nothing and breaks
    every tenant.
-6. ⚠ **open, and the one that gates everything** — envelope v2:
-   `source`/`destination`, **the qualified address form, and the L2/L3 split**
-   (§2.5). The envelope stops being flat and becomes a frame with headers.
-   ⚠ The switch reads **L2 only**, so it does not change now and does not change
-   when the router arrives.
+6. ✅ **decided and SHIPPED** — envelope v2: `source`/`destination`, the
+   qualified address form, and the L2/L3 split (§2.5). `build()` emits
+   `{"v":2,…,"l2":{…},"l3":{…},"payload":{…}}` and `parse_for_switch`
+   (`bus/envelope.py:132`) validates L2 only. ⚠ **This line read "open, and the
+   one that gates everything" until 2026-08-15, long after the code shipped** —
+   and it was quoted as an open thread in status reports on the strength of the
+   doc rather than the code.
+
+   ⚠ **What is genuinely open is the ENCODING, not the addressing.** §6 records
+   that the switch still decodes the whole frame to reach L2, and names framing
+   as the fix. That is [`BUILD-72`](BUILD-72-fixed-header.md) — a v3 wire, fixed
+   width, measured before it is built.
 
 ⚠ **1–3 were listed open here after being decided, exactly as `GLOSSARY`'s table
 was.** Renames 1–3 are executed and parked on `rename/vocabulary`.
