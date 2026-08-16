@@ -58,6 +58,12 @@ services:
       # can reach. Measured while running a second tenant beside the first.
       API_PORT: "8080"
       SESSION_PORT: "8081"
+      # ⚠ OPT-IN. Off by default: the api is the widest surface a tenant has, and
+      # a tenant whose agents only talk over the bus never needs it. Named here
+      # explicitly rather than left to env_file, because the healthcheck below
+      # branches on it and an unset value there would probe a door that is not
+      # running. Set API_ENABLED=1 in container/.env to publish it.
+      API_ENABLED: "${API_ENABLED:-0}"
       API_HOST: "${API_HOST:-0.0.0.0}"
       SESSION_HOST: "${SESSION_HOST:-0.0.0.0}"
       ALLOW_PLAINTEXT_PUBLISH: "${ALLOW_PLAINTEXT_PUBLISH:-0}"
@@ -80,7 +86,12 @@ services:
       # a plaintext probe gets "Empty reply from server" forever — measured: a
       # TLS tenant that served perfectly sat `health: starting` until it went
       # unhealthy. -k because the cert is for the published name, not 127.0.0.1.
-      test: ["CMD-SHELL", "if [ -n \"$$API_TLS_CERT\" ]; then curl -fsSk -H \"Authorization: Bearer $$API_TOKEN\" https://127.0.0.1:8080/health || exit 1; else curl -fsS -H \"Authorization: Bearer $$API_TOKEN\" http://127.0.0.1:8080/health || exit 1; fi"]
+      #
+      # ⚠ And the door is opt-in (API_ENABLED). With it off there is nothing to
+      # curl, so liveness is the switch — the one daemon a tenant cannot deliver
+      # without. Probing the api unconditionally would take every api-less tenant
+      # unhealthy while it forwarded perfectly.
+      test: ["CMD-SHELL", "if [ \"$${API_ENABLED:-0}\" = \"0\" ]; then pgrep -f 'python3 -m flock.switch' >/dev/null && redis-cli -u \"$${REDIS_URL:-redis://127.0.0.1:6379/0}\" ping >/dev/null || exit 1; elif [ -n \"$$API_TLS_CERT\" ]; then curl -fsSk -H \"Authorization: Bearer $$API_TOKEN\" https://127.0.0.1:8080/health || exit 1; else curl -fsS -H \"Authorization: Bearer $$API_TOKEN\" http://127.0.0.1:8080/health || exit 1; fi"]
       interval: 10s
       timeout: 3s
       retries: 5

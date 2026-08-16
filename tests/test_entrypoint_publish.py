@@ -25,7 +25,8 @@ def _run(**overrides):
     env = dict(os.environ)
     env.update(BASE)
     for key in ("API_TLS_CERT", "API_TLS_KEY", "SESSION_TLS_CERT", "SESSION_TLS_KEY",
-                "ALLOW_PLAINTEXT_PUBLISH", "API_HOST", "SESSION_HOST", "REDIS_PASSWORD"):
+                "ALLOW_PLAINTEXT_PUBLISH", "API_HOST", "SESSION_HOST", "REDIS_PASSWORD",
+                "API_ENABLED"):
         env.pop(key, None)
     env.update({k: v for k, v in overrides.items() if v is not None})
     # The guard runs before anything is started, so a run that gets past it
@@ -38,7 +39,7 @@ def _run(**overrides):
 
 
 def test_public_publication_without_tls_refuses():
-    proc = _run(API_HOST="0.0.0.0")
+    proc = _run(API_ENABLED="1", API_HOST="0.0.0.0")
     assert proc.returncode != 0
     assert REFUSAL in proc.stderr
     assert "ALLOW_PLAINTEXT_PUBLISH=1" in proc.stderr  # says how to accept it
@@ -52,8 +53,25 @@ def test_each_door_is_judged_separately():
 
 
 def test_refusal_happens_before_anything_starts():
-    proc = _run(API_HOST="0.0.0.0")
+    proc = _run(API_ENABLED="1", API_HOST="0.0.0.0")
     assert "redis pid" not in proc.stdout
+
+
+def test_disabled_api_door_is_not_judged():
+    """A door that is never started cannot leak a token, so it is not judged.
+
+    ⚠ Without this the opt-in default would be a silent trap: API_HOST would
+    keep its old meaning in `.env`, and a tenant that never runs an api door
+    would refuse to start over a token it never serves.
+    """
+    proc = _run(API_HOST="0.0.0.0")          # API_ENABLED unset -> off
+    assert REFUSAL not in proc.stderr
+
+
+def test_disabled_api_door_says_so():
+    """Off must be visible in the log, or 'why is nothing listening' is a hunt."""
+    proc = _run()
+    assert '"event":"api_disabled"' in proc.stdout
 
 
 def test_acknowledged_plaintext_starts():

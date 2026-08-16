@@ -61,6 +61,9 @@ trap shutdown EXIT INT TERM
 # Unset means not published at all — a bare `docker run` with no -p — which is
 # why the default is loopback rather than 0.0.0.0.
 for door in API SESSION; do
+  # A door that is not started cannot leak a token, so it is not judged. Keep
+  # this in step with the API_ENABLED guard further down.
+  [ "$door" = "API" ] && [ "${API_ENABLED:-0}" = "0" ] && continue
   eval "published=\"\${${door}_HOST:-127.0.0.1}\""
   eval "cert=\"\${${door}_TLS_CERT:-}\""
   eval "key=\"\${${door}_TLS_KEY:-}\""
@@ -302,7 +305,16 @@ fi
 # (§5). The token is handed to these two processes and nothing else — it must
 # not reach a tmux window, where the Command kind would make it root on every
 # peer (§3).
-start api     env API_TOKEN="$api_token" python3 -m flock.api
+# ⚠ The api door is OPT-IN. It is the widest surface the tenant has — one shared
+# bearer token, and `as` on a post is a declaration rather than a credential
+# (`api/app.py:617`), so any token holder can post as any enrolled client. A
+# tenant whose agents only talk to each other over the bus does not need it, and
+# a door nobody opened cannot be walked through. Set API_ENABLED=1 to publish it.
+if [ "${API_ENABLED:-0}" != "0" ]; then
+  start api   env API_TOKEN="$api_token" python3 -m flock.api
+else
+  echo '{"module":"container","event":"api_disabled","reason":"API_ENABLED is not 1"}'
+fi
 start session env API_TOKEN="$api_token" python3 -m flock.session
 
 wait -n

@@ -97,19 +97,19 @@ Tier A is documentation, B internal code, C Redis/environment, and D wire.
 | `AGENTS` | `container/compose.yaml:27` | env var | Boot roster seed encoded as comma-separated `name:port_type` pairs. | Static MAC/port table seed. | C |
 | `AGENT_CLIS` / `AGENT_PROFILES` / `AGENT_PROVIDERS` | `container/compose.yaml:46`, `container/compose.yaml:36`, `container/compose.yaml:37` | env var | Comma-separated per-agent exceptions for launch, account config, and model service. | Port configuration maps. | C |
 | `API_TOKEN` | `container/compose.yaml:47` | env var | Shared bearer credential for both published doors. | Network access credential. | C |
-| `API_HOST` / `SESSION_HOST` | `container/compose.yaml:60` | env var | Host-side publish addresses, not application bind addresses. | Listen/publish address. | C |
+| `API_HOST` / `SESSION_HOST` | `container/compose.yaml:68` | env var | Host-side publish addresses, not application bind addresses. | Listen/publish address. | C |
 | `API_PORT` / `SESSION_PORT` | `container/compose.yaml:58` | env var | Host-side published ports; container-side ports remain 8080/8081. | Port mapping. | C |
 | `API_TLS_*` / `SESSION_TLS_*` | `container/compose.yaml:63` | env var | In-container certificate/key paths for each door. | TLS termination material. | C |
-| `ALLOW_PLAINTEXT_PUBLISH` | `container/compose.yaml:62` | env var | Explicit operator acceptance of publishing a plaintext door beyond loopback. | Insecure-listener override. | C |
+| `ALLOW_PLAINTEXT_PUBLISH` | `container/compose.yaml:69` | env var | Explicit operator acceptance of publishing a plaintext door beyond loopback. | Insecure-listener override. | C |
 | `FLOCK_ALLOW_PLAINTEXT` | `container/entrypoint.sh:84` | env var | Entrypoint's internal assertion that exposure policy was already evaluated. | Policy handoff flag. | C |
-| `REDIS_BIND` / `REDIS_PASSWORD` | `container/entrypoint.sh:89` | env var | Redis listen address and credential required when widened beyond loopback. | Internal switch-store listener security. | C |
+| `REDIS_BIND` / `REDIS_PASSWORD` | `container/entrypoint.sh:93` | env var | Redis listen address and credential required when widened beyond loopback. | Internal switch-store listener security. | C |
 | `REDIS_URL` | `container/entrypoint.sh:112` | env var | Connection string handed only to framework processes that need Redis. | Control-plane store address. | C |
-| `REDIS_READY_SECONDS` | `container/entrypoint.sh:128` | env var | Maximum boot wait for Redis readiness. | Dependency convergence timeout. | C |
+| `REDIS_READY_SECONDS` | `container/entrypoint.sh:132` | env var | Maximum boot wait for Redis readiness. | Dependency convergence timeout. | C |
 | `ROSTER_POLL_SECONDS` | `container/compose.yaml:28` | env var | Shared refresh interval for switch and tmuxhost. | Control-plane refresh interval. | C |
 | `WATCHDOG_ENABLED` | `container/entrypoint.sh:295` | env var | Enables the separate human-alerting observer. | Network monitor enable flag. | C |
 | `door` | `container/entrypoint.sh:61` | doc term | One externally published API or session process/port. | Network ingress door/listener. | A |
 | `start` | `container/entrypoint.sh:37` | identifier | Shell helper that launches a named child and records its PID. | Process supervisor launch, though it is not a supervisor. | B |
-| `rcli` | `container/entrypoint.sh:119` | identifier | Auth-aware wrapper around `redis-cli` used during boot seeding. | Control-plane configuration client. | B |
+| `rcli` | `container/entrypoint.sh:123` | identifier | Auth-aware wrapper around `redis-cli` used during boot seeding. | Control-plane configuration client. | B |
 | `startAgent` | `src/flock/tmuxhost/host.py:104` | identifier | CLI launcher applying office-specific approval and model settings; not lifecycle `StartAgent`. | Port-attached process launcher. | B |
 
 ## Explicit findings
