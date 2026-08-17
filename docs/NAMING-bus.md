@@ -66,20 +66,20 @@ D wire compatibility.
 | _kick | `src/flock/switch/service.py:31` | identifier | B | Fire-and-forget launch of a delivery port after ingress is written. | Interrupt/doorbell to the destination port driver. |
 | offset | `src/flock/switch/service.py:25` | identifier | B | Index rotating roster order between BLPOP calls; distinct from file-tail offsets stored in Redis. | Fairness cursor. |
 | maintenance pass | `src/flock/switch/service.py:123` | doc term | A | One scheduled batch of activity, presence, verification, log-tail, and retention work. | Control/management-plane polling cycle. |
-| ActivityTailer | `src/flock/switch/activity.py:67` | identifier | B | Reads agent CLI session files and writes privacy-reduced input/output/tool events. | Traffic/activity monitor, not a packet tailer. |
-| activity | `src/flock/switch/activity.py:153` | doc term | A | Reduced history of observable CLI input, output, and tool-use events. | Link activity/traffic observation. |
-| input / output / tool | `src/flock/switch/activity.py:29` | wire | D | Values of activity event `kind`, classifying user input, agent text, and tool invocation. | Traffic classes, not envelope kinds. |
-| flavor | `src/flock/switch/activity.py:118` | identifier | B | Session-log format/parser family, currently Claude or Codex. | Decoder type. |
-| PresenceSampler | `src/flock/switch/presence.py:32` | identifier | B | Derives current working, idle, or unknown presence from launch type and recent activity. | Link/host state estimator. |
-| presence | `src/flock/switch/presence.py:97` | doc term | A | Current derived availability state with transition and last-activity times. | Operational state, not reachability alone. |
-| tailable | `src/flock/switch/presence.py:41` | identifier | B | Whether the configured CLI is expected to produce a session file this process understands. | Observable by this monitor. |
-| DeliveryVerifier | `src/flock/switch/verification.py:37` | identifier | B | Judges aged paste markers by looking for later CLI input activity; it does not verify every delivery kind. | Deferred receive heuristic, not acknowledgement protocol. |
-| pending | `src/flock/switch/verification.py:76` | identifier | B | Paste markers old enough to await a later activity judgment; unrelated to a board ticket waiting to be taken. | Unacknowledged delivery observations. |
-| eligible | `src/flock/switch/verification.py:77` | identifier | B | Pending markers at least `verify_after_seconds` old. | Timed-out candidates for acknowledgement judgment. |
-| verified | `src/flock/switch/verification.py:102` | identifier | B | A later input event exists; this proves consumption heuristically, not merely queue forwarding. | Inferred acknowledgement. |
-| blocked | `src/flock/switch/verification.py:75` | doc term | A | Participant state set when a paste cannot be confirmed after activity history exists; not general inability to work or queued board work. | Suspected receive-path fault. |
-| delivery_unjudged | `src/flock/switch/verification.py:91` | wire | D | First paste marker discarded from judgment because no activity history exists. | Delivery with insufficient observation for an ACK decision. |
-| delivery_unverified | `src/flock/switch/verification.py:116` | wire | D | Paste marker lacked a later input event after the wait and caused or preserved blocked state. | Missing inferred ACK. |
+| ActivityTailer | `src/flock/watchdog/activity.py:67` | identifier | B | Reads agent CLI session files and writes privacy-reduced input/output/tool events. | Traffic/activity monitor, not a packet tailer. |
+| activity | `src/flock/watchdog/activity.py:153` | doc term | A | Reduced history of observable CLI input, output, and tool-use events. | Link activity/traffic observation. |
+| input / output / tool | `src/flock/watchdog/activity.py:29` | wire | D | Values of activity event `kind`, classifying user input, agent text, and tool invocation. | Traffic classes, not envelope kinds. |
+| flavor | `src/flock/watchdog/activity.py:118` | identifier | B | Session-log format/parser family, currently Claude or Codex. | Decoder type. |
+| PresenceSampler | `src/flock/watchdog/presence.py:32` | identifier | B | Derives current working, idle, or unknown presence from launch type and recent activity. | Link/host state estimator. |
+| presence | `src/flock/watchdog/presence.py:97` | doc term | A | Current derived availability state with transition and last-activity times. | Operational state, not reachability alone. |
+| tailable | `src/flock/watchdog/presence.py:41` | identifier | B | Whether the configured CLI is expected to produce a session file this process understands. | Observable by this monitor. |
+| DeliveryVerifier | `src/flock/watchdog/verification.py:37` | identifier | B | Judges aged paste markers by looking for later CLI input activity; it does not verify every delivery kind. | Deferred receive heuristic, not acknowledgement protocol. |
+| pending | `src/flock/watchdog/verification.py:76` | identifier | B | Paste markers old enough to await a later activity judgment; unrelated to a board ticket waiting to be taken. | Unacknowledged delivery observations. |
+| eligible | `src/flock/watchdog/verification.py:77` | identifier | B | Pending markers at least `verify_after_seconds` old. | Timed-out candidates for acknowledgement judgment. |
+| verified | `src/flock/watchdog/verification.py:102` | identifier | B | A later input event exists; this proves consumption heuristically, not merely queue forwarding. | Inferred acknowledgement. |
+| blocked | `src/flock/watchdog/verification.py:75` | doc term | A | Participant state set when a paste cannot be confirmed after activity history exists; not general inability to work or queued board work. | Suspected receive-path fault. |
+| delivery_unjudged | `src/flock/watchdog/verification.py:91` | wire | D | First paste marker discarded from judgment because no activity history exists. | Delivery with insufficient observation for an ACK decision. |
+| delivery_unverified | `src/flock/watchdog/verification.py:116` | wire | D | Paste marker lacked a later input event after the wait and caused or preserved blocked state. | Missing inferred ACK. |
 | WindowLogTailer | `src/flock/switch/windowlog.py:8` | identifier | B | Copies complete JSONL records from the agent-window spool to container stdout and manages truncation. | Telemetry collector. |
 | RetentionTrimmer | `src/flock/switch/retention.py:6` | identifier | B | Applies count caps to completed-ticket and dead-letter lists during the switch maintenance pass. | Buffer retention policy. |
 | poll | `src/flock/switch/retention.py:16` | identifier | B | Name shared by five maintenance components for one non-blocking pass, not network polling in every case. | One management-plane scan. |
@@ -136,15 +136,15 @@ are tier C.
   `src/flock/switch/service.py:65` calls the popped egress queue the switch's
   “ingress port.” Both usages are locally coherent and reverse at the switch.
 - `kind` exists in the envelope at `src/flock/bus/envelope.py:50` and inside an
-  activity event at `src/flock/switch/activity.py:149`; the first selects an
+  activity event at `src/flock/watchdog/activity.py:149`; the first selects an
   opener and the second classifies observed CLI behavior.
 - `event` is the lifecycle action at `src/flock/bus/logging.py:43`, the field
-  wrapping a serialized activity observation at `src/flock/switch/activity.py:154`,
+  wrapping a serialized activity observation at `src/flock/watchdog/activity.py:154`,
   and the action in the separate task-history record at
   `src/flock/bus/logging.py:124`.
 - `offset` is the switch's fairness cursor at `src/flock/switch/service.py:25`,
   per-session byte cursors in `activity.offset` at
-  `src/flock/switch/activity.py:132`, and the window-spool byte cursor at
+  `src/flock/watchdog/activity.py:132`, and the window-spool byte cursor at
   `src/flock/switch/windowlog.py:23`.
 - `agent` names every roster participant in Redis addressing, but roster values
   include API clients and control, not only agent CLIs.

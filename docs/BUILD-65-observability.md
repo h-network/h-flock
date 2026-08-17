@@ -26,7 +26,7 @@ forwarded  stream_id=21aaaee…
 states**: still in flight, stranded forever, or the log being read too early.
 `tmux` could only identify it by inspecting queue depth — **outside the log**.
 
-⚠ **The verifier does not catch it.** `switch/verification.py` reads
+⚠ **The verifier does not catch it.** `watchdog/verification.py` reads
 `pending.verify`, which is written **at delivery time**. A stranded envelope
 never reaches delivery, so it never gets a marker, so the verifier never judges
 it. Confirmed by reading, not assumed.

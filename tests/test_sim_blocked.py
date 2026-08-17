@@ -12,7 +12,7 @@ from datetime import datetime, timezone
 import pytest
 
 from flock.bus import prefix
-from flock.switch.verification import DeliveryVerifier
+from flock.watchdog.verification import DeliveryVerifier
 
 
 class MockSimRedis:

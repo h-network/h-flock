@@ -9,6 +9,9 @@ from pathlib import Path
 import redis
 
 from flock.bus import members, prefix, port_type
+from flock.watchdog.activity import ActivityTailer
+from flock.watchdog.presence import PresenceSampler
+from flock.watchdog.verification import DeliveryVerifier
 from flock.tmux import run_tmux
 
 
@@ -321,6 +324,23 @@ class Watchdog:
             self.r.hdel(alerted_key, *stale_fields)
 
 
+def run_observers(watchdog, jobs, agents) -> list[str]:
+    """Poll each observer under its OWN try, and report which failed.
+
+    ⚠ In the switch all five shared one try, so a throw in the first silently
+    skipped the rest of the pass and the record named only the exception class.
+    Returns the names that raised, so this is testable rather than inspectable.
+    """
+    failed = []
+    for name, job in jobs:
+        try:
+            job.poll(agents)
+        except Exception as exc:
+            watchdog._error(name, exc)
+            failed.append(name)
+    return failed
+
+
 def main() -> None:
     if os.environ.get("WATCHDOG_ENABLED", "1") == "0":
         return
@@ -337,16 +357,51 @@ def main() -> None:
         cooldown_seconds=int(os.environ.get("WATCHDOG_COOLDOWN_SEC", "3600")),
         credential_warn_days=int(os.environ.get("WATCHDOG_CREDENTIAL_WARN_DAYS", "7")),
     )
+    # ⚠ These three moved out of the switch's forwarding loop. They observe
+    # agents — CLI transcripts, presence, whether a paste was followed by input
+    # — and the watchdog is already their only consumer: it reads the `presence`
+    # and `blocked` hashes they write. Sampling them here keeps file I/O and
+    # stream scans off the thread that must not block.
+    pod, tenant = os.environ["POD"], os.environ["TENANT"]
+    observers = (
+        ("activity", ActivityTailer(r, pod=pod, tenant=tenant)),
+        ("presence", PresenceSampler(
+            r, pod=pod, tenant=tenant,
+            working_seconds=float(os.environ.get("PRESENCE_WORKING_SECONDS", "30")))),
+        ("verification", DeliveryVerifier(
+            r, pod=pod, tenant=tenant,
+            verify_after_seconds=float(os.environ.get("VERIFY_AFTER_SECONDS", "10")))),
+    )
+    # ⚠ Activity kept the switch's 2s cadence, not the watchdog's 30s. It feeds
+    # verification, which only judges markers older than VERIFY_AFTER_SECONDS;
+    # sampling it at 30s would make "the agent typed" observable up to 30s late
+    # and turn healthy agents into unverified ones.
+    observe_seconds = float(os.environ.get("ACTIVITY_POLL_SECONDS", "2"))
+    next_observe = 0.0
+
+    next_poll = 0.0
     next_credentials = 0.0
     while True:
-        try:
-            watchdog.poll()
-        except Exception as exc:
-            watchdog._error("observations", exc)
+        if time.monotonic() >= next_observe:
+            try:
+                run_observers(watchdog, observers, watchdog._agents())
+            except Exception as exc:
+                watchdog._error("observers", exc)
+            next_observe = time.monotonic() + observe_seconds
+        # ⚠ Gated separately from the observers. The loop now wakes every
+        # observe_seconds (2s) to sample activity, and poll() is the expensive
+        # one — it shells out to tmux and reads presence and a ticket per agent.
+        # Ungated it would run 15x more often than WATCHDOG_INTERVAL asks for.
+        if time.monotonic() >= next_poll:
+            try:
+                watchdog.poll()
+            except Exception as exc:
+                watchdog._error("observations", exc)
+            next_poll = time.monotonic() + interval
         if time.monotonic() >= next_credentials:
             try:
                 watchdog.check_credentials()
                 next_credentials = time.monotonic() + 3600
             except Exception as exc:
                 watchdog._error("credentials", exc)
-        time.sleep(interval)
+        time.sleep(min(interval, observe_seconds))

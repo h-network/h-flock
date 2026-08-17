@@ -29,7 +29,7 @@ one that would have caught this. Say in your report which test that is.
 |---|---|---|
 | 1 ✅ | `.append()` on the `set` from `list_windows` — the `__init__` path raises | `tmuxhost/host.py:201`, `tmux/ops.py:56` |
 | 2 ✅ | `REDIS_PASSWORD` reaches every agent window and is never unset | `container/entrypoint.sh:108-114`, `:232`, and `:27` for the pattern to copy |
-| 5 | two codex agents without profiles share one session directory, so activity is attributed to the wrong agent | `switch/activity.py:86`, `tmux/ops.py:236-240` |
+| 5 | two codex agents without profiles share one session directory, so activity is attributed to the wrong agent | `watchdog/activity.py:86`, `tmux/ops.py:236-240` |
 | 16 | a port that cannot get the busy tag spins forever | `port/deliver.py:179-184`, `bus/resources.py:45` |
 
 ⚠ **Row 2 is the one I would not leave sitting.** It undoes the isolation claim
@@ -46,7 +46,7 @@ never exercised*, because that is the more useful answer.
 | 3 | `StopAgent` destroys an api client's unread mailbox; docs promise retention | `bus/resources.py:13` |
 | 4 | retiring `host` deletes the control provider, and the empty roster then spins the switch against Redis — one chain | `bus/keys.py:8`, `control/openers.py:16`, `switch/service.py:38-40` |
 | 6 | destructive `BLPOP` before `popped` is emitted — an envelope can vanish unrecorded | `switch/service.py:45`, `:48`, `:52-67` |
-| 14 | the activity tailer restarts from byte 0 when the newest session file changes | `switch/activity.py` |
+| 14 | the activity tailer restarts from byte 0 when the newest session file changes | `watchdog/activity.py` |
 | 15 | one undecodable byte in the window-log spool re-emits forever and never truncates | `switch/windowlog.py` |
 
 ⚠ **Row 6 is the interesting one.** At-most-once is deliberate (`AUDIT.md` 44:

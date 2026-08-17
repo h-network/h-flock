@@ -24,7 +24,7 @@
 **Out:** `tmux`, `tmuxhost`, `session`, `office`, `control`, `api`, `port`. h-vab
 says nothing about panes, CLIs or boards, and their names were never the problem.
 
-⚠ **Also out: `switch/activity.py`, `presence.py`, `verification.py`,
+⚠ **Also out: `watchdog/activity.py`, `presence.py`, `verification.py`,
 `windowlog.py`, `retention.py`.** They live under `switch/` but they are not the
 fabric — see §3.
 

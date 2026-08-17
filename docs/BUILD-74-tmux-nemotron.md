@@ -67,7 +67,7 @@ tenant, your own compose project, `down -v` at the end.
 - `received -> opened` — this is where `PASTE_ENTER_DELAY` lives; expect ~500 ms
   and say so
 - `delivery_unverified` / `delivery_unjudged` rate — ⚠ **this is the only
-  scenario where `switch/verification.py` applies at all**, since it watches pane
+  scenario where `watchdog/verification.py` applies at all**, since it watches pane
   input. First real reading we will have of it.
 
 ## 5. Done when

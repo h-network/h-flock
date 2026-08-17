@@ -105,7 +105,7 @@ all arrived byte-identical across all 17 forwarded frames. `ttl`/`hops` correct
 ### ⚠ Two findings that are NOT closed
 
 - **`delivery_unverified` fired on 4 of 13, all four to one agent** (30.8%). This
-  is the **first real reading** of `switch/verification.py`, which only applies to
+  is the **first real reading** of `watchdog/verification.py`, which only applies to
   `tmux` ports and was never exercised by an api or synthetic run. A
   concentration on one agent is a signal, not noise — **it is unknown whether
   that agent failed to process or the heuristic false-positives.** ⚠ Relevant

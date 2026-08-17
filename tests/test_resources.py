@@ -12,7 +12,7 @@ from flock.bus import (
     prefix,
 )
 from flock.control import start_agent, stop_agent
-from flock.switch.presence import PresenceSampler
+from flock.watchdog.presence import PresenceSampler
 
 
 def _resource_expression(call: ast.Call):

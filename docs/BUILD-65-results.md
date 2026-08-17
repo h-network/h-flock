@@ -50,7 +50,7 @@ It must not pop, kick, or otherwise retry delivery.
 | opener completes | `opened` (`src/flock/bus/doors.py:96-106`) | visible |
 | ticket opener writes the board | `board_write_confirmed`; failures are `board_write_failed` (`src/flock/port/openers.py:162-193`) | visible outside the five custody records |
 | tmux verification becomes eligible | marker exists only after the opener starts (`src/flock/port/openers.py:18-50`) | cannot observe a pre-pop strand |
-| verifier judges a marker | `delivery_unjudged` or `delivery_unverified`; a verified marker is deleted silently (`src/flock/switch/verification.py:73-125`) | deliberately silent on success |
+| verifier judges a marker | `delivery_unjudged` or `delivery_unverified`; a verified marker is deleted silently (`src/flock/watchdog/verification.py:73-125`) | deliberately silent on success |
 
 Counts for silent transitions in this table: four cheap records implemented,
 six watchdog observations not implemented, and four deliberately silent

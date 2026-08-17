@@ -333,6 +333,11 @@ def test_observation_failure_does_not_disable_due_credential_check(monkeypatch, 
         def check_credentials(self):
             calls.append("credentials")
 
+        def _agents(self):
+            # The observers moved here from the switch and are polled with the
+            # roster; a double standing in for Watchdog needs this too.
+            return set()
+
         _error = staticmethod(Watchdog._error)
 
     monkeypatch.delenv("WATCHDOG_ENABLED", raising=False)

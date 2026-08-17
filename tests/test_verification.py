@@ -5,7 +5,7 @@ import pytest
 
 from flock.bus import prefix
 from flock.switch.service import Switch
-from flock.switch.verification import DeliveryVerifier
+from flock.watchdog.verification import DeliveryVerifier
 
 
 class VerifyRedis:
@@ -152,23 +152,55 @@ def test_pending_verify_key_follows_the_dotted_resource_convention():
     assert _key("pending.verify") == "pod:acme:tenant:hq:agent:sme-2:pending.verify"
 
 
-def test_switch_tails_then_verifies_same_roster_in_existing_pass():
-    events = []
-    agents = {"architect", "sme-2"}
+def test_switch_no_longer_runs_the_observers():
+    """⚠ Activity, presence and verification moved to the watchdog.
 
-    class Tailer:
-        def poll(self, observed_agents):
-            events.append(("tail", observed_agents))
-
-    class Verifier:
-        def poll(self, observed_agents):
-            events.append(("verify", observed_agents))
-
+    They observe AGENTS; the watchdog is their only consumer — it reads the
+    `presence` and `blocked` hashes they write. Leaving them on the forwarding
+    thread put file I/O and stream scans in the one component that must not
+    block. This test is the old contract inverted: the switch must now refuse
+    them rather than accept them.
+    """
     switch = Switch(object(), pod="acme", tenant="hq")
-    switch._agents = lambda: agents
-    switch.step = lambda timeout=None: (_ for _ in ()).throw(StopIteration)
+    with pytest.raises(TypeError):
+        switch.run(delivery_verifier=object())
+    with pytest.raises(TypeError):
+        switch.run(activity_tailer=object())
 
-    with pytest.raises(StopIteration):
-        switch.run(Tailer(), delivery_verifier=Verifier())
 
-    assert events == [("tail", agents), ("verify", agents)]
+def test_watchdog_observers_each_get_their_own_try():
+    """One failing observer must not silence the others.
+
+    ⚠ In the switch all five shared a single try, so a throw in the first
+    skipped the rest of the pass, and the record named only the exception class
+    — from a five-job block, which was close to undiagnosable.
+    """
+    from flock.watchdog.service import run_observers
+
+    calls, errors = [], []
+
+    class Boom:
+        def poll(self, agents):
+            calls.append("boom")
+            raise RuntimeError("nope")
+
+    class Fine:
+        def __init__(self, name):
+            self.name = name
+
+        def poll(self, agents):
+            calls.append(self.name)
+
+    class Recorder:
+        def _error(self, job, exc):
+            errors.append((job, str(exc)))
+
+    failed = run_observers(
+        Recorder(),
+        (("activity", Boom()), ("presence", Fine("presence")), ("verification", Fine("verify"))),
+        {"sme-2"},
+    )
+
+    assert calls == ["boom", "presence", "verify"], "a throw must not skip the rest"
+    assert failed == ["activity"]
+    assert errors == [("activity", "nope")], "the failing job is named, not just its class"

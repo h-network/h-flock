@@ -9,11 +9,13 @@ import redis
 
 from flock.bus import EnvelopeError, emit, is_member, log_record, members, prefix
 from flock.bus.envelope import advance_hop, header_record_fields, parse_for_switch, stamp_source
-from .activity import ActivityTailer
-from .presence import PresenceSampler
 from .retention import RetentionTrimmer
-from .verification import DeliveryVerifier
 from .windowlog import WindowLogTailer
+
+# ⚠ activity, presence and verification are NOT here. They observe agents; the
+# watchdog owns them. What is left runs on the forwarding thread because it is
+# the switch's own housekeeping — the window spool it tails into its own stdout,
+# and the queues it writes.
 
 
 class Switch:
@@ -189,34 +191,36 @@ class Switch:
 
     def run(
         self,
-        activity_tailer: ActivityTailer | None = None,
-        activity_poll_seconds: float = 2.0,
-        delivery_verifier: DeliveryVerifier | None = None,
-        presence_sampler: PresenceSampler | None = None,
         window_log_tailer: WindowLogTailer | None = None,
         retention_trimmer: RetentionTrimmer | None = None,
+        maintenance_poll_seconds: float = 2.0,
     ) -> None:
-        next_activity = 0.0
+        """Forward, with the switch's own housekeeping between blocking pops.
+
+        ⚠ Each job gets its own try. One failing job used to take the other four
+        down silently, and the record named only the exception class — from a
+        five-job block that was close to undiagnosable.
+        """
+        next_maintenance = 0.0
         while True:
             now = time.monotonic()
-            if activity_tailer is not None and now >= next_activity:
-                try:
-                    agents = self._agents()
-                    activity_tailer.poll(agents)
-                    if presence_sampler is not None:
-                        presence_sampler.poll(agents)
-                    if delivery_verifier is not None:
-                        delivery_verifier.poll(agents)
-                    if window_log_tailer is not None:
-                        window_log_tailer.poll()
-                    if retention_trimmer is not None:
+            if now >= next_maintenance:
+                agents = None
+                if retention_trimmer is not None:
+                    try:
+                        agents = self._agents()
                         retention_trimmer.poll(agents)
-                except Exception as exc:
-                    emit("switch", "error", {}, reason=f"switch maintenance pass failed: {type(exc).__name__}")
-                next_activity = now + activity_poll_seconds
-            timeout = self.poll_seconds
-            if activity_tailer is not None:
-                timeout = min(timeout, max(0.1, next_activity - time.monotonic()))
+                    except Exception as exc:
+                        emit("switch", "error", {},
+                             reason=f"retention pass failed: {type(exc).__name__}: {exc}")
+                if window_log_tailer is not None:
+                    try:
+                        window_log_tailer.poll()
+                    except Exception as exc:
+                        emit("switch", "error", {},
+                             reason=f"window log pass failed: {type(exc).__name__}: {exc}")
+                next_maintenance = now + maintenance_poll_seconds
+            timeout = min(self.poll_seconds, max(0.1, next_maintenance - time.monotonic()))
             self.step(timeout=timeout)
 
 
@@ -244,20 +248,6 @@ def main() -> None:
     # legitimately trade feed latency against filesystem polling. A knob beside
     # an existing knob is consistency; a knob on its own would be speculation.
     switch.run(
-        ActivityTailer(r, pod=switch.pod, tenant=switch.tenant),
-        activity_poll_seconds=float(os.environ.get("ACTIVITY_POLL_SECONDS", "2")),
-        delivery_verifier=DeliveryVerifier(
-            r,
-            pod=switch.pod,
-            tenant=switch.tenant,
-            verify_after_seconds=float(os.environ.get("VERIFY_AFTER_SECONDS", "10")),
-        ),
-        presence_sampler=PresenceSampler(
-            r,
-            pod=switch.pod,
-            tenant=switch.tenant,
-            working_seconds=float(os.environ.get("PRESENCE_WORKING_SECONDS", "30")),
-        ),
         window_log_tailer=WindowLogTailer(
             r,
             pod=switch.pod,
@@ -271,4 +261,5 @@ def main() -> None:
             board_done_max=int(os.environ.get("BOARD_DONE_MAX", "500")),
             dead_max=int(os.environ.get("DEAD_MAX", "500")),
         ),
+        maintenance_poll_seconds=float(os.environ.get("MAINTENANCE_POLL_SECONDS", "2")),
     )
