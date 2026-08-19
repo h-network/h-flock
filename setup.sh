@@ -182,6 +182,77 @@ if [[ "${USE_PROVIDER:-n}" =~ ^[Yy] ]]; then
     done
 fi
 
+# ── which doors, and on which host ports ──────────────────────────────────────
+# ⚠ Two tenants on one host collide unless the PUBLISHED ports differ. The
+# compose project is already per-tenant (`h-flock-<tenant>`), but this script
+# used to write 8080/8081 unconditionally, so the second tenant on a box came up
+# with a working door nobody could reach — the failure `container/compose.yaml`
+# records as "measured while running a second tenant beside the first".
+#
+# ⚠ The doors ALWAYS bind 8080/8081 INSIDE the container. These choose the host
+# side of the mapping only.
+# ⚠ A port probe that cannot see the ports is a check that can never fail, and
+# it would report "free" for every port on the box. So the probe is chosen once,
+# up front, and its absence is SAID rather than swallowed. Python is already a
+# hard dependency of everything else here.
+port_busy() {
+    python3 - "$1" <<'PROBE'
+import socket, sys
+s = socket.socket()
+s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+try:
+    s.bind(("0.0.0.0", int(sys.argv[1])))
+except OSError:
+    sys.exit(0)          # in use
+finally:
+    s.close()
+sys.exit(1)              # free
+PROBE
+}
+
+free_port() {
+    # First free port at or above $1. Checked on the host, where the collision is.
+    local p="$1"
+    while port_busy "$p"; do p=$((p+1)); done
+    echo "$p"
+}
+
+echo
+API_ENABLED=0; API_PORT=""; TELEGRAM=0
+read -rp "Open the REST API door? [y/N]: " WANT_API
+case "${WANT_API:-n}" in y|Y) API_ENABLED=1 ;; esac
+
+# ⚠ The Telegram bot is an HTTP CLIENT of the api door (clients/telegram/bot.py
+# takes --api-url), not a door of its own. It cannot run without it, so the
+# dependency is enforced here rather than left to the operator to discover.
+read -rp "Run the Telegram bot against this tenant? [y/N]: " WANT_TG
+case "${WANT_TG:-n}" in
+    y|Y) TELEGRAM=1
+         if [ "$API_ENABLED" = "0" ]; then
+             echo "    the Telegram bot talks to the REST API, so that door is enabled too."
+             API_ENABLED=1
+         fi ;;
+esac
+
+if [ "$API_ENABLED" = "1" ]; then
+    DEF_API="$(free_port 8080)"
+    read -rp "  Host port for the REST API [${DEF_API}]: " API_PORT
+    API_PORT="${API_PORT:-$DEF_API}"
+fi
+DEF_SESSION="$(free_port 8081)"
+read -rp "Host port for the session console [${DEF_SESSION}]: " SESSION_PORT
+SESSION_PORT="${SESSION_PORT:-$DEF_SESSION}"
+
+for pair in "api:${API_PORT}" "session:${SESSION_PORT}"; do
+    name="${pair%%:*}"; port="${pair#*:}"
+    [ -n "$port" ] || continue
+    if port_busy "$port"; then
+        echo "error: port ${port} is already listening; the ${name} door would map onto nothing" >&2
+        echo "  and the tenant would come up unhealthy with a door nobody can reach." >&2
+        exit 2
+    fi
+done
+
 # ── how the doors are published ───────────────────────────────────────────────
 # The console and the api carry a bearer token. Published beyond loopback with
 # no TLS it crosses the network in clear text, so the tenant refuses to start
@@ -269,8 +340,9 @@ TOKEN="$(grep -s '^API_TOKEN=' container/.env | cut -d= -f2)"
     echo "TENANT=${TENANT}"
     echo "AGENTS=${AGENTS_CSV}"
     echo "API_TOKEN=${TOKEN}"
-    echo "API_PORT=8080"
-    echo "SESSION_PORT=8081"
+    echo "API_ENABLED=${API_ENABLED}"
+    [ -n "$API_PORT" ] && echo "API_PORT=${API_PORT}"
+    echo "SESSION_PORT=${SESSION_PORT}"
     echo "API_HOST=${DOOR_HOST}"
     echo "SESSION_HOST=${DOOR_HOST}"
     [ "$ALLOW_PLAINTEXT" = "1" ] && echo "ALLOW_PLAINTEXT_PUBLISH=1"
@@ -359,8 +431,18 @@ echo
 echo "Tenant '${TENANT}' is healthy."
 SCHEME=http; SESSION_SCHEME=ws
 if [ -n "$TLS_CERT_CONTAINER" ]; then SCHEME=https; SESSION_SCHEME=wss; fi
-echo "  api      ${SCHEME}://127.0.0.1:8080   token in container/.env"
-echo "  session  ${SESSION_SCHEME}://127.0.0.1:8081/session"
+# ⚠ Print only doors that are actually running. Printing a URL for a door the
+# entrypoint declined to start is how "why is nothing listening" becomes a hunt.
+if [ "$API_ENABLED" = "1" ]; then
+    echo "  api      ${SCHEME}://127.0.0.1:${API_PORT}   token in container/.env"
+else
+    echo "  api      not enabled (API_ENABLED=0) — set it in container/.env to open it"
+fi
+echo "  session  ${SESSION_SCHEME}://127.0.0.1:${SESSION_PORT}/session"
+if [ "$TELEGRAM" = "1" ]; then
+    echo "  telegram python3 -m clients.telegram.bot --api-url ${SCHEME}://127.0.0.1:${API_PORT}"
+    echo "           ⚠ not started by this script; it is a client, and it needs its own bot token"
+fi
 echo "  attach   docker exec -it -e TMUX_TMPDIR=/home/ubuntu/.flock/tmux $CONTAINER tmux attach -t ${TENANT}"
 if [ -n "$TLS_CERT_CONTAINER" ]; then
     echo

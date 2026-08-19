@@ -56,6 +56,37 @@ decoding the whole frame to reach two fields — 4,381 µs at 1 MiB nested, agai
 
 ---
 
+## 2026-08-19 — the REST API door is opt-in, and setup asks for ports
+
+**Contract:** `API_ENABLED` defaults to **0**. The api door does not start unless
+asked. Liveness when it is off is the switch plus Redis, not `/health`.
+
+`setup.sh` now asks which doors to open and on which **host** ports, defaulting
+to the first free one and refusing a port already in use.
+
+### ⚠ What this made false
+
+- **"A tenant serves :8080."** It serves it only with `API_ENABLED=1`. Anything
+  assuming the door is present — including `accept.sh`, `plumbing-check.sh` and
+  every scenario that enrols over HTTP — must set it.
+- **"`setup.sh` writes a working api config."** It wrote `API_TOKEN` and
+  `API_PORT` and never `API_ENABLED`, so between the default change and this
+  entry it generated a `.env` for a door that would not start, and printed the
+  URL anyway.
+- ⚠ **"Ports are fixed at 8080/8081."** They were hardcoded in `setup.sh` while
+  the compose project was already per-tenant — so a second tenant on one host
+  came up with a working door nobody could reach. `compose.yaml:53` had recorded
+  that failure; the fix never reached `setup.sh`.
+
+### Unchanged, deliberately
+
+- **The session console stays on by default.** It carries the same token but is
+  the only way to see a tenant without `docker exec`.
+- ⚠ **Telegram is a client, not a door.** `clients/telegram/bot.py` speaks HTTP
+  to the api door, so it depends on it; the prompt enables the API rather than
+  offering an independent choice.
+
+
 ## 2026-08-15 — wire v3 → v4: frozen reserved header, TTL and hops
 
 **Build 73.** A frame is now **256 ASCII header bytes** followed by the same

@@ -105,6 +105,10 @@ you plug in something new without touching it.
 #     Agent #3 name [sme-3]: frontend
 #   Use more than one account in this tenant? [y/N]: n
 #   Point any agent at a local model endpoint? [y/N]: n
+#   Open the REST API door? [y/N]: n              # OFF by default — see below
+#   Run the Telegram bot against this tenant? [y/N]: n
+#   Host port for the session console [8081]:     # first free port, so a second
+#                                                 # tenant on this box just works
 #   Reach the console from another machine? [Y/n]: y
 #     Path to a TLS certificate (blank for more choices):
 #     Generate a self-signed certificate? [y/N]: n     # plain HTTP, recorded as a choice
@@ -121,6 +125,23 @@ plumbing check 25/25 and failure simulator 19/19. ⚠ macOS ships **bash 3.2**, 
 `setup.sh` avoids bash 4 syntax; if Docker Desktop is not on your `PATH` in a
 non-interactive shell, add
 `/Applications/Docker.app/Contents/Resources/bin`.
+
+⚠ **The REST API door is OFF unless you ask for it.** It is the widest surface a
+tenant has — one shared bearer token, and `as` on a post is a declaration rather
+than a credential — and agents reach each other over the bus without it. Set
+`API_ENABLED=1` in `container/.env`, or answer yes at the prompt.
+
+⚠ **The Telegram bot is a CLIENT of that door, not a door of its own.**
+`clients/telegram/bot.py` takes `--api-url`, so it cannot run with the API off;
+answering yes to Telegram enables the API and says so. `setup.sh` does not start
+the bot — it needs its own Telegram token — it prints the command.
+
+⚠ **Host ports are asked, not assumed.** The doors always bind 8080/8081 *inside*
+the container; the prompts choose the host side, defaulting to the first free
+port. **This is what lets two tenants share one host** — the compose project was
+already per-tenant, but the published ports used to be hardcoded, so the second
+tenant came up healthy-looking with a door nobody could reach. A port already in
+use is refused rather than written into `.env`.
 
 ⚠ **Choosing TLS makes `setup.sh` deliver the certificate before the doors
 start** — it creates the container, `docker cp`s the certificate in, then starts
