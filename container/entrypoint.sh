@@ -295,9 +295,12 @@ unset FLOCK_LOG_FILE FLOCK_LOG_FILE_AGENT_ONLY
 
 # ── the rest ──────────────────────────────────────────────────────────────────
 start switch  env REDIS_URL="$redis_url" python3 -m flock.switch
-if [ "${WATCHDOG_ENABLED:-1}" != "0" ]; then
-  start watchdog env REDIS_URL="$redis_url" python3 -m flock.watchdog
-fi
+# ⚠ ALWAYS started. WATCHDOG_ENABLED silences alerting, and the process decides
+# that for itself — it also hosts ActivityTailer, PresenceSampler and
+# DeliveryVerifier, which the api door, the web console and the Telegram bot all
+# read. Gating the start here is what made the flag switch off telemetry three
+# clients depend on.
+start watchdog env REDIS_URL="$redis_url" python3 -m flock.watchdog
 # No adapter here. It is not a service — the switch kicks `flock.port <agent>`
 # per delivery and it exits (LLD-adapter-tmux §2). Starting one at boot would be
 # the daemon this build exists to remove.

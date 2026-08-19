@@ -359,10 +359,27 @@ def test_observation_failure_does_not_disable_due_credential_check(monkeypatch, 
     assert error["reason"] == "RuntimeError: bad observations"
 
 
-def test_disabled_main_exits_without_connecting(monkeypatch):
+def test_disabled_alerting_still_connects_because_observers_need_redis(monkeypatch):
+    """⚠ This asserted the OPPOSITE until 2026-08-19.
+
+    It pinned "WATCHDOG_ENABLED=0 means main() exits without connecting", which
+    was correct while the flag only governed alerts. The observers now live in
+    this process and read Redis, so exiting early silences telemetry rather than
+    alerts. The connection is now the evidence that they still run.
+    """
+    connected = []
     monkeypatch.setenv("WATCHDOG_ENABLED", "0")
-    monkeypatch.setattr(service.redis.Redis, "from_url", lambda url: (_ for _ in ()).throw(AssertionError))
-    service.main()
+    monkeypatch.setenv("REDIS_URL", "redis://unused")
+    monkeypatch.setenv("POD", "acme")
+    monkeypatch.setenv("TENANT", "hq")
+    monkeypatch.setattr(service.redis.Redis, "from_url",
+                        lambda url: connected.append(url) or object())
+    monkeypatch.setattr(service.time, "sleep",
+                        lambda s: (_ for _ in ()).throw(StopIteration))
+    monkeypatch.setattr(service.time, "monotonic", lambda: 0)
+    with pytest.raises(StopIteration):
+        service.main()
+    assert connected, "observers need Redis even with alerting off"
 
 
 def test_agy_is_unknown_because_its_expiry_is_an_access_token(tmp_path, capsys):
@@ -454,3 +471,59 @@ def test_unused_profile_directory_does_not_alert(tmp_path):
     Watchdog(r, pod="acme", tenant="hq", session_name="hq", home_root=tmp_path).check_credentials(now=NOW)
 
     assert prefix("acme", "hq", resource="alerts") not in r.streams
+
+
+def test_alerting_disabled_still_runs_the_observers(monkeypatch, capsys):
+    """⚠ WATCHDOG_ENABLED silences ALERTS, not telemetry.
+
+    Until the observers moved into this process the flag only quietened stall
+    and blocked alerts. Returning early would now also stop ActivityTailer,
+    PresenceSampler and DeliveryVerifier — presence reads `unknown` forever, the
+    activity stream stays empty, and clients/telegram/bot.py loses its progress
+    indicator. Found by api reviewing build 77.
+    """
+    polled = []
+
+    class Observer:
+        def __init__(self, name):
+            self.name = name
+
+        def poll(self, agents):
+            polled.append(self.name)
+            raise StopIteration        # one pass, then out of the loop
+
+    class QuietWatchdog:
+        def __init__(self, *a, **kw):
+            pass
+
+        def poll(self):
+            polled.append("ALERT")     # must never appear
+
+        def check_credentials(self):
+            polled.append("CREDENTIALS")
+
+        def _agents(self):
+            return {"sme-2"}
+
+        _error = staticmethod(Watchdog._error)
+
+    monkeypatch.setenv("WATCHDOG_ENABLED", "0")
+    monkeypatch.setenv("REDIS_URL", "redis://unused")
+    monkeypatch.setenv("POD", "acme")
+    monkeypatch.setenv("TENANT", "hq")
+    monkeypatch.setattr(service, "Watchdog", QuietWatchdog)
+    monkeypatch.setattr(service.redis.Redis, "from_url", lambda url: object())
+    monkeypatch.setattr(service, "ActivityTailer", lambda *a, **kw: Observer("activity"))
+    monkeypatch.setattr(service, "PresenceSampler", lambda *a, **kw: Observer("presence"))
+    monkeypatch.setattr(service, "DeliveryVerifier", lambda *a, **kw: Observer("verify"))
+    monkeypatch.setattr(service.time, "monotonic", lambda: 0)
+    monkeypatch.setattr(service.time, "sleep",
+                        lambda s: (_ for _ in ()).throw(StopIteration))
+
+    with pytest.raises(StopIteration):
+        service.main()
+
+    assert "activity" in polled, "observers must run with alerting off"
+    assert "ALERT" not in polled, "alerting must be silent"
+    assert "CREDENTIALS" not in polled
+    assert '"event":"alerting_disabled"' in capsys.readouterr().out

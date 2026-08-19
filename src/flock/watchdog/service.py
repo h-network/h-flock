@@ -8,7 +8,7 @@ from pathlib import Path
 
 import redis
 
-from flock.bus import members, prefix, port_type
+from flock.bus import log_record, members, prefix, port_type
 from flock.watchdog.activity import ActivityTailer
 from flock.watchdog.presence import PresenceSampler
 from flock.watchdog.verification import DeliveryVerifier
@@ -342,8 +342,14 @@ def run_observers(watchdog, jobs, agents) -> list[str]:
 
 
 def main() -> None:
-    if os.environ.get("WATCHDOG_ENABLED", "1") == "0":
-        return
+    # ⚠ WATCHDOG_ENABLED silences ALERTING, not telemetry. Until the observers
+    # moved here they lived in the switch, so this flag only ever quietened the
+    # stall and blocked alerts. Returning here would now also stop
+    # ActivityTailer, PresenceSampler and DeliveryVerifier — presence would read
+    # `unknown` forever, the activity stream would stay empty, and the Telegram
+    # bot would lose its progress indicator. Found by api reviewing build 77;
+    # the flag's name promises alerts and three clients depend on the rest.
+    alerting = os.environ.get("WATCHDOG_ENABLED", "1") != "0"
     interval = float(os.environ.get("WATCHDOG_INTERVAL", "30"))
     r = redis.Redis.from_url(os.environ["REDIS_URL"])
     watchdog = Watchdog(
@@ -379,6 +385,10 @@ def main() -> None:
     observe_seconds = float(os.environ.get("ACTIVITY_POLL_SECONDS", "2"))
     next_observe = 0.0
 
+    if not alerting:
+        log_record("watchdog", "alerting_disabled",
+                   reason="WATCHDOG_ENABLED=0; observers still running")
+
     next_poll = 0.0
     next_credentials = 0.0
     while True:
@@ -392,13 +402,13 @@ def main() -> None:
         # observe_seconds (2s) to sample activity, and poll() is the expensive
         # one — it shells out to tmux and reads presence and a ticket per agent.
         # Ungated it would run 15x more often than WATCHDOG_INTERVAL asks for.
-        if time.monotonic() >= next_poll:
+        if alerting and time.monotonic() >= next_poll:
             try:
                 watchdog.poll()
             except Exception as exc:
                 watchdog._error("observations", exc)
             next_poll = time.monotonic() + interval
-        if time.monotonic() >= next_credentials:
+        if alerting and time.monotonic() >= next_credentials:
             try:
                 watchdog.check_credentials()
                 next_credentials = time.monotonic() + 3600
