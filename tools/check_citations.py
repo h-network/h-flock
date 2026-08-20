@@ -11,11 +11,18 @@ from pathlib import Path
 
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
+# ⚠ IGNORECASE is load-bearing, not tidiness. Without it a citation written
+# `path.MD:1` matched NOTHING — so a dead path produced zero findings and the
+# run reported "0 hard failures". The checker was not lenient about the file, it
+# was blind to the citation, which is the worse failure: silence reads as clean.
+# Constructed by `bus` while attacking the sign-off form (build 78) and
+# reproduced here: `does-not-exist.md:1` exits 1, `does-not-exist.MD:1` exits 0.
 CITATION = re.compile(
     r"(?<![\w./-])"
     r"((?:[A-Za-z0-9_.-]+/)*[A-Za-z0-9_.-]+\."
     r"(?:py|sh|md|yaml|yml|toml|json|html|js|css))"
-    r":(\d+)(?:-(\d+))?"
+    r":(\d+)(?:-(\d+))?",
+    re.IGNORECASE,
 )
 QUOTED = re.compile(r"`([^`]+)`")
 SYMBOL = re.compile(r"^[A-Za-z_][A-Za-z0-9_.]*(?:\(\))?$")

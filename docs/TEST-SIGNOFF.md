@@ -1,10 +1,9 @@
 # Test sign-off
 
-⚠ **A test result is a claim, and this is the shape it must take to be one.**
-Every field below exists because a run in this repository was reported as
-evidence when it was not. The build number after each is the run that earned it.
+⚠ **A test result is a claim. This is the shape it must take to be one.**
 
-**Fill it, or say the field is UNKNOWN.** A missing field is not a pass.
+Every field exists because a run in this repository was reported as evidence and
+was not. **A missing field is not a pass.**
 
 ---
 
@@ -13,140 +12,135 @@ evidence when it was not. The build number after each is the run that earned it.
 ```
 TEST SIGN-OFF
 
-  claim          what this run establishes, in one line
-  sha            <full sha>                  ⚠ the commit, not "main", not "latest"
-  built from     COMMIT | WORKING TREE       ⚠ see §1
-  host           lab 172.16.0.14 | h-oracle | local   + why that host
-  run by         <lane>       authored the change?  YES | NO
+  claim            what this run establishes, in one line
+  source sha       <full sha>            ⚠ the commit, not "main"
+  artefact         COMMIT | WORKING TREE | <digest of what actually ran>
+  host             lab 172.16.0.14 | h-oracle | local | NOT MATERIAL (+ why)
+  command          the exact command
+  exit status      <n>                   read UNPIPED
 
-  command        the exact command
-  exit status    <n>          read UNPIPED — see §2
-  evidence       <path>       + sha256 if it will be torn down
+  EXCLUDED         paths and populations this run did NOT exercise
+  population       what the aggregate is over: n of N
 
-  EXCLUDED       the paths and populations this run did NOT exercise   ⚠ §3
-  could it fail  the negative control that was run, or NOT ESTABLISHED ⚠ §4
+  control          what was MUTATED to make the property false
+  expected locus   where the failure should surface
+  observed locus   where it actually surfaced        ⚠ must match
+  signature        the failure's text / code
 
-  verdict        PASS | FAIL | REFUSED
+  evidence         <path> + sha256 if it will be torn down
+
+  verdict          PASS | REFUSED | SMOKE
+  VERIFIED BY      <lane>   author of the change?  YES | NO
+```
+
+**Conditional blocks — fill only when they apply:**
+
+```
+  DESTRUCTIVE      identity this run CREATED · what teardown touches ·
+                   protected names refused (and the refusal proven)
+
+  COMPARISON       baseline sha · same host · same session · interleaved?
 ```
 
 ---
 
-## 1. `built from` — the field that invalidates most of the rest
+## The three rules that decide the verdict
 
-⚠ **A container built from an uncommitted working tree verifies nothing that
-anyone else can reproduce.** It is a useful smoke test and it is not evidence.
+⚠ **1. If `EXCLUDED` intersects the claim, the verdict is REFUSED.**
 
-**2026-08-18**: a watchdog change was verified live on h-oracle by `tar`-ing a
-working tree into a clone and rebuilding. The behaviour was correct. The commit
-was on the wrong branch and `main` never moved — so the "verified live" claim
-described code that was nowhere in the repository.
+Mechanical, no judgement. `bus` constructed a sign-off that filled every other
+field honestly and was still false:
 
-**`WORKING TREE` is a legal answer.** It downgrades the verdict to
-*smoke-tested*, and the claim must say so.
-
-## 2. `exit status` — read it unpiped
-
-⚠ **`cmd | tail` reports `tail`'s status.**
-
-```bash
-cmd > /tmp/out 2>&1; echo "exit=$?"; tail -5 /tmp/out
+```
+claim      checker refuses DANGEROUS
+control    missing file exited 1
+EXCLUDED   no readable DANGEROUS input exercised
+verdict    PASS          ← the exclusion CONTAINS the claim
 ```
 
-**BUILD 55**: `accept.sh` counted plumbing **24 failures** and returned green,
-because the pipeline reported the consumer's status. Fixed with `PIPESTATUS[0]`
-plus a forced `actual != expected` negative control.
+⚠ **2. A control must mutate the property, and fail where it should.**
 
-**2026-08-18**: a hard citation failure was pushed because
-`check_citations.py 2>&1 | tail -2 && git push` let `tail`'s zero through.
+That same counter-example had a control that genuinely failed — in
+`Path.read_text`, before any content oracle ran. The property was never
+exercised. **`expected locus` and `observed locus` are why the form now asks
+where.**
 
-`set -o pipefail` is the minimum; reading the status of the thing you ran is the
-rule.
+**BUILD 62**: a negative control passed for the wrong reason — it withheld the
+launcher instead of exercising the condition.
 
-## 3. `EXCLUDED` — name paths and populations, not commands
+⚠ **3. No control means SMOKE, never PASS.**
 
-⚠ **"All tests pass" is not a statement about the system.** It is a statement
-about the tests that ran.
-
-**BUILD 51**: a 100×20 API bench was green and covered adapter delivery. It did
-not cover tmux paste or control. Acceptance had to be rerun, because only
-`accept.sh` proved a kicked tmux delivery reached a pane.
-
-**BUILD 29/33**: `clients/telegram/bot.py` had `def enrol():` missing `self`.
-Pytest was green on mocks; it excluded ever instantiating the client. **The live
-bot crashed on call #1.**
-
-So: *"excluded `accept.sh`, the tmux paste path, and any container build"* —
-**not** *"ran pytest"*.
-
-## 4. `could it fail` — a pass is evidence only if failure was reachable
-
-⚠ **Ask what result would have appeared had the property been false.** If the
-answer is "the same one", the run establishes nothing.
-
-**BUILD 53**: the L2-only gate was proven by pointing the switch at
-`l3.destination` and watching it exit 1.
-
-**BUILD 62**: a negative control **passed for the wrong reason** — it withheld
-the launcher rather than exercising the condition under test.
-
-**2026-08-19**: a free-port probe piped `ss` to `grep`. Where `ss` is absent the
-pipeline returns nothing, every port reads free, and **both the suggestion and
-the collision refusal silently stop working.** It was replaced with a `bind()`
-and proven both ways.
-
-**`NOT ESTABLISHED` is a legal answer** and is far better than a claimed control
-that was never induced.
-
-## 5. `run by` — the author's own green is the weakest evidence there is
-
-⚠ Not a prohibition. A field.
-
-**BUILD 77**: three commits authored, implemented and self-reviewed by
-`architect` shipped two defects — a `setup.sh` that produced an API-dead tenant,
-and `WATCHDOG_ENABLED=0` silently killing all presence and activity telemetry.
-Both were found by `api` on first independent read.
-
-**Anyone may attack; only an independent reader signs.** Where the change is
-load-bearing — contracts, wire or custody, destructive paths, harnesses, or a
-measured claim — the verifier of record must not be the author.
-
-## 6. Two things that void a sign-off regardless of its fields
-
-⚠ **A run that destroyed something it did not create.** BUILD 59 killed the live
-office because the compose project was derived from the tenant name and teardown
-ran `down -v`. Record the identity this run created; tear down only that.
-
-⚠ **A comparison across hosts, sessions or methods.** BUILD 68 would have
-reported a 21% regression by comparing against a historical figure; paired on
-one host it was −2.11%. Identical scripts measure **6.5/s on the lab and 853/s
-on h-oracle** — see `BUILD-CONVENTION` §3.0.
+`NOT ESTABLISHED` plus `PASS` used to be syntactically legal here, which made the
+field unfalsifiable — nobody ever failed it. **SMOKE** is the honest outcome for
+a useful run without controls, and it is not evidence.
 
 ---
 
-## Worked example — a sign-off that fails its own form
+## Why each field, with the run that earned it
+
+| field | earned by |
+|---|---|
+| **artefact** | a watchdog fix "verified live" on h-oracle from an uncommitted **working tree**, while the commit sat on the wrong branch and `main` never moved |
+| **exit status, unpiped** | **BUILD 55** — `accept.sh` counted **24 plumbing failures** and returned green, because the pipeline reported the consumer's status |
+| **EXCLUDED** | **BUILD 29/33** — `clients/telegram/bot.py` had `def enrol():` missing `self`. Pytest green on mocks; it excluded ever instantiating the client. **The live bot crashed on call #1** |
+| **population** | **BUILD 70** — a `sent → popped` median from **100 enrolment paths** while the workload had 2,000. Plausible number, wrong population |
+| **control / locus / signature** | **build 78's counter-example**, above |
+| **DESTRUCTIVE** | **BUILD 59** — teardown killed the live office because the compose project was derived from the tenant name and ran `down -v` |
+| **COMPARISON** | **BUILD 68** would have reported a 21% regression against a historical figure; paired on one host it was **−2.11%**. Identical scripts read **6.5/s on the lab and 853/s on h-oracle** |
+| **VERIFIED BY** | **BUILD 77** — three commits authored, implemented and self-reviewed by `architect` shipped two defects, both found by `api` on first independent read |
+
+`WORKING TREE`, `NOT MATERIAL`, `SMOKE` and `NO` are all legal answers. Each
+changes what the run means; none of them is a failure to report.
+
+⚠ **Anyone may attack; only an independent reader signs.** Required where the
+change is load-bearing — contracts, wire or custody, destructive paths,
+harnesses, or a measured claim. Mechanical prose may be peer-landed with the
+scope declared.
+
+---
+
+## Two examples
+
+**PASS** — the citation recogniser's case blindness, build 78:
 
 ```
-  claim          the watchdog observers survive WATCHDOG_ENABLED=0
-  sha            f33885a
-  built from     COMMIT
-  host           lab 172.16.0.14        correctness, not a throughput claim
-  run by         architect              authored the change?  YES   ⚠ §5
-
-  command        docker compose -p h-flock-b77 … up -d --build
-  exit status    0                      read unpiped
-  evidence       /tmp/b77-build.log on the lab            ⚠ no sha256, torn down
-
-  EXCLUDED       accept.sh, plumbing-check.sh, every scenario that enrols over
-                 HTTP, the tmux paste path, and any second tenant
-  could it fail  YES — the same tenant with the pre-fix entrypoint does not
-                 start flock.watchdog at all                ⚠ NOT ACTUALLY RUN
-
-  verdict        PASS  ← ⚠ should be REFUSED
+  claim            the recogniser sees a citation regardless of extension case
+  source sha       <this commit>          artefact COMMIT
+  host             NOT MATERIAL — hermetic, no I/O outside tmp_path
+  command          python3 -m pytest -q tests/test_citations.py
+  exit status      0                      read unpiped
+  EXCLUDED         container build, accept.sh, every runtime path
+  population       3 constructed citations, both cases, both arms
+  control          `gone.MD:1` against a tree where it does not exist
+  expected locus   the recogniser, reported as "path does not exist"
+  observed locus   same                   signature: "gone.MD:1: path does not exist"
+  evidence         tests/test_citations.py
+  verdict          PASS
+  VERIFIED BY      bus — author of the change? NO
 ```
 
-⚠ **Two fields sink it.** The author signed their own change, and the negative
-control was asserted rather than induced — the pre-fix comparison was never run,
-so nothing distinguishes "the fix works" from "the observers were always going
-to write those keys". **The evidence was also torn down without a checksum.**
+**REFUSED** — my own watchdog verification, 2026-08-19:
 
-That run is in this repository and was reported as verification.
+```
+  claim            the observers survive WATCHDOG_ENABLED=0
+  source sha       f33885a                artefact COMMIT
+  host             lab 172.16.0.14
+  exit status      0
+  EXCLUDED         accept.sh, every HTTP-enrolling scenario, the tmux paste path
+  control          NOT ESTABLISHED — the pre-fix tenant was never run
+  evidence         /tmp/b77-build.log — torn down, no sha256
+  verdict          REFUSED                VERIFIED BY architect — author? YES
+```
+
+⚠ **Two fields sink it.** The control was *asserted*, not induced, so nothing
+distinguishes "the fix works" from "the observers were always going to write
+those keys" — and the author signed it. **That run is in this repository and was
+reported as verification.**
+
+---
+
+⚠ **This document is not a gate.** Nothing enforces it. `bus` scored **BUILD 55**
+against it and could not fill the run sha, working-tree identity, host binding,
+exact command, or retained evidence — **our best-documented negative control
+cannot be signed off retrospectively.** That gap is the argument for filling the
+form while the run is happening rather than after.
