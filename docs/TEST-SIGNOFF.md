@@ -111,9 +111,9 @@ scope declared.
   exit status      0                      read unpiped
   EXCLUDED         container build, accept.sh, every runtime path
   population       3 constructed citations, both cases, both arms
-  control          `gone.MD:1` against a tree where it does not exist
+  control          an upper-case citation to a path absent from the tree
   expected locus   the recogniser, reported as "path does not exist"
-  observed locus   same                   signature: "gone.MD:1: path does not exist"
+  observed locus   same                   signature: "… path does not exist"
   evidence         tests/test_citations.py
   verdict          PASS
   VERIFIED BY      bus — author of the change? NO
