@@ -522,3 +522,40 @@ def test_status_survives_a_blocked_key_of_the_wrong_type(office_env, capsys):
     office_env.values["pod:acme:tenant:hq:agent:worker:blocked"] = {"since": "now"}
     cli.main(["status", "worker"])
     assert "worker" in capsys.readouterr().out
+
+
+def test_clone_to_all_skips_agents_without_a_workspace(monkeypatch, capsys, tmp_path):
+    """⚠ api and control have no window and no /workdir (HLD §2).
+
+    Cloning for them makes a directory nothing can reach. Named explicitly it is
+    a stated skip; in the default sweep it is silent, because listing every
+    non-tmux agent on every run is noise.
+    """
+    from flock.office import clone_to_all
+
+    monkeypatch.setattr(clone_to_all, "WORKDIR_ROOT", str(tmp_path))
+    monkeypatch.setattr(clone_to_all.redis.Redis, "from_url", lambda url: object())
+    monkeypatch.setattr(clone_to_all, "members", lambda r, **kw: {"alfa", "api", "host"})
+    monkeypatch.setattr(clone_to_all, "port_type",
+                        lambda r, **kw: {"alfa": "tmux", "api": "api",
+                                         "host": "control"}[kw["agent"]])
+    monkeypatch.setenv("POD", "acme")
+    monkeypatch.setenv("TENANT", "hq")
+
+    assert clone_to_all.main(["git@example.com:x/repo.git", "-a", "api", "--dry-run"]) == 0
+    assert "not a tmux agent" in capsys.readouterr().out
+
+    assert clone_to_all.main(["git@example.com:x/repo.git", "--dry-run"]) == 0
+    out = capsys.readouterr().out
+    assert "would clone" in out and "alfa" in out
+    assert "api" not in out and "host" not in out
+
+
+def test_clone_to_all_refuses_an_agent_not_in_this_tenant(monkeypatch, capsys):
+    """Naming a stranger is an error, not an empty run."""
+    from flock.office import clone_to_all
+
+    monkeypatch.setattr(clone_to_all.redis.Redis, "from_url", lambda url: object())
+    monkeypatch.setattr(clone_to_all, "members", lambda r, **kw: {"alfa"})
+    assert clone_to_all.main(["git@example.com:x/repo.git", "-a", "ghost"]) == 2
+    assert "not in this tenant's roster" in capsys.readouterr().err

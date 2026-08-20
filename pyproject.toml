@@ -22,6 +22,7 @@ dependencies = [
 [project.scripts]
 "flock.port" = "flock.port.__main__:main"
 office = "flock.office:main"
+cloneToAll = "flock.office.clone_to_all:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]
