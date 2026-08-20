@@ -28,6 +28,26 @@ COPY pyproject.toml ./
 COPY src/ ./src/
 RUN pip install --no-cache-dir .
 
+# ⚠ CLI defaults, baked. Ported from h-office, which had them and h-flock never
+# did — h-flock only ever wrote enough to clear a trust prompt.
+#
+# Two of these are load-bearing rather than cosmetic:
+#
+#   attribution.commit/pr = ""   enforces AGENTS.md's "never add attribution
+#     trailers" MECHANICALLY. Relying on the instruction alone means every agent
+#     has to remember, every commit, forever.
+#
+#   promptSuggestionEnabled / awaySummaryEnabled / feedback surveys = off.
+#     These make a pane look busy when it is not, which feeds presence and
+#     produces delivery_unverified for an agent that is doing nothing wrong.
+#
+# codex's approval_policy/sandbox_mode duplicate what startAgent passes on the
+# command line, deliberately: a bare `codex` run by an agent that forgot the
+# wrapper otherwise stalls its window waiting for an approval nobody will give.
+COPY container/config/claude/settings.json /home/ubuntu/.claude/settings.json
+COPY container/config/codex/config.toml    /home/ubuntu/.codex/config.toml
+RUN chown -R ubuntu:ubuntu /home/ubuntu/.claude /home/ubuntu/.codex
+
 COPY container/entrypoint.sh /usr/local/bin/entrypoint.sh
 RUN chmod +x /usr/local/bin/entrypoint.sh
 
