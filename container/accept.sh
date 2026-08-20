@@ -20,10 +20,11 @@
 # it is deliberate, and if the prompts change this script must change with them.
 # That is a feature: a silent prompt change should break the acceptance run.
 #
-# ⚠ **One acceptance run per host at a time.** `setup.sh` publishes 8080/8081 and
-# has no way to be told otherwise before it starts the tenant, so `--api-port`
-# can only move the mapping *afterwards*. If another tenant holds 8080 the
-# install step fails on a port conflict, loudly. Free the host first.
+# ⚠ **`--api-port` now works before the tenant starts.** setup.sh asks for the
+# host ports, so `--api-port`/`--session-port` are answered at the prompt rather
+# than patched in afterwards. A port already listening is refused there, loudly,
+# instead of producing a tenant whose mapping points at nothing. Two acceptance
+# runs on one host is therefore a matter of choosing different ports.
 #
 # ⚠ **Everything is printed, including the dull parts.** A harness that reports
 # only its verdict hides the output someone needed.
@@ -115,11 +116,20 @@ fi
 trap cleanup EXIT
 
 step "install — driving setup.sh as a person would"
-# pod, tenant, 2 agents and their names, no extra accounts, no provider,
-# reachable from another machine, no certificate, no self-signed.
+# ⚠ POSITIONAL. One answer per prompt, in setup.sh's order:
+#   pod · tenant · 2 agents · their names · no extra accounts · no provider
+#   · OPEN THE API DOOR (yes — this harness drives it) · no Telegram
+#   · api host port · session host port
+#   · reachable from another machine · no certificate · no self-signed
+#
+# ⚠ The four middle answers were added 2026-08-20. The prompts changed and this
+# string did not, which is the breakage the header above predicts — and it is
+# api's "atomic edge and consumer landing" rule: an edge knob changed without
+# its consumers in the same commit leaves the repo broken.
 rm -f container/.env
-printf 'acme\n%s\n2\narchitect\nsme-2\nn\nn\ny\n\nn\n' "$TENANT" | ./setup.sh 2>&1 \
-  | grep -E "healthy|error|Error|NEEDS LOGIN|logged in|wrote container/.env" | head -8
+printf 'acme\n%s\n2\narchitect\nsme-2\nn\nn\ny\nn\n%s\n%s\ny\n\nn\n' \
+  "$TENANT" "$API_PORT" "$SESSION_PORT" | ./setup.sh 2>&1 \
+  | grep -E "healthy|error|Error|NEEDS LOGIN|logged in|wrote container/.env|not enabled" | head -10
 # setup.sh is the operation that creates the project. Record ownership only
 # after Docker confirms that this run brought its container into existence.
 if [ -n "$(docker ps -aq --filter "label=com.docker.compose.project=$PROJECT" 2>/dev/null | head -1)" ]; then
@@ -127,13 +137,13 @@ if [ -n "$(docker ps -aq --filter "label=com.docker.compose.project=$PROJECT" 2>
 fi
 [ -f container/.env ] || { fail "setup.sh wrote no container/.env"; exit 1; }
 
-if [ "$API_PORT" != "8080" ] || [ "$SESSION_PORT" != "8081" ]; then
-  # ⚠ Host side only. compose pins the container-side bind, because setting
-  # these in .env used to move the door's own port while the mapping still
-  # pointed at 8080 — a healthy-looking tenant nobody could reach.
-  sed -i -e "s/^API_PORT=.*/API_PORT=${API_PORT}/" -e "s/^SESSION_PORT=.*/SESSION_PORT=${SESSION_PORT}/" container/.env
-  docker compose -p "$PROJECT" --env-file container/.env -f container/compose.yaml up -d >/dev/null 2>&1
-fi
+# ⚠ The post-hoc port rewrite that used to live here is gone. setup.sh now ASKS
+# for the host ports, so they are answered above and the tenant comes up on them
+# first time — no sed, no second `up -d`. It also refuses a port already
+# listening, so a collision fails at the prompt rather than producing the
+# healthy-looking tenant nobody could reach that the old comment described.
+grep -q "^API_ENABLED=1" container/.env || { fail "setup.sh did not enable the api door"; exit 1; }
+grep -q "^API_PORT=${API_PORT}\$" container/.env || { fail "setup.sh wrote the wrong API_PORT"; exit 1; }
 
 step "health"
 for _ in $(seq 1 60); do
