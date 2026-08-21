@@ -11,6 +11,34 @@
 
 ---
 
+## 2026-08-21 — `cloneToAll` had two implementations; the newer one is gone
+
+**A duplicate I introduced on 2026-08-19 and did not notice for two days.**
+`office cloneToAll` has existed since `9a3658f` with seven tests. I ported
+h-office's standalone version on top of it as `flock/office/clone_to_all.py`,
+verified *that* copy live on h-oracle, and reported it as a new capability.
+
+**What was false:** anything reading `cloneToAll` as newly added. It was not.
+
+| | before today | now |
+|---|---|---|
+| `office cloneToAll` | `cli.py:_clone_to_all_command` | unchanged |
+| bare `cloneToAll` | `flock.office.clone_to_all:main` | `flock.office.cli:clone_to_all_main` — delegates |
+| output | two formats, one per spelling | one: `summary: cloned=N skipped=N failed=N` |
+| exit on a bad `-a` | `2` from the copy, `1` from the office | `1` |
+
+⚠ **The copy was worse, and the tests already said so.** It dropped
+`_clone_to_all_command`'s `shutil.rmtree` of a half-written clone, so a failed
+clone left a directory that every later run read as *"exists, skipped"* — a
+permanent gap needing manual repair. `test_clone_to_all_removes_partial_directory_after_failure`
+covers that and my copy had no equivalent. It also always fetched from the
+network, where the original reuses a clone an agent already has.
+
+**Found by** reconciling `TODO.md` against the tree and noticing
+`VERIFIED-2026-08-09.md` recorded a passing `cloneToAll` run twelve days before I
+"added" it. ⚠ **No gate could have caught this** — both implementations passed,
+every citation resolved, and the suite was green at 395 with the duplicate in it.
+
 ## 2026-08-15 — wire v2 → v3: fixed-width L2 header
 
 **Build 72.** A frame is now **191 ASCII header bytes** then an **opaque JSON

@@ -593,6 +593,21 @@ def main(argv: Sequence[str] | None = None) -> None:
             os.environ["FLOCK_LOG_QUIET"] = previous_quiet
 
 
+def clone_to_all_main(argv: Sequence[str] | None = None) -> None:
+    """`cloneToAll <url>` — the bare name on PATH, one implementation behind it.
+
+    ``AGENTS.md`` documents the bare spelling and h-office shipped it that way,
+    so the name earns a console script; the code stays in ``office cloneToAll``.
+
+    ⚠ **A second copy of this existed for two days** (2026-08-19 to 08-21). It was
+    ported from h-office without checking that `office cloneToAll` already
+    existed, and it silently dropped ``_clone_to_all_command``'s cleanup of a
+    half-written clone — so a failed clone left a directory that every later run
+    read as "already has it, skipped". **Delegate; do not reimplement.**
+    """
+    main(["cloneToAll", *(sys.argv[1:] if argv is None else argv)])
+
+
 def _run(args: list[str]) -> None:
     parser = _root_parser()
     if not args:
