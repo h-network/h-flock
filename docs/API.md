@@ -10,20 +10,21 @@ An **h-flock** tenant is a message bus for terminal agents and external applicat
 
 - **Addresses:** An agent's name (e.g. `backend`, `frontend`, `telegram`) is its sole address. All communication happens by addressing messages to names. Local names can be addressed directly (e.g. `backend`), or qualified with tenant and pod (`acme:hq:backend`).
 - **Applications as Participants:** External applications enrol as named participants on the bus with an `api` environment (`port_type: api`). Once enrolled, terminal agents can address replies to your app by name (e.g. `office send -a telegram hello`).
-- **Layered Wire Frames (v3):** Messages travel across the bus as version 3 layered wire frames (`v: 3`). A frame encapsulates Layer 2 local forwarding addresses (`l2`), Layer 3 qualified fabric addresses (`l3`), lifecycle correlation headers (`stream_id`, `correlation_id`), and an application `payload`.
-- ⚠ **The JSON you receive is unchanged from v2 — same eight keys, only `v` differs.** v3 changed how a frame is *encoded on the Redis wire* (a fixed 191-byte ASCII header followed by an opaque JSON body) so the switch can forward without parsing the payload. API clients never see the wire form.
+- **Layered Wire Frames (v4):** Messages travel across the bus as version 4 layered wire frames (`v: 4`). A frame encapsulates Layer 2 local forwarding addresses (`l2`), Layer 3 qualified fabric addresses (`l3`), lifecycle correlation headers (`stream_id`, `correlation_id`), a `ttl`/`hops` pair, and an application `payload`.
+- ⚠ **v4 added two keys you will receive: `ttl` and `hops`.** A client that validates against a closed set of the eight v3 keys **will reject a v4 envelope**. `ttl` counts down from 16 and `hops` counts up, both set by the fabric; treat them as read-only and ignore them unless you are tracing a loop.
+- **The wire encoding is not your concern.** v4 is a fixed **256-byte** ASCII header followed by an opaque JSON body, so the switch forwards without parsing the payload. API clients never see the wire form — you send and receive JSON.
 - **Envelopes & Kinds:** The **kind** indicates what sort of message it is (e.g. `Message`, `AddTicket`, `StartAgent`).
 - **Tag-Based Policy & Access Control:** Senders and recipients can declare `export` and `import` policy tags. Senders are filtered at the port before enqueuing; an unshared tag set results in an immediate, synchronous `422 Unprocessable Content` refusal.
 - **Asynchronous Delivery:** `POST` operations return `202 Accepted` immediately upon successful queueing. Agents process envelopes asynchronously over seconds to minutes. A reply, if generated, is delivered to your app's inbox stream.
 - **Pull-Based Task Boards:** Task boards are pulled by participants; adding a ticket writes to a board without interrupting or notifying the agent.
 
-### The v2 Wire Frame Specification
+### The v4 Wire Frame Specification
 
-Every envelope moving across the bus or read from `/messages` conforms to the version 3 frame schema:
+Every envelope moving across the bus or read from `/messages` conforms to the version 4 frame schema:
 
 ```json
 {
-  "v": 3,
+  "v": 4,
   "kind": "Message",
   "stream_id": "d03d60148843438cbafac93615646951",
   "correlation_id": "d3cec61c5c7049519920f433b325bf10",
@@ -32,6 +33,8 @@ Every envelope moving across the bus or read from `/messages` conforms to the ve
     "source": "telegram",
     "destination": "backend"
   },
+  "ttl": 16,
+  "hops": 0,
   "l3": {
     "source": "acme:hq:telegram",
     "destination": "acme:hq:backend"
@@ -44,12 +47,14 @@ Every envelope moving across the bus or read from `/messages` conforms to the ve
 
 | Field | Type | Description |
 |---|---|---|
-| `v` | integer | Wire schema version. Always `2`. Flat v1 envelopes are rejected at the door. |
+| `v` | integer | Wire schema version. Always `4`. Anything else is rejected at the door — the fabric does not accept older frames. |
 | `kind` | string | Message kind discriminator (e.g. `"Message"`, `"AddTicket"`, `"StartAgent"`, `"StopAgent"`). |
 | `stream_id` | string | Unique 32-character lowercase hex identifier for this envelope across its entire lifecycle. |
 | `correlation_id` | string | 32-character lowercase hex identifier for multi-turn conversations. Propagated from request or minted automatically. |
 | `ts` | string | RFC 3339 / ISO 8601 UTC timestamp with millisecond precision and `Z` suffix (`%Y-%m-%dT%H:%M:%S.%fZ`). |
 | `l2` | object | **Layer 2 Local Forwarding:** contains `source` (local agent name) and `destination` (local agent name or `"all"`). Used by the local switch. |
+| `ttl` | integer *(v4)* | Forwards remaining. Starts at `16`, decremented by the switch at each forward; at `0` the envelope is dead-lettered instead of forwarded. Read-only. |
+| `hops` | integer *(v4)* | Forwards taken, counting up from `0`. Read-only. |
 | `l3` | object | **Layer 3 Qualified Addressing:** contains `source` (`pod:tenant:agent`) and `destination` (`pod:tenant:agent` or `pod:tenant:all`). |
 | `payload` | object | Arbitrary JSON object holding the message content for the specified `kind`. |
 | `cursor` | string *(mailbox stream only)* | Monotonically increasing Redis stream entry ID (e.g. `"1786231887036-0"`) used for pagination and catch-up resuming. |
@@ -164,13 +169,15 @@ curl -H "Authorization: Bearer $API_TOKEN" \
   "agent": "telegram",
   "messages": [
     {
-      "v": 3,
+      "v": 4,
       "kind": "Message",
       "stream_id": "edd534563cdd46209f0f63924c5e0497",
       "correlation_id": "4ba8e30ce8354109901d7b09c3a01bb4",
       "ts": "2026-08-08T23:31:26.623Z",
       "l2": {"source": "backend", "destination": "telegram"},
-      "l3": {"source": "acme:hq:backend", "destination": "acme:hq:telegram"},
+      "ttl": 16,
+      "hops": 0,
+      "ttl": 16, "hops": 0, "l3": {"source": "acme:hq:backend", "destination": "acme:hq:telegram"},
       "payload": {
         "text": "hello from backend"
       },
@@ -247,7 +254,7 @@ X-Accel-Buffering: no
 ```text
 id: 1786231898811-0
 event: message
-data: {"v": 3, "kind": "Message", "stream_id": "71d1dec5203c434c91df2af82e693637", "correlation_id": "da93ce7c8ce84ba6a26e9f338a989ee5", "ts": "2026-08-08T23:31:38.290Z", "l2": {"source": "frontend", "destination": "telegram"}, "l3": {"source": "acme:hq:frontend", "destination": "acme:hq:telegram"}, "payload": {"text": "hello from frontend"}, "cursor": "1786231898811-0"}
+data: {"v": 4, "kind": "Message", "stream_id": "71d1dec5203c434c91df2af82e693637", "correlation_id": "da93ce7c8ce84ba6a26e9f338a989ee5", "ts": "2026-08-08T23:31:38.290Z", "l2": {"source": "frontend", "destination": "telegram"}, "ttl": 16, "hops": 0, "l3": {"source": "acme:hq:frontend", "destination": "acme:hq:telegram"}, "payload": {"text": "hello from frontend"}, "cursor": "1786231898811-0"}
 
 ```
 
@@ -806,7 +813,7 @@ Port `:8081` provides WebSocket terminal access for rendering live terminal wind
 When an envelope is posted to the door or delivered across the bus, the platform emits structured custody records. Join them across system logs by `stream_id`:
 
 - **`send_refused`** *(pre-queue refusal)*: Emitted synchronously by the sender door/port when a send is rejected (e.g. policy denial, unrouted non-local destination, or validation failure). **No frame is minted and nothing is enqueued to egress.**
-- **`sent`**: Emitted when the envelope is assembled into a v3 frame and enqueued to the sender's `egress` list.
+- **`sent`**: Emitted when the envelope is assembled into a v4 frame and enqueued to the sender's `egress` list.
 - **`popped`**: Emitted by the switch when taking the frame off egress.
 - **`forwarded`**: Emitted by the switch when delivering the frame to the recipient's `ingress` list.
 - **`dead_lettered`**: Emitted if the switch or port fails to deliver or parse the frame.

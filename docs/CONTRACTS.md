@@ -98,10 +98,13 @@ def port_type(r, *, pod, tenant, agent) -> str | None   # HGET   — port side o
     # that is invariant 8, and it is about the switch, not about this function.
 ```
 
-The Redis wire is **hard v3**: a frame is a fixed 191-byte ASCII header then an
-opaque JSON body (`bus/envelope.py:14`), and anything else is rejected rather
-than upgraded — as v2 rejected flat v1. HTTP send request bodies are port input and keep their existing
-shape; mailbox consumers receive the layered frame and must read L2/L3.
+The Redis wire is **hard v4**: a frame is a fixed 256-byte ASCII header then an
+opaque JSON body (`bus/envelope.py:16`), and anything else is rejected rather
+than upgraded — as v3 rejected v2 and v2 rejected flat v1. ⚠ **191 is the TTL
+offset now, not the header width** (`TTL_START`, `bus/envelope.py:13`); a reader
+who remembers 191 as the width is one version behind. HTTP send request bodies
+are port input and keep their existing shape; mailbox consumers receive the
+layered frame and must read L2/L3, and since v4 also `ttl` and `hops`.
 
 ⚠ **The switch calls `members` and `is_member`, never `port_type`.** Reading the value
 is what would tell it how an agent is hosted, which invariant 8 forbids. That is

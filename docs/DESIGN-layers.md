@@ -415,7 +415,11 @@ whole network.
 6. ✅ **decided and SHIPPED** — envelope v2: `source`/`destination`, the
    qualified address form, and the L2/L3 split (§2.5). `build()` emits
    `{"v":2,…,"l2":{…},"l3":{…},"payload":{…}}` and `parse_for_switch`
-   (`bus/envelope.py:132`) validates L2 only. ⚠ **This line read "open, and the
+   (`bus/envelope.py:217`) validates L2 only. ⚠ **v2 is what this decision
+   shipped; the wire is v4 today** and the frame carries `ttl` and `hops` between
+   `l2` and `l3` — see `LLD-bus-and-switch` §5 for the current shape. ⚠ **The
+   citation here read `:132` until 2026-08-21**, which is `_validate_body`'s
+   neighbourhood, not `parse_for_switch`'s. ⚠ **This line read "open, and the
    one that gates everything" until 2026-08-15, long after the code shipped** —
    and it was quoted as an open thread in status reports on the strength of the
    doc rather than the code.
@@ -423,7 +427,9 @@ whole network.
    ✅ **The ENCODING was the genuinely open part, and it is now closed too.**
    [`BUILD-72`](BUILD-72-fixed-header.md) shipped the v3 wire on 2026-08-15: a
    fixed 191-byte ASCII header then an opaque JSON body, so the switch forwards
-   without parsing. §6 has the measurement.
+   without parsing. §6 has the measurement. ⚠ **`BUILD-73` then froze it at 256
+   bytes for v4**, adding `ttl`, `hops` and 59 reserved bytes — the current wire
+   is v4/256, and the 191 above is the width that build shipped.
 
 ⚠ **1–3 were listed open here after being decided, exactly as `GLOSSARY`'s table
 was.** Renames 1–3 are executed and parked on `rename/vocabulary`.
@@ -451,9 +457,11 @@ JSON the switch's read cost **4,381 µs** — 3,086× its cost at 16 B. So the �
 above was published on a measurement taken at +77 bytes, where the effect was
 correctly invisible.
 
-**v3 applied the fix it named.** `_header_text` (`bus/envelope.py:189`) slices
-`raw[:191]` and decodes only those bytes; `parse_for_switch` (`:217`) reads the
-header and nothing else. ⚠ **The switch is now payload-independent by
+**v3 applied the fix it named, and v4 widened it.** `_header_text`
+(`bus/envelope.py:189`) slices `raw[:HEADER_WIDTH]` and decodes only those bytes;
+`parse_for_switch` (`:217`) reads the header and nothing else. ⚠ **`HEADER_WIDTH`
+is 256 since build 73, not the 191 v3 shipped** — the constant is what the code
+slices by, which is why the widening needed no change here. ⚠ **The switch is now payload-independent by
 construction, not by measurement** — `rg 'json\.' src/flock/switch/service.py` is
 empty.
 

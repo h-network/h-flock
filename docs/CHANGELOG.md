@@ -11,6 +11,41 @@
 
 ---
 
+## 2026-08-21 — the docs caught up to wire v4, six days late
+
+**Build 73 took the wire to v4/256 on 2026-08-15 and updated `HLD.md` alone.**
+Five other docs kept describing v3.
+
+| doc | said | now |
+|---|---|---|
+| **`API.md`** ⚠ public | `v: 3`, 191-byte header, "same eight keys" | `v: 4`, 256, **`ttl`/`hops` documented** |
+| `API.md` field table | `v` is *"Always `2`"* | `4` — that line survived **both** prior corrections |
+| `CONTRACTS.md:101` | "the Redis wire is **hard v3**" | hard v4; notes 191 is `TTL_START` now |
+| `LLD-bus-and-switch` §5 | frame example `"v": 3`, no `ttl`/`hops` | v4 with both |
+| `DESIGN-layers.md` | `raw[:191]`, `parse_for_switch` at `:132` | `raw[:HEADER_WIDTH]`, `:217` |
+
+⚠ **What was false, and it was client-visible:** v4 added `ttl` and `hops` to the
+envelope a mailbox consumer receives. `API.md` told external developers to expect
+**eight keys**; they get **ten**. A client validating against a closed schema
+rejects every envelope, and the public reference said the wrong thing about it
+for six days.
+
+**`LLD-bus-and-switch` also said "six transport records" above a list of five** —
+`kick_started` (build 65) never reached the block. And broadcast is now recorded
+correctly: a `kick_started`/`received`/`opened` **triple** per recipient, not a
+pair, because `switch/service.py:173` kicks each accepted recipient in turn.
+
+⚠ **Why it went unnoticed: `DRIFT.md` §8's check was `rg -l '"v": ?2' docs/`** —
+hardcoded to the version it was written for. At v3 and then v4 it kept looking
+for v2, found nothing, and reported clean. It is now derived from
+`envelope.py:VERSION` and searches `range(2, VERSION)`, so v5 needs no edit.
+**`"v": 1` is deliberately excluded** — the activity/alert stream is a separate
+schema that is legitimately still v1, and flagging it makes the check noise.
+
+**`DRIFT.md` §1 and §3 are re-labelled from ✅ FIXED to RECURRED.** §1 had listed
+`API.md:13,21,25,166,249` as the worst case; the recurrence hit lines 13, 22, 26,
+167, 250 of the same file.
+
 ## 2026-08-21 — `cloneToAll` had two implementations; the newer one is gone
 
 **A duplicate I introduced on 2026-08-19 and did not notice for two days.**

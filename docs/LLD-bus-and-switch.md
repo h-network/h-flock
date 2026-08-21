@@ -707,20 +707,29 @@ reissued automatically.
 envelope leaves six transport records across its life:
 
 ```
-  sent        the source's own end            (flock.bus.doors)
-  popped      the switch took custody           (switch)
-  forwarded   … and what it then did            (switch)
-  received    the port took custody          (port)
-  opened      … and what it then did            (port)
+  sent          the source's own end          (flock.bus.doors)
+  popped        the switch took custody       (switch)
+  forwarded     … and what it then did        (switch)
+  kick_started  the switch woke the opener    (switch)
+  received      the port took custody         (port)
+  opened        … and what it then did        (port)
 ```
+
+⚠ **`kick_started` was added in build 65 and this list did not gain it until
+2026-08-21** — the prose above said "six" while the block showed five, for the
+second time in this file's life. See the note below, which records the same
+defect at four.
 
 An opener may add a kind-specific lifecycle record between `received` and
 `opened`; `AddTicket`, for example, emits `board_write_confirmed`, so its complete
-trace has six records. A corrected source adds `source_stamped` between
+trace has **seven** records. A corrected source adds `source_stamped` between
 `popped` and `forwarded`; the event carries the corrected source and names the
-original claim in `reason`. The pair-per-component is what matters: each
-component records that it took custody and what it then did. `send` has no pair
-because it has no custody to hand on — it is the origin.
+original claim in `reason`. ⚠ **The pair-per-component rule no longer holds and
+should not be used to check the count**: the switch emits three, not two, because
+`kick_started` records an action taken on a *third* party — waking the opener —
+rather than custody handed on. `send` has no pair either, because it is the
+origin. **Count the list, do not derive it from a rule**; deriving it is what
+produced "four" and then "six-listing-five".
 
 ⚠ **This said "four" until build 20, and the arithmetic never worked**: two
 paired components plus `send` is 1+2+2. It read as true only because `sent` was
@@ -729,8 +738,10 @@ counting actually saw. The claim was corrected when the record it was missing
 started arriving.
 
 A broadcast instead leaves the three shared records `sent`, `popped` and
-`forwarded`, then one `received`/`opened` pair per receiving participant. Those
-pairs retain the envelope address `destination: "all"`; they are not
+`forwarded`, then a `kick_started`/`received`/`opened` **triple** per receiving
+participant — `service.py:173` kicks each accepted recipient in turn, so the kick
+is per-participant and not shared. Those triples retain the envelope address
+`destination: "all"`; they are not
 per-destination delivery records and cannot be distinguished from each other by
 destination field alone. The `forwarded.count` field is the fan-out cardinality.
 
@@ -750,12 +761,14 @@ message means becomes a change to the switch.
 
 ```json
 {
-  "v": 3,
+  "v": 4,
   "kind": "Message",
   "stream_id": "<hex>",
   "correlation_id": "<hex>",
   "ts": "2026-08-07T18:00:00.000Z",
   "l2": {"source": "<participant>", "destination": "<participant>"},
+  "ttl": 16,
+  "hops": 0,
   "l3": {
     "source": "<pod>:<tenant>:<participant>",
     "destination": "<pod>:<tenant>:<participant>"

@@ -5,15 +5,22 @@
 > separate finding and belongs in [`TODO.md`](TODO.md) — do not "fix" the code to
 > match a sentence.
 
-⚠ **STATUS: §1 and §2 were the blocking rows and BOTH ARE FIXED (2026-08-15).**
-§3 fixed in `CONTRACTS.md` and `LLD-bus-and-switch.md`. §4, §5 and §6 remain open
-and are ticketed. Contract changes are now tracked forward in
-[`CHANGELOG.md`](CHANGELOG.md), which is the thing that would have prevented most
-of this.
+⚠⚠ **STATUS 2026-08-21: §1 RECURRED at v4 and §3 was only half-fixed.** Both had
+been marked ✅ FIXED on 2026-08-15 and neither held. §1 came back in the same
+file (`API.md`) at the same lines ±1, because its check was pinned to the literal
+version it was written for. §3's number was corrected in the sentence while the
+list beneath it still showed five. §4 remains open; §5 is at 32 near misses.
 
-**Generated 2026-08-15, against `main` at the v3 merge.** This file goes stale the
-moment code moves; **re-derive it, do not trust it.** Every row states how to
-re-check it in one command.
+⚠ **A ✅ in this file means "was true when written", exactly like every other
+claim here.** Re-run the command in the row. The two rows that recurred are the
+argument: **the fix was applied to the instance, and the thing that would catch
+the next instance was not.** Contract changes are tracked forward in
+[`CHANGELOG.md`](CHANGELOG.md), which caught neither, because it records what
+changed and nothing reads it back against the docs.
+
+**Generated 2026-08-15 at the v3 merge; §1, §3 and §8 revised 2026-08-21 at v4.**
+This file goes stale the moment code moves; **re-derive it, do not trust it.**
+Every row states how to re-check it in one command.
 
 ## Why this exists
 
@@ -24,10 +31,32 @@ greps actually found, ranked by whether someone can be misled into wrong work.
 
 ---
 
-## 1. ✅ FIXED — the wire is v3, seven docs said v2
+## 1. ⚠ RECURRED at v4, fixed again 2026-08-21 — was: the wire is v3, seven docs said v2
 
-**Code:** `bus/envelope.py` — `VERSION = "3"`, `HEADER_WIDTH = 191`. `build()`
-returns `{"v": 3, …}`. Verify:
+⚠ **This row was marked ✅ FIXED and then happened again, one version later, in
+the same file at the same lines.** Build 73 took the wire to v4/256 and updated
+`HLD.md` alone. On 2026-08-21 `API.md` still said `v: 3` and "191-byte header" at
+lines 13, 22, 26, 167, 250 — the v3 fix had touched 13, 21, 25, 166, 249. It also
+still called `v` *"Always `2`"* in the field table, which means that line survived
+**both** corrections. `CONTRACTS.md:101` said "hard v3" and `DESIGN-layers.md`
+said `raw[:191]`.
+
+⚠ **v4 additionally added two client-visible keys, `ttl` and `hops`**, so
+`API.md`'s "same eight keys" was wrong in a way that breaks a client validating
+against a closed schema — the first time this row's drift was more than a label.
+
+**Why it recurred:** §8's check was `rg -l '"v": ?2' docs/`, hardcoded to the
+version it was written for. It has been made version-derived. **The lesson is not
+"re-read the docs" — it is that a check containing a literal of the thing it
+guards stops guarding it at the next bump.**
+
+**Code today:** `bus/envelope.py` — `VERSION = "4"`, `HEADER_WIDTH = 256`,
+`TTL_START = 191`. `build()` returns `{"v": 4, …}` with `ttl` and `hops`.
+
+**The v3 round, kept because the shape of the recurrence is the point:**
+
+**Code (then):** `bus/envelope.py` — `VERSION = "3"`, `HEADER_WIDTH = 191`. `build()`
+returned `{"v": 3, …}`. Verify:
 
 ```bash
 python3 -c "import sys;sys.path.insert(0,'src');from flock.bus.envelope import VERSION,HEADER_WIDTH;print(VERSION,HEADER_WIDTH)"
@@ -47,9 +76,11 @@ that is how `BUILD-46` got its dead URL.
 
 ## 2. ✅ FIXED — the switch no longer parses the frame
 
-**Code:** `parse_for_switch` (`bus/envelope.py:217`) slices `raw[:191]` and
-decodes only those bytes; `_header_text` (`:189`) does `raw[:HEADER_WIDTH].decode`
-**before** any other decode. Verify:
+**Code:** `parse_for_switch` (`bus/envelope.py:217`) slices `raw[:HEADER_WIDTH]`
+and decodes only those bytes; `_header_text` (`:189`) does that decode **before**
+any other. ⚠ **This row said `raw[:191]` until 2026-08-21** — the width is 256 at
+v4, and writing the literal instead of the constant is the §1 mistake in
+miniature. Verify:
 
 ```bash
 rg 'json\.' src/flock/switch/service.py      # must be empty
@@ -57,14 +88,28 @@ rg 'json\.' src/flock/switch/service.py      # must be empty
 
 | doc | says | fix |
 |---|---|---|
-| `DESIGN-layers.md:441` | "`parse_for_switch` decodes the whole JSON — L3 and payload included" | ⚠ **now false.** This was the standing open item; build 72 closed it |
+| `DESIGN-layers.md:449` | "`parse_for_switch` decodes the whole JSON — L3 and payload included" | ⚠ **now false.** This was the standing open item; build 72 closed it |
 | `DESIGN-layers.md:424` | "the switch still decodes the whole frame to reach L2" | same |
 
 ⚠ **§6 marks the switch ✅ done with the caveat "approximately header-independent,
 not truly so."** The caveat is now discharged — say so, and record that the test
 it named (frames growing substantially) was run and is what produced v3.
 
-## 3. ✅ FIXED — three different custody-record counts, and the code said neither
+## 3. ⚠ FIXED IN THE SENTENCE ONLY — three different custody-record counts, and the code said neither
+
+⚠ **Closed on 2026-08-21, and the six-month lesson is in how it half-closed.**
+`LLD-bus-and-switch:707` was corrected from "five" to "**six** transport records"
+— and **the code block directly beneath it still listed five**, missing
+`kick_started`. The file contradicted itself in adjacent lines and read as fixed
+because the sentence the table below cites was the part that got edited.
+
+⚠ **The broadcast asymmetry this row identified was never written down anywhere
+until the same day.** It is now in `LLD-bus-and-switch` as a
+`kick_started`/`received`/`opened` **triple** per recipient, cited to
+`switch/service.py:173`.
+
+**Checking a count means counting the list, not reading the number in front of
+it.** Nothing mechanical catches this; see §8.
 
 **Code:** 13 envelope events; a delivered unicast leaves **six** stages —
 `sent, popped, forwarded, kick_started, received, opened`. Verify:
@@ -150,9 +195,31 @@ of `(stream_id, agent)` — **not the join key build 69 established**, and the k
 ```bash
 python3 tools/check_citations.py                       # §5
 rg 'json\.' src/flock/switch/service.py                # §2, must be empty
-rg -l '"v": ?2' docs/                                  # §1
+
+# §1 — read the version from the code, derive the superseded ones, find docs
+# still showing them. Self-updating: at v5 it looks for 2|3|4 with no edit.
+V=$(python3 -c "import sys;sys.path.insert(0,'src');from flock.bus.envelope import VERSION,HEADER_WIDTH;print(VERSION)")
+W=$(python3 -c "import sys;sys.path.insert(0,'src');from flock.bus.envelope import VERSION,HEADER_WIDTH;print(HEADER_WIDTH)")
+OLD=$(python3 -c "print('|'.join(str(i) for i in range(2,$V)))")
+echo "current wire: v$V, ${W}-byte header — looking for v($OLD)"
+grep -rnE "\"v\": *($OLD)" docs/ --include='*.md' | grep -vE 'BUILD-|VERIFIED-|CHANGELOG'
 ```
 
-⚠ **There is no check for §3 or §4** — prose claims about counts and numbers are
-invisible to tooling. That is the actual gap, and it is why this file is a
+⚠ **The range starts at 2 on purpose. `"v": 1` is NOT drift** — the activity and
+alert event streams are a *separate* schema that is legitimately still v1
+(`LLD-watchdog:77`, `LLD-api:133`, `API.md:541`). A check written as "anything
+that is not the current version" flags nine correct lines, and a check that
+cries wolf nine times is one nobody runs. **The wire-frame versions and the
+event-stream version are different numbers that happen to share a key name.**
+
+⚠ **The §1 check used to read `rg -l '"v": ?2' docs/` — pinned to v2.** When the
+wire went to v3 and then v4 it kept looking for v2, found nothing, and reported
+clean while `API.md` documented the wrong version to external developers **twice
+in a row**. A check written against a literal version expires the moment that
+version does; derive it from the code instead. **That single hardcoded `2` is the
+whole reason §1 recurred**, and it is the most useful thing in this file.
+
+⚠ **There is still no check for §3 or §4** — prose claims about counts and
+numbers are invisible to tooling, which is how `LLD-bus-and-switch` came to say
+"six" above a list of five. That is the actual gap, and it is why this file is a
 snapshot rather than a gate.
