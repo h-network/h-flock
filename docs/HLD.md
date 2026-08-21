@@ -414,7 +414,9 @@ layer, and went looking. Its trail, in its own order:
 3. `/opt/flock/bin/office` is a four-line console script, so the tool is an
    importable package whose source is on the box
 4. it searched for the one internal word we had handed it — `port`
-5. `port/runner.py`: `import redis`, and the url
+5. `port/runner.py`: `import redis`, and the url — ⚠ **the trail is kept as it
+   happened; that file is `port/deliver.py` today**, renamed with `port/cli.py`
+   → `port/send.py` so the two adapters say which direction they carry
 6. `ps` confirmed `redis-server` independently
 
 ⚠ **Step 1 was a reason, and it was ours.** Fixed: `office` sets
