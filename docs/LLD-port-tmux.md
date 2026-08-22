@@ -149,9 +149,19 @@ delivery. The returned `RPUSH` list length confirms the synchronous mutation:
 success logs `board_write_confirmed`, while an exception or non-positive result
 logs `board_write_failed` and raises `DeadLetter`.
 
-### Verification Markers (`pending.verify`)
+### Verification and usage-correlation markers
 
-Before pasting a `Message` or `Command` into a `port_type: tmux` window, the port records a pending verification marker in Redis Stream `<prefix>:agent:<name>:pending.verify` via `XADD MAXLEN ~ 100`:
+Before pasting a `Message` or `Command` into a `port_type: tmux` window, the
+port writes the same marker to two bounded Redis Streams:
+
+- `<prefix>:agent:<name>:pending.verify` via `XADD MAXLEN ~ 100`, for the
+  watchdog's delivery-verification pass.
+- `<prefix>:agent:<name>:delivery.markers` via `XADD MAXLEN ~ 500`, for the
+  activity tailer's heuristic join from a later usage record to the delivery
+  that prompted it.
+
+Both entries have this shape:
+
 ```json
 { "stream_id": "<stream_id>", "ts": "<ts>" }
 ```
@@ -160,7 +170,16 @@ Before pasting a `Message` or `Command` into a `port_type: tmux` window, the por
 - **Confirmed synchronously for `AddTicket`**: `AddTicket` pastes nothing, so it confirms its board write directly and is not verified via activity inputs. It never creates `blocked`; an untaken ticket is normal board state.
 - **Skipped for `agy` and `bash`**: `agy` has no session log file / activity feed and `bash` has no CLI turn records, so markers are skipped to avoid false unverified alerts.
 - **Fail-safe**: Marker creation is wrapped in `try...except` so stream write failures never impact envelope delivery.
-- **`blocked` state**: The switch checks these markers on its pass. If an agent has produced prior activity and a delivery is unverified with no activity produced since, the switch writes `<prefix>:agent:<name>:blocked`. It catches wedged processes, trust pickers, and unauthenticated login prompts. An agent with no prior activity is `unknown` and its first delivery is `unjudged` rather than `blocked`.
+- **`blocked` state**: The watchdog checks `pending.verify` on its pass, after
+  the marker is at least `VERIFY_AFTER_SECONDS` old (default 120 seconds). If
+  an agent has produced prior activity and a delivery is unverified with no
+  activity produced since, the watchdog writes
+  `<prefix>:agent:<name>:blocked`. It catches wedged processes, trust pickers,
+  and unauthenticated login prompts. An agent with no prior activity is
+  `unknown` and its first delivery is `unjudged` rather than `blocked`.
+- **Harness deadline**: `container/sim-blocked.sh` reads the running watchdog's
+  `VERIFY_AFTER_SECONDS` and derives its wall-clock poll deadline from that
+  value. The verifier window is configuration, not a fixed harness delay.
 - **Wedged process simulation**: ⚠ `SIGSTOP` cannot wedge a process running as a tmux pane process — a plain `sleep` started from a shell reaches state `T`, but the same `sleep` started as a tmux pane process never does (it reads back state `S`, and process-group forms fare no better). To simulate an unconsuming wedged window in tests (`container/sim-blocked.sh`), the pane is respawned with a non-consuming process (`respawn-pane -k 'sleep infinity'`) while leaving the agent's launch key as `claude` so the delivery is marked for verification.
 
 ## 4. Getting text into a window
@@ -190,8 +209,8 @@ silent: the Enter is swallowed, the message sits unsubmitted, and the agent look
 submits its first line early and arrives split in two.
 
 **Verification never reads the pane and never retries.** Before the paste, the
-port writes the `pending.verify` marker described in §3. The switch later
-compares it with the CLI's own session-file `input` events and reports verified,
+port writes the two markers described in §3. The watchdog later compares
+`pending.verify` with the CLI's own session-file activity events and reports verified,
 unverified, or unjudged. A rendered pane is not a data source (the HLD's
 *nothing in the data path reads a terminal* invariant),
 and an unverified delivery is evidence for an operator rather than permission to
