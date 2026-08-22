@@ -212,12 +212,16 @@ without adding depth:
   pod:acme:tenant:hq:agent:telegram  : inbox         an app client's mailbox
   pod:acme:tenant:hq:agent:backend     : activity      privacy-reduced CLI events
   pod:acme:tenant:hq:agent:backend     : pending.verify delivery evidence to judge
+  pod:acme:tenant:hq:agent:backend     : delivery.markers usage attribution evidence
+  pod:acme:tenant:hq:agent:backend     : usage.requests request-id deduplication
+  pod:acme:tenant:hq                   : usage         retained tenant usage records
 ```
 
 Tenant and agent addresses can carry resources; the current `prefix()` requires
 both pod and tenant and therefore has no pod-only resource form. Envelope queues
 are LISTs. Retained or independently judged observations use Streams: an app `inbox`, an agent's
-`activity`, and its transient `pending.verify` markers. The distinction is the
+`activity`, its transient `pending.verify` and `delivery.markers` observations,
+and the tenant `usage` feed. The distinction is the
 reader model: a queue is consumed once, while a mailbox or observation feed can
 be read at independent positions and verification markers are deleted only
 after judgment.
@@ -325,9 +329,11 @@ and bounds the switch's blocking pop and the tmux host's reconciliation loop.
 With an empty roster there is no queue to block on, so the switch sleeps for the
 same interval rather than spinning against repeated roster reads.
 The switch's maintenance cadence is separately configurable as
-`ACTIVITY_POLL_SECONDS`, default 2; it shortens the switch's block when its next
-pass is due. These are distinct controls because roster convergence and
-filesystem observation have different costs.
+`MAINTENANCE_POLL_SECONDS`, default 2; it shortens the switch's block when its
+next housekeeping pass is due. The watchdog's filesystem observation cadence
+is `ACTIVITY_POLL_SECONDS`, also default 2. These are distinct controls because
+roster convergence, switch housekeeping, and filesystem observation have
+different costs and owners.
 
 Staleness is bounded by the relevant polling interval and is harmless in the two obvious
 directions. A participant added a moment ago is simply not routed to yet; once a
@@ -381,30 +387,43 @@ The switch sits on the opposite end of both.
 | `<prefix>:ingress` | LIST | the switch | the participant's port |
 | `<prefix>:dead` | LIST | the switch, or an edge port | entries by hand; depth by `api` |
 | `<prefix>:inbox` | STREAM | the `api` delivery routine | app clients, by cursor |
-| `<prefix>:activity` | STREAM | the switch's session tailer | api reads and presence/verification sampling |
-| `<prefix>:pending.verify` | STREAM | the tmux delivery opener | the switch's verifier |
-| `<prefix>:blocked` | HASH | the switch's verifier | office and watchdog reads |
+| `<prefix>:activity` | STREAM | the watchdog's session tailer | api reads and presence/verification sampling |
+| `<prefix>:pending.verify` | STREAM | the tmux delivery opener | the watchdog's verifier |
+| `<prefix>:delivery.markers` | STREAM | the tmux delivery opener | the watchdog's usage correlator |
+| `<prefix>:usage.requests` | SET | the watchdog activity tailer | the same tailer's per-agent request deduplication |
+| `<prefix>:usage.attributed` | SET | the watchdog activity tailer | the same tailer's per-agent delivery-attribution deduplication |
+| `<prefix>:blocked` | HASH | the watchdog's verifier | office and watchdog reads |
 | tenant `<prefix>:alerts` | STREAM | the watchdog | api polling and SSE, by cursor |
+| tenant `<prefix>:usage` | STREAM | the watchdog activity tailer | `office usage`, by range |
 
 Envelope transport uses lists, not pub/sub, so a backlog survives a consumer
 restart. The mailbox is retained, not consumed: `XRANGE` and `XREAD` let polling
 and SSE readers keep independent cursors. Delivery appends one field named
 `envelope`, capped approximately at 1,000 entries; the stream entry ID is the
-cursor. The other two Streams carry observation rather than envelopes and are
+cursor. The remaining Streams carry observations rather than envelopes and are
 described below.
 
-### 3.4 The switch's maintenance pass
+### 3.4 Observation and maintenance passes
 
-The switch uses its existing loop for observation and retention; there is no
-second daemon and none of these jobs sits in an envelope's data path. Every
-`ACTIVITY_POLL_SECONDS` (default 2), one roster snapshot drives five jobs:
+None of these jobs sits in an envelope's data path. The watchdog runs the first
+three observation jobs every `ACTIVITY_POLL_SECONDS` (default 2); the switch
+runs the final two housekeeping jobs in its own loop every
+`MAINTENANCE_POLL_SECONDS` (default 2). Keeping filesystem and Stream scans in
+the separate watchdog process prevents a slow observation from stalling
+forwarding (`src/flock/watchdog/service.py:373-407`,
+`src/flock/switch/service.py:192-224`).
 
 1. **Tail session files.** For each Claude or Codex agent, the tailer reads only
    bytes after the stored `activity.offset` in the newest session JSONL. It
    appends privacy-reduced events to `<prefix>:activity`: `input`, `output`, or
    `tool`, with a tool's **name only**. Arguments, paths and content have no
    field in the event. The Stream is approximately capped at 1,000 entries.
-   CLIs without a supported session format produce no feed.
+   CLIs without a supported session format produce no feed. Usage records in
+   the same supported transcripts are separately appended to the tenant
+   `<prefix>:usage` Stream. A request ID is deduplicated in the agent's
+   `usage.requests` Set; when the first usage after a delivery marker can be
+   correlated, `usage.attributed` prevents that stream ID being claimed twice.
+   Absent correlation is omitted rather than guessed.
 
    ⚠ **A Codex session belongs to the workspace in its own `session_meta`, not
    to its directory.** `CODEX_HOME` is an account directory: agents using the
@@ -435,12 +454,12 @@ second daemon and none of these jobs sits in an envelope's data path. Every
    five of six messages.
 
    ⚠ **The allowlist is a capability claim, not a list of exceptions.** A CLI
-   is marked only when the switch can tail its session format. The old rule
+   is marked only when the watchdog can tail its session format. The old rule
    "anything except agy" also marked bare shell windows, whose deliveries can
    never be confirmed. An unknown future CLI must therefore remain unmarked
    until its activity feed is supported.
 
-   Once a marker is at least `VERIFY_AFTER_SECONDS` old (default 10), the switch
+   Once a marker is at least `VERIFY_AFTER_SECONDS` old (default 120), the watchdog
    first asks whether the agent has ever produced observable activity: either
    `activity.offset` or the activity Stream exists. Without that history the
    agent is `unknown`, not blocked. The marker is deleted and a
@@ -454,8 +473,8 @@ second daemon and none of these jobs sits in an envelope's data path. Every
    detecting a genuinely lost first paste. No terminal is read to make the
    distinction.
 
-   For an agent with activity history, a later `input` event confirms the
-   marker. Otherwise the switch logs `delivery_unverified` and retains that
+   For an agent with activity history, a later activity event confirms the
+   marker. Otherwise the verifier logs `delivery_unverified` and retains that
    first verdict in `<prefix>:blocked` as `{since, stream_id}`. A later verified
    delivery deletes the hash; another unverified delivery does not reset
    `since`. Either way the pending marker is deleted after judgment. The
@@ -472,7 +491,7 @@ second daemon and none of these jobs sits in an envelope's data path. Every
    they cannot acquire this state.
 
    ⚠ **An unverified delivery is surfaced and never re-pasted.** Verification
-   distinguishes "a later input was observed" from "no later input was
+   distinguishes "later CLI activity was observed" from "no later activity was
    observed"; it cannot distinguish an unsubmitted paste from text that landed
    in a stopped process, picker or slow CLI. A retry cannot help while the block
    remains, and after a human clears it both copies may be consumed.
@@ -485,7 +504,7 @@ second daemon and none of these jobs sits in an envelope's data path. Every
    while a surfaced unverified instruction can be assessed and resent by a
    human who knows whether that is safe. The verifier never retries, re-pastes,
    or dead-letters the envelope.
-4. **Carry window logs to stdout.** Agent-side `office` records are written to
+4. **Carry window logs to stdout (switch).** Agent-side `office` records are written to
    `/home/ubuntu/.flock/window.log.jsonl`; the switch tails complete lines from
    a tenant byte offset so `sent` joins the central envelope log. If the spool
    exceeds `WINDOW_LOG_MAX_BYTES` (default 8 MiB), it is truncated only after
@@ -502,23 +521,27 @@ second daemon and none of these jobs sits in an envelope's data path. Every
    subsequently tails the file and emits the record centrally, so observability
    is preserved without exposing module names, stream IDs or correlation IDs on
    the agent's own screen. Daemons do not set the quiet flag and continue to log
-   to their stdout.
-5. **Apply retention.** One pipeline trims each agent's `tasks.done` and `dead`
+   to their stdout. Each h-flock JSON record on container stdout is also copied
+   to `FLOCK_CUSTODY_FILE`; compose mounts that path from a named volume so the
+   evidence survives ordinary container removal. The mirror is a byte copy, not
+   a second schema, and never raises into delivery (`src/flock/bus/logging.py:27-51`).
+5. **Apply retention (switch).** One pipeline trims each agent's `tasks.done` and `dead`
    LISTs to the newest `BOARD_DONE_MAX` and `DEAD_MAX` entries (both default
    500). Centralising the caps here covers every writer.
 
-An exception in this pass is logged and the forwarding loop continues. That is
-also the boundary on its authority: observation may look and may only report;
-it does not change delivery decisions.
+Each job isolates and records its own failure. An observer failure does not stop
+the watchdog loop; switch housekeeping failure does not stop forwarding.
 
 ### 3.5 The watchdog boundary
 
-`flock.watchdog` is a separate tenant process, not another switch pass. It reads
-the switch's `presence` and `blocked` state, board state, tmux window-activity
+`flock.watchdog` is a separate tenant process, not another switch pass. Its
+observers write `activity`, `presence`, delivery verdicts and usage records; its
+alerting pass reads `presence` and `blocked`, board state, tmux window-activity
 metadata and credential files, then appends factual records to the tenant
 `<prefix>:alerts` Stream. It sends **no envelope**: alerts are for a human through
 the api's polling and SSE routes, never for the lead or another agent. Keeping
-it out of this loop means a slow external observation cannot stall forwarding.
+keeping it out of the switch loop means a slow external observation cannot
+stall forwarding.
 
 This is the bus-facing boundary, not the watchdog's complete design. Its
 three-signal stall rule, credential/account walk, cooldowns, alert shapes and
