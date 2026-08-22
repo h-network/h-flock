@@ -16,11 +16,13 @@ preceding delivery markers:
   `correlation_id`.
 - Multiple messages received during a single agent turn produce one usage
   record attributed to the latest marker; subsequent usage events without new
-  markers omit `stream_id` and `correlation_id`.
-- `pending.verify` and `delivery.markers` in `src/flock/port/openers.py` retain
-  markers without length-based trimming, preserving unresolved markers until
-  verified and correlated.
-- Empty or trimmed marker histories omit `stream_id` directly without error.
+  markers omit `stream_id` and `correlation_id` (degrading gracefully to
+  unattributed usage as per section 3 rather than guessing).
+- `delivery.markers` in `src/flock/port/openers.py` has a documented ceiling of
+  500 markers and `pending.verify` has a documented ceiling of 100 markers. When
+  a marker is absent or trimmed under load, the usage record cleanly omits
+  `stream_id` and `_EMIT_USAGE_LUA` atomically increments the agent's observable
+  counter `usage.unattributed`, making attribution loss transparent to operators.
 - Deduplication and attribution sets (`_seen_requests` and `_attributed_markers`)
   are strictly scoped per-agent, preventing cross-agent suppression.
 - Redis claim and emission are performed atomically via Lua transaction
@@ -46,22 +48,22 @@ are flagged explicitly as `unpriced` rather than reported as silent zero cost.
 
 ## TEST SIGN-OFF — full repository gate
 
-    claim            ActivityTailer extracts 4 usage buckets, dedupes request IDs per agent via atomic Lua claim/emit, correlates delivery markers, prices via longest prefix with unpriced flags and fail-loud config, and office usage reads real RESP xrange and formats summaries
-    source sha       8ab9db43ac2d864a3d6f4cb9d8a92dfed5b885cd
+    claim            ActivityTailer extracts 4 usage buckets, dedupes request IDs per agent via atomic Lua claim/emit, correlates delivery markers with observable unattributed counters, prices via longest prefix with unpriced flags and fail-loud config, and office usage reads real RESP xrange and formats summaries
+    source sha       471c1d885f4e284f8a7547ef056c6b6cb943492f
     artefact         COMMIT
-    host             local — hermetic in-memory Redis double, real local redis-server probes, session fixtures, and citation reads
+    host             local — hermetic in-memory Redis double, real ephemeral redis-server (/usr/bin/redis-server), session fixtures, and citation reads
     command          python3 -m pytest -q
     exit status      0, read unpiped
 
     EXCLUDED         container build, accept.sh, live tenant, four-agent Nemotron live run, and live LLM API calls
-    population       432 tests and 5 subtests; all repository tests collected
+    population       433 tests and 5 subtests; all repository tests collected (real redis-server Lua atomic claim test RAN, 0 skipped)
 
     control          ten property mutations documented below
-    expected locus   exact bucket extraction, same-agent deduplication, unpriced flagging, cache non-decorativeness, marker correlation/omission, cross-agent isolation, emission failure recovery, fail-loud pricing configuration, RESP xrange execution, and real Lua atomic claim
+    expected locus   exact bucket extraction, same-agent deduplication, unpriced flagging, cache non-decorativeness, marker correlation/omission, cross-agent isolation, emission failure recovery, fail-loud pricing configuration, RESP xrange execution, and real Lua atomic claim on real redis-server
     observed locus   same for all ten
     signature        each named test failed with exit 1 on property mutation and passed upon restoration
 
-    evidence         /tmp/build82-pytest.log sha256 50324ff2a500ec33eeadf045a692ecde1dd32cadb3d33828257ed4d5bb745d07
+    evidence         /tmp/build82-pytest.log sha256 3e2e314d9e3865ac66d2c51a89c9d43f0576c2d1c743ce5f8e9fb9cbc7ae77c8
 
     verdict          PASS
     VERIFIED BY      PENDING — independent lane required before merge — author of the change? NO
@@ -77,7 +79,7 @@ Property mutation: mutated `claude-opus-4` cache_read pricing rate from 1.50 to 
     expected locus   calculate_cost rate lookup in src/flock/office/pricing.py
     observed locus   tests/test_usage.py assertion on expected cost
     signature        AssertionError: assert 0.1381425 == 0.198609
-    evidence         /tmp/build82-control1.log sha256 b1c2240490b211af7a2ec7756bdff4986141b997c4241ce88956984310d1b1ad
+    evidence         /tmp/build82-control1.log sha256 61608392391c324d1e6587fc8a1e0b67baded59d3b9c95573d192217f0ef64e6
 
 Restored behavior extracts 812 input, 40,311 cache_read, 1,902 cache_write, and
 1,204 output tokens, computing exactly $0.198609 USD.
@@ -91,7 +93,7 @@ Property mutation: disabled `SISMEMBER` in `_EMIT_USAGE_LUA` and in-memory `_see
     expected locus   ActivityTailer._emit_usage deduplication check in src/flock/watchdog/activity.py
     observed locus   tests/test_usage.py emitted records count
     signature        AssertionError: Duplicate request ID was emitted more than once (len=2, expected 1)
-    evidence         /tmp/build82-control2.log sha256 a3d545c3519b4422908ba66b5fc471b22ac7b57b5c896a9dca76c7a53d728b09
+    evidence         /tmp/build82-control2.log sha256 736da823de29cd42ed0037181155f9074256e31246d8e2bea9fada6a6f068a0b
 
 Restored behavior suppresses duplicate request records and emits exactly one usage event.
 
@@ -104,7 +106,7 @@ Property mutation: changed missing model pricing to return `(0.00, True)` instea
     expected locus   calculate_cost missing model branch in src/flock/office/pricing.py
     observed locus   tests/test_usage.py is_priced assertion
     signature        AssertionError: assert True is False
-    evidence         /tmp/build82-control3.log sha256 4b71a2240fd02e4dd09db6ab185ea74b49de5766253b17f18cc9613d802baf94
+    evidence         /tmp/build82-control3.log sha256 faf7d0fa6e1a33335a66b5f6d3a2396c44adaae0e0dc853ca6c005e706c23ed3
 
 Restored behavior flags `nemotron-lightning` as `is_priced=False` and cost `None`, displaying `unpriced` in `office usage`.
 
@@ -117,7 +119,7 @@ Property mutation: zeroed out `cache_read` and `cache_write` in `calculate_cost`
     expected locus   calculate_cost token multiplication in src/flock/office/pricing.py
     observed locus   tests/test_usage.py difference assertion
     signature        AssertionError: assert 0.0 == pytest.approx(2.4375)
-    evidence         /tmp/build82-control4.log sha256 851df091437b387791d5d5f2a002b7ddba7cb41180251c2d0405fd8c9a2e4d40
+    evidence         /tmp/build82-control4.log sha256 516e3d494fae8ceabf7f2725185ce0c2a23caec73a2394694ba4cad524757291
 
 Restored behavior includes cache buckets and reflects a $2.4375 USD cost difference on 1M cache_read / 50k cache_write tokens.
 
@@ -130,7 +132,7 @@ Property mutation: removed `_attributed_markers` tracking so every subsequent us
     expected locus   ActivityTailer._correlate_delivery attribution check in src/flock/watchdog/activity.py
     observed locus   tests/test_usage.py second record stream_id assertion
     signature        AssertionError: 'stream_id' in records[1]
-    evidence         /tmp/build82-control5.log sha256 933ae4d3ffede0419667bf5de9b062b54125a4c1fd2ddd2b8615528568e500ad
+    evidence         /tmp/build82-control5.log sha256 32d8d26d34f311e7a27424fde9abb0175fdb7e295cf545152076a135410bf3cc
 
 Restored behavior joins the first usage record after a marker and omits `stream_id` and `correlation_id` from subsequent turns that lacked new delivery markers.
 
@@ -143,7 +145,7 @@ Property mutation: made `_seen_requests` a single global set across all agents.
     expected locus   ActivityTailer._seen_requests per-agent mapping in src/flock/watchdog/activity.py
     observed locus   tests/test_usage.py distinct agent count assertion
     signature        AssertionError: Expected 2 records (1 per agent), got 1
-    evidence         /tmp/build82-control6.log sha256 f9d3ea3938b12360d2d3656496064385f157fbcf4dff542ccdeaf63031cc9ea0
+    evidence         /tmp/build82-control6.log sha256 594803221d4e900c34b19c1bd3da10d08fae323a388def46365389946ec3a9df
 
 Restored behavior isolates request tracking per agent so shared or colliding request IDs across agents emit independently.
 
@@ -156,7 +158,7 @@ Property mutation: marked request as seen in memory even when Redis emission fai
     expected locus   ActivityTailer._emit_usage exception handler in src/flock/watchdog/activity.py
     observed locus   tests/test_usage.py seen check assertion
     signature        AssertionError: 'msg_recoverable_001' in tailer._seen_requests['bus']
-    evidence         /tmp/build82-control7.log sha256 ec7a83a35a6ce113640c6d4f69b4c162762224b9f5151f016af6d1700a0dc970
+    evidence         /tmp/build82-control7.log sha256 b92f497e0fbad7b6f4a213d9c54d4f0f61dd101bf3f3137f689423373659d21d
 
 Restored behavior aborts on Redis write failure without marking the request seen, allowing successful replay on restart.
 
@@ -169,7 +171,7 @@ Property mutation: swallowed `FileNotFoundError` in `load_pricing` to silently f
     expected locus   load_pricing explicit env handler in src/flock/office/pricing.py
     observed locus   tests/test_usage.py pytest.raises assertion
     signature        Failed: DID NOT RAISE <class 'FileNotFoundError'>
-    evidence         /tmp/build82-control8.log sha256 7d2322b458a39e2973b3e5fe8de437836f7b7f14fda2ee2c9b76bf9a5b2799fe
+    evidence         /tmp/build82-control8.log sha256 617853d597b07fabbe57e31604f2eb3f0a6ec4426d09552f9541a34aa5697ec1
 
 Restored behavior fails loudly when an operator specifies an invalid or missing `FLOCK_PRICING_FILE`.
 
@@ -182,26 +184,26 @@ Property mutation: renamed `xrange` to `_disabled_xrange` in `src/flock/bus/resp
     expected locus   Redis.xrange definition in src/flock/bus/resp.py
     observed locus   src/flock/office/cli.py _usage_command direct xrange invocation
     signature        AttributeError: 'Redis' object has no attribute 'xrange'
-    evidence         /tmp/build82-control9.log sha256 3c0274780cf8ff7564f60fdbb41237f3f3749ee6b785971570dcd253e0b86c26
+    evidence         /tmp/build82-control9.log sha256 b416096e393ece12754acf1068b395229413c767c15a1e012cf5551b62d132fe
 
 Restored behavior defines `xrange` on `flock.bus.resp.Redis` and executes stream reporting without silent swallows.
 
-### 10. Real Lua atomic claim and emission script execution
+### 10. Real Lua atomic claim and emission script execution on real redis-server
 
 Property mutation: removed `redis.call("SADD", seen_key, request_id)` from `_EMIT_USAGE_LUA`.
 
     command          pytest -q tests/test_usage.py::test_lua_script_atomic_claim_and_replay_dedupe_on_real_redis
     exit status      1, read unpiped
     expected locus   _EMIT_USAGE_LUA SADD claim in src/flock/watchdog/activity.py
-    observed locus   tests/test_usage.py second emission deduplication assertion
-    signature        AssertionError: assert 1 == 0
-    evidence         /tmp/build82-control10.log sha256 e97143f8bf9c877bc8983fbef55ab16a81014bd79190bcfc03ef507535c77fff
+    observed locus   tests/test_usage.py sismember claim assertion against real redis-server
+    signature        AssertionError: assert 0 (where 0 = sismember(seen_key, 'req_atomic_001'))
+    evidence         /tmp/build82-control10.log sha256 e487dcc7fd78ba8feb7b35e564da6d90b1656cca262136723c1eb794e8d69dad
 
-Restored behavior atomically claims request IDs inside the Redis Lua transaction on real redis-server, suppressing replay duplication.
+Restored behavior atomically claims request IDs inside the Redis Lua transaction on real `/usr/bin/redis-server`, suppressing replay duplication.
 
 ## Citation gate
 
-    source sha       8ab9db43ac2d864a3d6f4cb9d8a92dfed5b885cd
+    source sha       471c1d885f4e284f8a7547ef056c6b6cb943492f
     command          python3 tools/check_citations.py
     exit status      0, read unpiped
     population       676 citations, 550 unique
