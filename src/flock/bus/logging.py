@@ -68,8 +68,12 @@ def log_record(
     """One JSON object per line on stdout. Fields absent when not known.
 
     `stream_id` belongs to envelope events only — it is the join key for one
-    envelope's life, and a synthetic value on a lifecycle event makes the four
+    envelope's life, and a synthetic value on a lifecycle event makes the six
     records of a real envelope harder to find. See CONTRACTS §3.
+
+    ⚠ This said "four" until 2026-08-22. A delivered unicast leaves SIX —
+    `sent, popped, forwarded, kick_started, received, opened` — and the count in
+    this file has now been stale at four, five and six in turn.
     """
     record = {
         "ts": datetime.now(timezone.utc).isoformat(timespec="milliseconds").replace("+00:00", "Z"),

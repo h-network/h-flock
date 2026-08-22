@@ -707,9 +707,15 @@ the entry shape matches the single-agent route exactly.
   <prefix>:alerts                         STREAM   tenant-level, MAXLEN ~ 1000
 ```
 
-⚠ **`blocked` is written by the switch, not the watchdog.** It is the switch's
-own delivery verdict retained instead of discarded: set on `unverified`, deleted
-on `verified`. One writer, and no screen is read to produce it.
+⚠ **`blocked` is written by the WATCHDOG.** It is a delivery verdict retained
+instead of discarded: set on `unverified`, deleted on `verified`. One writer, and
+no screen is read to produce it.
+
+⚠ **This said "the switch, not the watchdog" until 2026-08-22**, and it was true
+until 2026-08-17, when activity tailing, presence sampling and delivery
+verification moved out of the fabric into `flock.watchdog`. The switch now owns
+the window-log tail and retention; anyone chasing `blocked` in `switch/` will not
+find it (`watchdog/verification.py`).
 
 ⚠ **`blocked` does not mean "stuck".** It means *a delivery was judged unverified
 and nothing has been consumed since*. Measured with each precondition proved: it
@@ -812,9 +818,9 @@ or boot-only configuration must not reach agent windows (`LLD-container` §4).
 | `POD`, `TENANT` | the prefix every Redis key is built from |
 | `AGENTS` | comma-separated `name:port_type` pairs; boot-only roster seed, unset before tmux starts |
 | `ROSTER_POLL_SECONDS` | default `5`. Shared by the switch and tmuxhost |
-| `ACTIVITY_POLL_SECONDS` | default `2`. How often the switch tails CLI session files for the activity feed |
-| `VERIFY_AFTER_SECONDS` | default `10`. How long a delivery marker waits for a later `input` event before being reported unconfirmed |
-| `WATCHDOG_ENABLED` | default `1`. `0` exits the process cleanly |
+| `ACTIVITY_POLL_SECONDS` | default `2`. How often the **watchdog** tails CLI session files for the activity feed |
+| `VERIFY_AFTER_SECONDS` | default **`120`**. How long a delivery marker waits for later **`input`, `output` or `tool`** activity before being reported unconfirmed |
+| `WATCHDOG_ENABLED` | default `1`. ⚠ **`0` does NOT stop the process** — it silences *alerting* only. The observers keep running, because the api door, the console and the Telegram client all read what they write, and exiting took those down with it |
 | `WATCHDOG_INTERVAL` | default `30`. Seconds between passes |
 | `WATCHDOG_STALL_SEC` | default `600`. A ticket open longer than this **may** alert |
 | `WATCHDOG_SILENCE_SEC` | default `300`. …**and** the window quiet this long |
