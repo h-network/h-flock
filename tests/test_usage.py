@@ -45,6 +45,30 @@ class UsageRedis:
     def sismember(self, key, member):
         return member in self.sets.get(key, set())
 
+    def eval(self, script, numkeys, *args):
+        stream_key = args[0] if numkeys >= 1 else ""
+        seen_key = args[1] if numkeys >= 2 else ""
+        attributed_key = args[2] if numkeys >= 3 else ""
+
+        request_id = args[numkeys] if len(args) > numkeys else ""
+        raw_usage = args[numkeys + 1] if len(args) > numkeys + 1 else ""
+        stream_id = args[numkeys + 2] if len(args) > numkeys + 2 else ""
+
+        if "SISMEMBER" in script and request_id and seen_key:
+            if self.sismember(seen_key, request_id):
+                return 0
+
+        if "XADD" in script and stream_key and raw_usage:
+            self.xadd(stream_key, {"usage": raw_usage})
+
+        if "SADD" in script:
+            if request_id and seen_key:
+                self.sadd(seen_key, request_id)
+            if stream_id and attributed_key:
+                self.sadd(attributed_key, stream_id)
+
+        return 1
+
 
 def _usage_records(r):
     key = prefix("acme", "hq", resource="usage")
@@ -506,3 +530,144 @@ def test_explicit_flock_pricing_file_missing_or_malformed_fails_loudly(tmp_path,
     monkeypatch.setenv("FLOCK_PRICING_FILE", str(bad_json))
     with pytest.raises(ValueError, match="FLOCK_PRICING_FILE contains invalid JSON"):
         load_pricing()
+
+
+def test_office_usage_runs_against_resp_redis_client(monkeypatch, capsys):
+    """office usage must execute successfully over the real flock.bus.resp.Redis client."""
+    import io
+    from unittest.mock import patch
+    from flock.bus.resp import Redis as RespRedis
+
+    class FakeSocket:
+        def __init__(self, replies):
+            self.reader = io.BytesIO(replies)
+            self.requests = []
+
+        def makefile(self, mode):
+            return self.reader
+
+        def sendall(self, request):
+            self.requests.append(request)
+
+    record_json = json.dumps({
+        "agent": "bus",
+        "cli": "claude",
+        "model": "claude-opus-4-8",
+        "input": 12400,
+        "cache_read": 1200000,
+        "cache_write": 48100,
+        "output": 31200,
+        "ts": "2026-08-22T10:00:00.000Z",
+    }).encode("utf-8")
+
+    resp_reply = (
+        b"*1\r\n"
+        b"*2\r\n"
+        b"$3\r\n1-0\r\n"
+        b"*2\r\n"
+        b"$5\r\nusage\r\n"
+        + f"${len(record_json)}\r\n".encode()
+        + record_json
+        + b"\r\n"
+    )
+
+    sock = FakeSocket(resp_reply)
+    with patch("flock.bus.resp.socket.create_connection", return_value=sock):
+        resp_client = RespRedis.from_url("redis://127.0.0.1:6379/0")
+
+    monkeypatch.setattr(cli, "_context", lambda: (resp_client, "acme", "hq", "bus"))
+
+    cli.main(["usage"])
+    out = capsys.readouterr().out
+    assert "bus" in out
+    assert "claude-opus-4-8" in out
+    assert "12.4k" in out
+    assert "1.20M" in out
+    assert "48.1k" in out
+    assert "31.2k" in out
+
+
+def test_lua_script_atomic_claim_and_replay_dedupe_on_real_redis():
+    """Verify _EMIT_USAGE_LUA atomic claim, emission, and deduplication on real Redis."""
+    import socket
+    import uuid
+    from flock.watchdog.activity import _EMIT_USAGE_LUA
+
+    # Check if local Redis is accessible
+    sock = socket.socket()
+    try:
+        sock.connect(("127.0.0.1", 6379))
+        sock.close()
+    except Exception:
+        pytest.skip("local redis-server not accessible")
+
+    import redis
+    r = redis.Redis(host="127.0.0.1", port=6379, db=0, decode_responses=True)
+    test_id = str(uuid.uuid4())[:8]
+    stream_key = f"test:{test_id}:usage"
+    seen_key = f"test:{test_id}:usage.requests"
+    attributed_key = f"test:{test_id}:usage.attributed"
+
+    try:
+        req_id = f"req_{test_id}_001"
+        payload = json.dumps({"agent": "bus", "input": 100})
+
+        # First emission -> succeeds, claims request ID
+        res1 = r.eval(_EMIT_USAGE_LUA, 3, stream_key, seen_key, attributed_key, req_id, payload, "stream_1", 10000)
+        assert res1 == 1
+        assert r.xlen(stream_key) == 1
+        assert r.sismember(seen_key, req_id)
+        assert r.sismember(attributed_key, "stream_1")
+
+        # Second emission with identical request ID -> returns 0, does not duplicate in stream
+        res2 = r.eval(_EMIT_USAGE_LUA, 3, stream_key, seen_key, attributed_key, req_id, payload, "stream_2", 10000)
+        assert res2 == 0
+        assert r.xlen(stream_key) == 1
+    finally:
+        r.delete(stream_key, seen_key, attributed_key)
+
+
+def test_unresolved_markers_preserved_and_correlated_without_trim_loss(tmp_path):
+    """Pending markers are preserved without length trimming and correlated with usage."""
+    r = UsageRedis(agents=("bus",))
+    r.values[prefix("acme", "hq", "bus", "launch")] = "claude"
+
+    # Add 150 delivery markers (beyond any 100 maxlen threshold)
+    for i in range(1, 151):
+        mark_delivery_pending(
+            r,
+            "acme",
+            "hq",
+            "bus",
+            f"stream-turn-{i:03d}",
+            correlation_id=f"corr-turn-{i:03d}",
+        )
+
+    verify_key = prefix("acme", "hq", "bus", "pending.verify")
+    markers_key = prefix("acme", "hq", "bus", "delivery.markers")
+    assert len(r.streams.get(verify_key, [])) == 150
+    assert len(r.streams.get(markers_key, [])) == 150
+
+    session = tmp_path / ".claude" / "projects" / "-workdir-bus" / "session.jsonl"
+    _write_lines(
+        session,
+        [
+            {
+                "type": "assistant",
+                "timestamp": "2026-08-22T23:59:59.000Z",
+                "message": {
+                    "id": "msg_marker_preserved",
+                    "model": "claude-opus-4-8",
+                    "usage": {"input_tokens": 100, "output_tokens": 50},
+                },
+            }
+        ],
+    )
+
+    tailer = ActivityTailer(r, pod="acme", tenant="hq", home_root=tmp_path)
+    tailer.poll()
+
+    records = _usage_records(r)
+    assert len(records) == 1
+    assert records[0]["stream_id"] == "stream-turn-150"
+    assert records[0]["correlation_id"] == "corr-turn-150"

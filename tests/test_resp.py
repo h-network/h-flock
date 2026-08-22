@@ -59,3 +59,21 @@ def test_url_auth_and_database_are_selected():
         Redis.from_url("redis://:p%40ss@redis.example:6380/2")
     assert b"AUTH" in sock.requests[0] and b"p@ss" in sock.requests[0]
     assert b"SELECT" in sock.requests[1] and b"2" in sock.requests[1]
+
+
+def test_xrange_parses_stream_entries_with_field_dict():
+    payload = b'{"agent":"bus","input":100}'
+    resp_reply = (
+        b"*1\r\n"
+        b"*2\r\n"
+        b"$3\r\n1-0\r\n"
+        b"*2\r\n"
+        b"$5\r\nusage\r\n"
+        + f"${len(payload)}\r\n".encode()
+        + payload
+        + b"\r\n"
+    )
+    r, sock = client(resp_reply)
+    entries = r.xrange("usage", min="-", max="+")
+    assert entries == [(b"1-0", {b"usage": b'{"agent":"bus","input":100}'})]
+    assert sock.requests[0] == b"*4\r\n$6\r\nXRANGE\r\n$5\r\nusage\r\n$1\r\n-\r\n$1\r\n+\r\n"

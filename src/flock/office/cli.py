@@ -610,14 +610,7 @@ def _usage_command(argv: list[str]) -> None:
 
     r, pod, tenant, _ = _context()
     usage_key = prefix(pod, tenant, resource="usage")
-    entries = []
-    if hasattr(r, "xrange"):
-        try:
-            entries = r.xrange(usage_key, min="-", max="+")
-        except Exception:
-            entries = []
-    elif hasattr(r, "streams"):
-        entries = r.streams.get(usage_key, [])
+    entries = r.xrange(usage_key, min="-", max="+")
 
     since_dt = _timestamp(args.since) if args.since else None
 
