@@ -44,6 +44,10 @@ dx() { docker exec "$CONTAINER" "$@"; }
 T=$(dx printenv API_TOKEN)
 A="http://127.0.0.1:8080"
 EXPECT=$(( STATIONS * ROUNDS ))
+# bench-port writes exactly the received and opened custody stages. Keep the
+# meaning beside the count: adding another synthetic-port stage must change
+# this declaration or the exact writer census will refuse the run loudly.
+BENCH_PORT_STAGES=2
 
 echo "switch-bench: $STATIONS x $ROUNDS = $EXPECT envelopes, payload=$PAYLOAD_BYTES -> $OUT"
 
@@ -99,7 +103,10 @@ echo "  captured $(wc -l < "$OUT") lines"
 
 echo
 echo "== analysis =="
-python3 "$(dirname "$0")/analyse-run.py" "$OUT" --expect "$EXPECT" --source-prefix bench-
+python3 "$(dirname "$0")/analyse-run.py" "$OUT" --expect "$EXPECT" --source-prefix bench- \
+  --expect-writer "bench-send=$EXPECT" \
+  --expect-writer "bench-port=$((EXPECT * BENCH_PORT_STAGES))"
+ANALYSIS_STATUS=$?
 
 echo
 echo "== teardown =="
@@ -110,3 +117,4 @@ for i in $(seq 1 "$STATIONS"); do
     -d "{\"kind\":\"StopAgent\",\"payload\":{\"agent\":\"bench-$i\"}}" "$A/agents/host/envelopes"
 done
 echo "  retired $STATIONS stations"
+exit "$ANALYSIS_STATUS"
