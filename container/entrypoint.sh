@@ -59,14 +59,14 @@ start() {
   "$@" &
   local pid=$!
   pids+=("$pid")
-  jlog "{\"module\":\"container\",\"event\":\"started\",\"reason\":\"$name pid=$pid\"}"
+  jlog "{\"module\":\"container\",\"writer\":\"container\",\"event\":\"started\",\"reason\":\"$name pid=$pid\"}"
 }
 
 # If a module exits, the tenant exits and the restart policy brings it back.
 # Deliberately blunt for a skeleton — no partial states to reason about (§6).
 shutdown() {
   local code=$?
-  jlog "{\"module\":\"container\",\"event\":\"stopped\",\"reason\":\"exit=$code\"}"
+  jlog "{\"module\":\"container\",\"writer\":\"container\",\"event\":\"stopped\",\"reason\":\"exit=$code\"}"
   kill "${pids[@]}" 2>/dev/null || true
   exit "$code"
 }
@@ -180,7 +180,7 @@ if not url:
 
 r = redis.from_url(url)
 count = purge_transport(r, pod=os.environ["POD"], tenant=os.environ["TENANT"])
-print(f"{{\"module\":\"container\",\"event\":\"transport_purged\",\"count\":{count}}}")
+print(f"{{\"module\":\"container\",\"writer\":\"container\",\"event\":\"transport_purged\",\"count\":{count}}}")
 ')
 jlog "$purge_record"
 
@@ -217,7 +217,7 @@ rcli HSET "$roster_key" "${fields[@]}" >/dev/null
 # The HASH loses AGENTS ordering. Preserve authority while the ordered source is
 # still in hand; no later command or override writes this derived value.
 rcli SET "pod:${POD}:tenant:${TENANT}:lead" "${agents[0]}" >/dev/null
-jlog "{\"module\":\"container\",\"event\":\"roster_seeded\",\"count\":$(( ${#fields[@]} / 2 ))}"
+jlog "{\"module\":\"container\",\"writer\":\"container\",\"event\":\"roster_seeded\",\"count\":$(( ${#fields[@]} / 2 ))}"
 
 # Per-agent CLI and account, as exceptions only — "backend=codex", "frontend=work".
 # Both land as agent resources rather than roster values: the roster is the MAC
@@ -262,7 +262,7 @@ seed_profile_dir() {
     [ -e "/home/ubuntu/.codex/$item" ] && [ ! -e "$x/$item" ] && cp -r "/home/ubuntu/.codex/$item" "$x/" 2>/dev/null
   done
   [ -f "$c/.claude.json" ] || printf '{\n  "hasCompletedOnboarding": true\n}\n' > "$c/.claude.json"
-  jlog "{\"module\":\"container\",\"event\":\"profile_seeded\",\"reason\":\"$prof\"}"
+  jlog "{\"module\":\"container\",\"writer\":\"container\",\"event\":\"profile_seeded\",\"reason\":\"$prof\"}"
 }
 IFS=',' read -ra _profpairs <<< "${AGENT_PROFILES:-}"
 for _pair in "${_profpairs[@]:-}"; do
@@ -312,7 +312,7 @@ for agent in "${agents[@]}"; do
     sleep 0.3
   done
 done
-jlog "{\"module\":\"container\",\"event\":\"windows_ready\",\"count\":${#agents[@]}}"
+jlog "{\"module\":\"container\",\"writer\":\"container\",\"event\":\"windows_ready\",\"count\":${#agents[@]}}"
 
 # Only the tmux server and its windows retain these. Processes started below
 # already write directly to container stdout and must not enter the tail file.
@@ -341,7 +341,7 @@ start watchdog env REDIS_URL="$redis_url" python3 -m flock.watchdog
 if [ "${API_ENABLED:-0}" != "0" ]; then
   start api   env API_TOKEN="$api_token" python3 -m flock.api
 else
-  jlog '{"module":"container","event":"api_disabled","reason":"API_ENABLED is not 1"}'
+  jlog '{"module":"container","writer":"container","event":"api_disabled","reason":"API_ENABLED is not 1"}'
 fi
 start session env API_TOKEN="$api_token" python3 -m flock.session
 

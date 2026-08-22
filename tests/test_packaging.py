@@ -66,3 +66,27 @@ def test_image_env_does_not_shadow_a_diverging_code_default():
         "the image ENV overrides a different code default, so the code default "
         f"is dead: {mismatched}"
     )
+
+
+def test_every_container_record_carries_a_writer():
+    """⚠ The container's own records are shell echoes and bypass log_record.
+
+    Build 80 gave every Python-emitted record a `writer`. The 7 lifecycle records
+    the entrypoint emits are `printf`/`print` of literal JSON and reached the
+    custody log with no writer at all — 44 of 300 records in the build 81 live
+    run, found in that run's writer census, not by a test.
+    """
+    import pathlib
+    import re
+
+    entrypoint = (
+        pathlib.Path(__file__).resolve().parents[1] / "container" / "entrypoint.sh"
+    ).read_text()
+
+    missing = []
+    for match in re.finditer(r'\{\\?"module\\?":\\?"container\\?"(.{0,120})', entrypoint):
+        if "writer" not in match.group(1):
+            line = entrypoint[: match.start()].count("\n") + 1
+            missing.append(f"entrypoint.sh:{line}")
+
+    assert not missing, f"container records with no writer: {missing}"
