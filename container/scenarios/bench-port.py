@@ -30,6 +30,7 @@ import sys
 import time
 
 sys.path.insert(0, "/app/src")
+os.environ["FLOCK_WRITER"] = "bench-port"
 
 import redis  # noqa: E402  (long-lived process: the import is paid once)
 

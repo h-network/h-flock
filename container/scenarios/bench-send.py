@@ -16,6 +16,7 @@ import sys
 import time
 
 sys.path.insert(0, "/app/src")
+os.environ["FLOCK_WRITER"] = "bench-send"
 
 import redis  # noqa: E402
 

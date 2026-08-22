@@ -5,6 +5,8 @@ import os
 import sys
 from datetime import datetime, timezone
 
+_WRITER = os.environ.get("FLOCK_WRITER")
+
 _ENVELOPE_EVENTS = {
     "sent",
     "send_failed",
@@ -73,6 +75,7 @@ def log_record(
         "ts": datetime.now(timezone.utc).isoformat(timespec="milliseconds").replace("+00:00", "Z"),
         "module": module,
         "event": event,
+        "writer": _WRITER or module,
     }
     if event in _ENVELOPE_EVENTS:
         record["stream_id"] = stream_id or "unknown"

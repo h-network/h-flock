@@ -42,6 +42,10 @@ def main() -> int:
                     help="envelopes the workload should have produced")
     ap.add_argument("--source-prefix", default=None,
                     help="only count envelopes whose source starts with this")
+    ap.add_argument("--writer", action="append", default=[],
+                    help="only count records from this writer; repeatable")
+    ap.add_argument("--exclude-writer", action="append", default=[],
+                    help="exclude records from this writer; repeatable")
     ap.add_argument("--coverage", type=float, default=0.99,
                     help="a stage below this fraction of expect is REFUSED")
     args = ap.parse_args()
@@ -49,6 +53,9 @@ def main() -> int:
     paths: dict[tuple, dict] = collections.defaultdict(dict)
     parse_failures = 0
     dead = 0
+    writers = collections.Counter()
+    selected_writers = set(args.writer)
+    excluded_writers = set(args.exclude_writer)
 
     for line in open(args.log, errors="replace"):
         line = line.strip()
@@ -59,6 +66,12 @@ def main() -> int:
         except Exception:
             parse_failures += 1
             continue
+        writer = str(rec.get("writer") or rec.get("module") or "unknown")
+        if selected_writers and writer not in selected_writers:
+            continue
+        if writer in excluded_writers:
+            continue
+        writers[writer] += 1
         event = rec.get("event")
         if event == "dead_lettered":
             dead += 1
@@ -80,9 +93,16 @@ def main() -> int:
     n = len(paths)
     expect = args.expect or n
     print(f"envelopes {n:,}   expected {expect:,}   dead-lettered {dead}   parse failures 0")
+    census = "  ".join(f"{writer}={count}" for writer, count in sorted(writers.items())) or "none"
+    bench_writers = sorted({"bench-send", "bench-port"}.intersection(writers))
+    writer_refused = bool(bench_writers)
+    suffix = ""
+    if writer_refused:
+        suffix = "  ⚠ REFUSED — synthetic benchmark writer present"
+    print(f"writers: {census}{suffix}")
 
     print("\n== every step logged? ==")
-    incomplete = False
+    incomplete = writer_refused
     for stage in STAGES:
         have = sum(1 for p in paths.values() if stage in p)
         frac = have / expect if expect else 0

@@ -68,6 +68,16 @@ def test_stdout_record_and_newline_are_one_write(monkeypatch):
     assert json.loads(output.writes[0])["event"] == "forwarded"
 
 
+def test_record_writer_defaults_to_module_and_accepts_process_label(monkeypatch, capsys):
+    monkeypatch.setattr("flock.bus.logging._WRITER", None)
+    log_record("switch", "forwarded", stream_id="default")
+    assert json.loads(capsys.readouterr().out)["writer"] == "switch"
+
+    monkeypatch.setattr("flock.bus.logging._WRITER", "bench-send")
+    log_record("port", "sent", stream_id="labelled")
+    assert json.loads(capsys.readouterr().out)["writer"] == "bench-send"
+
+
 def test_agent_sent_envelope_is_observed_end_to_end_in_central_log(monkeypatch, tmp_path):
     r = LogRedis()
     path = tmp_path / "window.jsonl"
@@ -142,12 +152,14 @@ def test_window_log_tailer_uses_byte_offset_and_waits_for_complete_line(tmp_path
     path.write_bytes(b'{"event":"one"}\n{"event":"two')
     tailer = WindowLogTailer(r, pod="acme", tenant="hq", path=path)
     tailer.poll()
-    assert capsys.readouterr().out.splitlines() == ['{"event":"one"}']
+    first = json.loads(capsys.readouterr().out)
+    assert first == {"event": "one", "writer": "window:unknown"}
 
     with path.open("ab") as output:
         output.write(b'"}\n')
     tailer.poll()
-    assert capsys.readouterr().out.splitlines() == ['{"event":"two"}']
+    second = json.loads(capsys.readouterr().out)
+    assert second == {"event": "two", "writer": "window:unknown"}
 
 
 def test_window_log_truncates_only_at_consumed_end_and_later_record_still_arrives(tmp_path, capsys):
@@ -159,7 +171,10 @@ def test_window_log_truncates_only_at_consumed_end_and_later_record_still_arrive
 
     tailer.poll()
     lines = capsys.readouterr().out.splitlines()
-    assert lines[:2] == ['{"event":"first"}', '{"event":"second"}']
+    assert [json.loads(line)["event"] for line in lines[:2]] == ["first", "second"]
+    assert [json.loads(line)["writer"] for line in lines[:2]] == [
+        "window:unknown", "window:unknown"
+    ]
     truncation = json.loads(lines[2])
     assert truncation["module"] == "switch"
     assert truncation["event"] == "window_log_truncated"
@@ -170,7 +185,9 @@ def test_window_log_truncates_only_at_consumed_end_and_later_record_still_arrive
     with path.open("ab") as output:
         output.write(b'{"event":"after"}\n')
     tailer.poll()
-    assert capsys.readouterr().out.splitlines() == ['{"event":"after"}']
+    assert json.loads(capsys.readouterr().out) == {
+        "event": "after", "writer": "window:unknown"
+    }
 
 
 def test_window_log_over_cap_is_not_truncated_before_partial_tail_is_consumed(tmp_path, capsys):
@@ -196,12 +213,12 @@ def test_window_log_skips_complete_invalid_utf8_line_and_keeps_progressing(tmp_p
     tailer.poll()
 
     lines = capsys.readouterr().out.splitlines()
-    assert lines[0] == '{"event":"before"}'
+    assert json.loads(lines[0]) == {"event": "before", "writer": "window:unknown"}
     error = json.loads(lines[1])
     assert error["event"] == "window_log_decode_error"
     assert error["reason"] == "invalid UTF-8 at byte 27"
     assert error["bytes"] == len(b"invalid:\xff\n")
-    assert lines[2] == '{"event":"after"}'
+    assert json.loads(lines[2]) == {"event": "after", "writer": "window:unknown"}
     assert r.values[tailer.offset_key] == path.stat().st_size
 
     tailer.poll()
@@ -285,6 +302,35 @@ def test_watchdog_alerts_reach_the_durable_mirror(monkeypatch, tmp_path, capsys)
     mirrored = evidence.read_text().strip()
     assert mirrored == printed, "the alert reached stdout but not the evidence file"
     assert json.loads(mirrored)["kind"] == "credential"
+    assert json.loads(mirrored)["writer"] == "watchdog"
+
+
+def test_watchdog_error_names_watchdog_writer(monkeypatch, tmp_path, capsys):
+    from flock.watchdog.service import Watchdog
+
+    evidence = tmp_path / "custody.jsonl"
+    monkeypatch.setenv("FLOCK_CUSTODY_FILE", str(evidence))
+
+    Watchdog._error("presence", RuntimeError("lost"))
+
+    printed = json.loads(capsys.readouterr().out)
+    assert printed["writer"] == "watchdog"
+    assert json.loads(evidence.read_text())["writer"] == "watchdog"
+
+
+def test_window_tailer_adds_absent_writer_and_preserves_explicit_writer(tmp_path, capsys):
+    path = tmp_path / "window.jsonl"
+    path.write_text(
+        json.dumps({"event": "sent", "source": "architect"}) + "\n"
+        + json.dumps({"event": "opened", "writer": "custom-port"}) + "\n"
+    )
+    tailer = WindowLogTailer(_OffsetStore(), pod="acme", tenant="hq", path=path)
+
+    tailer.poll()
+
+    records = [json.loads(line) for line in capsys.readouterr().out.splitlines()]
+    assert records[0]["writer"] == "window:architect"
+    assert records[1]["writer"] == "custom-port"
 
 
 def test_tailed_pane_records_reach_the_durable_mirror(tmp_path, monkeypatch, capsys):
@@ -302,7 +348,9 @@ def test_tailed_pane_records_reach_the_durable_mirror(tmp_path, monkeypatch, cap
     window = tmp_path / "window.log.jsonl"
     monkeypatch.setenv("FLOCK_CUSTODY_FILE", str(evidence))
 
-    line = json.dumps({"module": "port", "event": "sent", "stream_id": "abc"})
+    line = json.dumps({
+        "module": "port", "event": "sent", "stream_id": "abc", "source": "architect"
+    })
     window.write_text(line + "\n")
 
     tailer = WindowLogTailer(resp.Redis.from_url("redis://127.0.0.1:6379/0"),
@@ -310,8 +358,9 @@ def test_tailed_pane_records_reach_the_durable_mirror(tmp_path, monkeypatch, cap
     with patch.object(tailer, "r", _OffsetStore()):
         tailer.poll()
 
-    assert capsys.readouterr().out.strip() == line
-    assert evidence.read_text().strip() == line, "tailed record never reached the evidence"
+    printed = capsys.readouterr().out.strip()
+    assert json.loads(printed)["writer"] == "window:architect"
+    assert evidence.read_text().strip() == printed, "tailed record never reached the evidence"
 
 
 class _OffsetStore:

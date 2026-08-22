@@ -116,6 +116,7 @@ def _connection_log(
             "ts": _now(),
             "module": "session",
             "event": "closed",
+            "writer": "session",
             "connection_id": connection_id,
             "client": client,
             "agents": sorted(agents),
