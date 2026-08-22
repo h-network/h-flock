@@ -173,8 +173,9 @@ class ActivityTailer:
         self.pod = pod
         self.tenant = tenant
         self.home_root = Path(home_root)
-        self._seen_requests: set[str] = set()
-        self._attributed_markers: set[str] = set()
+        import collections
+        self._seen_requests: dict[str, set[str]] = collections.defaultdict(set)
+        self._attributed_markers: dict[str, set[str]] = collections.defaultdict(set)
 
     def _profile(self, agent: str) -> str | None:
         return _text(self.r.get(prefix(self.pod, self.tenant, agent, "profile")))
@@ -309,21 +310,14 @@ class ActivityTailer:
         candidates.sort(key=lambda item: item[0])
         _, stream_id, correlation_id = candidates[-1]
 
-        if stream_id in self._attributed_markers:
+        if stream_id in self._attributed_markers[agent]:
             return None, None
 
         if hasattr(self.r, "sismember"):
             try:
                 if self.r.sismember(attributed_key, stream_id):
-                    self._attributed_markers.add(stream_id)
+                    self._attributed_markers[agent].add(stream_id)
                     return None, None
-            except Exception:
-                pass
-
-        self._attributed_markers.add(stream_id)
-        if hasattr(self.r, "sadd"):
-            try:
-                self.r.sadd(attributed_key, stream_id)
             except Exception:
                 pass
 
@@ -331,21 +325,15 @@ class ActivityTailer:
 
     def _emit_usage(self, agent: str, timestamp: str, usage: dict) -> None:
         request_id = usage.get("request_id")
+        seen_key = prefix(self.pod, self.tenant, agent, "usage.requests")
         if request_id:
-            seen_key = prefix(self.pod, self.tenant, agent, "usage.requests")
-            if request_id in self._seen_requests:
+            if request_id in self._seen_requests[agent]:
                 return
             if hasattr(self.r, "sismember"):
                 try:
                     if self.r.sismember(seen_key, request_id):
-                        self._seen_requests.add(request_id)
+                        self._seen_requests[agent].add(request_id)
                         return
-                except Exception:
-                    pass
-            self._seen_requests.add(request_id)
-            if hasattr(self.r, "sadd"):
-                try:
-                    self.r.sadd(seen_key, request_id)
                 except Exception:
                     pass
 
@@ -379,6 +367,23 @@ class ActivityTailer:
                 )
             except Exception:
                 pass
+
+        if request_id:
+            self._seen_requests[agent].add(request_id)
+            if hasattr(self.r, "sadd"):
+                try:
+                    self.r.sadd(seen_key, request_id)
+                except Exception:
+                    pass
+
+        if stream_id:
+            attributed_key = prefix(self.pod, self.tenant, agent, "usage.attributed")
+            self._attributed_markers[agent].add(stream_id)
+            if hasattr(self.r, "sadd"):
+                try:
+                    self.r.sadd(attributed_key, stream_id)
+                except Exception:
+                    pass
 
         if os.environ.get("FLOCK_LOG_QUIET") != "1":
             sys.stdout.write(raw + "\n")

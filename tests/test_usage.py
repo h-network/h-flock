@@ -391,3 +391,57 @@ def test_office_usage_cli_table_and_json(monkeypatch, capsys):
     bus_json = json.loads(capsys.readouterr().out)
     assert len(bus_json["rows"]) == 1
     assert bus_json["rows"][0]["agent"] == "bus"
+
+
+def test_same_request_id_across_different_agents_is_not_suppressed(tmp_path):
+    """Different agents with identical request IDs must both emit records independently."""
+    r = UsageRedis(agents=("bus", "tmux"))
+    bus_session = tmp_path / ".claude" / "projects" / "-workdir-bus" / "session.jsonl"
+    tmux_session = tmp_path / ".claude" / "projects" / "-workdir-tmux" / "session.jsonl"
+
+    shared_record = {
+        "type": "assistant",
+        "timestamp": "2026-08-22T10:00:01.000Z",
+        "message": {
+            "id": "shared_request_id_123",
+            "model": "claude-opus-4-8",
+            "usage": {"input_tokens": 150, "output_tokens": 75},
+        },
+    }
+    _write_lines(bus_session, [shared_record])
+    _write_lines(tmux_session, [shared_record])
+
+    tailer = ActivityTailer(r, pod="acme", tenant="hq", home_root=tmp_path)
+    tailer.poll()
+
+    records = _usage_records(r)
+    assert len(records) == 2, f"Expected 2 records (1 per agent), got {len(records)}"
+    agents = {rec["agent"] for rec in records}
+    assert agents == {"bus", "tmux"}
+
+
+def test_truly_empty_marker_history_omits_correlation(tmp_path):
+    """An agent with zero delivery markers omits stream_id and correlation_id cleanly."""
+    r = UsageRedis(agents=("bus",))
+    session = tmp_path / ".claude" / "projects" / "-workdir-bus" / "session.jsonl"
+    _write_lines(
+        session,
+        [
+            {
+                "type": "assistant",
+                "timestamp": "2026-08-22T10:00:01.000Z",
+                "message": {
+                    "id": "msg_nomarker_001",
+                    "model": "claude-opus-4-8",
+                    "usage": {"input_tokens": 200, "output_tokens": 100},
+                },
+            }
+        ],
+    )
+    tailer = ActivityTailer(r, pod="acme", tenant="hq", home_root=tmp_path)
+    tailer.poll()
+
+    records = _usage_records(r)
+    assert len(records) == 1
+    assert "stream_id" not in records[0]
+    assert "correlation_id" not in records[0]
