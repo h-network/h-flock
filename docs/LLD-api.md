@@ -65,7 +65,7 @@ keyspace scan, and agents holding nothing still appear.
 
 ## 3. Sending
 
-Build a `v=2` layered wire frame with the `destination` from the path, check tag-based policy, `send` it, return
+Build a `v=4` layered wire frame with the `destination` from the path, check tag-based policy, `send` it, return
 `202` with the `stream_id` and the `correlation_id`. A policy refusal or unrouted non-local destination returns `422 Unprocessable Content` synchronously before anything is enqueued.
 
 **The body carries `kind` and `payload`, and the api validates neither.**
@@ -202,8 +202,12 @@ and nothing about the REST surface is designed around them.
 **TLS — resolved in Build 36.** Configured via `API_TLS_CERT` and `API_TLS_KEY`. A non-loopback `API_BIND` without TLS configured refuses to serve.
 
 ## 8. What this is not
-
-Not the switch — it forwards nothing. Not an agent runtime — it does not start,
-stop, watch or drive anything. Not a query interface over Redis — every provider
-is a fixed shape, and a request can never name a key.
+ 
+ Not the switch — it forwards nothing. Not an agent runtime — it does not start,
+ stop, watch or drive anything. Not a query interface over Redis — every provider
+ is a fixed shape, and a request can never name a key.
+ 
+ Not usage reporting — `office usage` is an operator CLI command that queries the
+ tenant usage stream (`pod:<pod>:tenant:<tenant>:usage`) over Redis directly, not an
+ HTTP REST endpoint on `flock.api`.
 
