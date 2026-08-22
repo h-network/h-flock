@@ -206,3 +206,55 @@ def test_window_log_skips_complete_invalid_utf8_line_and_keeps_progressing(tmp_p
 
     tailer.poll()
     assert capsys.readouterr().out == ""
+
+
+def test_custody_mirror_is_a_byte_copy_of_stdout(monkeypatch, tmp_path, capsys):
+    """The durable mirror must equal what `docker logs` shows, exactly.
+
+    Container stdout is deleted with the container, so this file is the only
+    evidence a run happened after teardown.
+    """
+    evidence = tmp_path / "custody.jsonl"
+    monkeypatch.setenv("FLOCK_CUSTODY_FILE", str(evidence))
+    monkeypatch.delenv("FLOCK_LOG_QUIET", raising=False)
+
+    log_record("switch", "forwarded", source="a", destination="b")
+    log_record("port", "opened", source="a", destination="b")
+
+    printed = [l for l in capsys.readouterr().out.splitlines() if l.strip()]
+    mirrored = [l for l in evidence.read_text().splitlines() if l.strip()]
+    assert mirrored == printed, "the mirror diverged from stdout"
+    assert [json.loads(l)["event"] for l in mirrored] == ["forwarded", "opened"]
+
+
+def test_quiet_pane_records_are_not_mirrored_twice(monkeypatch, tmp_path, capsys):
+    """⚠ The duplicate guard, and the reason the mirror is gated on QUIET.
+
+    `office` runs in a pane and sets FLOCK_LOG_QUIET, so its record reaches the
+    log once — when the switch re-emits the window file it tails (HLD §5).
+    Mirroring it directly as well would write it TWICE, and a duplicated custody
+    record is indistinguishable from a duplicated delivery to every conservation
+    check we have.
+    """
+    evidence = tmp_path / "custody.jsonl"
+    window = tmp_path / "window.jsonl"
+    monkeypatch.setenv("FLOCK_CUSTODY_FILE", str(evidence))
+    monkeypatch.setenv("FLOCK_LOG_FILE", str(window))
+    monkeypatch.setenv("FLOCK_LOG_QUIET", "1")
+    monkeypatch.setenv("AGENT_NAME", "sender")
+
+    log_record("port", "sent", source="sender", destination="peer")
+
+    assert capsys.readouterr().out == ""
+    assert not evidence.exists() or evidence.read_text() == ""
+    assert len(window.read_text().splitlines()) == 1, "the window file still gets it once"
+
+
+def test_unwritable_custody_file_never_breaks_a_send(monkeypatch, tmp_path, capsys):
+    """A full or read-only evidence volume must not take a tenant down."""
+    monkeypatch.setenv("FLOCK_CUSTODY_FILE", str(tmp_path))  # a directory
+    monkeypatch.delenv("FLOCK_LOG_QUIET", raising=False)
+
+    log_record("switch", "forwarded", source="a", destination="b")
+
+    assert json.loads(capsys.readouterr().out.strip())["event"] == "forwarded"

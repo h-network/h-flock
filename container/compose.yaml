@@ -96,3 +96,22 @@ services:
       timeout: 3s
       retries: 5
       start_period: 20s
+    # ⚠ Docker's json-file driver had NO cap here, so container stdout — which
+    # is every custody record — grew without bound until the container was
+    # removed. 5 × 50 MB is roughly a week of a four-agent office.
+    logging:
+      driver: json-file
+      options:
+        max-size: "50m"
+        max-file: "5"
+    volumes:
+      # ⚠ THE EVIDENCE OUTLIVES THE CONTAINER. `docker logs` is deleted with the
+      # container, so before this a teardown destroyed the only record that a run
+      # ever happened — TEST-SIGNOFF's own REFUSED example fails on exactly that.
+      # A NAMED volume, so `down` keeps it and only an explicit `down -v` clears
+      # it. Everything else in a tenant is deliberately ephemeral; this is not.
+      - custody:${CUSTODY_DIR:-/home/ubuntu/.flock/custody}
+
+volumes:
+  custody:
+    name: "${COMPOSE_PROJECT_NAME:-h-flock}-custody"

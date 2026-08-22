@@ -3,6 +3,26 @@
 # dependency order and gets out of the way (LLD-container §5, §8).
 set -euo pipefail
 
+# ⚠ The custody log must outlive the container. Docker's json-file driver is
+# deleted with it, so `docker compose down` used to destroy the only evidence a
+# run happened. FLOCK_CUSTODY_FILE points at a mounted volume; `flock.bus.logging`
+# mirrors every record it prints, and jlog does the same for the container's own
+# lifecycle lines, which are shell echoes and never reach Python.
+#
+# ⚠ Set BEFORE the first jlog call and never unset — unlike FLOCK_LOG_FILE,
+# which is unset at line ~294 because the switch TAILS that file and daemons
+# writing to it would feed the tail loop back into itself. This file is tailed
+# by nobody.
+export FLOCK_CUSTODY_FILE="${FLOCK_CUSTODY_FILE:-/home/ubuntu/.flock/custody/custody.jsonl}"
+mkdir -p "$(dirname "$FLOCK_CUSTODY_FILE")" 2>/dev/null || true
+
+# Print one record to stdout and to the durable mirror. Never fails the caller:
+# a full or unwritable volume must not take the tenant down.
+jlog() {
+  printf '%s\n' "$1"
+  printf '%s\n' "$1" >> "$FLOCK_CUSTODY_FILE" 2>/dev/null || true
+}
+
 require() {
   local missing=0
   for var in "$@"; do
@@ -39,14 +59,14 @@ start() {
   "$@" &
   local pid=$!
   pids+=("$pid")
-  echo "{\"module\":\"container\",\"event\":\"started\",\"reason\":\"$name pid=$pid\"}"
+  jlog "{\"module\":\"container\",\"event\":\"started\",\"reason\":\"$name pid=$pid\"}"
 }
 
 # If a module exits, the tenant exits and the restart policy brings it back.
 # Deliberately blunt for a skeleton — no partial states to reason about (§6).
 shutdown() {
   local code=$?
-  echo "{\"module\":\"container\",\"event\":\"stopped\",\"reason\":\"exit=$code\"}"
+  jlog "{\"module\":\"container\",\"event\":\"stopped\",\"reason\":\"exit=$code\"}"
   kill "${pids[@]}" 2>/dev/null || true
   exit "$code"
 }
@@ -144,7 +164,11 @@ done
 # version is worse than a lost one (DESIGN-layers §7, BUILD-63). Boards and
 # streams survive via AOF; transport queues are purged here before anything
 # starts consuming.
-python3 -c '
+# ⚠ Through jlog, not printed directly. This record is the proof that a restart
+# discarded in-flight transport rather than replaying it, which is the whole
+# argument that AOF persistence does not break at-most-once — so it is exactly
+# the record that must survive teardown.
+purge_record=$(python3 -c '
 import os, sys, redis
 from flock.bus.resources import purge_transport
 from flock.bus.connection import local_redis_url
@@ -157,7 +181,8 @@ if not url:
 r = redis.from_url(url)
 count = purge_transport(r, pod=os.environ["POD"], tenant=os.environ["TENANT"])
 print(f"{{\"module\":\"container\",\"event\":\"transport_purged\",\"count\":{count}}}")
-'
+')
+jlog "$purge_record"
 
 
 # ── seed the roster ───────────────────────────────────────────────────────────
@@ -192,7 +217,7 @@ rcli HSET "$roster_key" "${fields[@]}" >/dev/null
 # The HASH loses AGENTS ordering. Preserve authority while the ordered source is
 # still in hand; no later command or override writes this derived value.
 rcli SET "pod:${POD}:tenant:${TENANT}:lead" "${agents[0]}" >/dev/null
-echo "{\"module\":\"container\",\"event\":\"roster_seeded\",\"count\":$(( ${#fields[@]} / 2 ))}"
+jlog "{\"module\":\"container\",\"event\":\"roster_seeded\",\"count\":$(( ${#fields[@]} / 2 ))}"
 
 # Per-agent CLI and account, as exceptions only — "backend=codex", "frontend=work".
 # Both land as agent resources rather than roster values: the roster is the MAC
@@ -237,7 +262,7 @@ seed_profile_dir() {
     [ -e "/home/ubuntu/.codex/$item" ] && [ ! -e "$x/$item" ] && cp -r "/home/ubuntu/.codex/$item" "$x/" 2>/dev/null
   done
   [ -f "$c/.claude.json" ] || printf '{\n  "hasCompletedOnboarding": true\n}\n' > "$c/.claude.json"
-  echo "{\"module\":\"container\",\"event\":\"profile_seeded\",\"reason\":\"$prof\"}"
+  jlog "{\"module\":\"container\",\"event\":\"profile_seeded\",\"reason\":\"$prof\"}"
 }
 IFS=',' read -ra _profpairs <<< "${AGENT_PROFILES:-}"
 for _pair in "${_profpairs[@]:-}"; do
@@ -287,7 +312,7 @@ for agent in "${agents[@]}"; do
     sleep 0.3
   done
 done
-echo "{\"module\":\"container\",\"event\":\"windows_ready\",\"count\":${#agents[@]}}"
+jlog "{\"module\":\"container\",\"event\":\"windows_ready\",\"count\":${#agents[@]}}"
 
 # Only the tmux server and its windows retain these. Processes started below
 # already write directly to container stdout and must not enter the tail file.
@@ -316,7 +341,7 @@ start watchdog env REDIS_URL="$redis_url" python3 -m flock.watchdog
 if [ "${API_ENABLED:-0}" != "0" ]; then
   start api   env API_TOKEN="$api_token" python3 -m flock.api
 else
-  echo '{"module":"container","event":"api_disabled","reason":"API_ENABLED is not 1"}'
+  jlog '{"module":"container","event":"api_disabled","reason":"API_ENABLED is not 1"}'
 fi
 start session env API_TOKEN="$api_token" python3 -m flock.session
 

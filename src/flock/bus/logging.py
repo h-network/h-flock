@@ -89,6 +89,25 @@ def log_record(
         # absent instead of making Dockerfile configuration part of this API.
         sys.stdout.write(line + "\n")
         sys.stdout.flush()
+        # ⚠ A DURABLE MIRROR OF STDOUT, and deliberately nothing more. Container
+        # stdout is Docker's `json-file`, which is deleted with the container —
+        # so before this existed, `docker compose down` destroyed the only
+        # evidence a run ever happened. TEST-SIGNOFF's own REFUSED example fails
+        # on exactly that: "evidence /tmp/b77-build.log — torn down, no sha256".
+        # ⚠ Gated on the SAME condition as the stdout write, so the file is a
+        # byte-for-byte copy of what `docker logs` shows. A pane record is
+        # QUIET here and reaches the log once, when the switch re-emits the
+        # window file it tails (HLD §5). Mirroring it directly as well would
+        # write it TWICE, and a duplicate custody record is indistinguishable
+        # from a duplicate delivery to every conservation check we have.
+        custody = os.environ.get("FLOCK_CUSTODY_FILE")
+        if custody:
+            try:
+                with open(custody, "a", encoding="utf-8") as evidence:
+                    evidence.write(line + "\n")
+            except Exception:
+                # Same rule as below: observation must never fail a command.
+                pass
     try:
         agent_only = os.environ.get("FLOCK_LOG_FILE_AGENT_ONLY")
         if path and (not agent_only or os.environ.get("AGENT_NAME")):
