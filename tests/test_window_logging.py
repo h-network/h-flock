@@ -285,3 +285,70 @@ def test_watchdog_alerts_reach_the_durable_mirror(monkeypatch, tmp_path, capsys)
     mirrored = evidence.read_text().strip()
     assert mirrored == printed, "the alert reached stdout but not the evidence file"
     assert json.loads(mirrored)["kind"] == "credential"
+
+
+def test_tailed_pane_records_reach_the_durable_mirror(tmp_path, monkeypatch, capsys):
+    """⚠ The origin record of every agent send comes through the tailer.
+
+    Measured on a live tenant 2026-08-22: the evidence file held `popped`
+    through `opened` and `sent` count 0. `office` runs in a pane and is QUIET,
+    so its `sent` never touches stdout — it lands in the window file and reaches
+    the log only when WindowLogTailer re-emits it. An envelope with five stages
+    and no `sent` reads exactly like one the bus invented.
+    """
+    from flock.bus import resp
+
+    evidence = tmp_path / "custody.jsonl"
+    window = tmp_path / "window.log.jsonl"
+    monkeypatch.setenv("FLOCK_CUSTODY_FILE", str(evidence))
+
+    line = json.dumps({"module": "port", "event": "sent", "stream_id": "abc"})
+    window.write_text(line + "\n")
+
+    tailer = WindowLogTailer(resp.Redis.from_url("redis://127.0.0.1:6379/0"),
+                             pod="acme", tenant="hq", path=window)
+    with patch.object(tailer, "r", _OffsetStore()):
+        tailer.poll()
+
+    assert capsys.readouterr().out.strip() == line
+    assert evidence.read_text().strip() == line, "tailed record never reached the evidence"
+
+
+class _OffsetStore:
+    """Minimal stand-in: the tailer only reads and writes its byte offset."""
+    def __init__(self):
+        self.value = None
+
+    def get(self, key):
+        return self.value
+
+    def set(self, key, value):
+        self.value = value
+
+
+def test_no_json_record_reaches_stdout_without_the_mirror():
+    """⚠ A REGRESSION GUARD, because grep found three of four bypasses.
+
+    Every place that writes a whole JSON record to stdout must also call
+    mirror(); otherwise it is in `docker logs` and absent from the evidence.
+    Four sites were found only by diffing a live tenant against its own log.
+    """
+    import pathlib
+    import re
+
+    root = pathlib.Path(__file__).resolve().parents[1] / "src" / "flock"
+    offenders = []
+    for path in root.rglob("*.py"):
+        if path.name == "logging.py" or "office/cli.py" in str(path):
+            continue  # the mirror itself, and human-facing CLI output
+        text = path.read_text()
+        lines = text.splitlines()
+        for i, line in enumerate(lines):
+            if not re.match(r"^\s*print\((raw|line)[,)]", line):
+                continue
+            # Look ahead past any explanatory comment block to the next
+            # statement. A mirror() call anywhere in that window counts.
+            window = "\n".join(lines[i + 1: i + 16])
+            if "mirror(" not in window:
+                offenders.append(f"{path.relative_to(root)}:{i + 1}")
+    assert not offenders, f"records printed without mirror(): {offenders}"

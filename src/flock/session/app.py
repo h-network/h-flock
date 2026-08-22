@@ -15,6 +15,8 @@ from typing import AsyncIterator
 
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 
+from flock.bus import mirror
+
 from .control import ControlModeClient, ControlModeError, Subscriber
 
 
@@ -109,22 +111,21 @@ def _connection_log(
     mode: str | None,
     connected_at: str,
 ) -> None:
-    print(
-        json.dumps(
-            {
-                "ts": _now(),
-                "module": "session",
-                "event": "closed",
-                "connection_id": connection_id,
-                "client": client,
-                "agents": sorted(agents),
-                "mode": mode or "unselected",
-                "connected_at": connected_at,
-            },
-            separators=(",", ":"),
-        ),
-        flush=True,
+    raw = json.dumps(
+        {
+            "ts": _now(),
+            "module": "session",
+            "event": "closed",
+            "connection_id": connection_id,
+            "client": client,
+            "agents": sorted(agents),
+            "mode": mode or "unselected",
+            "connected_at": connected_at,
+        },
+        separators=(",", ":"),
     )
+    print(raw, flush=True)
+    mirror(raw)
 
 
 def create_app(

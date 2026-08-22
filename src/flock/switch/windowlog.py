@@ -2,7 +2,7 @@
 
 from pathlib import Path
 
-from flock.bus import log_record, prefix
+from flock.bus import log_record, mirror, prefix
 
 
 class WindowLogTailer:
@@ -50,6 +50,15 @@ class WindowLogTailer:
                         committed = source.tell()
                         continue
                     print(line, flush=True)
+                    # ⚠ THE ORIGIN RECORD OF EVERY AGENT SEND COMES THROUGH HERE.
+                    # `office` runs in a pane and is QUIET, so its `sent` never
+                    # touches stdout directly — it lands in the window file and
+                    # reaches the log only when this re-emits it. Without this
+                    # call the durable evidence has `popped` through `opened` and
+                    # no `sent`, which reads exactly like an envelope the bus
+                    # invented. Measured on a live tenant 2026-08-22: five of six
+                    # stages in the file, `sent` count 0.
+                    mirror(line)
                     committed = source.tell()
             self.r.set(self.offset_key, committed)
             current_size = self.path.stat().st_size
