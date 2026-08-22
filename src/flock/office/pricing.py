@@ -32,21 +32,22 @@ def load_pricing(path: Path | str | None = None) -> dict[str, dict[str, float]]:
     """Load model pricing definitions from config file or fallback."""
     if path is not None:
         file_path = Path(path)
-        if file_path.is_file():
-            try:
-                return json.loads(file_path.read_text(encoding="utf-8"))
-            except Exception:
-                pass
-        return _FALLBACK_PRICING.copy()
+        if not file_path.is_file():
+            raise FileNotFoundError(f"Pricing file specified but not found: {path}")
+        try:
+            return json.loads(file_path.read_text(encoding="utf-8"))
+        except Exception as exc:
+            raise ValueError(f"Pricing file contains invalid JSON: {path}") from exc
 
     env_path = os.environ.get("FLOCK_PRICING_FILE")
     if env_path:
         file_path = Path(env_path)
-        if file_path.is_file():
-            try:
-                return json.loads(file_path.read_text(encoding="utf-8"))
-            except Exception:
-                pass
+        if not file_path.is_file():
+            raise FileNotFoundError(f"FLOCK_PRICING_FILE specified but not found: {env_path}")
+        try:
+            return json.loads(file_path.read_text(encoding="utf-8"))
+        except Exception as exc:
+            raise ValueError(f"FLOCK_PRICING_FILE contains invalid JSON: {env_path}") from exc
 
     for candidate in _CANDIDATE_PATHS:
         if candidate.is_file():

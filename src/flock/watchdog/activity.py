@@ -165,6 +165,37 @@ def _codex_usage(record: dict) -> dict | None:
     }
 
 
+_EMIT_USAGE_LUA = """
+local stream_key = KEYS[1]
+local seen_key = KEYS[2]
+local attributed_key = KEYS[3]
+
+local request_id = ARGV[1]
+local raw_usage = ARGV[2]
+local stream_id = ARGV[3]
+local maxlen = tonumber(ARGV[4]) or 10000
+
+if request_id ~= "" and seen_key ~= "" then
+    local is_seen = redis.call("SISMEMBER", seen_key, request_id)
+    if is_seen == 1 then
+        return 0
+    end
+end
+
+redis.call("XADD", stream_key, "MAXLEN", "~", maxlen, "*", "usage", raw_usage)
+
+if request_id ~= "" and seen_key ~= "" then
+    redis.call("SADD", seen_key, request_id)
+end
+
+if stream_id ~= "" and attributed_key ~= "" then
+    redis.call("SADD", attributed_key, stream_id)
+end
+
+return 1
+"""
+
+
 class ActivityTailer:
     """Make one non-blocking pass over every participant's newest session file."""
 
@@ -324,18 +355,14 @@ class ActivityTailer:
         return stream_id, correlation_id
 
     def _emit_usage(self, agent: str, timestamp: str, usage: dict) -> None:
-        request_id = usage.get("request_id")
-        seen_key = prefix(self.pod, self.tenant, agent, "usage.requests")
-        if request_id:
-            if request_id in self._seen_requests[agent]:
-                return
-            if hasattr(self.r, "sismember"):
-                try:
-                    if self.r.sismember(seen_key, request_id):
-                        self._seen_requests[agent].add(request_id)
-                        return
-                except Exception:
-                    pass
+        request_id = usage.get("request_id") or ""
+        seen_key = prefix(self.pod, self.tenant, agent, "usage.requests") if request_id else ""
+        if request_id and request_id in self._seen_requests[agent]:
+            return
+
+        stream_id, correlation_id = self._correlate_delivery(agent, timestamp)
+        stream_id_str = stream_id or ""
+        attributed_key = prefix(self.pod, self.tenant, agent, "usage.attributed") if stream_id else ""
 
         record = {
             "module": "watchdog",
@@ -350,40 +377,62 @@ class ActivityTailer:
             "output": usage["output"],
             "ts": timestamp,
         }
-        stream_id, correlation_id = self._correlate_delivery(agent, timestamp)
         if stream_id:
             record["stream_id"] = stream_id
         if correlation_id:
             record["correlation_id"] = correlation_id
 
         raw = json.dumps(record, separators=(",", ":"))
-        if hasattr(self.r, "xadd"):
+        usage_stream = prefix(self.pod, self.tenant, resource="usage")
+
+        emitted = False
+        if hasattr(self.r, "eval"):
             try:
-                self.r.xadd(
-                    prefix(self.pod, self.tenant, resource="usage"),
-                    {"usage": raw},
-                    maxlen=10000,
-                    approximate=True,
+                res = self.r.eval(
+                    _EMIT_USAGE_LUA,
+                    3,
+                    usage_stream,
+                    seen_key or "",
+                    attributed_key or "",
+                    request_id,
+                    raw,
+                    stream_id_str,
+                    10000,
                 )
+                if res == 0:
+                    if request_id:
+                        self._seen_requests[agent].add(request_id)
+                    return
+                emitted = bool(res)
             except Exception:
-                pass
+                return
+        elif hasattr(self.r, "xadd"):
+            if request_id and hasattr(self.r, "sismember"):
+                try:
+                    if self.r.sismember(seen_key, request_id):
+                        self._seen_requests[agent].add(request_id)
+                        return
+                except Exception:
+                    pass
+            try:
+                self.r.xadd(usage_stream, {"usage": raw}, maxlen=10000, approximate=True)
+                if request_id and hasattr(self.r, "sadd"):
+                    self.r.sadd(seen_key, request_id)
+                if stream_id and hasattr(self.r, "sadd"):
+                    self.r.sadd(attributed_key, stream_id)
+                emitted = True
+            except Exception:
+                return
+        else:
+            return
+
+        if not emitted:
+            return
 
         if request_id:
             self._seen_requests[agent].add(request_id)
-            if hasattr(self.r, "sadd"):
-                try:
-                    self.r.sadd(seen_key, request_id)
-                except Exception:
-                    pass
-
         if stream_id:
-            attributed_key = prefix(self.pod, self.tenant, agent, "usage.attributed")
             self._attributed_markers[agent].add(stream_id)
-            if hasattr(self.r, "sadd"):
-                try:
-                    self.r.sadd(attributed_key, stream_id)
-                except Exception:
-                    pass
 
         if os.environ.get("FLOCK_LOG_QUIET") != "1":
             sys.stdout.write(raw + "\n")

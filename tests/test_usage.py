@@ -445,3 +445,64 @@ def test_truly_empty_marker_history_omits_correlation(tmp_path):
     assert len(records) == 1
     assert "stream_id" not in records[0]
     assert "correlation_id" not in records[0]
+
+
+def test_emission_failure_does_not_prematurely_commit_seen_request(tmp_path):
+    """An emission failure in Redis does not mark request as seen, allowing recovery."""
+    class FailingUsageRedis(UsageRedis):
+        def __init__(self):
+            super().__init__(agents=("bus",))
+            self.fail_xadd = True
+
+        def xadd(self, key, fields, *, maxlen=None, approximate=False):
+            if self.fail_xadd and key == prefix("acme", "hq", resource="usage"):
+                raise RuntimeError("Simulated Redis write failure")
+            super().xadd(key, fields, maxlen=maxlen, approximate=approximate)
+
+    r = FailingUsageRedis()
+    session = tmp_path / ".claude" / "projects" / "-workdir-bus" / "session.jsonl"
+    _write_lines(
+        session,
+        [
+            {
+                "type": "assistant",
+                "timestamp": "2026-08-22T10:00:01.000Z",
+                "message": {
+                    "id": "msg_recoverable_001",
+                    "model": "claude-opus-4-8",
+                    "usage": {"input_tokens": 100, "output_tokens": 50},
+                },
+            }
+        ],
+    )
+    tailer = ActivityTailer(r, pod="acme", tenant="hq", home_root=tmp_path)
+
+    # First poll fails during xadd
+    tailer.poll()
+    assert len(_usage_records(r)) == 0
+    assert "msg_recoverable_001" not in tailer._seen_requests["bus"]
+    seen_key = prefix("acme", "hq", "bus", "usage.requests")
+    assert not r.sismember(seen_key, "msg_recoverable_001")
+
+    # Second poll with Redis recovered and fresh tailer (simulating restart replay from 0)
+    r.fail_xadd = False
+    r.values.pop(prefix("acme", "hq", "bus", "activity.offset"), None)
+    restart_tailer = ActivityTailer(r, pod="acme", tenant="hq", home_root=tmp_path)
+    restart_tailer.poll()
+    assert len(_usage_records(r)) == 1
+    assert "msg_recoverable_001" in restart_tailer._seen_requests["bus"]
+    assert r.sismember(seen_key, "msg_recoverable_001")
+
+
+def test_explicit_flock_pricing_file_missing_or_malformed_fails_loudly(tmp_path, monkeypatch):
+    """An operator-specified FLOCK_PRICING_FILE must fail loudly on missing/bad JSON."""
+    missing_path = tmp_path / "nonexistent_pricing.json"
+    monkeypatch.setenv("FLOCK_PRICING_FILE", str(missing_path))
+    with pytest.raises(FileNotFoundError, match="FLOCK_PRICING_FILE specified but not found"):
+        load_pricing()
+
+    bad_json = tmp_path / "bad_pricing.json"
+    bad_json.write_text("{not valid json: 123}")
+    monkeypatch.setenv("FLOCK_PRICING_FILE", str(bad_json))
+    with pytest.raises(ValueError, match="FLOCK_PRICING_FILE contains invalid JSON"):
+        load_pricing()
