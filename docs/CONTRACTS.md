@@ -226,16 +226,17 @@ stops meaning anything.
 
 ## 3. What a log record is
 
-`LLD-bus-and-switch` §4 promises two records per component and **six** across a
-delivered envelope's life — `sent, popped, forwarded, kick_started, received,
-opened`. ⚠ **`kick_started` (build 65) made it six**; this line said five until
-2026-08-15, as did three other docs.
+A delivered unicast has **six** records across its life — `sent, popped,
+forwarded, kick_started, received, opened`. ⚠ **`kick_started` (build 65) made
+it six**; this line said five until 2026-08-15, as did three other docs. Do not
+derive this count from a pair-per-component rule: `sent` is an origin and
+`kick_started` is an attempted wake-up, not a custody pair.
 
 ⚠ **A broadcast does not have six**: `forwarded` is emitted once with `count=N`
 and `destination:"all"` (`switch/service.py:169`), so it cannot be joined per
 recipient. `analyse-run.py`'s `STAGES` is the operative list.
 
-The contract is and that a crash shows up as "popped, no outcome".
+The contract is a set, and a crash shows up as "popped, no outcome".
 That only works if the records join, so the shape is a contract.
 
 **One JSON object per line.** Daemons write records to stdout for the container
@@ -245,11 +246,20 @@ its own stdout. Board mutations also append their separate operator history to
 `TASK_RECORD` (default `/home/ubuntu/.flock/tasks.jsonl`). These files are
 transport paths for records, not competing lifecycle schemas.
 
+Every h-flock JSON record printed to container stdout is also copied to
+`FLOCK_CUSTODY_FILE` when configured. The compose deployment mounts its parent
+directory from the named custody volume, so ordinary container removal keeps
+the evidence; an explicit volume removal deletes it. `mirror(line)` never
+raises and must be called only for a line also printed to stdout: writing on
+only one path creates either missing evidence or a duplicate custody record
+(`src/flock/bus/logging.py:27-51`, `container/compose.yaml:105-123`).
+
 | Field | | |
 |---|---|---|
 | `ts` | required | RFC3339, UTC, milliseconds |
 | `module` | required | component name, such as `bus`, `switch`, `port`, `tmuxhost`, `api`, `session`, `watchdog`, `control`, `tmux` or `container` |
 | `event` | required | see below |
+| `writer` | required | process label: `FLOCK_WRITER` when set, otherwise `module`; it is provenance for analysis, not an unforgeable credential |
 | `stream_id` | envelope events only | the join key; absent on lifecycle records |
 | `correlation_id` | when known | |
 | `source`, `destination` | when known | `destination` is the participant the record is about; receive-side broadcast records name the actual recipient, not literal L2 `all` |
@@ -261,7 +271,7 @@ transport paths for records, not competing lifecycle schemas.
 ⚠ `task_id`, not `id` — a bare `id` sits beside `stream_id` and `correlation_id`
 in the same record and reads as a third identity for the same thing.
 
-The five successful-unicast custody records are a **set, not a sequence**. Join them by
+The six successful-unicast custody records are a **set, not a sequence**. Join them by
 `stream_id`; do not reconstruct custody by sorting timestamps. `send` appends
 before it emits `sent`, so a fast switch can emit `popped` before the source
 emits `sent` even though custody is correct.
@@ -272,6 +282,7 @@ Events, in custody order (not guaranteed log or timestamp order):
   sent          send wrote an egress                     (flock.bus.doors)
   popped        the switch took it off an egress         (switch)
   forwarded     … and wrote an ingress                   (switch)
+  kick_started  … and successfully spawned the port     (switch)
   dead_lettered terminal alternative to forward/open    (switch or port)
   received      receive took it off an ingress           (flock.bus.doors)
   opened        an opener ran to completion              (port)
@@ -280,17 +291,17 @@ Events, in custody order (not guaranteed log or timestamp order):
 A module may also log its own **lifecycle** — `started`, `stopped`, `error` —
 which is not about any envelope. Those carry no `stream_id`: it is the join key
 for one envelope's life, and a synthetic value like `"system"` in that field
-makes the five records of a real **unicast** envelope harder to find, not
-easier. ⚠ **A broadcast leaves three shared records plus a `received`/`opened`
-pair per recipient.** The pairs name the actual receiving participant even
+makes the six records of a real **unicast** envelope harder to find, not
+easier. ⚠ **A broadcast leaves three shared records plus a `kick_started`,
+`received`, and `opened` trio per recipient.** The receive-side records name the actual receiving participant even
 though the unchanged frame still carries L2 `destination: all`;
-`forwarded.count` is the cardinality. N receive-side pairs sharing one
+`forwarded.count` is the cardinality. N receive-side trios sharing one
 `stream_id` are correct for a broadcast. More than one record for the same
-`(stream_id, recipient)` is a duplicate; for unicast, more than one record for
-the `stream_id` is therefore still a defect. `stream_id`
-is required on the six events above and absent on the rest. A parsed frame can
-carry its `stream_id` on all six possible events above, but a successful
-unicast has five:
+`(stream_id, event, recipient)` is a duplicate; the recipient dimension is
+unnecessary for unicast. `stream_id`
+is required on the seven envelope events above and absent on the rest. A parsed frame can
+carry its `stream_id` on all seven possible events above, but a successful
+unicast has six:
 `dead_lettered` replaces a later success path rather than joining it.
 
 ⚠ A malformed frame may have no trustworthy identifier. Its `popped` and
@@ -299,9 +310,9 @@ joinable to a custody set. What remains knowable is the source egress queue,
 the time it was popped, the parse reason, and the sender's dead queue retaining
 the raw value. The literal field being present does not make it a join key.
 
-`send_refused` is **not a sixth custody record**. It says the sending port
+`send_refused` is **not a custody record**. It says the sending port
 rejected a request before assembly and before any egress write, so there is no
-enqueued envelope whose custody could be joined to the five-record set. It
+enqueued envelope whose custody could be joined to the six-record set. It
 carries `source`, `destination` and `reason`, but no `stream_id`.
 
 Four joinable **attempt records** describe work around custody without claiming
@@ -312,6 +323,13 @@ a handover: `send_failed` means an assembled frame was not written to egress;
 port, including one record per recipient of a broadcast. They do not prove that
 the port ran, popped, or delivered anything; only `received` and `opened` make
 those later claims.
+
+An `event: usage` record is an observation, not another custody handover. It
+uses `writer: usage` and carries `agent`, `cli`, `model`, `input`, `cache_read`,
+`cache_write`, and `output`; `stream_id` and `correlation_id` appear only when a
+preceding delivery marker can be attributed without guessing. The tenant
+`usage` Stream stores the same JSON object in its `usage` field, capped
+approximately at 10,000 entries (`src/flock/watchdog/activity.py:369-452`).
 
 ⚠ **Never log a payload.** Invariant 4 says the switch does not read one; the
 same restraint applies to everything else, and a payload is the one field that

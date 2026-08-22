@@ -43,12 +43,17 @@ D wire compatibility.
 | purge_agent | `src/flock/bus/resources.py:41` | identifier | B | Deletes classified identity state but deliberately retains queues and board data. “Purge” alone overstates what it removes. | De-enrol an address while retaining buffered traffic. |
 | emit | `src/flock/bus/logging.py:88` | identifier | B | Projects envelope fields into one lifecycle log record. | Emit a per-frame trace event. |
 | log_record | `src/flock/bus/logging.py:20` | identifier | B | Constructs and outputs a contract-shaped observation record. | Telemetry event. |
+| mirror | `src/flock/bus/logging.py:27` | identifier | B | Copies one stdout record to the configured durable custody file without raising. | Durable telemetry mirror. |
 | record_task_event | `src/flock/bus/logging.py:108` | identifier | B | Appends the separate operator board-history schema, despite living in the bus logging module. | Operator audit record; no switching analogue. |
+| Redis.xrange | `src/flock/bus/resp.py:93` | identifier | B | Minimal RESP client's range read for retained Streams, returning entry IDs paired with field dictionaries. | Telemetry/mailbox range read. |
 | module | `src/flock/bus/logging.py:42` | wire | D | Component name in a lifecycle record, not a Python module necessarily. | Reporting node/component. |
+| writer | `src/flock/bus/logging.py:78` | wire | D | Process label used to separate real and synthetic record producers; defaults to module and is not a credential. | Reporting process identity. |
 | event | `src/flock/bus/logging.py:43` | wire | D | Lifecycle or operator-history action name; the same field name also wraps serialized activity events in Redis. | Event type; overloaded across telemetry schemas. |
 | local_redis_url | `src/flock/bus/connection.py:6` | identifier | B | Constructs the password-bearing loopback Redis connection URL used by infrastructure. | Local switch-management connection string. |
 | FLOCK_LOG_FILE | `src/flock/bus/logging.py:75` | env var | C | Optional JSONL spool receiving observation records in addition to permitted stdout. | Telemetry sink path. |
 | FLOCK_LOG_QUIET | `src/flock/bus/logging.py:76` | env var | C | Value `1` suppresses observation records on stdout, primarily inside an agent pane. | Disable local telemetry egress. |
+| FLOCK_WRITER | `src/flock/bus/logging.py:8` | env var | C | Process-level override for the writer field, read once when logging is imported. | Telemetry producer label. |
+| FLOCK_CUSTODY_FILE | `src/flock/bus/logging.py:44` | env var | C | Optional durable mirror path for records also written to container stdout. | Persistent telemetry sink. |
 | FLOCK_LOG_FILE_AGENT_ONLY | `src/flock/bus/logging.py:79` | env var | C | Makes file spooling conditional on `AGENT_NAME`; the name says who may write rather than what the file contains. | Source filter on a telemetry sink. |
 | TASK_RECORD | `src/flock/bus/logging.py:119` | env var | C | Path for the separate board action JSONL history. | Operator-audit sink path. |
 
@@ -129,6 +134,10 @@ are tier C.
 | alerted | `src/flock/bus/resources.py:15` | redis key | C | Per-participant alert marker; I could not tell which alert it suppresses or its value shape from bus/switch code alone. | Alarm deduplication state. |
 | presence | `src/flock/bus/resources.py:16` | redis key | C | Hash holding derived `state`, `since`, and `last_activity`. | Operational state record. |
 | pending.verify | `src/flock/bus/resources.py:17` | redis key | C | Stream of terminal-paste markers awaiting later activity judgment. | Pending inferred acknowledgements. |
+| delivery.markers | `src/flock/bus/resources.py:18` | redis key | C | Stream retaining paste markers for later usage-to-delivery correlation after verification consumes its own copy. | Usage attribution observations. |
+| usage.requests | `src/flock/bus/resources.py:19` | redis key | C | Per-participant Set of emitted CLI request IDs used to suppress duplicate usage records. | Telemetry deduplication state. |
+| usage.attributed | `src/flock/bus/resources.py:20` | redis key | C | Per-participant Set of delivery stream IDs already assigned to a usage record. | Correlation deduplication state. |
+| usage | `src/flock/bus/resources.py:47` | redis key | C | Tenant Stream of retained token-usage records consumed by office usage. | Usage-accounting telemetry. |
 
 ## Explicit collisions and drift
 
