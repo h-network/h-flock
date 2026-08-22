@@ -49,5 +49,5 @@ TEST SIGN-OFF
   evidence         tests/test_verification.py at b8e9954032294360caffde5166b44b2f6558d673
 
   verdict          SMOKE
-  VERIFIED BY      PENDING independent api read — author of the change? NO
+  VERIFIED BY      api — author of the change? NO
 ```
