@@ -90,3 +90,20 @@ def test_every_container_record_carries_a_writer():
             missing.append(f"entrypoint.sh:{line}")
 
     assert not missing, f"container records with no writer: {missing}"
+
+
+def test_pricing_config_is_copied_into_container_image():
+    """⚠ container/config/pricing.json must be present in the built container image.
+
+    Otherwise load_pricing falls back to hardcoded defaults and editing the
+    configuration file has no effect.
+    """
+    import pathlib
+
+    root = pathlib.Path(__file__).resolve().parents[1]
+    assert (root / "container" / "config" / "pricing.json").is_file(), "pricing.json missing from repository"
+
+    dockerfile = (root / "container" / "Dockerfile").read_text()
+    assert "container/config/pricing.json" in dockerfile, (
+        "pricing.json is not COPYed in container/Dockerfile; container will fall back to hardcoded defaults"
+    )

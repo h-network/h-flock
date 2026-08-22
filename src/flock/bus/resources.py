@@ -15,6 +15,9 @@ AGENT_STATE_RESOURCES = frozenset(
         "alerted",
         "presence",
         "pending.verify",
+        "delivery.markers",
+        "usage.requests",
+        "usage.attributed",
         "tags",
     }
 )
@@ -41,7 +44,7 @@ AGENT_DATA_RESOURCES = DURABLE_DATA_RESOURCES | TRANSPORT_QUEUE_RESOURCES
 
 PER_AGENT_RESOURCES = AGENT_STATE_RESOURCES | AGENT_DATA_RESOURCES
 TENANT_RESOURCES = frozenset(
-    {"roster", "lead", "window.log.offset", "delivering", "alerts", "credential.alerted"}
+    {"roster", "lead", "window.log.offset", "delivering", "alerts", "credential.alerted", "usage"}
 )
 DYNAMIC_RESOURCE_PATTERNS = frozenset({"tasks.*"})
 

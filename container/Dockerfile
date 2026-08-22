@@ -46,7 +46,10 @@ RUN pip install --no-cache-dir .
 # wrapper otherwise stalls its window waiting for an approval nobody will give.
 COPY container/config/claude/settings.json /home/ubuntu/.claude/settings.json
 COPY container/config/codex/config.toml    /home/ubuntu/.codex/config.toml
-RUN chown -R ubuntu:ubuntu /home/ubuntu/.claude /home/ubuntu/.codex
+COPY container/config/pricing.json         /app/container/config/pricing.json
+RUN mkdir -p /etc/flock \
+ && cp /app/container/config/pricing.json /etc/flock/pricing.json \
+ && chown -R ubuntu:ubuntu /home/ubuntu/.claude /home/ubuntu/.codex /app/container /etc/flock
 
 COPY container/entrypoint.sh /usr/local/bin/entrypoint.sh
 RUN chmod +x /usr/local/bin/entrypoint.sh
