@@ -682,48 +682,6 @@ def test_lua_script_atomic_claim_and_replay_dedupe_on_real_redis(tmp_path):
             proc.kill()
 
 
-def test_marker_is_xdeleted_from_delivery_markers_upon_attribution(tmp_path):
-    """On successful attribution, the marker entry is XDEL'd from delivery.markers to bound storage."""
-    r = UsageRedis(agents=("bus",))
-    r.values[prefix("acme", "hq", "bus", "launch")] = "claude"
-
-    mark_delivery_pending(
-        r,
-        "acme",
-        "hq",
-        "bus",
-        "stream-turn-xdel",
-        correlation_id="corr-turn-xdel",
-    )
-
-    markers_key = prefix("acme", "hq", "bus", "delivery.markers")
-    assert len(r.streams.get(markers_key, [])) == 1
-
-    session = tmp_path / ".claude" / "projects" / "-workdir-bus" / "session.jsonl"
-    _write_lines(
-        session,
-        [
-            {
-                "type": "assistant",
-                "timestamp": "2026-08-22T23:59:59.000Z",
-                "message": {
-                    "id": "msg_marker_xdel",
-                    "model": "claude-opus-4-8",
-                    "usage": {"input_tokens": 100, "output_tokens": 50},
-                },
-            }
-        ],
-    )
-
-    tailer = ActivityTailer(r, pod="acme", tenant="hq", home_root=tmp_path)
-    tailer.poll()
-
-    records = _usage_records(r)
-    assert len(records) == 1
-    assert records[0]["stream_id"] == "stream-turn-xdel"
-    assert len(r.streams.get(markers_key, [])) == 0
-
-
 def test_unresolved_markers_correlated_within_ceiling(tmp_path):
     """Pending markers are correlated with usage within the documented ceiling."""
     r = UsageRedis(agents=("bus",))

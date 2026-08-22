@@ -309,27 +309,18 @@ class ActivityTailer:
         attributed_key = prefix(self.pod, self.tenant, agent, "usage.attributed")
 
         raw_entries = []
-        if hasattr(self.r, "xrevrange"):
+        if hasattr(self.r, "xrange"):
             try:
-                raw_entries.extend(self.r.xrevrange(markers_key, max="+", min="-", count=50))
+                raw_entries.extend(self.r.xrange(markers_key, min="-", max="+"))
             except Exception:
                 pass
             try:
-                raw_entries.extend(self.r.xrevrange(verify_key, max="+", min="-", count=50))
-            except Exception:
-                pass
-        elif hasattr(self.r, "xrange"):
-            try:
-                raw_entries.extend(self.r.xrange(markers_key, min="-", max="+", count=50))
-            except Exception:
-                pass
-            try:
-                raw_entries.extend(self.r.xrange(verify_key, min="-", max="+", count=50))
+                raw_entries.extend(self.r.xrange(verify_key, min="-", max="+"))
             except Exception:
                 pass
         elif hasattr(self.r, "streams"):
-            raw_entries.extend(self.r.streams.get(markers_key, [])[-50:])
-            raw_entries.extend(self.r.streams.get(verify_key, [])[-50:])
+            raw_entries.extend(self.r.streams.get(markers_key, []))
+            raw_entries.extend(self.r.streams.get(verify_key, []))
 
         candidates = []
         seen_sids = set()
@@ -360,7 +351,7 @@ class ActivityTailer:
                 return (0, 0)
 
         candidates.sort(key=lambda item: (item[0], _parse_eid(item[3])))
-        _, stream_id, correlation_id, entry_id = candidates[-1]
+        _, stream_id, correlation_id, _ = candidates[-1]
 
         if stream_id in self._attributed_markers[agent]:
             return None, None
@@ -370,12 +361,6 @@ class ActivityTailer:
                 if self.r.sismember(attributed_key, stream_id):
                     self._attributed_markers[agent].add(stream_id)
                     return None, None
-            except Exception:
-                pass
-
-        if entry_id and hasattr(self.r, "xdel"):
-            try:
-                self.r.xdel(markers_key, entry_id)
             except Exception:
                 pass
 
