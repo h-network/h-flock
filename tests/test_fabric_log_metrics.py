@@ -111,12 +111,25 @@ def test_writer_census_refuses_synthetic_and_exact_exclusion_restores_run(tmp_pa
     refused = _run(log, 2)
     assert refused.returncode == 1
     assert _has(refused.stdout, "writers: bench-send=6 port=6")
-    assert "synthetic benchmark writer present" in refused.stdout
+    assert "bench-send was not explicitly expected" in refused.stdout
 
     excluded = _run(log, 1, "--exclude-writer", "bench-send")
     assert excluded.returncode == 0
     assert _has(excluded.stdout, "writers: port=6")
     assert "bench-send=" not in excluded.stdout
+
+
+def test_expected_synthetic_writer_requires_exact_count(tmp_path):
+    lines = _complete("synthetic", 1, writer="bench-send")
+    log = tmp_path / "synthetic.jsonl"
+    log.write_text("\n".join(lines) + "\n")
+
+    accepted = _run(log, 1, "--expect-writer", "bench-send=6")
+    wrong = _run(log, 1, "--expect-writer", "bench-send=5")
+
+    assert accepted.returncode == 0
+    assert wrong.returncode == 1
+    assert "bench-send count 6 != expected 5" in wrong.stdout
 
 
 def test_default_writer_census_matches_legacy_module_fallback(tmp_path):
@@ -158,3 +171,13 @@ def test_bench_writer_is_set_before_flock_logging_is_imported():
         text = (ROOT / "container" / "scenarios" / name).read_text()
         assignment = f'os.environ["FLOCK_WRITER"] = "{writer}"'
         assert text.index(assignment) < text.index("from flock.bus")
+
+
+def test_switch_bench_declares_synthetic_census_and_returns_analysis_status():
+    text = (ROOT / "container" / "scenarios" / "switch-bench.sh").read_text()
+
+    assert '--expect-writer "bench-send=$EXPECT"' in text
+    assert "BENCH_PORT_STAGES=2" in text
+    assert '--expect-writer "bench-port=$((EXPECT * BENCH_PORT_STAGES))"' in text
+    assert "ANALYSIS_STATUS=$?" in text
+    assert text.rstrip().endswith('exit "$ANALYSIS_STATUS"')

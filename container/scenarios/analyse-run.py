@@ -46,6 +46,8 @@ def main() -> int:
                     help="only count records from this writer; repeatable")
     ap.add_argument("--exclude-writer", action="append", default=[],
                     help="exclude records from this writer; repeatable")
+    ap.add_argument("--expect-writer", action="append", default=[], metavar="NAME=COUNT",
+                    help="accept a synthetic writer only at this exact count; repeatable")
     ap.add_argument("--coverage", type=float, default=0.99,
                     help="a stage below this fraction of expect is REFUSED")
     args = ap.parse_args()
@@ -56,6 +58,15 @@ def main() -> int:
     writers = collections.Counter()
     selected_writers = set(args.writer)
     excluded_writers = set(args.exclude_writer)
+    expected_writers = {}
+    for value in args.expect_writer:
+        try:
+            name, count = value.rsplit("=", 1)
+            if not name or int(count) < 0:
+                raise ValueError
+            expected_writers[name] = int(count)
+        except ValueError:
+            ap.error(f"--expect-writer requires NAME=COUNT, got {value!r}")
 
     for line in open(args.log, errors="replace"):
         line = line.strip()
@@ -95,10 +106,22 @@ def main() -> int:
     print(f"envelopes {n:,}   expected {expect:,}   dead-lettered {dead}   parse failures 0")
     census = "  ".join(f"{writer}={count}" for writer, count in sorted(writers.items())) or "none"
     bench_writers = sorted({"bench-send", "bench-port"}.intersection(writers))
-    writer_refused = bool(bench_writers)
+    writer_errors = []
+    for writer in bench_writers:
+        expected_count = expected_writers.get(writer)
+        if expected_count is None:
+            writer_errors.append(f"{writer} was not explicitly expected")
+        elif writers[writer] != expected_count:
+            writer_errors.append(
+                f"{writer} count {writers[writer]} != expected {expected_count}"
+            )
+    for writer, expected_count in sorted(expected_writers.items()):
+        if writer not in writers:
+            writer_errors.append(f"{writer} count 0 != expected {expected_count}")
+    writer_refused = bool(writer_errors)
     suffix = ""
     if writer_refused:
-        suffix = "  ⚠ REFUSED — synthetic benchmark writer present"
+        suffix = "  ⚠ REFUSED — " + "; ".join(writer_errors)
     print(f"writers: {census}{suffix}")
 
     print("\n== every step logged? ==")
