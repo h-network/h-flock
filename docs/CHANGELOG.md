@@ -11,6 +11,87 @@
 
 ---
 
+## 2026-08-22 — the custody log outlives the container
+
+**Build 79.** `FLOCK_CUSTODY_FILE` is a byte copy of every record reaching
+container stdout, on a named volume that survives `docker compose down`.
+
+**What was false:** that `docker logs` is where a run's evidence lives. It is
+deleted with the container, and was uncapped. Any sign-off citing a torn-down
+tenant's log had no retained evidence — `TEST-SIGNOFF`'s own REFUSED example.
+
+⚠ **The file is a SUPERSET of `docker logs`, not an equal.** It accumulates
+across container lifetimes, so comparing the whole file to a running container's
+log will differ by every previous life, including the `stopped` record that
+`docker logs` for a removed container cannot show at all.
+
+⚠ **Three of the four record paths were found by diffing a live tenant, not by
+grep.** The one that mattered is `switch/windowlog.py`: it re-emits pane records,
+so it carries **every agent-originated `sent`**. Before the fix the evidence held
+`popped` through `opened` and no `sent`.
+
+## 2026-08-22 — every record says who wrote it
+
+**Build 80.** New key `writer` on every custody record, from `FLOCK_WRITER`,
+defaulting to `module`.
+
+**What was false:** that a record's origin could be inferred. `bench-port.py` and
+`bench-send.py` write custody records **by design**, so synthetic and real were
+byte-indistinguishable and every conservation count silently included benchmark
+traffic.
+
+| | |
+|---|---|
+| **default** | `module` — no existing record changes meaning |
+| **tailer** | preserves an explicit `writer`, fills only an absence with `window:<agent>` |
+| **analyser** | `--writer` / `--exclude-writer`, always prints the census, marks a run REFUSED when an *undeclared* bench writer appears |
+| **`--expect-writer NAME=COUNT`** | exact match, so leftover contamination still refuses |
+
+⚠ **`writer` is a label, not a credential.** It is not signed and is not meant to
+be; h-vab measured that alternative and declined it (`COMPARISON-hvab-fabric` §3.1).
+
+## 2026-08-22 — delivery verification accepts any activity, and waits 120s
+
+**Build 81.** `input`, `output` **or** `tool` after the marker counts as alive.
+`VERIFY_AFTER_SECONDS` default **10 → 120**.
+
+**What was false:** that `delivery_unverified` meant a delivery failed. It was
+wrong for **1,180 of 1,285** on one run and **4 of 13** on another; the live rate
+is now **0 of 40**.
+
+⚠ **This admits a false positive**: `output` can belong to the previous turn, so
+alive does not prove the paste was consumed. That is the safer error — a wedged
+process or a login prompt emits no activity of any kind.
+
+⚠ **It also invalidated every fixed-duration wait on a verdict.**
+`container/sim-blocked.sh` polled 20 s and reported four true detections as
+failures on the lab. Anything waiting for `blocked` or an empty `pending.verify`
+must derive its patience from the tenant's window.
+
+## 2026-08-22 — usage and cost records
+
+**Build 82.** New `usage` event carrying four token buckets, and `office usage`.
+
+**What was false:** that h-flock had no cost surface. It now has one, and
+`CONTRACTS` §5 listed **fifteen** office subcommands against seventeen in code —
+`cloneToAll` and `usage` were both shipped and both undocumented.
+
+| | |
+|---|---|
+| **record** | `{"event":"usage","writer":"usage","agent","cli","model","input","cache_read","cache_write","output"[,"stream_id","correlation_id"]}` |
+| **pricing** | `container/config/pricing.json`, longest-prefix match, USD per 1M |
+| **unpriced** | a model with no entry reads `unpriced`, **never `0.00`** |
+| **correlation** | first usage after a delivery marker gets that envelope's ids; **omitted, never guessed**, when no marker precedes it |
+
+⚠ **`delivery.markers` is bounded at 500 and attribution loss is silent.** A
+trimmed marker yields a usage record with no `stream_id` — the specified
+degradation. Measured live: **18 of 27 attributed, 9 omitted.**
+
+⚠ **`flock.bus.resp.Redis` gained `xrange`/`xlen`.** It had `xadd` and no reader,
+so `office usage` returned an empty table with exit 0 against a stream holding 27
+records. No unit test could catch it: the fake client in the tests had `xrange`
+and the real one did not.
+
 ## 2026-08-21 — the docs caught up to wire v4, six days late
 
 **Build 73 took the wire to v4/256 on 2026-08-15 and updated `HLD.md` alone.**

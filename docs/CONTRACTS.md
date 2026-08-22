@@ -413,7 +413,24 @@ office broadcast <text>...              # tenant broadcast, everyone but you
 office peers | hire | letGo | pause | resume
 office add | list | take | done | cancel | hold | delete
 office status [<agent>]                 # presence, open ticket, last activity
+office cloneToAll <repo-url> [-a a,b] [--dry-run]
+office usage [--agent <a>] [--since <ISO>] [--json]
 ```
+
+⚠ **Seventeen subcommands, and this block listed fifteen until 2026-08-22.**
+`cloneToAll` and `usage` were both shipped and both absent here. The list in
+`office/cli.py:_COMMANDS` is the authority; if the two disagree, the code is
+right and this is the stale one.
+
+- **`cloneToAll`** puts one repository in every `tmux` agent's workspace. It
+  fetches from the network **once** and clones the rest from that copy, then
+  points each `origin` back at the real URL. `api` and `control` agents are
+  skipped — they have no `/workdir`. Also on `PATH` under the bare name, which
+  delegates here (`office/cli.py:clone_to_all_main`).
+- **`usage`** reports token counts and estimated cost per agent, from the `usage`
+  records the watchdog emits. ⚠ **A model absent from `container/config/pricing.json`
+  reads `unpriced`, never `0.00`** — a local model and an unpriced cloud model
+  must not become indistinguishable in a total.
 
 ⚠ **Corrected in build 09 — this was seven separate binaries** (`send`,
 `sendMessage`, `sendBroadcast`, `peers`, `hire`, `letGo`, …) and is now one.

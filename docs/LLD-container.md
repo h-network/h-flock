@@ -61,6 +61,42 @@ tenant container instead.
 | session | `LLD-session` | terminal output and keystrokes. Its own port |
 | agents | — | one per tmux window for `port_type: tmux` roster entries |
 
+## 2.1 The custody log outlives the container
+
+⚠ **Container stdout is Docker's `json-file` driver, and it is deleted with the
+container.** Until 2026-08-22 a `docker compose down` destroyed the only record
+that a run had happened — the failure `TEST-SIGNOFF` still carries as its worked
+REFUSED example, *"evidence /tmp/b77-build.log — torn down, no sha256"*.
+
+| | |
+|---|---|
+| **`FLOCK_CUSTODY_FILE`** | `/home/ubuntu/.flock/custody/custody.jsonl`, set by `container/entrypoint.sh` before the first record and never unset |
+| **volume** | named `<project>-custody`, so `down` keeps it and only an explicit `down -v` clears it |
+| **`docker logs` cap** | `json-file`, `max-size: 50m`, `max-file: 5` — it was uncapped and grew until the container was removed |
+
+**What is in the file:** a byte copy of every record that reaches container
+stdout, for that container's lifetime, plus the records of every previous
+lifetime — which is why it is a superset of `docker logs`, not an equal.
+
+⚠ **`mirror()` (`bus/logging.py`) is gated on the same condition as the stdout
+write, and that is load-bearing.** A pane record is `FLOCK_LOG_QUIET` and reaches
+the log exactly once, when the switch re-emits the window file it tails. Mirroring
+it directly *as well* would write it twice, and **a duplicated custody record is
+indistinguishable from a duplicated delivery to every conservation check we have.**
+
+⚠ **Four separate paths write whole records to stdout**, and `grep` found one of
+them. The other three were found by diffing the evidence file against `docker
+logs` on a live tenant: the watchdog's alerts and job errors, the session's
+close record, and — the one that mattered — `switch/windowlog.py`, which carries
+**every agent-originated `sent`**. Without it the evidence held `popped` through
+`opened` and no `sent`, which reads exactly like an envelope the bus invented.
+`tests/test_window_logging.py` now fails if any module prints a record without
+mirroring it.
+
+⚠ **It is not tamper-evident.** Any process in the container can append to it,
+and the benchmark scripts do so by design. `writer` says who *claims* to have
+written a record; it is a label, not a credential.
+
 ## 3. Only doors are published, and each one separately
 
 Redis binds loopback and is **never** port-mapped. It has no authentication by
