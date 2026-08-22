@@ -5,6 +5,23 @@
 > separate finding and belongs in [`TODO.md`](TODO.md) — do not "fix" the code to
 > match a sentence.
 
+⚠ **ROUND 2026-08-22 — four lanes swept their own docs, and it worked.** Builds
+79-82 landed in one day and shipped six contracts that appeared in **zero** living
+docs: `writer`, `FLOCK_CUSTODY_FILE`, `delivery.markers`, `usage.requests`,
+`office usage`, and `xrange` on the RESP client. All six are now documented.
+
+⚠ **Each lane found things in its own files that I did not.** `api` found
+duplicate `ttl`/`hops` keys I had introduced into a JSON block of the **public**
+API reference that morning — invisible to every gate, because **duplicate keys
+are legal JSON** and `json.loads` silently keeps the last. `bus` found four
+architect-owned statements still assigning `blocked`, activity polling and the
+verification window to the switch, five days after they moved to the watchdog.
+`tmux` fixed all fourteen near citations in its files **individually**, after my
+mechanical pass that morning pushed a citation past the end of a file.
+
+**The lesson is the ownership, not the sweep.** I had already run a drift review
+that same morning and missed all of it.
+
 ⚠⚠ **STATUS 2026-08-21: §1 RECURRED at v4 and §3 was only half-fixed.** Both had
 been marked ✅ FIXED on 2026-08-15 and neither held. §1 came back in the same
 file (`API.md`) at the same lines ±1, because its check was pinned to the literal
