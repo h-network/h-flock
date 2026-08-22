@@ -6,6 +6,9 @@ from datetime import datetime, timezone
 from flock.bus import log_record, prefix
 
 
+VERIFICATION_ACTIVITY_KINDS = frozenset(("input", "output", "tool"))
+
+
 def _text(value) -> str | None:
     if value is None:
         return None
@@ -35,16 +38,24 @@ def _elapsed(now: datetime, then: datetime) -> int | float:
 
 
 class DeliveryVerifier:
-    """Confirm aged paste markers against later CLI input activity."""
+    """Confirm aged paste markers against later CLI activity."""
 
-    def __init__(self, r, *, pod: str, tenant: str, verify_after_seconds: float = 10.0):
+    def __init__(self, r, *, pod: str, tenant: str, verify_after_seconds: float = 120.0):
         self.r = r
         self.pod = pod
         self.tenant = tenant
         self.verify_after_seconds = verify_after_seconds
 
-    def _input_times(self, agent: str) -> list[datetime]:
-        entries = self.r.xrange(prefix(self.pod, self.tenant, agent, "activity"), min="-", max="+")
+    def _input_times(self, agent: str, marker_time: datetime) -> list[datetime]:
+        # Activity stream IDs are assigned when ActivityTailer appends the CLI
+        # event.  Starting at the marker's millisecond avoids rereading the
+        # agent's entire retained history on every watchdog pass; the timestamp
+        # check below remains authoritative because a tailed event can carry an
+        # older timestamp than its Redis ID.
+        marker_id = f"{max(0, int(marker_time.timestamp() * 1000))}-0"
+        entries = self.r.xrange(
+            prefix(self.pod, self.tenant, agent, "activity"), min=marker_id, max="+"
+        )
         result = []
         for _, raw_fields in entries:
             raw_event = _fields(raw_fields).get("event")
@@ -52,7 +63,7 @@ class DeliveryVerifier:
                 event = json.loads(raw_event)
             except (TypeError, json.JSONDecodeError):
                 continue
-            if not isinstance(event, dict) or event.get("kind") != "input":
+            if not isinstance(event, dict) or event.get("kind") not in VERIFICATION_ACTIVITY_KINDS:
                 continue
             timestamp = _timestamp(event.get("ts"))
             if timestamp is not None:
@@ -97,7 +108,12 @@ class DeliveryVerifier:
                     self.r.xdel(pending_key, entry_id)
                 continue
 
-            input_times = self._input_times(agent)
+            # Output or tool activity can still belong to the previous turn, so
+            # this wider evidence admits a false positive: alive does not prove
+            # the paste was consumed.  That is the safer error here.  A wedged
+            # process or login prompt emits no activity, while input-only
+            # evidence produced 30–92% false negatives for healthy agents.
+            input_times = self._input_times(agent, min(item[2] for item in eligible))
             for entry_id, marker, marker_time in eligible:
                 verified = any(input_time > marker_time for input_time in input_times)
                 if verified:
@@ -117,7 +133,7 @@ class DeliveryVerifier:
                         stream_id=marker.get("stream_id"),
                         destination=agent,
                         reason=(
-                            "not confirmed by a later input activity event; "
+                            "not confirmed by a later CLI activity event; "
                             "not retried because verification cannot distinguish "
                             "loss from a landed paste"
                         ),

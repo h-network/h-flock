@@ -5,6 +5,7 @@ import pytest
 
 from flock.bus import prefix
 from flock.switch.service import Switch
+from flock.watchdog import verification
 from flock.watchdog.verification import DeliveryVerifier
 
 
@@ -14,8 +15,10 @@ class VerifyRedis:
         self.deleted = []
         self.hashes = {}
         self.values = {}
+        self.xrange_calls = []
 
     def xrange(self, key, min="-", max="+"):
+        self.xrange_calls.append((key, min, max))
         return list(self.streams.get(key, []))
 
     def xdel(self, key, entry_id):
@@ -61,22 +64,36 @@ def test_later_input_verifies_and_drops_marker_without_log(capsys):
     r.streams[_key("activity")] = [_activity("input", "2026-08-09T12:00:01Z")]
     r.hashes[_key("blocked")] = {"since": "old", "stream_id": "old"}
 
-    DeliveryVerifier(r, pod="acme", tenant="hq").poll({"sme-2"}, now=NOW)
+    DeliveryVerifier(r, pod="acme", tenant="hq", verify_after_seconds=10).poll(
+        {"sme-2"}, now=NOW
+    )
 
     assert r.streams[_key("pending.verify")] == []
     assert _key("blocked") not in r.hashes
     assert capsys.readouterr().out == ""
 
 
-def test_missing_later_input_is_surfaced_and_not_retried(capsys):
+def test_later_output_verifies_and_drops_marker_without_log(capsys):
     r = VerifyRedis()
-    r.streams[_key("pending.verify")] = [_marker("not-confirmed", "2026-08-09T12:00:00Z")]
-    r.streams[_key("activity")] = [
-        _activity("input", "2026-08-09T11:59:59Z", b"1-0"),
-        _activity("output", "2026-08-09T12:00:05Z", b"2-0"),
-    ]
+    r.streams[_key("pending.verify")] = [_marker("delivered", "2026-08-09T12:00:00Z")]
+    r.streams[_key("activity")] = [_activity("output", "2026-08-09T12:00:05Z")]
+    r.hashes[_key("blocked")] = {"since": "old", "stream_id": "old"}
 
     DeliveryVerifier(r, pod="acme", tenant="hq", verify_after_seconds=10).poll({"sme-2"}, now=NOW)
+
+    assert r.streams[_key("pending.verify")] == []
+    assert _key("blocked") not in r.hashes
+    assert capsys.readouterr().out == ""
+
+
+def test_no_activity_after_marker_is_surfaced_and_not_retried(capsys):
+    r = VerifyRedis()
+    r.streams[_key("pending.verify")] = [_marker("not-confirmed", "2026-08-09T12:00:00Z")]
+    r.values[_key("activity.offset")] = "observed"
+
+    DeliveryVerifier(r, pod="acme", tenant="hq", verify_after_seconds=10).poll(
+        {"sme-2"}, now=NOW
+    )
 
     record = json.loads(capsys.readouterr().out)
     assert record["module"] == "switch"
@@ -85,7 +102,7 @@ def test_missing_later_input_is_surfaced_and_not_retried(capsys):
     assert record["destination"] == "sme-2"
     assert record["waited"] == 20
     assert record["reason"] == (
-        "not confirmed by a later input activity event; "
+        "not confirmed by a later CLI activity event; "
         "not retried because verification cannot distinguish loss from a landed paste"
     )
     assert "lost" not in json.dumps(record)
@@ -96,13 +113,61 @@ def test_missing_later_input_is_surfaced_and_not_retried(capsys):
     }
 
 
+def test_activity_before_marker_does_not_verify(capsys):
+    r = VerifyRedis()
+    r.streams[_key("pending.verify")] = [_marker("ordered", "2026-08-09T12:00:00Z")]
+    r.streams[_key("activity")] = [_activity("tool", "2026-08-09T11:59:59Z")]
+
+    DeliveryVerifier(r, pod="acme", tenant="hq", verify_after_seconds=10).poll(
+        {"sme-2"}, now=NOW
+    )
+
+    assert json.loads(capsys.readouterr().out)["event"] == "delivery_unverified"
+    assert r.hashes[_key("blocked")]["stream_id"] == "ordered"
+
+
+def test_activity_read_starts_at_earliest_eligible_marker():
+    r = VerifyRedis()
+    marker_time = datetime(2026, 8, 9, 12, 0, 0, tzinfo=timezone.utc)
+    r.streams[_key("activity")] = [_activity("output", "2026-08-09T12:00:01Z")]
+
+    DeliveryVerifier(r, pod="acme", tenant="hq")._input_times("sme-2", marker_time)
+
+    assert r.xrange_calls == [(_key("activity"), "1786276800000-0", "+")]
+
+
+def test_input_only_negative_control_flips_output_evidence(monkeypatch, capsys):
+    """The widened-evidence control fails at the evidence reader's locus."""
+    r = VerifyRedis()
+    marker_time = datetime(2026, 8, 9, 12, 0, 0, tzinfo=timezone.utc)
+    r.streams[_key("activity")] = [_activity("output", "2026-08-09T12:00:01Z")]
+    verifier = DeliveryVerifier(r, pod="acme", tenant="hq")
+
+    assert verifier._input_times("sme-2", marker_time) == [
+        datetime(2026, 8, 9, 12, 0, 1, tzinfo=timezone.utc)
+    ]
+    monkeypatch.setattr(verification, "VERIFICATION_ACTIVITY_KINDS", frozenset(("input",)))
+    assert verifier._input_times("sme-2", marker_time) == []
+
+    r.streams[_key("pending.verify")] = [_marker("control", "2026-08-09T12:00:00Z")]
+    verifier.verify_after_seconds = 10
+    verifier.poll({"sme-2"}, now=NOW)
+    assert json.loads(capsys.readouterr().out)["event"] == "delivery_unverified"
+
+
+def test_default_verification_window_is_two_minutes():
+    assert DeliveryVerifier(object(), pod="acme", tenant="hq").verify_after_seconds == 120.0
+
+
 def test_first_unverified_delivery_preserves_blocked_since_and_stream_id(capsys):
     r = VerifyRedis()
     r.values[_key("activity.offset")] = "observed"
     r.hashes[_key("blocked")] = {"since": "2026-08-09T11:00:00Z", "stream_id": "first"}
     r.streams[_key("pending.verify")] = [_marker("second", "2026-08-09T12:00:00Z")]
 
-    DeliveryVerifier(r, pod="acme", tenant="hq").poll({"sme-2"}, now=NOW)
+    DeliveryVerifier(r, pod="acme", tenant="hq", verify_after_seconds=10).poll(
+        {"sme-2"}, now=NOW
+    )
 
     assert r.hashes[_key("blocked")] == {"since": "2026-08-09T11:00:00Z", "stream_id": "first"}
     capsys.readouterr()
