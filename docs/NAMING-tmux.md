@@ -30,7 +30,7 @@ Tier A is documentation, B internal code, C Redis/environment, and D wire.
 | name | where it lives | kind | what it means, in one line | networking analogue, if any | tier |
 |---|---|---|---|---|---|
 | `tmuxhost` / `TmuxHost` | `src/flock/tmuxhost/host.py:14` | identifier | Long-running reconciler that makes tmux windows match desired roster state. | Port manager/controller. | B |
-| `host` | `container/entrypoint.sh:264` | doc term | Here means the tmux reconciler, while roster name `host` means lifecycle control. | Collision between physical host and control-plane address. | A |
+| `host` | `container/entrypoint.sh:292` | doc term | Here means the tmux reconciler, while roster name `host` means lifecycle control. | Collision between physical host and control-plane address. | A |
 | `reconcile_once` | `src/flock/tmuxhost/host.py:165` | identifier | One desired-versus-actual window convergence pass. | Control-plane reconciliation. | B |
 | `ensure_server_and_session` | `src/flock/tmuxhost/host.py:80` | identifier | Creates missing tmux server/session and applies global options. | Ensuring a switching fabric exists. | B |
 | `session_name` | `src/flock/tmuxhost/host.py:21` | identifier | Tmux session target, normally identical to tenant name. | Routing-domain instance name. | B |
@@ -55,11 +55,15 @@ Tier A is documentation, B internal code, C Redis/environment, and D wire.
 | `deliver_api` | `src/flock/port/deliver.py:25` | identifier | Moves one ingress envelope to an enrolled client's mailbox stream. | Delivery to a different port medium. | B |
 | `deliver_unroutable` | `src/flock/port/deliver.py:51` | identifier | Pops and dead-letters an envelope whose port_type has no implementation. | Unsupported-port drop. | B |
 | `opener` | `src/flock/port/deliver.py:148` | doc term | Kind-specific callable whose normal return means an envelope was opened. | Ethertype handler. | B |
-| `message_opener` / `command_opener` / `add_ticket_opener` | `src/flock/port/openers.py:115`, `src/flock/port/openers.py:55`, `src/flock/port/openers.py:85` | identifier | Terminal or board actions selected by envelope kind. | Protocol handlers. | B |
+| `message_opener` | `src/flock/port/openers.py:76` | identifier | Terminal action selected for a `Message`. | Protocol handler. | B |
+| `command_opener` | `src/flock/port/openers.py:107` | identifier | Terminal action selected for a `Command`. | Protocol handler. | B |
+| `add_ticket_opener` | `src/flock/port/openers.py:138` | identifier | Board action selected for an `AddTicket`. | Protocol handler. | B |
 | `opened` | `src/flock/bus/doors.py:143` | doc term | Terminal outcome meaning an opener completed, not proof a human/CLI consumed it. | Accepted by destination handler, not delivery acknowledgement. | A |
 | `delivering` | `src/flock/port/deliver.py:177` | redis key | Tenant hash serving as a per-agent mutual-exclusion/busy tag. | Per-port transmit lock. | C |
 | `paused` | `src/flock/port/deliver.py:84` | redis key | Marker that leaves ingress queued rather than opening it. | Administratively down port. | C |
-| `pending.verify` | `src/flock/port/openers.py:43` | redis key | Stream of pasted deliveries awaiting out-of-band activity judgment. | Delivery telemetry awaiting observation. | C |
+| `pending.verify` | `src/flock/port/openers.py:44` | redis key | Stream of pasted deliveries awaiting out-of-band activity judgment. | Delivery telemetry awaiting observation. | C |
+| `delivery.markers` | `src/flock/port/openers.py:45` | redis key | Bounded stream used to correlate later token usage heuristically with the delivery that prompted it. | Receive-side accounting join marker. | C |
+| `VERIFY_AFTER_SECONDS` | `src/flock/watchdog/service.py:386` | env var | Minimum marker age before the watchdog judges delivery verification; defaults to 120 seconds. | Observation-window threshold. | C |
 | `VERIFIABLE_CLIS` | `src/flock/port/openers.py:15` | identifier | Allowlist of CLI implementations whose session files can confirm input. | Observable port types. | B |
 | `inbox` | `src/flock/port/deliver.py:32` | redis key | Resumable mailbox stream for a `port_type: api` participant. | Receive buffer on an application port. | C |
 | `dead` | `src/flock/port/deliver.py:63` | redis key | Retained list of envelopes that could not be opened. | Dead-letter/drop queue. | C |
@@ -95,21 +99,24 @@ Tier A is documentation, B internal code, C Redis/environment, and D wire.
 | `POD` | `container/compose.yaml:22` | env var | Namespace above tenant in every Redis key. | I could not tell what distinct network concept this means without asking. | C |
 | `TENANT` | `container/compose.yaml:23` | env var | Tenant identity and default tmux session name. | Routing domain. | C |
 | `AGENTS` | `container/compose.yaml:27` | env var | Boot roster seed encoded as comma-separated `name:port_type` pairs. | Static MAC/port table seed. | C |
-| `AGENT_CLIS` / `AGENT_PROFILES` / `AGENT_PROVIDERS` | `container/compose.yaml:46`, `container/compose.yaml:36`, `container/compose.yaml:37` | env var | Comma-separated per-agent exceptions for launch, account config, and model service. | Port configuration maps. | C |
-| `API_TOKEN` | `container/compose.yaml:47` | env var | Shared bearer credential for both published doors. | Network access credential. | C |
-| `API_HOST` / `SESSION_HOST` | `container/compose.yaml:68` | env var | Host-side publish addresses, not application bind addresses. | Listen/publish address. | C |
+| `AGENT_CLIS` | `container/compose.yaml:42` | env var | Comma-separated per-agent launch-program exceptions. | Port attachment map. | C |
+| `AGENT_PROFILES` | `container/compose.yaml:43` | env var | Comma-separated per-agent account-config exceptions. | Port account map. | C |
+| `AGENT_PROVIDERS` | `container/compose.yaml:52` | env var | Comma-separated per-agent model-service exceptions. | Port uplink map. | C |
+| `API_TOKEN` | `container/compose.yaml:54` | env var | Shared bearer credential for both published doors. | Network access credential. | C |
+| `API_HOST` / `SESSION_HOST` | `container/compose.yaml:73`, `container/compose.yaml:74` | env var | Host-side publish addresses, not application bind addresses. | Listen/publish address. | C |
 | `API_PORT` / `SESSION_PORT` | `container/compose.yaml:58` | env var | Host-side published ports; container-side ports remain 8080/8081. | Port mapping. | C |
 | `API_TLS_*` / `SESSION_TLS_*` | `container/compose.yaml:63` | env var | In-container certificate/key paths for each door. | TLS termination material. | C |
-| `ALLOW_PLAINTEXT_PUBLISH` | `container/compose.yaml:69` | env var | Explicit operator acceptance of publishing a plaintext door beyond loopback. | Insecure-listener override. | C |
-| `FLOCK_ALLOW_PLAINTEXT` | `container/entrypoint.sh:84` | env var | Entrypoint's internal assertion that exposure policy was already evaluated. | Policy handoff flag. | C |
-| `REDIS_BIND` / `REDIS_PASSWORD` | `container/entrypoint.sh:93` | env var | Redis listen address and credential required when widened beyond loopback. | Internal switch-store listener security. | C |
-| `REDIS_URL` | `container/entrypoint.sh:112` | env var | Connection string handed only to framework processes that need Redis. | Control-plane store address. | C |
-| `REDIS_READY_SECONDS` | `container/entrypoint.sh:132` | env var | Maximum boot wait for Redis readiness. | Dependency convergence timeout. | C |
+| `ALLOW_PLAINTEXT_PUBLISH` | `container/compose.yaml:75` | env var | Explicit operator acceptance of publishing a plaintext door beyond loopback. | Insecure-listener override. | C |
+| `FLOCK_ALLOW_PLAINTEXT` | `container/entrypoint.sh:107` | env var | Entrypoint's internal assertion that exposure policy was already evaluated. | Policy handoff flag. | C |
+| `REDIS_BIND` / `REDIS_PASSWORD` | `container/entrypoint.sh:112`, `container/entrypoint.sh:113` | env var | Redis listen address and credential required when widened beyond loopback. | Internal switch-store listener security. | C |
+| `REDIS_URL` | `container/entrypoint.sh:135` | env var | Connection string handed only to framework processes that need Redis. | Control-plane store address. | C |
+| `REDIS_READY_SECONDS` | `container/entrypoint.sh:152` | env var | Maximum boot wait for Redis readiness. | Dependency convergence timeout. | C |
+| `FLOCK_CUSTODY_FILE` | `container/entrypoint.sh:16` | env var | Mounted append-only byte mirror of custody records written to container stdout, retained across tenant teardown. | Durable observation ledger. | C |
 | `ROSTER_POLL_SECONDS` | `container/compose.yaml:28` | env var | Shared refresh interval for switch and tmuxhost. | Control-plane refresh interval. | C |
-| `WATCHDOG_ENABLED` | `container/entrypoint.sh:295` | env var | Enables the separate human-alerting observer. | Network monitor enable flag. | C |
-| `door` | `container/entrypoint.sh:61` | doc term | One externally published API or session process/port. | Network ingress door/listener. | A |
-| `start` | `container/entrypoint.sh:37` | identifier | Shell helper that launches a named child and records its PID. | Process supervisor launch, though it is not a supervisor. | B |
-| `rcli` | `container/entrypoint.sh:123` | identifier | Auth-aware wrapper around `redis-cli` used during boot seeding. | Control-plane configuration client. | B |
+| `WATCHDOG_ENABLED` | `container/entrypoint.sh:323` | env var | Enables the separate human-alerting observer. | Network monitor enable flag. | C |
+| `door` | `container/entrypoint.sh:83` | doc term | One externally published API or session process/port. | Network ingress door/listener. | A |
+| `start` | `container/entrypoint.sh:57` | identifier | Shell helper that launches a named child and records its PID. | Process supervisor launch, though it is not a supervisor. | B |
+| `rcli` | `container/entrypoint.sh:143` | identifier | Auth-aware wrapper around `redis-cli` used during boot seeding. | Control-plane configuration client. | B |
 | `startAgent` | `src/flock/tmuxhost/host.py:104` | identifier | CLI launcher applying office-specific approval and model settings; not lifecycle `StartAgent`. | Port-attached process launcher. | B |
 
 ## Explicit findings

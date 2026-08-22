@@ -190,7 +190,14 @@ file's mtime the gap is 7:59:59. Therefore, agents assigned to the same account 
 
 ⚠ **Launch and Profile State Ordering:** `start_agent` (`flock.control.openers`) writes the `launch` (`pod:<pod>:tenant:<tenant>:agent:<name>:launch`) and `profile` keys to Redis *before* writing roster membership (`r.hset(roster_key, agent, agent_port_type)`). `tmuxhost` reconciles windows as soon as the agent row appears in the roster; writing launch or profile after roster membership created a race condition where `tmuxhost` built a window with the default CLI or wrong account before the launch/profile keys were set.
 
-⚠ **Quiet Terminal Telemetry:** `office` runs inside an agent's window, where `stdout` is the agent's screen. Printing bus telemetry log records (`{"module":"port", ...}`) to `stdout` hands the agent internal module names, stream IDs, and correlation IDs, leading agents to inspect local processes and discover Redis. `office` sets `FLOCK_LOG_QUIET=1` to suppress envelope logging to `stdout`, while log records are still written to the window log file (`FLOCK_LOG_FILE`) for switch tailing.
+⚠ **Quiet Terminal Telemetry:** `office` runs inside an agent's window, where
+`stdout` is the agent's screen. Printing bus telemetry log records
+(`{"module":"port", ...}`) to `stdout` hands the agent internal module names,
+stream IDs, and correlation IDs, leading agents to inspect local processes and
+discover Redis. `office` sets `FLOCK_LOG_QUIET=1` to suppress envelope logging
+to `stdout`, while records still reach the window log (`FLOCK_LOG_FILE`). The
+switch tails that file, emits each record once to container stdout, and mirrors
+the same line to the durable mounted custody log (`FLOCK_CUSTODY_FILE`).
 
 ## 6. Lifecycle
 
