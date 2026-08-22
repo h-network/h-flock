@@ -47,7 +47,7 @@ tests; this branch changes no other BUILD 81 behavior.
     evidence         /tmp/build80-pytest.log sha256 5022c47f740da75c6565a4ae6429c8deb76e9d8c4f19c9609f9cad20a47aed81
 
     verdict          PASS
-    VERIFIED BY      PENDING — the earlier api PASS did not cover switch-bench composition
+    VERIFIED BY      tmux — author of the change? NO
 
 ## Controls
 
