@@ -50,10 +50,14 @@ def mark_delivery_pending(
         r.xadd(
             verify_key,
             entry,
+            maxlen=100,
+            approximate=True,
         )
         r.xadd(
             markers_key,
             entry,
+            maxlen=500,
+            approximate=True,
         )
     except Exception:
         pass

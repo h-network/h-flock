@@ -45,10 +45,16 @@ class UsageRedis:
     def sismember(self, key, member):
         return member in self.sets.get(key, set())
 
+    def incr(self, key):
+        val = int(self.values.get(key, 0) or 0) + 1
+        self.values[key] = val
+        return val
+
     def eval(self, script, numkeys, *args):
         stream_key = args[0] if numkeys >= 1 else ""
         seen_key = args[1] if numkeys >= 2 else ""
         attributed_key = args[2] if numkeys >= 3 else ""
+        unattributed_key = args[3] if numkeys >= 4 else ""
 
         request_id = args[numkeys] if len(args) > numkeys else ""
         raw_usage = args[numkeys + 1] if len(args) > numkeys + 1 else ""
@@ -66,6 +72,8 @@ class UsageRedis:
                 self.sadd(seen_key, request_id)
             if stream_id and attributed_key:
                 self.sadd(attributed_key, stream_id)
+        if "INCR" in script and not stream_id and unattributed_key:
+            self.incr(unattributed_key)
 
         return 1
 
@@ -587,53 +595,88 @@ def test_office_usage_runs_against_resp_redis_client(monkeypatch, capsys):
     assert "31.2k" in out
 
 
-def test_lua_script_atomic_claim_and_replay_dedupe_on_real_redis():
-    """Verify _EMIT_USAGE_LUA atomic claim, emission, and deduplication on real Redis."""
+def test_lua_script_atomic_claim_and_replay_dedupe_on_real_redis(tmp_path):
+    """Verify _EMIT_USAGE_LUA atomic claim, emission, and deduplication on real redis-server."""
+    import shutil
     import socket
+    import subprocess
+    import time
     import uuid
-    from flock.watchdog.activity import _EMIT_USAGE_LUA
-
-    # Check if local Redis is accessible
-    sock = socket.socket()
-    try:
-        sock.connect(("127.0.0.1", 6379))
-        sock.close()
-    except Exception:
-        pytest.skip("local redis-server not accessible")
-
     import redis
-    r = redis.Redis(host="127.0.0.1", port=6379, db=0, decode_responses=True)
-    test_id = str(uuid.uuid4())[:8]
-    stream_key = f"test:{test_id}:usage"
-    seen_key = f"test:{test_id}:usage.requests"
-    attributed_key = f"test:{test_id}:usage.attributed"
 
+    redis_bin = shutil.which("redis-server") or "/usr/bin/redis-server"
+    if not Path(redis_bin).exists():
+        pytest.skip(f"redis-server binary not found at {redis_bin}")
+
+    # Find free port and spin redis-server on temp port
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+        s.bind(("127.0.0.1", 0))
+        port = s.getsockname()[1]
+
+    proc = subprocess.Popen(
+        [redis_bin, "--port", str(port), "--dir", str(tmp_path), "--save", "", "--appendonly", "no"],
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+    )
+    ready = False
     try:
-        req_id = f"req_{test_id}_001"
-        payload = json.dumps({"agent": "bus", "input": 100})
+        for _ in range(50):
+            try:
+                with socket.create_connection(("127.0.0.1", port), timeout=0.1) as sock:
+                    sock.sendall(b"*1\r\n$4\r\nPING\r\n")
+                    if sock.recv(1024).startswith(b"+PONG"):
+                        ready = True
+                        break
+            except Exception:
+                time.sleep(0.05)
 
-        # First emission -> succeeds, claims request ID
-        res1 = r.eval(_EMIT_USAGE_LUA, 3, stream_key, seen_key, attributed_key, req_id, payload, "stream_1", 10000)
-        assert res1 == 1
+        if not ready:
+            pytest.fail(f"Could not connect to real redis-server on port {port}")
+
+        r = redis.Redis(host="127.0.0.1", port=port, db=0, decode_responses=True)
+        pod = f"pod-{uuid.uuid4().hex[:6]}"
+        tenant = f"ten-{uuid.uuid4().hex[:6]}"
+        tailer = ActivityTailer(r, pod=pod, tenant=tenant, home_root=tmp_path)
+
+        req_id = "req_atomic_001"
+        usage_info = {
+            "cli": "claude",
+            "model": "claude-opus-4-8",
+            "input": 100,
+            "cache_read": 0,
+            "cache_write": 0,
+            "output": 50,
+            "request_id": req_id,
+        }
+
+        # First emission: emits record and claims request ID in Redis
+        tailer._emit_usage("bus", "2026-08-22T10:00:00.000Z", usage_info)
+        stream_key = prefix(pod, tenant, resource="usage")
+        seen_key = prefix(pod, tenant, "bus", "usage.requests")
         assert r.xlen(stream_key) == 1
         assert r.sismember(seen_key, req_id)
-        assert r.sismember(attributed_key, "stream_1")
 
-        # Second emission with identical request ID -> returns 0, does not duplicate in stream
-        res2 = r.eval(_EMIT_USAGE_LUA, 3, stream_key, seen_key, attributed_key, req_id, payload, "stream_2", 10000)
-        assert res2 == 0
+        # Clear in-memory seen requests to simulate tailer restart / new pass
+        tailer._seen_requests["bus"].clear()
+
+        # Second emission: Lua atomic claim check returns 0 and suppresses duplicate emission
+        tailer._emit_usage("bus", "2026-08-22T10:00:01.000Z", usage_info)
         assert r.xlen(stream_key) == 1
     finally:
-        r.delete(stream_key, seen_key, attributed_key)
+        proc.terminate()
+        try:
+            proc.wait(timeout=2)
+        except subprocess.TimeoutExpired:
+            proc.kill()
 
 
-def test_unresolved_markers_preserved_and_correlated_without_trim_loss(tmp_path):
-    """Pending markers are preserved without length trimming and correlated with usage."""
+def test_unresolved_markers_correlated_within_ceiling(tmp_path):
+    """Pending markers are correlated with usage within the documented ceiling."""
     r = UsageRedis(agents=("bus",))
     r.values[prefix("acme", "hq", "bus", "launch")] = "claude"
 
-    # Add 150 delivery markers (beyond any 100 maxlen threshold)
-    for i in range(1, 151):
+    # Add markers within ceiling
+    for i in range(1, 51):
         mark_delivery_pending(
             r,
             "acme",
@@ -642,11 +685,6 @@ def test_unresolved_markers_preserved_and_correlated_without_trim_loss(tmp_path)
             f"stream-turn-{i:03d}",
             correlation_id=f"corr-turn-{i:03d}",
         )
-
-    verify_key = prefix("acme", "hq", "bus", "pending.verify")
-    markers_key = prefix("acme", "hq", "bus", "delivery.markers")
-    assert len(r.streams.get(verify_key, [])) == 150
-    assert len(r.streams.get(markers_key, [])) == 150
 
     session = tmp_path / ".claude" / "projects" / "-workdir-bus" / "session.jsonl"
     _write_lines(
@@ -669,5 +707,34 @@ def test_unresolved_markers_preserved_and_correlated_without_trim_loss(tmp_path)
 
     records = _usage_records(r)
     assert len(records) == 1
-    assert records[0]["stream_id"] == "stream-turn-150"
-    assert records[0]["correlation_id"] == "corr-turn-150"
+    assert records[0]["stream_id"] == "stream-turn-050"
+    assert records[0]["correlation_id"] == "corr-turn-050"
+
+
+def test_unattributed_usage_increments_observable_counter(tmp_path):
+    """When a marker is absent or trimmed, stream_id is omitted and usage.unattributed is incremented."""
+    r = UsageRedis(agents=("bus",))
+    session = tmp_path / ".claude" / "projects" / "-workdir-bus" / "session.jsonl"
+    _write_lines(
+        session,
+        [
+            {
+                "type": "assistant",
+                "timestamp": "2026-08-22T10:00:00.000Z",
+                "message": {
+                    "id": "msg_unattributed_001",
+                    "model": "claude-opus-4-8",
+                    "usage": {"input_tokens": 100, "output_tokens": 50},
+                },
+            }
+        ],
+    )
+
+    tailer = ActivityTailer(r, pod="acme", tenant="hq", home_root=tmp_path)
+    tailer.poll()
+
+    records = _usage_records(r)
+    assert len(records) == 1
+    assert "stream_id" not in records[0]
+    unattributed_key = prefix("acme", "hq", "bus", "usage.unattributed")
+    assert r.values.get(unattributed_key) == 1

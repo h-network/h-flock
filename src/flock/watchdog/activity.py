@@ -169,6 +169,7 @@ _EMIT_USAGE_LUA = """
 local stream_key = KEYS[1]
 local seen_key = KEYS[2]
 local attributed_key = KEYS[3]
+local unattributed_key = KEYS[4]
 
 local request_id = ARGV[1]
 local raw_usage = ARGV[2]
@@ -190,6 +191,8 @@ end
 
 if stream_id ~= "" and attributed_key ~= "" then
     redis.call("SADD", attributed_key, stream_id)
+elseif unattributed_key ~= "" then
+    redis.call("INCR", unattributed_key)
 end
 
 return 1
@@ -363,6 +366,7 @@ class ActivityTailer:
         stream_id, correlation_id = self._correlate_delivery(agent, timestamp)
         stream_id_str = stream_id or ""
         attributed_key = prefix(self.pod, self.tenant, agent, "usage.attributed") if stream_id else ""
+        unattributed_key = prefix(self.pod, self.tenant, agent, "usage.unattributed") if not stream_id else ""
 
         record = {
             "module": "watchdog",
@@ -390,10 +394,11 @@ class ActivityTailer:
             try:
                 res = self.r.eval(
                     _EMIT_USAGE_LUA,
-                    3,
+                    4,
                     usage_stream,
                     seen_key or "",
                     attributed_key or "",
+                    unattributed_key or "",
                     request_id,
                     raw,
                     stream_id_str,
@@ -420,6 +425,8 @@ class ActivityTailer:
                     self.r.sadd(seen_key, request_id)
                 if stream_id and hasattr(self.r, "sadd"):
                     self.r.sadd(attributed_key, stream_id)
+                elif unattributed_key and hasattr(self.r, "incr"):
+                    self.r.incr(unattributed_key)
                 emitted = True
             except Exception:
                 return
