@@ -1,7 +1,7 @@
 import asyncio
 import json
 
-from flock.session.app import SessionSettings, _authorized, create_app
+from flock.session.app import SessionSettings, _authorized, _connection_log, create_app
 from flock.session.control import ControlModeClient, Subscriber
 
 
@@ -45,6 +45,12 @@ def test_bearer_auth_is_exact_and_constant_scheme_insensitive():
     assert _authorized(FakeWebSocket("bearer secret"), "secret")
     assert not _authorized(FakeWebSocket("Bearer wrong"), "secret")
     assert not _authorized(FakeWebSocket(""), "secret")
+
+
+def test_session_close_record_names_session_writer(capsys):
+    _connection_log("c-1", "browser", {"architect"}, "read", "earlier")
+
+    assert json.loads(capsys.readouterr().out)["writer"] == "session"
 
 
 def test_snapshot_precedes_output_arriving_during_capture():
@@ -266,6 +272,5 @@ def test_session_non_loopback_bind_with_tls_succeeds():
         session_tls_key="/key.pem",
     )
     settings.validate()
-
 
 

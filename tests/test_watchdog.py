@@ -116,6 +116,7 @@ def test_stall_requires_old_ticket_nonworking_presence_and_silent_window(monkeyp
         "v": 1,
         "ts": "2026-08-09T14:00:00.000Z",
         "kind": "stalled",
+        "writer": "watchdog",
         "agent": "sme-2",
         "ticket": "review the auth change",
         "doing_age_s": 840,
@@ -212,6 +213,7 @@ def test_blocked_alert_reads_router_verdict_without_scraping(monkeypatch):
         "v": 1,
         "ts": "2026-08-09T14:00:00.000Z",
         "kind": "blocked",
+        "writer": "watchdog",
         "agent": "sme-2",
         "since": "2026-08-09T13:53:00Z",
         "stream_id": "delivery-1",
@@ -313,6 +315,7 @@ def test_stall_failure_does_not_disable_blocked_check(monkeypatch, capsys):
     assert output[0] == {
         "module": "watchdog",
         "event": "error",
+        "writer": "watchdog",
         "job": "stalls",
         "reason": "RuntimeError: bad board",
     }

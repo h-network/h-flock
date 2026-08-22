@@ -8,7 +8,7 @@ ROOT = Path(__file__).parents[1]
 SCRIPT = ROOT / "container" / "scenarios" / "analyse-run.py"
 
 
-def _line(stream_id, event, seconds, *, source="bench-1"):
+def _line(stream_id, event, seconds, *, source="bench-1", writer="port"):
     return json.dumps(
         {
             "ts": f"2026-08-15T00:00:{seconds:06.3f}Z",
@@ -17,18 +17,19 @@ def _line(stream_id, event, seconds, *, source="bench-1"):
             "stream_id": stream_id,
             "source": source,
             "destination": "bench-2",
+            "writer": writer,
         }
     )
 
 
-def _complete(stream_id, offset, *, source="bench-1"):
+def _complete(stream_id, offset, *, source="bench-1", writer="port"):
     return [
-        _line(stream_id, "sent", offset, source=source),
-        _line(stream_id, "popped", offset + 0.010, source=source),
-        _line(stream_id, "forwarded", offset + 0.020, source=source),
-        _line(stream_id, "kick_started", offset + 0.025, source=source),
-        _line(stream_id, "received", offset + 0.030, source=source),
-        _line(stream_id, "opened", offset + 0.040, source=source),
+        _line(stream_id, "sent", offset, source=source, writer=writer),
+        _line(stream_id, "popped", offset + 0.010, source=source, writer=writer),
+        _line(stream_id, "forwarded", offset + 0.020, source=source, writer=writer),
+        _line(stream_id, "kick_started", offset + 0.025, source=source, writer=writer),
+        _line(stream_id, "received", offset + 0.030, source=source, writer=writer),
+        _line(stream_id, "opened", offset + 0.040, source=source, writer=writer),
     ]
 
 
@@ -43,7 +44,7 @@ def _has(stdout: str, phrase: str) -> bool:
     return squash(phrase) in squash(stdout)
 
 
-def _run(path, expected):
+def _run(path, expected, *extra):
     return subprocess.run(
         [
             sys.executable,
@@ -53,6 +54,7 @@ def _run(path, expected):
             str(expected),
             "--source-prefix",
             "bench-",
+            *extra,
         ],
         text=True,
         capture_output=True,
@@ -98,3 +100,61 @@ def test_source_filter_excludes_control_paths(tmp_path):
 
     assert result.returncode == 0
     assert _has(result.stdout, "envelopes 2   expected 2")
+
+
+def test_writer_census_refuses_synthetic_and_exact_exclusion_restores_run(tmp_path):
+    lines = _complete("real", 1, writer="port")
+    lines.extend(_complete("synthetic", 2, writer="bench-send"))
+    log = tmp_path / "writers.jsonl"
+    log.write_text("\n".join(lines) + "\n")
+
+    refused = _run(log, 2)
+    assert refused.returncode == 1
+    assert _has(refused.stdout, "writers: bench-send=6 port=6")
+    assert "synthetic benchmark writer present" in refused.stdout
+
+    excluded = _run(log, 1, "--exclude-writer", "bench-send")
+    assert excluded.returncode == 0
+    assert _has(excluded.stdout, "writers: port=6")
+    assert "bench-send=" not in excluded.stdout
+
+
+def test_default_writer_census_matches_legacy_module_fallback(tmp_path):
+    current_lines = _complete("current", 1, writer="test")
+    legacy_lines = []
+    for line in current_lines:
+        record = json.loads(line)
+        record.pop("writer")
+        legacy_lines.append(json.dumps(record))
+    current = tmp_path / "current.jsonl"
+    legacy = tmp_path / "legacy.jsonl"
+    current.write_text("\n".join(current_lines) + "\n")
+    legacy.write_text("\n".join(legacy_lines) + "\n")
+
+    current_result = _run(current, 1)
+    legacy_result = _run(legacy, 1)
+
+    assert current_result.returncode == legacy_result.returncode == 0
+    assert current_result.stdout == legacy_result.stdout
+    assert _has(current_result.stdout, "writers: test=6")
+
+
+def test_writer_include_is_repeatable_and_exact(tmp_path):
+    lines = _complete("port", 1, writer="port")
+    lines.extend(_complete("switch", 2, writer="switch"))
+    lines.extend(_complete("watchdog", 3, writer="watchdog"))
+    log = tmp_path / "writers.jsonl"
+    log.write_text("\n".join(lines) + "\n")
+
+    result = _run(log, 2, "--writer", "port", "--writer", "switch")
+
+    assert result.returncode == 0
+    assert _has(result.stdout, "writers: port=6 switch=6")
+    assert "watchdog=" not in result.stdout
+
+
+def test_bench_writer_is_set_before_flock_logging_is_imported():
+    for name, writer in (("bench-send.py", "bench-send"), ("bench-port.py", "bench-port")):
+        text = (ROOT / "container" / "scenarios" / name).read_text()
+        assignment = f'os.environ["FLOCK_WRITER"] = "{writer}"'
+        assert text.index(assignment) < text.index("from flock.bus")

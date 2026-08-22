@@ -1,5 +1,6 @@
 """Tail log lines written inside agent windows into container stdout."""
 
+import json
 from pathlib import Path
 
 from flock.bus import log_record, mirror, prefix
@@ -49,6 +50,23 @@ class WindowLogTailer:
                         )
                         committed = source.tell()
                         continue
+                    try:
+                        record = json.loads(line)
+                    except (TypeError, json.JSONDecodeError):
+                        record = None
+                    if isinstance(record, dict):
+                        # A current log_record already carries the process label.
+                        # Legacy/custom pane writers do not. Preserve an explicit
+                        # writer byte-for-byte in meaning; only fill the absence.
+                        if "writer" not in record:
+                            agent = (
+                                record.get("source")
+                                or record.get("agent")
+                                or record.get("destination")
+                                or "unknown"
+                            )
+                            record["writer"] = f"window:{agent}"
+                            line = json.dumps(record, separators=(",", ":"))
                     print(line, flush=True)
                     # ⚠ THE ORIGIN RECORD OF EVERY AGENT SEND COMES THROUGH HERE.
                     # `office` runs in a pane and is QUIET, so its `sent` never

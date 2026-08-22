@@ -186,6 +186,7 @@ def test_first_delivery_without_activity_history_is_dropped_unjudged(capsys):
         "ts": record["ts"],
         "module": "switch",
         "event": "delivery_unjudged",
+        "writer": "switch",
         "stream_id": "first",
         "destination": "sme-2",
         "reason": "agent has no activity history; first delivery is not judged",

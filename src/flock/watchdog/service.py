@@ -102,6 +102,7 @@ class Watchdog:
         return result
 
     def _alert(self, record: dict) -> None:
+        record = {**record, "writer": "watchdog"}
         raw = json.dumps(record, separators=(",", ":"))
         self.r.xadd(
             prefix(self.pod, self.tenant, resource="alerts"),
@@ -123,6 +124,7 @@ class Watchdog:
             {
                 "module": "watchdog",
                 "event": "error",
+                "writer": "watchdog",
                 "job": job,
                 "reason": f"{type(exc).__name__}: {exc}",
             },
@@ -381,7 +383,7 @@ def main() -> None:
             working_seconds=float(os.environ.get("PRESENCE_WORKING_SECONDS", "30")))),
         ("verification", DeliveryVerifier(
             r, pod=pod, tenant=tenant,
-            verify_after_seconds=float(os.environ.get("VERIFY_AFTER_SECONDS", "10")))),
+            verify_after_seconds=float(os.environ.get("VERIFY_AFTER_SECONDS", "120")))),
     )
     # ⚠ Activity kept the switch's 2s cadence, not the watchdog's 30s. It feeds
     # verification, which only judges markers older than VERIFY_AFTER_SECONDS;
