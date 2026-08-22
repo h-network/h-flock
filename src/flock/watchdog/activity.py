@@ -1,10 +1,12 @@
 """Tail CLI session logs into privacy-reduced per-agent activity streams."""
 
 import json
+import os
+import sys
 from datetime import datetime, timezone
 from pathlib import Path
 
-from flock.bus import members, prefix
+from flock.bus import members, mirror, prefix
 
 
 def _now() -> str:
@@ -15,6 +17,23 @@ def _text(value) -> str | None:
     if value is None:
         return None
     return value.decode() if isinstance(value, bytes) else str(value)
+
+
+def _fields(raw: dict) -> dict[str, str]:
+    return {_text(key): _text(value) for key, value in raw.items()}
+
+
+def _timestamp(value) -> datetime | None:
+    value = _text(value)
+    if not value:
+        return None
+    try:
+        parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except (AttributeError, ValueError):
+        return None
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=timezone.utc)
+    return parsed.astimezone(timezone.utc)
 
 
 def _claude_events(record: dict) -> list[tuple[str, str | None]]:
@@ -47,6 +66,29 @@ def _claude_events(record: dict) -> list[tuple[str, str | None]]:
     return events
 
 
+def _claude_usage(record: dict) -> dict | None:
+    record_type = record.get("type")
+    if record_type != "assistant":
+        return None
+    message = record.get("message")
+    if not isinstance(message, dict):
+        return None
+    usage = message.get("usage")
+    if not isinstance(usage, dict):
+        return None
+    model = str(message.get("model") or record.get("model") or "unknown")
+    request_id = str(message.get("id") or record.get("requestId") or record.get("id") or "")
+    return {
+        "cli": "claude",
+        "model": model,
+        "request_id": request_id,
+        "input": int(usage.get("input_tokens", 0) or 0),
+        "cache_read": int(usage.get("cache_read_input_tokens", 0) or 0),
+        "cache_write": int(usage.get("cache_creation_input_tokens", 0) or 0),
+        "output": int(usage.get("output_tokens", 0) or 0),
+    }
+
+
 def _codex_events(record: dict) -> list[tuple[str, str | None]]:
     payload = record.get("payload")
     if not isinstance(payload, dict):
@@ -64,6 +106,65 @@ def _codex_events(record: dict) -> list[tuple[str, str | None]]:
     return []
 
 
+def _codex_usage(record: dict) -> dict | None:
+    payload = record.get("payload") if isinstance(record.get("payload"), dict) else record
+    record_type = str(record.get("type", ""))
+    payload_type = str(payload.get("type", ""))
+
+    usage = None
+    if record_type == "token_count" or payload_type == "token_count":
+        usage = payload
+    elif isinstance(payload.get("usage"), dict):
+        usage = payload.get("usage")
+    elif isinstance(payload.get("info", {}).get("usage"), dict):
+        usage = payload["info"]["usage"]
+    elif "input_tokens" in payload or "prompt_tokens" in payload:
+        usage = payload
+
+    if usage is None:
+        return None
+
+    model = str(payload.get("model") or record.get("model") or "unknown")
+    request_id = str(payload.get("request_id") or payload.get("id") or record.get("id") or "")
+
+    input_tokens = int(
+        usage.get("input_tokens")
+        or usage.get("prompt_tokens")
+        or usage.get("input", 0)
+        or 0
+    )
+    cache_read = int(
+        usage.get("cached_tokens")
+        or usage.get("cache_read_tokens")
+        or usage.get("cache_read_input_tokens")
+        or usage.get("cache_read", 0)
+        or usage.get("prompt_tokens_details", {}).get("cached_tokens", 0)
+        or 0
+    )
+    cache_write = int(
+        usage.get("cache_write_tokens")
+        or usage.get("cache_creation_input_tokens")
+        or usage.get("cache_write", 0)
+        or 0
+    )
+    output_tokens = int(
+        usage.get("output_tokens")
+        or usage.get("completion_tokens")
+        or usage.get("output", 0)
+        or 0
+    )
+
+    return {
+        "cli": "codex",
+        "model": model,
+        "request_id": request_id,
+        "input": input_tokens,
+        "cache_read": cache_read,
+        "cache_write": cache_write,
+        "output": output_tokens,
+    }
+
+
 class ActivityTailer:
     """Make one non-blocking pass over every participant's newest session file."""
 
@@ -72,6 +173,8 @@ class ActivityTailer:
         self.pod = pod
         self.tenant = tenant
         self.home_root = Path(home_root)
+        self._seen_requests: set[str] = set()
+        self._attributed_markers: set[str] = set()
 
     def _profile(self, agent: str) -> str | None:
         return _text(self.r.get(prefix(self.pod, self.tenant, agent, "profile")))
@@ -156,6 +259,132 @@ class ActivityTailer:
             approximate=True,
         )
 
+    def _correlate_delivery(self, agent: str, usage_ts: str) -> tuple[str | None, str | None]:
+        """Correlate usage timestamp with preceding delivery marker (Build 82 §3).
+
+        Heuristic: the first usage record for agent A after the marker for
+        stream_id S, and before the next marker for A, is S's turn.
+        An agent receiving two messages during one turn produces one usage
+        record; only the latest marker gets attributed, and subsequent usage
+        records without new markers receive no attribution.
+        """
+        usage_time = _timestamp(usage_ts)
+        if usage_time is None:
+            return None, None
+
+        markers_key = prefix(self.pod, self.tenant, agent, "delivery.markers")
+        verify_key = prefix(self.pod, self.tenant, agent, "pending.verify")
+        attributed_key = prefix(self.pod, self.tenant, agent, "usage.attributed")
+
+        raw_entries = []
+        if hasattr(self.r, "xrange"):
+            try:
+                raw_entries.extend(self.r.xrange(markers_key, min="-", max="+"))
+            except Exception:
+                pass
+            try:
+                raw_entries.extend(self.r.xrange(verify_key, min="-", max="+"))
+            except Exception:
+                pass
+        elif hasattr(self.r, "streams"):
+            raw_entries.extend(self.r.streams.get(markers_key, []))
+            raw_entries.extend(self.r.streams.get(verify_key, []))
+
+        candidates = []
+        seen_sids = set()
+        for item in raw_entries:
+            raw_fields = item[1] if isinstance(item, tuple) and len(item) == 2 else item
+            fields = _fields(raw_fields) if hasattr(raw_fields, "items") else {}
+            sid = fields.get("stream_id")
+            if not sid or sid in seen_sids:
+                continue
+            seen_sids.add(sid)
+            m_time = _timestamp(fields.get("ts"))
+            if m_time is not None and m_time <= usage_time:
+                candidates.append((m_time, sid, fields.get("correlation_id")))
+
+        if not candidates:
+            return None, None
+
+        candidates.sort(key=lambda item: item[0])
+        _, stream_id, correlation_id = candidates[-1]
+
+        if stream_id in self._attributed_markers:
+            return None, None
+
+        if hasattr(self.r, "sismember"):
+            try:
+                if self.r.sismember(attributed_key, stream_id):
+                    self._attributed_markers.add(stream_id)
+                    return None, None
+            except Exception:
+                pass
+
+        self._attributed_markers.add(stream_id)
+        if hasattr(self.r, "sadd"):
+            try:
+                self.r.sadd(attributed_key, stream_id)
+            except Exception:
+                pass
+
+        return stream_id, correlation_id
+
+    def _emit_usage(self, agent: str, timestamp: str, usage: dict) -> None:
+        request_id = usage.get("request_id")
+        if request_id:
+            seen_key = prefix(self.pod, self.tenant, agent, "usage.requests")
+            if request_id in self._seen_requests:
+                return
+            if hasattr(self.r, "sismember"):
+                try:
+                    if self.r.sismember(seen_key, request_id):
+                        self._seen_requests.add(request_id)
+                        return
+                except Exception:
+                    pass
+            self._seen_requests.add(request_id)
+            if hasattr(self.r, "sadd"):
+                try:
+                    self.r.sadd(seen_key, request_id)
+                except Exception:
+                    pass
+
+        record = {
+            "module": "watchdog",
+            "event": "usage",
+            "writer": "usage",
+            "agent": agent,
+            "cli": usage["cli"],
+            "model": usage["model"],
+            "input": usage["input"],
+            "cache_read": usage["cache_read"],
+            "cache_write": usage["cache_write"],
+            "output": usage["output"],
+            "ts": timestamp,
+        }
+        stream_id, correlation_id = self._correlate_delivery(agent, timestamp)
+        if stream_id:
+            record["stream_id"] = stream_id
+        if correlation_id:
+            record["correlation_id"] = correlation_id
+
+        raw = json.dumps(record, separators=(",", ":"))
+        if hasattr(self.r, "xadd"):
+            try:
+                self.r.xadd(
+                    prefix(self.pod, self.tenant, resource="usage"),
+                    {"usage": raw},
+                    maxlen=10000,
+                    approximate=True,
+                )
+            except Exception:
+                pass
+
+        if os.environ.get("FLOCK_LOG_QUIET") != "1":
+            sys.stdout.write(raw + "\n")
+            sys.stdout.flush()
+            mirror(raw)
+
     def _tail(self, agent: str, path: Path, flavor: str) -> None:
         offsets = self._state(agent)
         path_text = str(path)
@@ -164,6 +393,7 @@ class ActivityTailer:
         if offset > size:
             offset = 0
         parser = _claude_events if flavor == "claude" else _codex_events
+        usage_parser = _claude_usage if flavor == "claude" else _codex_usage
 
         with path.open("rb") as session:
             session.seek(offset)
@@ -184,6 +414,9 @@ class ActivityTailer:
                     timestamp = _now()
                 for kind, tool in parser(record):
                     self._append(agent, timestamp, kind, tool)
+                usage = usage_parser(record)
+                if usage is not None:
+                    self._emit_usage(agent, timestamp, usage)
                 committed_offset = session.tell()
             offset = committed_offset
 

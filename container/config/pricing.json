@@ -1,0 +1,80 @@
+{
+  "claude-opus-4": {
+    "input": 15.0,
+    "cache_write": 18.75,
+    "cache_read": 1.5,
+    "output": 75.0
+  },
+  "claude-3-opus": {
+    "input": 15.0,
+    "cache_write": 18.75,
+    "cache_read": 1.5,
+    "output": 75.0
+  },
+  "claude-sonnet-4": {
+    "input": 3.0,
+    "cache_write": 3.75,
+    "cache_read": 0.3,
+    "output": 15.0
+  },
+  "claude-3-7-sonnet": {
+    "input": 3.0,
+    "cache_write": 3.75,
+    "cache_read": 0.3,
+    "output": 15.0
+  },
+  "claude-3-5-sonnet": {
+    "input": 3.0,
+    "cache_write": 3.75,
+    "cache_read": 0.3,
+    "output": 15.0
+  },
+  "claude-3-5-haiku": {
+    "input": 0.8,
+    "cache_write": 1.0,
+    "cache_read": 0.08,
+    "output": 4.0
+  },
+  "claude-3-haiku": {
+    "input": 0.25,
+    "cache_write": 0.3,
+    "cache_read": 0.03,
+    "output": 1.25
+  },
+  "gpt-5-codex": {
+    "input": 2.5,
+    "cache_write": 0.0,
+    "cache_read": 1.25,
+    "output": 10.0
+  },
+  "gpt-5": {
+    "input": 2.5,
+    "cache_write": 0.0,
+    "cache_read": 1.25,
+    "output": 10.0
+  },
+  "gpt-4o": {
+    "input": 2.5,
+    "cache_write": 0.0,
+    "cache_read": 1.25,
+    "output": 10.0
+  },
+  "gpt-4o-mini": {
+    "input": 0.15,
+    "cache_write": 0.0,
+    "cache_read": 0.075,
+    "output": 0.6
+  },
+  "o1": {
+    "input": 15.0,
+    "cache_write": 0.0,
+    "cache_read": 7.5,
+    "output": 60.0
+  },
+  "o3-mini": {
+    "input": 1.1,
+    "cache_write": 0.0,
+    "cache_read": 0.55,
+    "output": 4.4
+  }
+}

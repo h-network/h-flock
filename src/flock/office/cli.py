@@ -16,6 +16,82 @@ from flock.bus import is_member, log_record, members, prefix, record_task_event,
 # this is unchanged, and an agent window still has no REDIS_URL to find.
 _REDIS_URL = os.environ.get("REDIS_URL", "redis://127.0.0.1:6379/0")
 _WORKDIR_ROOT = Path("/workdir")
+_DEFAULT_PRICING_PATH = Path(__file__).parents[3] / "container" / "config" / "pricing.json"
+
+_FALLBACK_PRICING = {
+    "claude-opus-4": {"input": 15.0, "cache_write": 18.75, "cache_read": 1.5, "output": 75.0},
+    "claude-3-opus": {"input": 15.0, "cache_write": 18.75, "cache_read": 1.5, "output": 75.0},
+    "claude-sonnet-4": {"input": 3.0, "cache_write": 3.75, "cache_read": 0.3, "output": 15.0},
+    "claude-3-7-sonnet": {"input": 3.0, "cache_write": 3.75, "cache_read": 0.3, "output": 15.0},
+    "claude-3-5-sonnet": {"input": 3.0, "cache_write": 3.75, "cache_read": 0.3, "output": 15.0},
+    "claude-3-5-haiku": {"input": 0.8, "cache_write": 1.0, "cache_read": 0.08, "output": 4.0},
+    "claude-3-haiku": {"input": 0.25, "cache_write": 0.30, "cache_read": 0.03, "output": 1.25},
+    "gpt-5-codex": {"input": 2.5, "cache_write": 0.0, "cache_read": 1.25, "output": 10.0},
+    "gpt-5": {"input": 2.5, "cache_write": 0.0, "cache_read": 1.25, "output": 10.0},
+    "gpt-4o": {"input": 2.5, "cache_write": 0.0, "cache_read": 1.25, "output": 10.0},
+    "gpt-4o-mini": {"input": 0.15, "cache_write": 0.0, "cache_read": 0.075, "output": 0.60},
+    "o1": {"input": 15.0, "cache_write": 0.0, "cache_read": 7.5, "output": 60.0},
+    "o3-mini": {"input": 1.1, "cache_write": 0.0, "cache_read": 0.55, "output": 4.4},
+}
+
+
+def load_pricing(path: Path | str | None = None) -> dict[str, dict[str, float]]:
+    """Load model pricing definitions from container/config/pricing.json or fallback."""
+    if path is not None:
+        file_path = Path(path)
+    else:
+        env_path = os.environ.get("FLOCK_PRICING_FILE")
+        if env_path:
+            file_path = Path(env_path)
+        else:
+            file_path = _DEFAULT_PRICING_PATH
+
+    if file_path.is_file():
+        try:
+            return json.loads(file_path.read_text(encoding="utf-8"))
+        except Exception:
+            pass
+    return _FALLBACK_PRICING.copy()
+
+
+def find_model_rates(model: str, pricing: dict[str, dict[str, float]]) -> dict[str, float] | None:
+    """Find rates for model using longest-prefix match."""
+    if not model or not pricing:
+        return None
+    matches = [key for key in pricing if model.startswith(key)]
+    if not matches:
+        return None
+    best_key = max(matches, key=len)
+    return pricing[best_key]
+
+
+def calculate_cost(
+    model: str,
+    *,
+    input_tokens: int,
+    cache_read: int,
+    cache_write: int,
+    output_tokens: int,
+    pricing: dict[str, dict[str, float]] | None = None,
+) -> tuple[float | None, bool]:
+    """Calculate token cost in USD using longest-prefix pricing rules.
+
+    Returns (cost_usd, is_priced).
+    If model has no match, returns (None, False).
+    """
+    if pricing is None:
+        pricing = load_pricing()
+    rates = find_model_rates(model, pricing)
+    if rates is None:
+        return None, False
+
+    cost = (
+        input_tokens * rates.get("input", 0.0)
+        + cache_read * rates.get("cache_read", 0.0)
+        + cache_write * rates.get("cache_write", 0.0)
+        + output_tokens * rates.get("output", 0.0)
+    ) / 1_000_000.0
+    return cost, True
 _COMMANDS = (
     "send",
     "broadcast",
@@ -33,6 +109,7 @@ _COMMANDS = (
     "delete",
     "add",
     "cloneToAll",
+    "usage",
 )
 
 
@@ -63,6 +140,7 @@ def _root_parser() -> argparse.ArgumentParser:
         "delete": "permanently remove a task",
         "add": "add a task to another agent's board",
         "cloneToAll": "clone a repository into agent workspaces",
+        "usage": "show token usage and estimated cost",
     }
     for name in _COMMANDS:
         subcommands.add_parser(name, help=descriptions[name], add_help=False)
@@ -275,7 +353,13 @@ def _task_keys(pod: str, tenant: str, agent: str) -> dict[str, str]:
 
 
 def _text(value) -> str:
-    return value.decode() if isinstance(value, bytes) else value
+    if value is None:
+        return ""
+    return value.decode() if isinstance(value, bytes) else str(value)
+
+
+def _fields(raw: dict) -> dict[str, str]:
+    return {_text(key): _text(value) for key, value in raw.items()}
 
 
 def _now() -> str:
@@ -576,6 +660,122 @@ def _clone_to_all_command(argv: list[str]) -> None:
         raise OfficeError(f"{failed} clone operation(s) failed")
 
 
+def _format_token_count(n: int) -> str:
+    if n <= 0:
+        return "-"
+    if n < 1000:
+        return str(n)
+    if n < 1_000_000:
+        val = n / 1000.0
+        if val >= 100 or val.is_integer():
+            return f"{int(round(val))}k"
+        return f"{val:.1f}k"
+    val = n / 1_000_000.0
+    if val.is_integer():
+        return f"{int(round(val))}M"
+    return f"{val:.2f}M"
+
+
+def _usage_command(argv: list[str]) -> None:
+    parser = _operation_parser("usage", "Show token usage and estimated cost.")
+    parser.add_argument("-a", "--agent", metavar="AGENT", help="filter by agent name")
+    parser.add_argument("--since", metavar="ISO", help="filter records since ISO timestamp")
+    parser.add_argument("--json", action="store_true", help="output JSON format")
+    args = parser.parse_args(argv)
+
+    r, pod, tenant, _ = _context()
+    usage_key = prefix(pod, tenant, resource="usage")
+    entries = []
+    if hasattr(r, "xrange"):
+        try:
+            entries = r.xrange(usage_key, min="-", max="+")
+        except Exception:
+            entries = []
+    elif hasattr(r, "streams"):
+        entries = r.streams.get(usage_key, [])
+
+    since_dt = _timestamp(args.since) if args.since else None
+
+    import collections
+    aggregates = collections.defaultdict(lambda: {"input": 0, "cache_read": 0, "cache_write": 0, "output": 0})
+
+    for item in entries:
+        raw_fields = item[1] if isinstance(item, tuple) and len(item) == 2 else item
+        fields = _fields(raw_fields) if hasattr(raw_fields, "items") else {}
+        raw_usage = fields.get("usage")
+        if not raw_usage:
+            continue
+        try:
+            rec = json.loads(raw_usage)
+        except (TypeError, json.JSONDecodeError):
+            continue
+        if not isinstance(rec, dict):
+            continue
+
+        agent = rec.get("agent", "unknown")
+        if args.agent is not None and agent != args.agent:
+            continue
+
+        if since_dt is not None:
+            ts = _timestamp(rec.get("ts"))
+            if ts is not None and ts < since_dt:
+                continue
+
+        cli = rec.get("cli", "unknown")
+        model = rec.get("model", "unknown")
+        key = (agent, cli, model)
+        aggregates[key]["input"] += int(rec.get("input", 0) or 0)
+        aggregates[key]["cache_read"] += int(rec.get("cache_read", 0) or 0)
+        aggregates[key]["cache_write"] += int(rec.get("cache_write", 0) or 0)
+        aggregates[key]["output"] += int(rec.get("output", 0) or 0)
+
+    pricing = load_pricing()
+    rows = []
+    total_usd = 0.0
+
+    for (agent, cli, model), counts in sorted(aggregates.items()):
+        cost, is_priced = calculate_cost(
+            model,
+            input_tokens=counts["input"],
+            cache_read=counts["cache_read"],
+            cache_write=counts["cache_write"],
+            output_tokens=counts["output"],
+            pricing=pricing,
+        )
+        if is_priced and cost is not None:
+            total_usd += cost
+        rows.append({
+            "agent": agent,
+            "cli": cli,
+            "model": model,
+            "input": counts["input"],
+            "cache_read": counts["cache_read"],
+            "cache_write": counts["cache_write"],
+            "output": counts["output"],
+            "usd": round(cost, 4) if (is_priced and cost is not None) else None,
+            "unpriced": not is_priced,
+        })
+
+    if args.json:
+        print(json.dumps({"rows": rows, "total_usd": round(total_usd, 2)}, indent=2))
+        return
+
+    print(f"{'agent':<10}{'cli':<8}{'model':<23}{'input':>7}{'cache_r':>10}{'cache_w':>9}{'output':>9}{'USD':>10}")
+    for row in rows:
+        in_str = _format_token_count(row["input"])
+        cr_str = _format_token_count(row["cache_read"])
+        cw_str = _format_token_count(row["cache_write"])
+        out_str = _format_token_count(row["output"])
+        usd_str = "unpriced" if row["unpriced"] else f"{row['usd']:.2f}"
+        print(
+            f"{row['agent']:<10}{row['cli']:<8}{row['model']:<23}"
+            f"{in_str:>7}{cr_str:>10}{cw_str:>9}{out_str:>9}{usd_str:>10}"
+        )
+    if rows:
+        print(f"{'':>66}{'------':>10}")
+        print(f"{'':>66}{total_usd:>10.2f}")
+
+
 def main(argv: Sequence[str] | None = None) -> None:
     # ⚠ Scoped, not global. This command runs inside an agent's window, so its
     # stdout is a pane and bus telemetry printed there is a signpost the agent
@@ -645,6 +845,8 @@ def _run(args: list[str]) -> None:
             _add_command(remainder)
         elif command == "cloneToAll":
             _clone_to_all_command(remainder)
+        elif command == "usage":
+            _usage_command(remainder)
         else:
             parser.error(f"unknown command: {command}")
     except OfficeError as exc:

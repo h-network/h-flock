@@ -21,6 +21,7 @@ def mark_delivery_pending(
     tenant: str,
     agent: str,
     stream_id: str,
+    correlation_id: str | None = None,
 ) -> None:
     """Record a pending delivery verification marker for a tmux paste (claude/codex only)."""
     try:
@@ -41,11 +42,21 @@ def mark_delivery_pending(
             return
 
         verify_key = prefix(pod, tenant, agent=agent, resource="pending.verify")
+        markers_key = prefix(pod, tenant, agent=agent, resource="delivery.markers")
         ts = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.%f")[:-3] + "Z"
+        entry = {"stream_id": stream_id, "ts": ts}
+        if correlation_id:
+            entry["correlation_id"] = correlation_id
         r.xadd(
             verify_key,
-            {"stream_id": stream_id, "ts": ts},
+            entry,
             maxlen=100,
+            approximate=True,
+        )
+        r.xadd(
+            markers_key,
+            entry,
+            maxlen=500,
             approximate=True,
         )
     except Exception:
@@ -62,6 +73,7 @@ def message_opener(
     socket: str | None = None,
 ) -> None:
     stream_id = envelope.get("stream_id", "")
+    corr_id = envelope.get("correlation_id")
     source = envelope.get("l2", {}).get("source", "unknown")
     payload = envelope.get("payload", {})
 
@@ -78,7 +90,7 @@ def message_opener(
     #
     # Marking first costs nothing if the paste fails: the delivery genuinely did
     # not happen, and unverified is the right answer.
-    mark_delivery_pending(r, pod, tenant, agent, stream_id)
+    mark_delivery_pending(r, pod, tenant, agent, stream_id, correlation_id=corr_id)
     paste_text(session_name, agent, formatted_msg, stream_id=stream_id, socket=socket)
 
 
@@ -92,6 +104,7 @@ def command_opener(
     socket: str | None = None,
 ) -> None:
     stream_id = envelope.get("stream_id", "")
+    corr_id = envelope.get("correlation_id")
     source = envelope.get("l2", {}).get("source", "unknown")
     payload = envelope.get("payload", {})
 
@@ -108,7 +121,7 @@ def command_opener(
     #
     # Marking first costs nothing if the paste fails: the delivery genuinely did
     # not happen, and unverified is the right answer.
-    mark_delivery_pending(r, pod, tenant, agent, stream_id)
+    mark_delivery_pending(r, pod, tenant, agent, stream_id, correlation_id=corr_id)
     paste_text(session_name, agent, formatted_msg, stream_id=stream_id, socket=socket)
 
 
