@@ -3,7 +3,23 @@
 # The h-network base carries tmux and the agent CLIs (claude, codex, agy) plus
 # startAgent, so a window can run a real agent rather than a mock shell. It does
 # not carry redis or an init, which are this container's own concerns.
-FROM ghcr.io/h-network/base:latest
+# ⚠ PINNED BY DIGEST, NOT `:latest`. The base owns `startAgent` and the agent
+# CLIs, so it decides how every window launches — and nothing in this repository
+# executes `startAgent` or asserts it works. The two tests that mention it check
+# that we CONSTRUCT the string; `run_tmux` is mocked. All 432 tests stay green if
+# the base drops it entirely.
+#
+# ⚠ So an unpinned base change lands on the next `--build` and shows up as silent
+# agents — the same signature as a login prompt, a first-run dialog or a wedged
+# CLI. Pinned, absorbing a base change is a commit here that can be reverted.
+#
+# This is also what makes it safe to iterate on the base from a tenant that is
+# itself running on it: the office keeps this digest while the new one is built.
+#
+# To update: `docker buildx imagetools inspect ghcr.io/h-network/base:latest`,
+# take `Digest:`, change the line below, rebuild, and run acceptance. Record the
+# digest in the build's results (`BUILD-CONVENTION` §3.0).
+FROM ghcr.io/h-network/base@sha256:74c290e5db4955e45f0316b7c192c54a7166284af33dd1d1f5364360db791a6f
 
 USER root
 

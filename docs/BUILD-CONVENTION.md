@@ -40,6 +40,27 @@ falsifiability, not on volume.
 
 ## 3. ⚠ Measurement, if the build claims a number
 
+### 3.0a ⚠ Name the base image digest, not just the host
+
+A run is against a host **and** a base image. `container/Dockerfile` pins
+`ghcr.io/h-network/base` **by digest** — the base owns `startAgent` and the agent
+CLIs, so it decides how every window launches, and **nothing in this repository
+executes `startAgent` or asserts that it works.** The two tests that mention it
+check the string we construct, with `run_tmux` mocked.
+
+**Record the digest in any results doc that quotes a number**, the same way §3.0
+names the host:
+
+```bash
+grep '^FROM' container/Dockerfile          # what the build used
+docker buildx imagetools inspect ghcr.io/h-network/base:latest   # what is current
+```
+
+⚠ **Every figure taken before 2026-08-22 names no base image** — 845/s, 0 of 40,
+the six-stage conservation. All were against
+`sha256:74c290e5db49…`, established after the fact, and both hosts happened to
+hold the same one. That was luck, not method.
+
 ### 3.0 ⚠ The two hosts, and which question each answers
 
 We all run as unix user `ubuntu` with a shared `HOME=/home/ubuntu`, so
