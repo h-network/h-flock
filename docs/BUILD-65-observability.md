@@ -1,5 +1,11 @@
 # Build 65 — is every handover, every failure, every forward actually logged?
 
+> ⚠ **The figures below name no host, and the spread between our two is 130×**
+> — identical scripts read **6.5/s on the 4-vCPU lab** and **853/s on h-oracle**.
+> Read every `/s` here as this build's own evidence on an unrecorded host,
+> **never as a capability**. `BUILD-CONVENTION` §3.0 is the rule that followed;
+> [`DRIFT`](DRIFT.md) §4 is the finding.
+
 > **Base on `main`.** Branch `bus/build-65-observability`, push to origin.
 > Owner: `bus` (`flock/bus/logging.py`, `flock/switch`, `flock/port`).
 > ⚠ **Audit first. The fix is the second half and may be smaller than it looks.**

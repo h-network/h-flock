@@ -1,5 +1,11 @@
 # Build 53 — the envelope becomes a frame
 
+> ⚠ **The figures below name no host, and the spread between our two is 130×**
+> — identical scripts read **6.5/s on the 4-vCPU lab** and **853/s on h-oracle**.
+> Read every `/s` here as this build's own evidence on an unrecorded host,
+> **never as a capability**. `BUILD-CONVENTION` §3.0 is the rule that followed;
+> [`DRIFT`](DRIFT.md) §4 is the finding.
+
 > **Base on `main`.** Branch `bus/build-53-frame`, push to origin.
 > Owner: `bus`. ⚠ Touches `flock/adapter` (`tmux`'s) and the clients (`api`'s) —
 > see §7. **This is a wire change.**

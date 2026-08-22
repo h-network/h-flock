@@ -1,5 +1,11 @@
 # Build 69 — broadcast conservation results
 
+> ⚠ **The figures below name no host, and the spread between our two is 130×**
+> — identical scripts read **6.5/s on the 4-vCPU lab** and **853/s on h-oracle**.
+> Read every `/s` here as this build's own evidence on an unrecorded host,
+> **never as a capability**. `BUILD-CONVENTION` §3.0 is the rule that followed;
+> [`DRIFT`](DRIFT.md) §4 is the finding.
+
 Tested branch tip `e54b1e2` on the disposable `broadcast69` tenant. The frame
 format did not change: broadcast frames retained L2 `destination: all` while
 receive-side custody records named the actual participant.

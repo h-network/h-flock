@@ -133,7 +133,36 @@ python3 -c "import sys;sys.path.insert(0,'src');from flock.bus.logging import _E
 everything downstream are per-recipient. So a broadcast **cannot** be joined
 across `forwarded -> kick_started`.
 
-## 4. ⚠ Every throughput figure older than 2026-08-14 is a 4-vCPU number
+## 4. ✅ CLOSED 2026-08-22 — every throughput figure older than 2026-08-14 is a 4-vCPU number
+
+**25 build documents quote a `/s` figure. 6 already named their host** — 48-bus
+says *"All measurements were made on h-lab"* at `:44`, plus 71-×2, 72-×2 and
+`BUILD-CONVENTION` itself. **The remaining 19 carry a banner** under their title
+stating that no host is named and the spread is 130×.
+
+⚠ **`\b` matters in the pattern below.** A bare `[0-9]/s` matches
+`wss://…:8081/session` and reports `BUILD-77` — which quotes no figure at all —
+as drift. The first version of this check did exactly that, and a check that
+reports a clean document is one people stop running.
+
+⚠ **No figure was edited and no history was rewritten**, per the caution below —
+the banner is an annotation above the content, and each document still reads as
+the dated record it is.
+
+⚠ **This row is the reason to distrust a bare number in this repository**, and it
+stays visible rather than being deleted: the same defect recurs the moment
+someone measures on one host and writes it down without saying which.
+
+**Re-check:** every `BUILD-*.md` with a `/s` figure either names a host or
+carries the banner.
+
+```bash
+for f in $(grep -rlE '[0-9]+(\.[0-9]+)?/s\b' docs/BUILD-*.md); do
+  grep -qE 'h-lab|h-oracle|4-vCPU|performance host|name no host' "$f" || echo "UNMARKED $f"
+done
+```
+
+### The original finding
 
 **25 `BUILD-*.md` files quote a `/s` figure.** Identical scripts measured
 **6.5/s on the lab and 832/s on h-oracle**; the switch read 7–9 ms there and 0 ms
