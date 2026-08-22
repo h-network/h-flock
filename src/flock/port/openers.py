@@ -53,6 +53,16 @@ def mark_delivery_pending(
             maxlen=100,
             approximate=True,
         )
+        # ⚠ 500 IS A SAFETY NET, NOT A POLICY, AND IT CAN LOSE ATTRIBUTION.
+        # A marker trimmed here yields a usage record with no stream_id, which is
+        # the degradation BUILD-82 §3 specifies — omit rather than guess — so the
+        # loss is acceptable and bounded. It is NOT observable: a counter that
+        # fired on every uncorrelated record was removed in review because 9 of
+        # 27 uncorrelated in the live run were the normal case, and a signal
+        # dominated by the normal case is the delivery_unverified defect again.
+        # ⚠ Do not "fix" this with an XDEL on attribution. That was built once
+        # and deleted the marker BEFORE the claim, turning a retryable XADD miss
+        # into permanent loss and letting a duplicate delete a newer marker.
         r.xadd(
             markers_key,
             entry,
