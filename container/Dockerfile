@@ -113,10 +113,20 @@ RUN mkdir -p /home/ubuntu/.flock/tmux /workdir \
 # environment and therefore in every agent's, which is how an agent asked "where
 # are my peers" found a database instead. The entrypoint hands it to the router,
 # which is the only module that requires it.
+# ⚠ A TUNING DEFAULT SET HERE SILENTLY BEATS THE ONE IN THE CODE, because the
+# code reads `os.environ.get(NAME, default)` and this makes NAME always present.
+# `VERIFY_AFTER_SECONDS=10` used to live in this block. Build 81 raised the class
+# default to 120 and build 80 raised `service.py`'s fallback to 120 — and the
+# window in a running tenant stayed 10, because this line won both times. Two
+# lanes fixed it, neither fix reached production. It is gone; `service.py` owns
+# it now, and an operator can still set it in `container/.env`.
+#
+# ⚠ The two below duplicate their code defaults and currently AGREE, which is the
+# only reason they are not the same bug. Change one and you must change both —
+# or better, delete it here as `VERIFY_AFTER_SECONDS` was deleted.
 ENV PYTHONUNBUFFERED=1 \
     ROSTER_POLL_SECONDS=5 \
     ACTIVITY_POLL_SECONDS=2 \
-    VERIFY_AFTER_SECONDS=10 \
     PRESENCE_WORKING_SECONDS=30 \
     BOARD_DONE_MAX=500 \
     DEAD_MAX=500 \

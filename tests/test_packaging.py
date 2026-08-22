@@ -26,3 +26,43 @@ def test_uvicorn_can_actually_serve_websockets():
         "uvicorn has no usable WebSocket implementation — flock.session will "
         "answer 404 on /session and only log a warning"
     )
+
+
+def test_image_env_does_not_shadow_a_diverging_code_default():
+    """⚠ An image ENV silently beats the code default it duplicates.
+
+    `VERIFY_AFTER_SECONDS=10` lived in the Dockerfile ENV block. Build 81 raised
+    the class default to 120 and build 80 raised `service.py`'s fallback to 120,
+    and a running tenant still used 10 — measured on h-oracle 2026-08-22, where
+    the watchdog's `/proc/<pid>/environ` read `VERIFY_AFTER_SECONDS=10` while the
+    installed source read `"120"`. Two lanes fixed it; neither fix reached
+    production.
+
+    This fails when the image sets a tuning knob to a value the code disagrees
+    with, which is the only case that is silently wrong.
+    """
+    import pathlib
+    import re
+
+    root = pathlib.Path(__file__).resolve().parents[1]
+    dockerfile = (root / "container" / "Dockerfile").read_text()
+
+    image = {}
+    for match in re.finditer(r"^\s*(?:ENV\s+)?([A-Z][A-Z0-9_]+)=(\S+)", dockerfile, re.M):
+        image[match.group(1)] = match.group(2).rstrip("\\").strip()
+
+    mismatched = []
+    for path in (root / "src").rglob("*.py"):
+        text = path.read_text()
+        for name, default in re.findall(
+            r'environ\.get\(\s*"([A-Z][A-Z0-9_]+)"\s*,\s*"([^"]*)"\s*\)', text
+        ):
+            if name in image and image[name] != default:
+                mismatched.append(
+                    f"{name}: image={image[name]!r} code={default!r} ({path.name})"
+                )
+
+    assert not mismatched, (
+        "the image ENV overrides a different code default, so the code default "
+        f"is dead: {mismatched}"
+    )
