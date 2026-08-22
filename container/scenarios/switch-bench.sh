@@ -63,7 +63,22 @@ for i in $(seq 1 "$STATIONS"); do
     "$A/agents/host/envelopes"
 done
 sleep 5
-echo "  roster: $(dx redis-cli HLEN "pod:$POD:tenant:$TENANT:roster" | tr -d '\r')"
+ROSTER=$(dx redis-cli HLEN "pod:$POD:tenant:$TENANT:roster" | tr -d '\r')
+echo "  roster: $ROSTER"
+
+# ⚠ ENROLMENT GOES THROUGH THE REST API DOOR, WHICH IS OPT-IN SINCE BUILD 76.
+# Against a tenant with API_ENABLED=0 every curl above posts into a closed door,
+# returns nothing, and this script used to print "roster: 4" against STATIONS=100
+# and carry on — submitting 2000 envelopes addressed to stations that do not
+# exist, which the switch correctly refuses to forward, then hanging in the drain
+# loop forever waiting for deliveries that can never happen. Measured 2026-08-22.
+# The contradiction was already in its own output; nothing read it.
+if [ "${ROSTER:-0}" -lt "$STATIONS" ]; then
+  echo "switch-bench: enrolled $ROSTER of $STATIONS stations." >&2
+  echo "  The REST API door is how stations enrol and it is opt-in. Check" >&2
+  echo "  API_ENABLED=1 in container/.env, then recreate the tenant." >&2
+  exit 1
+fi
 
 echo "== synthetic port =="
 # ⚠ The image contains /app/src only — `container/scenarios/` is NOT baked in.
