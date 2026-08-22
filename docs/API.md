@@ -177,7 +177,7 @@ curl -H "Authorization: Bearer $API_TOKEN" \
       "l2": {"source": "backend", "destination": "telegram"},
       "ttl": 16,
       "hops": 0,
-      "ttl": 16, "hops": 0, "l3": {"source": "acme:hq:backend", "destination": "acme:hq:telegram"},
+      "l3": {"source": "acme:hq:backend", "destination": "acme:hq:telegram"},
       "payload": {
         "text": "hello from backend"
       },
@@ -805,7 +805,7 @@ Port `:8081` provides WebSocket terminal access for rendering live terminal wind
 | **Policy Denial** | `"policy denied '<source>' -> '<destination>': no shared export/import tag"` | Senders and recipients have disjoint policy tags. **Nothing was sent or enqueued.** Verify and update `export` / `import` tags via `StartAgent`. |
 | **Non-Local Route** | `"no route to non-local destination '<destination>'"` | Destination specifies a qualified pod/tenant outside this tenant. Intra-tenant local routing cannot reach foreign nodes without a gateway. |
 | **Invalid Client Identity** | `"invalid 'as' client: must be an enrolled client with port_type 'api'"` | The declared `"as"` client is not enrolled in the tenant roster as an `api` participant. Enrol with `StartAgent` first. |
-| **Malformed Address / Payload** | `"destination must be a qualified pod:tenant:agent address"` or `"payload must be an object"` | Request envelope structure does not conform to the v3 frame specification. |
+| **Malformed Address / Payload** | `"destination must be a qualified pod:tenant:agent address"` or `"payload must be an object"` | Request envelope structure does not conform to the v4 frame specification. |
 | **Payload Too Large** | `"request body too large (max 1MB)"` | Envelope payload exceeded the 1MB limit. |
 
 ### Custody Records & Observability
