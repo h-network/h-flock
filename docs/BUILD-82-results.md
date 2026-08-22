@@ -30,21 +30,21 @@ USD cost columns.
 ## TEST SIGN-OFF — full repository gate
 
     claim            ActivityTailer extracts 4 usage buckets, dedupes request IDs, correlates delivery markers, prices via longest prefix with unpriced flags, and office usage formats summaries
-    source sha       44029d80f2c55adb9c4afe4931f5ccd2893776f0
+    source sha       dfa40cb228d5821a6aa4e5067eeb8500cc5e35cd
     artefact         COMMIT
     host             local — hermetic in-memory Redis double, session fixtures, and citation reads
     command          python3 -m pytest -q
     exit status      0, read unpiped
 
     EXCLUDED         container build, accept.sh, live tenant, four-agent Nemotron live run, and live LLM API calls
-    population       423 tests and 5 subtests; all repository tests collected
+    population       424 tests and 5 subtests; all repository tests collected
 
     control          five property mutations documented below
     expected locus   exact bucket extraction, request deduplication, unpriced flagging, cache non-decorativeness, and marker correlation/omission
     observed locus   same for all five
     signature        each named test failed with exit 1 on property mutation and passed upon restoration
 
-    evidence         tests/test_usage.py at 44029d80f2c55adb9c4afe4931f5ccd2893776f0
+    evidence         tests/test_usage.py at dfa40cb228d5821a6aa4e5067eeb8500cc5e35cd
 
     verdict          PASS
     VERIFIED BY      PENDING — independent lane required before merge — author of the change? NO
@@ -57,7 +57,7 @@ Property mutation: mutated `claude-opus-4` cache_read pricing rate from 1.50 to 
 
     command          pytest -q tests/test_usage.py::test_claude_fixture_extracts_four_buckets_and_exact_usd
     exit status      1, read unpiped
-    expected locus   calculate_cost rate lookup in src/flock/office/cli.py
+    expected locus   calculate_cost rate lookup in src/flock/office/pricing.py
     observed locus   tests/test_usage.py assertion on expected cost
     signature        AssertionError: assert 0.1381425 == 0.198609
 
@@ -82,7 +82,7 @@ Property mutation: changed missing model pricing to return `(0.00, True)` instea
 
     command          pytest -q tests/test_usage.py::test_unpriced_model_is_flagged_unpriced_not_zero
     exit status      1, read unpiped
-    expected locus   calculate_cost missing model branch in src/flock/office/cli.py
+    expected locus   calculate_cost missing model branch in src/flock/office/pricing.py
     observed locus   tests/test_usage.py is_priced assertion
     signature        AssertionError: assert True is False
 
@@ -94,7 +94,7 @@ Property mutation: zeroed out `cache_read` and `cache_write` in `calculate_cost`
 
     command          pytest -q tests/test_usage.py::test_cache_buckets_are_not_decorative
     exit status      1, read unpiped
-    expected locus   calculate_cost token multiplication in src/flock/office/cli.py
+    expected locus   calculate_cost token multiplication in src/flock/office/pricing.py
     observed locus   tests/test_usage.py difference assertion
     signature        AssertionError: assert 0.0 == pytest.approx(2.4375)
 
@@ -114,7 +114,7 @@ Restored behavior joins the first usage record after a marker and omits `stream_
 
 ## Citation gate
 
-    source sha       44029d80f2c55adb9c4afe4931f5ccd2893776f0
+    source sha       dfa40cb228d5821a6aa4e5067eeb8500cc5e35cd
     command          python3 tools/check_citations.py
     exit status      0, read unpiped
     population       676 citations, 550 unique
