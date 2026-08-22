@@ -169,7 +169,6 @@ _EMIT_USAGE_LUA = """
 local stream_key = KEYS[1]
 local seen_key = KEYS[2]
 local attributed_key = KEYS[3]
-local unattributed_key = KEYS[4]
 
 local request_id = ARGV[1]
 local raw_usage = ARGV[2]
@@ -191,8 +190,6 @@ end
 
 if stream_id ~= "" and attributed_key ~= "" then
     redis.call("SADD", attributed_key, stream_id)
-elseif unattributed_key ~= "" then
-    redis.call("INCR", unattributed_key)
 end
 
 return 1
@@ -312,22 +309,32 @@ class ActivityTailer:
         attributed_key = prefix(self.pod, self.tenant, agent, "usage.attributed")
 
         raw_entries = []
-        if hasattr(self.r, "xrange"):
+        if hasattr(self.r, "xrevrange"):
             try:
-                raw_entries.extend(self.r.xrange(markers_key, min="-", max="+"))
+                raw_entries.extend(self.r.xrevrange(markers_key, max="+", min="-", count=50))
             except Exception:
                 pass
             try:
-                raw_entries.extend(self.r.xrange(verify_key, min="-", max="+"))
+                raw_entries.extend(self.r.xrevrange(verify_key, max="+", min="-", count=50))
+            except Exception:
+                pass
+        elif hasattr(self.r, "xrange"):
+            try:
+                raw_entries.extend(self.r.xrange(markers_key, min="-", max="+", count=50))
+            except Exception:
+                pass
+            try:
+                raw_entries.extend(self.r.xrange(verify_key, min="-", max="+", count=50))
             except Exception:
                 pass
         elif hasattr(self.r, "streams"):
-            raw_entries.extend(self.r.streams.get(markers_key, []))
-            raw_entries.extend(self.r.streams.get(verify_key, []))
+            raw_entries.extend(self.r.streams.get(markers_key, [])[-50:])
+            raw_entries.extend(self.r.streams.get(verify_key, [])[-50:])
 
         candidates = []
         seen_sids = set()
         for item in raw_entries:
+            entry_id = item[0] if isinstance(item, tuple) and len(item) == 2 else None
             raw_fields = item[1] if isinstance(item, tuple) and len(item) == 2 else item
             fields = _fields(raw_fields) if hasattr(raw_fields, "items") else {}
             sid = fields.get("stream_id")
@@ -336,13 +343,24 @@ class ActivityTailer:
             seen_sids.add(sid)
             m_time = _timestamp(fields.get("ts"))
             if m_time is not None and m_time <= usage_time:
-                candidates.append((m_time, sid, fields.get("correlation_id")))
+                candidates.append((m_time, sid, fields.get("correlation_id"), entry_id))
 
         if not candidates:
             return None, None
 
-        candidates.sort(key=lambda item: item[0])
-        _, stream_id, correlation_id = candidates[-1]
+        def _parse_eid(eid):
+            if eid is None:
+                return (0, 0)
+            if isinstance(eid, bytes):
+                eid = eid.decode("utf-8", "replace")
+            parts = str(eid).split("-")
+            try:
+                return (int(parts[0]), int(parts[1]) if len(parts) > 1 else 0)
+            except ValueError:
+                return (0, 0)
+
+        candidates.sort(key=lambda item: (item[0], _parse_eid(item[3])))
+        _, stream_id, correlation_id, entry_id = candidates[-1]
 
         if stream_id in self._attributed_markers[agent]:
             return None, None
@@ -352,6 +370,12 @@ class ActivityTailer:
                 if self.r.sismember(attributed_key, stream_id):
                     self._attributed_markers[agent].add(stream_id)
                     return None, None
+            except Exception:
+                pass
+
+        if entry_id and hasattr(self.r, "xdel"):
+            try:
+                self.r.xdel(markers_key, entry_id)
             except Exception:
                 pass
 
@@ -366,7 +390,6 @@ class ActivityTailer:
         stream_id, correlation_id = self._correlate_delivery(agent, timestamp)
         stream_id_str = stream_id or ""
         attributed_key = prefix(self.pod, self.tenant, agent, "usage.attributed") if stream_id else ""
-        unattributed_key = prefix(self.pod, self.tenant, agent, "usage.unattributed") if not stream_id else ""
 
         record = {
             "module": "watchdog",
@@ -394,11 +417,10 @@ class ActivityTailer:
             try:
                 res = self.r.eval(
                     _EMIT_USAGE_LUA,
-                    4,
+                    3,
                     usage_stream,
                     seen_key or "",
                     attributed_key or "",
-                    unattributed_key or "",
                     request_id,
                     raw,
                     stream_id_str,
@@ -425,8 +447,6 @@ class ActivityTailer:
                     self.r.sadd(seen_key, request_id)
                 if stream_id and hasattr(self.r, "sadd"):
                     self.r.sadd(attributed_key, stream_id)
-                elif unattributed_key and hasattr(self.r, "incr"):
-                    self.r.incr(unattributed_key)
                 emitted = True
             except Exception:
                 return

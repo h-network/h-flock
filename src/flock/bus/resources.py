@@ -18,7 +18,6 @@ AGENT_STATE_RESOURCES = frozenset(
         "delivery.markers",
         "usage.requests",
         "usage.attributed",
-        "usage.unattributed",
         "tags",
     }
 )

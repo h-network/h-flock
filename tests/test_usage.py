@@ -32,8 +32,23 @@ class UsageRedis:
     def xadd(self, key, fields, *, maxlen=None, approximate=False):
         self.streams.setdefault(key, []).append((f"{len(self.streams.setdefault(key, [])) + 1}-0", fields))
 
-    def xrange(self, key, min="-", max="+"):
-        return list(self.streams.get(key, []))
+    def xrange(self, key, min="-", max="+", count=None):
+        entries = list(self.streams.get(key, []))
+        if count is not None:
+            entries = entries[:count]
+        return entries
+
+    def xrevrange(self, key, max="+", min="-", count=None):
+        entries = list(reversed(self.streams.get(key, [])))
+        if count is not None:
+            entries = entries[:count]
+        return entries
+
+    def xdel(self, key, *ids):
+        id_set = set(ids)
+        if key in self.streams:
+            self.streams[key] = [e for e in self.streams[key] if e[0] not in id_set]
+        return len(id_set)
 
     def sadd(self, key, member):
         s = self.sets.setdefault(key, set())
@@ -54,7 +69,6 @@ class UsageRedis:
         stream_key = args[0] if numkeys >= 1 else ""
         seen_key = args[1] if numkeys >= 2 else ""
         attributed_key = args[2] if numkeys >= 3 else ""
-        unattributed_key = args[3] if numkeys >= 4 else ""
 
         request_id = args[numkeys] if len(args) > numkeys else ""
         raw_usage = args[numkeys + 1] if len(args) > numkeys + 1 else ""
@@ -72,8 +86,6 @@ class UsageRedis:
                 self.sadd(seen_key, request_id)
             if stream_id and attributed_key:
                 self.sadd(attributed_key, stream_id)
-        if "INCR" in script and not stream_id and unattributed_key:
-            self.incr(unattributed_key)
 
         return 1
 
@@ -606,7 +618,7 @@ def test_lua_script_atomic_claim_and_replay_dedupe_on_real_redis(tmp_path):
 
     redis_bin = shutil.which("redis-server") or "/usr/bin/redis-server"
     if not Path(redis_bin).exists():
-        pytest.skip(f"redis-server binary not found at {redis_bin}")
+        pytest.fail(f"redis-server binary not found at {redis_bin} - real redis test is mandatory")
 
     # Find free port and spin redis-server on temp port
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
@@ -670,6 +682,48 @@ def test_lua_script_atomic_claim_and_replay_dedupe_on_real_redis(tmp_path):
             proc.kill()
 
 
+def test_marker_is_xdeleted_from_delivery_markers_upon_attribution(tmp_path):
+    """On successful attribution, the marker entry is XDEL'd from delivery.markers to bound storage."""
+    r = UsageRedis(agents=("bus",))
+    r.values[prefix("acme", "hq", "bus", "launch")] = "claude"
+
+    mark_delivery_pending(
+        r,
+        "acme",
+        "hq",
+        "bus",
+        "stream-turn-xdel",
+        correlation_id="corr-turn-xdel",
+    )
+
+    markers_key = prefix("acme", "hq", "bus", "delivery.markers")
+    assert len(r.streams.get(markers_key, [])) == 1
+
+    session = tmp_path / ".claude" / "projects" / "-workdir-bus" / "session.jsonl"
+    _write_lines(
+        session,
+        [
+            {
+                "type": "assistant",
+                "timestamp": "2026-08-22T23:59:59.000Z",
+                "message": {
+                    "id": "msg_marker_xdel",
+                    "model": "claude-opus-4-8",
+                    "usage": {"input_tokens": 100, "output_tokens": 50},
+                },
+            }
+        ],
+    )
+
+    tailer = ActivityTailer(r, pod="acme", tenant="hq", home_root=tmp_path)
+    tailer.poll()
+
+    records = _usage_records(r)
+    assert len(records) == 1
+    assert records[0]["stream_id"] == "stream-turn-xdel"
+    assert len(r.streams.get(markers_key, [])) == 0
+
+
 def test_unresolved_markers_correlated_within_ceiling(tmp_path):
     """Pending markers are correlated with usage within the documented ceiling."""
     r = UsageRedis(agents=("bus",))
@@ -709,32 +763,3 @@ def test_unresolved_markers_correlated_within_ceiling(tmp_path):
     assert len(records) == 1
     assert records[0]["stream_id"] == "stream-turn-050"
     assert records[0]["correlation_id"] == "corr-turn-050"
-
-
-def test_unattributed_usage_increments_observable_counter(tmp_path):
-    """When a marker is absent or trimmed, stream_id is omitted and usage.unattributed is incremented."""
-    r = UsageRedis(agents=("bus",))
-    session = tmp_path / ".claude" / "projects" / "-workdir-bus" / "session.jsonl"
-    _write_lines(
-        session,
-        [
-            {
-                "type": "assistant",
-                "timestamp": "2026-08-22T10:00:00.000Z",
-                "message": {
-                    "id": "msg_unattributed_001",
-                    "model": "claude-opus-4-8",
-                    "usage": {"input_tokens": 100, "output_tokens": 50},
-                },
-            }
-        ],
-    )
-
-    tailer = ActivityTailer(r, pod="acme", tenant="hq", home_root=tmp_path)
-    tailer.poll()
-
-    records = _usage_records(r)
-    assert len(records) == 1
-    assert "stream_id" not in records[0]
-    unattributed_key = prefix("acme", "hq", "bus", "usage.unattributed")
-    assert r.values.get(unattributed_key) == 1

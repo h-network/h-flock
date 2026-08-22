@@ -112,6 +112,31 @@ class Redis:
                 result.append(item)
         return result
 
+    def xrevrange(self, key, max="+", min="-", count=None):
+        parts = ["XREVRANGE", key, max, min]
+        if count is not None:
+            parts.extend(("COUNT", count))
+        raw = self._command(*parts)
+        if not raw:
+            return []
+        result = []
+        for item in raw:
+            if isinstance(item, (list, tuple)) and len(item) == 2:
+                entry_id, fields_list = item[0], item[1]
+                if isinstance(fields_list, (list, tuple)):
+                    fields_dict = dict(zip(fields_list[::2], fields_list[1::2]))
+                    result.append((entry_id, fields_dict))
+                elif isinstance(fields_list, dict):
+                    result.append((entry_id, fields_list))
+                else:
+                    result.append((entry_id, fields_list))
+            else:
+                result.append(item)
+        return result
+
+    def xdel(self, key, *ids):
+        return self._command("XDEL", key, *ids)
+
     def xlen(self, key): return self._command("XLEN", key)
 
     def hgetall(self, key):
