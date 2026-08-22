@@ -126,6 +126,15 @@ step "install — driving setup.sh as a person would"
 # string did not, which is the breakage the header above predicts — and it is
 # api's "atomic edge and consumer landing" rule: an edge knob changed without
 # its consumers in the same commit leaves the repo broken.
+# ⚠ A SHORT VERIFICATION WINDOW, ON PURPOSE. The failure simulator proves the
+# fabric still CATCHES a wedged agent, and no verdict can exist until a marker is
+# older than this. Production is 120s, which would make each of the four cases
+# wait out two minutes. What is under test is the detection, not the tuning
+# value — that is measured separately in BUILD-81's live arm.
+# ⚠ It also exercises the knob end to end. `Dockerfile:119` shadowed this exact
+# variable and two lanes' fixes never reached a running tenant.
+export VERIFY_AFTER_SECONDS=5
+
 rm -f container/.env
 printf 'acme\n%s\n2\narchitect\nsme-2\nn\nn\ny\nn\n%s\n%s\ny\n\nn\n' \
   "$TENANT" "$API_PORT" "$SESSION_PORT" | ./setup.sh 2>&1 \

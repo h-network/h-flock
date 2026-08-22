@@ -86,10 +86,22 @@ window_present() {
     printf '%s\n' "$windows" | grep -Fxq -- "$agent"
 }
 
+# ⚠ HOW LONG TO WAIT IS NOT A CONSTANT — it is the tenant's verification window.
+# The verifier judges nothing until a marker is older than VERIFY_AFTER_SECONDS,
+# so a fixed poll silently becomes "the fabric failed to catch a wedged agent"
+# the moment that window is raised. Build 81 moved it 10 -> 120 and this file's
+# 20-second poll turned four true detections into four FAILs on the lab.
+# Derived from the running tenant, plus a poll cycle of slack.
+VERIFY_WINDOW=$(dx sh -c 'tr "\0" "\n" < /proc/$(pgrep -f flock.watchdog | head -1)/environ 2>/dev/null | sed -n "s/^VERIFY_AFTER_SECONDS=//p"' 2>/dev/null | tr -d '\r\n')
+VERIFY_WINDOW="${VERIFY_WINDOW:-120}"
+# Two polls per second, window + 45s of slack for the watchdog's own cadence.
+POLL_TICKS=$(( (VERIFY_WINDOW + 45) * 2 ))
+echo "sim-blocked: verification window ${VERIFY_WINDOW}s — waiting up to $((POLL_TICKS / 2))s per verdict"
+
 poll_blocked_key() {
     local agent="$1"
     local key="pod:$POD:tenant:$TENANT:agent:$agent:blocked"
-    for _ in $(seq 1 40); do
+    for _ in $(seq 1 "$POLL_TICKS"); do
         local val=$(dx redis-cli HGETALL "$key" 2>/dev/null || true)
         if [ -n "$val" ]; then
             echo "$val"
@@ -124,7 +136,8 @@ poll_judged() {
         return 2
     fi
 
-    for _ in $(seq 1 120); do
+    # Same derivation: a verdict cannot exist before the window elapses.
+    for _ in $(seq 1 "$POLL_TICKS"); do
         n=$(dx redis-cli XLEN "$key" 2>/dev/null | tr -d '\r\n' || true)
         if [ "${n:-0}" -eq 0 ]; then return 0; fi
         sleep 0.5
