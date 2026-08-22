@@ -258,3 +258,30 @@ def test_unwritable_custody_file_never_breaks_a_send(monkeypatch, tmp_path, caps
     log_record("switch", "forwarded", source="a", destination="b")
 
     assert json.loads(capsys.readouterr().out.strip())["event"] == "forwarded"
+
+
+def test_watchdog_alerts_reach_the_durable_mirror(monkeypatch, tmp_path, capsys):
+    """⚠ Alerts bypassed the evidence file until 2026-08-22.
+
+    `Watchdog._alert` raw-printed and xadd'd to the Redis `alerts` stream. Both
+    die with the container — Redis AOF lives in the container filesystem with no
+    volume — so a credential or stall alert left NO trace after teardown. Found
+    by diffing the evidence file against `docker logs` on a live tenant.
+    """
+    from flock.watchdog.service import Watchdog
+
+    evidence = tmp_path / "custody.jsonl"
+    monkeypatch.setenv("FLOCK_CUSTODY_FILE", str(evidence))
+
+    class FakeRedis:
+        def xadd(self, *a, **k):
+            return b"1-0"
+
+    wd = Watchdog.__new__(Watchdog)
+    wd.r, wd.pod, wd.tenant = FakeRedis(), "acme", "hq"
+    wd._alert({"v": 1, "kind": "credential", "account": "default", "status": "absent"})
+
+    printed = capsys.readouterr().out.strip()
+    mirrored = evidence.read_text().strip()
+    assert mirrored == printed, "the alert reached stdout but not the evidence file"
+    assert json.loads(mirrored)["kind"] == "credential"

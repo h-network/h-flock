@@ -8,7 +8,7 @@ from pathlib import Path
 
 import redis
 
-from flock.bus import log_record, members, prefix, port_type
+from flock.bus import log_record, members, mirror, prefix, port_type
 from flock.watchdog.activity import ActivityTailer
 from flock.watchdog.presence import PresenceSampler
 from flock.watchdog.verification import DeliveryVerifier
@@ -110,21 +110,26 @@ class Watchdog:
             approximate=True,
         )
         print(raw, flush=True)
+        # ⚠ Alerts bypassed the durable mirror until 2026-08-22 — they reached
+        # `docker logs` and the Redis stream, both of which die with the
+        # container, so a credential or stall alert left no trace after
+        # teardown. Found by diffing the evidence file against `docker logs` on
+        # a live tenant, not by reading.
+        mirror(raw)
 
     @staticmethod
     def _error(job: str, exc: Exception) -> None:
-        print(
-            json.dumps(
-                {
-                    "module": "watchdog",
-                    "event": "error",
-                    "job": job,
-                    "reason": f"{type(exc).__name__}: {exc}",
-                },
-                separators=(",", ":"),
-            ),
-            flush=True,
+        raw = json.dumps(
+            {
+                "module": "watchdog",
+                "event": "error",
+                "job": job,
+                "reason": f"{type(exc).__name__}: {exc}",
+            },
+            separators=(",", ":"),
         )
+        print(raw, flush=True)
+        mirror(raw)
 
     def _ticket(self, agent: str) -> dict | None:
         raw = self.r.lindex(prefix(self.pod, self.tenant, agent, "tasks.doing"), 0)

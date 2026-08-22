@@ -22,6 +22,33 @@ _ENVELOPE_EVENTS = {
 }
 
 
+def mirror(line: str) -> None:
+    """Append one already-formatted record to the durable evidence file.
+
+    ⚠ **Container stdout is deleted with the container.** Docker's `json-file`
+    driver goes with `docker compose down`, so this file is the only thing that
+    says a run happened once the tenant is gone — the failure `TEST-SIGNOFF`
+    records as *"evidence /tmp/b77-build.log — torn down, no sha256"*.
+
+    ⚠ **Call this ONLY where the same line is printed to stdout**, so the file
+    stays a byte copy of what `docker logs` shows for that container's lifetime.
+    A record written here *instead* of stdout is invisible to `docker logs`; a
+    record written here *as well as* by another path is a duplicate, and a
+    duplicated custody record is indistinguishable from a duplicated delivery to
+    every conservation check we have.
+
+    Never raises. A full or read-only evidence volume must not fail a command.
+    """
+    path = os.environ.get("FLOCK_CUSTODY_FILE")
+    if not path:
+        return
+    try:
+        with open(path, "a", encoding="utf-8") as evidence:
+            evidence.write(line + "\n")
+    except Exception:
+        pass
+
+
 def log_record(
     module: str,
     event: str,
@@ -100,14 +127,7 @@ def log_record(
         # window file it tails (HLD §5). Mirroring it directly as well would
         # write it TWICE, and a duplicate custody record is indistinguishable
         # from a duplicate delivery to every conservation check we have.
-        custody = os.environ.get("FLOCK_CUSTODY_FILE")
-        if custody:
-            try:
-                with open(custody, "a", encoding="utf-8") as evidence:
-                    evidence.write(line + "\n")
-            except Exception:
-                # Same rule as below: observation must never fail a command.
-                pass
+        mirror(line)
     try:
         agent_only = os.environ.get("FLOCK_LOG_FILE_AGENT_ONLY")
         if path and (not agent_only or os.environ.get("AGENT_NAME")):
