@@ -65,7 +65,7 @@ are flagged explicitly as `unpriced` rather than reported as silent zero cost.
     evidence         /tmp/build82-pytest.log sha256 e137e07cc4875ec01cff43d02baafa70d04efc6914191cf73512ac2c28e5e822
 
     verdict          PASS
-    VERIFIED BY      PENDING — independent lane required before merge — author of the change? NO
+    VERIFIED BY      tmux — author of the change? NO
 
 ## Controls
 
