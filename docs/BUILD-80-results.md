@@ -43,7 +43,7 @@ tests; this branch changes no other BUILD 81 behavior.
     evidence         /tmp/build80-pytest.log sha256 3919d6f8e16846836eca39617318721a95bba7dc2fe1bd8818dc13be79b1c5aa
 
     verdict          PASS
-    VERIFIED BY      PENDING — independent lane required before merge
+    VERIFIED BY      api — author of the change? NO
 
 ## Controls
 
