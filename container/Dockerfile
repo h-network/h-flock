@@ -19,7 +19,7 @@
 # To update: `docker buildx imagetools inspect ghcr.io/h-network/base:latest`,
 # take `Digest:`, change the line below, rebuild, and run acceptance. Record the
 # digest in the build's results (`BUILD-CONVENTION` §3.0).
-FROM ghcr.io/h-network/base@sha256:74c290e5db4955e45f0316b7c192c54a7166284af33dd1d1f5364360db791a6f
+FROM ghcr.io/h-network/base@sha256:10406097c8954af16c62cf0088dea147065146bf4f667c361da96384ed02cbdc
 
 USER root
 
@@ -44,24 +44,16 @@ COPY pyproject.toml ./
 COPY src/ ./src/
 RUN pip install --no-cache-dir .
 
-# ⚠ CLI defaults, baked. Ported from h-office, which had them and h-flock never
-# did — h-flock only ever wrote enough to clear a trust prompt.
+# ⚠ CLI defaults and first-run gates for claude and codex come from the BASE
+# IMAGE now, not from here. They lived in this file until 2026-08-23 as a copy
+# of h-office's; base owns them because they describe how to run an agent CLI
+# unattended, which is not h-flock's business. Deleting the copy rather than
+# merging it is deliberate: this image builds on that base and only that base,
+# so a second copy would be drift rather than a fallback.
 #
-# Two of these are load-bearing rather than cosmetic:
-#
-#   attribution.commit/pr = ""   enforces AGENTS.md's "never add attribution
-#     trailers" MECHANICALLY. Relying on the instruction alone means every agent
-#     has to remember, every commit, forever.
-#
-#   promptSuggestionEnabled / awaySummaryEnabled / feedback surveys = off.
-#     These make a pane look busy when it is not, which feeds presence and
-#     produces delivery_unverified for an agent that is doing nothing wrong.
-#
-# codex's approval_policy/sandbox_mode duplicate what startAgent passes on the
-# command line, deliberately: a bare `codex` run by an agent that forgot the
-# wrapper otherwise stalls its window waiting for an approval nobody will give.
-COPY container/config/claude/settings.json /home/ubuntu/.claude/settings.json
-COPY container/config/codex/config.toml    /home/ubuntu/.codex/config.toml
+# ⚠ agy is STILL OURS, below. Base suppresses claude's and codex's dialogs and
+# refuses agy outright (`seedProfile agy` exits 3), so its three gates are
+# h-flock's to answer for as long as we hire agy agents.
 COPY container/config/pricing.json         /app/container/config/pricing.json
 RUN mkdir -p /etc/flock \
  && cp /app/container/config/pricing.json /etc/flock/pricing.json \
@@ -69,36 +61,6 @@ RUN mkdir -p /etc/flock \
 
 COPY container/entrypoint.sh /usr/local/bin/entrypoint.sh
 RUN chmod +x /usr/local/bin/entrypoint.sh
-
-# Claude Code keeps first-run state in ~/.claude.json. Without hasCompletedOnboarding
-# an agent's first `startAgent` lands on the theme picker instead of a prompt —
-# which for an agent in a headless window means it never starts at all. The base
-# image does not set it; h-office pre-seeds the same flag for the same reason.
-# Merged into the existing file rather than overwritten: it carries installMethod,
-# machineID and migration flags that should survive.
-RUN python3 -c "import json, os; p='/home/ubuntu/.claude.json'; d=json.load(open(p)) if os.path.exists(p) else {}; d['hasCompletedOnboarding']=True; json.dump(d, open(p,'w'), indent=2)" \
- && chown ubuntu:ubuntu /home/ubuntu/.claude.json
-
-# The fourth first-run gate. startAgent passes --dangerously-skip-permissions,
-# which has its own one-time "Bypass Permissions mode" acceptance dialog — and
-# a headless agent stops dead on it. The base image ships no settings.json at
-# all, so there is nothing suppressing it. Merged rather than written, so a
-# settings.json arriving later via container/home keeps its own keys.
-RUN mkdir -p /home/ubuntu/.claude \
- && python3 -c "import json, os; p='/home/ubuntu/.claude/settings.json'; d=json.load(open(p)) if os.path.exists(p) else {}; d['skipDangerousModePermissionPrompt']=True; json.dump(d, open(p,'w'), indent=2)" \
- && chown -R ubuntu:ubuntu /home/ubuntu/.claude
-
-# Seed codex config.toml with check_for_update_on_startup = false.
-# Suppresses the "Update available!" startup dialog whose default option runs
-# `npm install -g @openai/codex` globally inside the container.
-# Merged rather than overwritten so any existing config.toml keys survive.
-# ⚠ Written FIRST, not appended. In TOML a bare key after a [section] header
-# belongs to that section — appending it to a config.toml that carries
-# [profiles.<name>] blocks (which container/home may deliver) would bury it
-# inside the last one, where it parses cleanly and does nothing.
-RUN mkdir -p /home/ubuntu/.codex \
- && python3 -c "import os; p='/home/ubuntu/.codex/config.toml'; old=open(p).read() if os.path.exists(p) else ''; keep=[l for l in old.splitlines() if not l.strip().startswith('check_for_update_on_startup')]; open(p,'w').write('\n'.join(['check_for_update_on_startup = false'] + keep) + '\n')" \
- && chown -R ubuntu:ubuntu /home/ubuntu/.codex
 
 # agy shows three first-run gates — a colour-scheme picker, a pre-checked
 # consent to send interaction data to Google, and a workspace-trust prompt — and
