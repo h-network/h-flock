@@ -331,15 +331,17 @@ preceding delivery marker can be attributed without guessing. The tenant
 `usage` Stream stores the same JSON object in its `usage` field, capped
 approximately at 10,000 entries (`src/flock/watchdog/activity.py:369-452`).
 
-Control openers (`src/flock/control/openers.py:29-56`) emit
+Control openers (`src/flock/control/openers.py:29-58`) emit
 `{start,stop,pause,resume}_agent_accepted` upon successfully acknowledging all
 desired-state writes in Redis (`writer: control`, carrying `destination: <agent>`
-and `correlation_id` when present). If an opener raises an exception before
-state changes, it emits `{start,stop,pause,resume}_agent_failed` with `reason`
-before dead-lettering; if an error occurs after partial state mutation, it emits
-`{start,stop,pause,resume}_agent_incomplete`. ⚠ **`_accepted` records desired-state
-acknowledgement, not actual window or process creation.** Actual tmux windows and
-process lifecycles are reconciled asynchronously by `tmuxhost.reconcile_once`.
+and `correlation_id` when present). If request validation fails before any write
+is attempted, the opener emits `{start,stop,pause,resume}_agent_failed` with `reason`
+before dead-lettering. If any write attempt encounters an exception (including
+the first write, where outcome is UNKNOWN with no writes acknowledged), the
+opener emits `{start,stop,pause,resume}_agent_incomplete`. ⚠ **`_accepted` records
+desired-state acknowledgement, not actual window or process creation.** Actual
+tmux windows and process lifecycles are reconciled asynchronously by
+`tmuxhost.reconcile_once`.
 
 ⚠ **Never log a payload.** Invariant 4 says the switch does not read one; the
 same restraint applies to everything else, and a payload is the one field that
@@ -523,10 +525,10 @@ the api validates.
 |---|---|---|---|
 | `Message` | `tmux` | `{"text": "..."}` | pastes `[message from <source>] <text>` |
 | `Command` | `tmux` | `{"text": "..."}` | pastes `<text>` **bare** — it executes |
-| `StartAgent` | `control` | `{"agent": "networking", "cli": "claude", "port_type": "tmux"}` | enrols, creates the window, starts the CLI |
-| `StopAgent` | `control` | `{"agent": "networking"}` | reverses all three |
-| `PauseAgent` | `control` | `{"agent": "networking"}` | stops the CLI, keeps the agent and its queues |
-| `ResumeAgent` | `control` | `{"agent": "networking"}` | starts the CLI again and kicks delivery for queued ingress |
+| `StartAgent` | `control` | `{"agent": "networking", "cli": "claude", "port_type": "tmux"}` | publishes desired launch state, enrols (tmuxhost reconciles window and CLI) |
+| `StopAgent` | `control` | `{"agent": "networking"}` | removes roster row, purges identity state (tmuxhost kills window) |
+| `PauseAgent` | `control` | `{"agent": "networking"}` | marks paused in Redis and interrupts CLI |
+| `ResumeAgent` | `control` | `{"agent": "networking"}` | clears pause in Redis, resumes CLI, kicks pending ingress |
 | `AddTicket` | `tmux` | `{"title", "description", "priority"}` | writes a ticket to that agent's `tasks.todo` — and **pastes nothing** |
 
 ⚠ **`AssignTask` is gone.** It was the old name for `AddTicket`, kept as an alias
@@ -572,13 +574,14 @@ identity state**, retaining its mailbox and other data and touching no tmux.
 differ only in whether the prefix is rendered — see `LLD-port-tmux` §3 for why
 that one difference is the whole security boundary.
 
-### `StartAgent` and `StopAgent` are the whole operation — for a tmux agent
+### `StartAgent` and `StopAgent` publish desired state — reconciliation is asynchronous (tmux)
 
 `StartAgent` publishes optional profile and provider state plus the launch key,
-then enrols the agent; tmuxhost reconciliation creates its window and starts the
-CLI in it. Desired launch state is visible before the roster row that triggers
+then enrols the agent; tmuxhost reconciliation asynchronously creates its window
+and starts the CLI in it. Desired launch state is visible before the roster row that triggers
 reconciliation, while actual window creation still follows enrolment.
-`StopAgent` reverses all three. They are not enrolment alone.
+`StopAgent` removes the roster row, purges classified identity state, and tmuxhost kills the window.
+They publish desired state, not synchronous window creation alone.
 
 ⚠ **For `port_type: "api"` there is only enrolment.** A client enrolment writes a
 roster row and stops: no launch key, no home, no window, no CLI. `StopAgent`
