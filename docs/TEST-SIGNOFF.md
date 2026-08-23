@@ -170,6 +170,41 @@ documents" does not license leaving the edited document at war with itself —
 … creates the window"* at another. **Reconcile it, or record it as drift by
 name.**
 
+### ⚠ A capture that cannot fail loudly is a gate that cannot fail
+
+**Read the artifact before you commit it.** Non-empty is not enough — **plausible**
+is the test. Does it contain the lines your results document quotes?
+
+⚠ **Build 100 committed seven evidence files containing
+`sed: can't read /tmp/...` where the live captures should have been.** Every hash
+matched. The immutable-path rule was satisfied. The results document quoted
+lines confidently, and **the lines were not in the file.**
+
+⚠⚠ **A hash proves a file has not CHANGED. It never proves the file contains what
+someone says it does.** Those are different claims and only one of them is
+cheap to check.
+
+**The mechanism is worth knowing because it punishes good behaviour.** `bus`
+refused its own first two harness attempts and cleaned them up — correctly. The
+capture step then reached for an artifact directory belonging to one of those
+cleaned-up attempts, because it was bound to a variable that survived them
+rather than to the tenant the accepted run created. **Its own self-correction
+destroyed the evidence for the run that mattered.**
+
+**Two rules, and the second is the one nobody had:**
+
+1. **Bind the capture to the identifier the accepted run created**, never to
+   something that can outlive an earlier attempt.
+2. **Fail the build if a capture is empty or does not contain what will be
+   quoted.** This is `BUILD-CONVENTION` §1 — *a new gate must be shown to fail* —
+   applied to **evidence** rather than to tests. A capture step that silently
+   writes an error message is a gate that cannot go red.
+
+⚠ **And the loss is permanent.** The tenant is torn down and the artifacts are
+gone, so a result the author genuinely saw on a terminal is now unverifiable.
+**Live evidence has no second chance** — that is why the acceptance seat now
+hashes and commits its run logs.
+
 ### ⚠ Bind each gate to the tree it actually ran against
 
 A test gate binds to the **code** commit. A citation gate validates
