@@ -12,7 +12,7 @@
    - *Honesty limit of fixture:* In `tests/fixtures/codex-session-captured.jsonl`, all three `turn_context` records carry `gpt-5.6-sol` because that session did not switch models. Mid-session model changes and session rotation are verified by `test_codex_mid_session_model_change` and `test_codex_session_rotation_resets_model`.
 
 2. **Session Ownership Contract:**
-   - `_codex_session_belongs_to` retains strict `/workdir/{agent}` ownership based on line 1 `session_meta` cwd, preventing arbitrary paths (e.g. `/tmp/sme-1`) from being claimed.
+   - `_codex_session_belongs_to` retains strict `/workdir/{agent}` ownership based on line 1 `session_meta` cwd, rejecting arbitrary paths (e.g. `/tmp/sme-1`).
 
 3. **Last vs Total Token Usage (§2):**
    - `_codex_usage` extracts `last_token_usage` for turn-level incremental accounting, never cumulative `total_token_usage`.
@@ -35,29 +35,29 @@
 
 - **Control 1 (Model resolution from turn_context):**
   - *Mutation:* Revert `_codex_usage` to ignore `turn_context` model and use `payload.get("model") or "unknown"`.
-  - *Observed locus:* `test_codex_captured_session_fixture_model_and_tokens` FAILED with `assert 'unknown' == 'gpt-5.6-sol'`.
+  - *Observed locus:* `test_codex_captured_session_fixture_model_and_tokens` FAILED with `assert 'unknown' == 'gpt-5.6-sol'`; exit 1.
 - **Control 2 (Last vs Total token usage):**
   - *Mutation:* Change `_codex_usage` to read `total_token_usage` instead of `last_token_usage`.
-  - *Observed locus:* `test_codex_captured_session_fixture_model_and_tokens` FAILED with `assert 533066 == 64831` on ordinal 141.
+  - *Observed locus:* `test_codex_captured_session_fixture_model_and_tokens` FAILED with `assert 533066 == 64831` on ordinal 141; exit 1.
 - **Control 3 (Session rotation model reset):**
-  - *Mutation:* Leak previous session's model across rotation without path-scoped reset.
-  - *Observed locus:* `test_codex_session_rotation_resets_model` FAILED with `assert 'gpt-5.6-sol' == 'gpt-5-codex'`.
+  - *Mutation:* Replace path-scoped models with global agent-keyed dict that ignores new session_meta when a stale model is present.
+  - *Observed locus:* `test_codex_session_rotation_resets_model` FAILED with `assert 'gpt-5.6-sol' == 'gpt-5-codex'`; exit 1.
 - **Control 4 (Offset restart recovery):**
   - *Mutation:* Omit `_codex_model_at_offset` recovery upon resuming at mid-session offset.
-  - *Observed locus:* `test_codex_restart_at_mid_session_offset_recovers_model` FAILED with `assert 'unknown' == 'gpt-5.6-sol'`.
+  - *Observed locus:* `test_codex_restart_at_mid_session_offset_recovers_model` FAILED with `assert 'unknown' == 'gpt-5.6-sol'`; exit 1.
 - **Control 5 (Ownership strictly rejects arbitrary cwd):**
-  - *Mutation:* Accept arbitrary cwd ending with `/{agent}`.
-  - *Observed locus:* `test_codex_session_ownership_rejects_arbitrary_cwd` FAILED with `assert True is False` on `/tmp/sme-2`.
+  - *Mutation:* Accept arbitrary cwd ending with `/{agent}` (e.g. `/tmp/sme-2`).
+  - *Observed locus:* `test_codex_session_ownership_rejects_arbitrary_cwd` FAILED with `assert True is False`; exit 1.
 - **Control 6 (Codex rate limits):**
   - *Mutation:* Omit `rate_limits` extraction in `_codex_usage`.
-  - *Observed locus:* `test_office_usage_surfaces_codex_rate_limits` FAILED.
+  - *Observed locus:* `test_codex_captured_session_fixture_model_and_tokens` FAILED with `KeyError: 'rate_limits'`; exit 1.
 
 ---
 
 ## TEST SIGN-OFF — full repository gate
 
     claim            ActivityTailer resolves codex model from turn_context, scopes model to session path with offset recovery, extracts last_token_usage per turn, captures rate limits, and office status/usage names agy agents as not measurable
-    source sha       af3f8ef
+    source sha       af3f8ef96948c2d05e6148d4053ff98c91e39b03
     artefact         COMMIT
     host             local — hermetic in-memory Redis double, captured codex fixture, and unpiped test runner
     command          python3 -m pytest -q
@@ -67,15 +67,15 @@
     population       454 tests and 5 subtests; all repository tests collected (0 skipped)
 
     control          six property mutations documented above
-    evidence         /tmp/build88-negative.log sha256 44a6b7395eb5e54bb2907437c9001ecafc36a8fab72ed5bbd3995b3c4957c24f
-                     /tmp/build88-pytest.log sha256 1e836c9bb591688e946e6da5ee7fbfe25daa9de61eb05eec8ac4128381fe7bcf
+    evidence         /tmp/build88-negative.log sha256 9699ef7e8aacd40a00d1b741f1c9bdd2fb25b798d22ecab5a490d7adb85e0069
+                     /tmp/build88-pytest.log sha256 05a4a5ff16877af7a34577b1d64dac49973043f1c3cce4fb8fbdd419d4d7616a
 
     verdict          PASS
     VERIFIED BY      PENDING — independent lane required before merge
 
 ## Citation gate
 
-    source sha       af3f8ef
+    source sha       af3f8ef96948c2d05e6148d4053ff98c91e39b03
     command          python3 tools/check_citations.py
     exit status      0, read unpiped
     result           0 hard failures, 45 near misses
