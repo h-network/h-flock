@@ -30,9 +30,11 @@ old hire's identity.
 Cause and membership share one Lua boundary because cleanup after a sequential
 write cannot prove its own outcome after a connection loss. On a lost Lua
 reply, control truthfully emits `_incomplete`; the server has nevertheless
-committed both cause and roster or neither, so the rejected cause-without-roster
-state cannot exist. A mandatory real-Redis test performs the atomic write, loses
-the reply deliberately, and observes both values.
+committed both cause and roster. Redis scripts do not roll back writes before a
+command error, so the script writes roster first: an error can leave membership
+without attribution, but cannot leave the rejected cause-without-roster state.
+A mandatory real-Redis test loses the reply and observes both values, then
+forces a `WRONGTYPE` roster failure and observes no cause.
 
 ## Behavioural controls
 

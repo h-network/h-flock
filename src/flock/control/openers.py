@@ -22,8 +22,8 @@ _START_AGENT_KEYS = frozenset(
 _TARGET_ONLY_KEYS = frozenset({"agent"})
 
 _PUBLISH_WINDOW_CAUSE_LUA = """
-redis.call('SET', KEYS[1], ARGV[1])
 redis.call('HSET', KEYS[2], ARGV[2], ARGV[3])
+redis.call('SET', KEYS[1], ARGV[1])
 return 1
 """
 

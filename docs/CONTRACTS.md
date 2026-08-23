@@ -631,9 +631,11 @@ they require no new window.
 The cause and roster row are one Lua write boundary because neither sequential
 ordering is truthful: cause-first could strand an id when roster publication
 fails, while roster-first could let tmuxhost create before the id is visible.
-If the atomic operation commits but its reply is lost, control conservatively
-emits `start_agent_incomplete`; Redis nevertheless contains both values, never
-a cause without the membership that request published.
+If the operation commits but its reply is lost, control conservatively emits
+`start_agent_incomplete`; Redis nevertheless contains both values. The Lua
+script writes the roster first because Redis does not roll back earlier script
+writes after a command error: a server-side failure may expose a cause-less
+membership, but never a cause without the membership that request published.
 
 ⚠ **For `port_type: "api"` there is only enrolment.** A client enrolment writes a
 roster row and stops: no launch key, no home, no window, no CLI. `StopAgent`

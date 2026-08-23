@@ -157,6 +157,27 @@ def test_fresh_hire_cause_and_roster_are_atomic_on_real_redis(tmp_path):
 
         assert client.get(prefix("acme", "hq", "dave", "window.cause")) == "hire-correlation"
         assert client.hget(prefix("acme", "hq", resource="roster"), "dave") == "tmux"
+
+        # Redis scripts isolate intermediate writes but do not roll them back
+        # after a command error. HSET must therefore precede SET: a corrupt
+        # roster may yield no membership, but it must never strand a cause.
+        from flock.control.openers import _PUBLISH_WINDOW_CAUSE_LUA
+
+        client.flushdb()
+        cause_key = prefix("acme", "hq", "dave", "window.cause")
+        roster_key = prefix("acme", "hq", resource="roster")
+        client.set(roster_key, "wrong-type")
+        with pytest.raises(redis.ResponseError, match="WRONGTYPE"):
+            client.eval(
+                _PUBLISH_WINDOW_CAUSE_LUA,
+                2,
+                cause_key,
+                roster_key,
+                "hire-correlation",
+                "dave",
+                "tmux",
+            )
+        assert client.get(cause_key) is None
     finally:
         process.terminate()
         process.wait(timeout=2)
