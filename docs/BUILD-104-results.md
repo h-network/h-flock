@@ -31,23 +31,17 @@ Per `docs/TEST-SIGNOFF.md`, this invariant is persistently controlled by
 - **AST traversal**: Rejects any other `FLOCK_WRITER` identifier/constant, and rejects any literal `"fault-injection"` anywhere in `src/`.
 
 - **Clean run**: `python3 -m pytest tests/test_fault_injection.py -k test_shipping_source_has_no_writer_assignments` passes with exit 0.
-- **Negative mutation**: Mutating `src/flock/switch/service.py` with
-  `os.environ.update({"FLOCK_WRITER": "fault-injection"})` inside `step()` triggers the assertion in
-  `test_shipping_source_has_no_writer_assignments` at `tests/test_fault_injection.py:146`
-  identifying `src/flock/switch/service.py:105` and exits 1:
+- **Negative mutation 1 (Missing scan root)**: Repointing `src_dir` to `ROOT / "missing-src"` triggers the population assertion at `tests/test_fault_injection.py:115` and exits 1.
+- **Negative mutation 2 (FLOCK_WRITER / fault-injection setter)**: Mutating `src/flock/switch/service.py` with `os.environ.update(
+ {"FLOCK_WRITER": "fault-injection"}
+)` inside `step()` triggers the assertion at `tests/test_fault_injection.py:146` identifying `src/flock/switch/service.py:105` and exits 1.
 
-      FAILED tests/test_fault_injection.py::test_shipping_source_has_no_writer_assignments
-      AssertionError: Illegal FLOCK_WRITER or fault-injection in shipping source:
-        src/flock/switch/service.py:105: occurrence of 'FLOCK_WRITER'
-        src/flock/switch/service.py:105: literal 'fault-injection'
-      MUTATION_EXIT=1
-
-The mutation was restored before generating final gate logs.
+Both mutations were restored before generating final gate logs.
 
 ## TEST SIGN-OFF
 
     claim            writer: fault-injection documented in CONTRACTS as scenario-only, structural check confirms absent in src/, and --keep console transfer documented in BUILD-CONVENTION
-    source sha       df55595
+    source sha       e6f5a87
     artefact         COMMIT
     host             local — structural inspection and documentation audit
     command          python3 -m pytest -q
@@ -56,25 +50,25 @@ The mutation was restored before generating final gate logs.
     EXCLUDED         live container execution, Docker image build, runtime benchmark
     population       514 tests and 5 subtests; all repository tests collected
 
-    control          structural mutation: assign FLOCK_WRITER in src/flock/switch/service.py via update/dict
-    expected locus   test_shipping_source_has_no_writer_assignments assertion exit 1 at tests/test_fault_injection.py:146
+    control          structural mutations: (1) repoint scan root to missing-src; (2) assign FLOCK_WRITER / fault-injection in src/flock/switch/service.py
+    expected locus   (1) assertion exit 1 at tests/test_fault_injection.py:115; (2) assertion exit 1 at tests/test_fault_injection.py:146
     observed locus   same
-    signature        AssertionError: Illegal FLOCK_WRITER or fault-injection in shipping source: src/flock/switch/service.py:105; MUTATION_EXIT=1
+    signature        (1) AssertionError: Expected at least 10 python files in src/, found 0; (2) AssertionError: Illegal FLOCK_WRITER or fault-injection in shipping source: src/flock/switch/service.py:105; MUTATION_EXIT=1
 
-    evidence         docs/evidence/build-104-controls.log sha256 a23c99216a54e89be064b871ef33086fafafb719ee94b0f0a781809c04230fa9
-                     docs/evidence/build-104-pytest.log sha256 a9a6ac5cb54cdfc3c3365b692cc0e6ebd203567f35d430efbb3d2550b4c2805e
+    evidence         docs/evidence/build-104-controls.log sha256 2c5c5363bc542229bfcc844b5c4125c976efa833e305c0f588150ab98c116070
+                     docs/evidence/build-104-pytest.log sha256 c67ba43da7d296b0375f2750347a43a3361d3c63a11eaf5e8be4b86dabcb1031
 
-    verdict          PASS (structural claim verified with negative mutation control)
+    verdict          PASS (structural claim verified with negative mutation controls)
     VERIFIED BY      PENDING — assigned by architect
 
 ## Citation gate
 
-    source sha       df55595
+    source sha       e6f5a87
     artefact         COMMIT
     command          python3 tools/check_citations.py
     exit status      0, read unpiped
     result           0 hard failures, 85 near misses
-    evidence         docs/evidence/build-104-citations.log sha256 9bcf42e131fe48e26b10bc3d685962b638d71d02f6c5acf1e411c91355960747
+    evidence         docs/evidence/build-104-citations.log sha256 57bffaa13f8708210a2a79debd1d51c1b721b591951f2c03b8b6c2962e808180
 
 ## Merged-tree verification
 
