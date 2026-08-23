@@ -152,6 +152,15 @@ tenant and project; one per run, fresh each time.
   swapping** — 1.2–1.9 GiB free of 7.8, and swap already in use — before a single
   container existed. **A build that dies here is more likely to be the host than
   the code**, and you cannot make that argument afterwards without the number.
+  ⚠ **That swapping had a cause, found 2026-08-24: it was OUR litter, not the
+  host.** Thirty-five containers from the architect's base-image testing, each
+  holding an idle interactive CLI, had been running for 23 hours; two leaked
+  console proxies had been running for hours more. After removing them:
+  **available memory 4.2 → 7.0 GiB, swap 2.2 GiB → 140 MiB, disk 82% → 71%.**
+  ⚠ **The number was worth recording precisely because it turned out to be
+  explicable.** A standing "this host is just slow" would have absorbed it
+  forever; a measurement repeated four times became a question, and the question
+  had an answer.
 - ⚠⚠ **TEAR DOWN WITH COMPOSE, NEVER `docker rm`.**
   `docker compose -p h-flock-$TENANT down -v`. Removing containers by hand leaves
   the network behind **holding its subnet forever**, and nothing ever reclaims
