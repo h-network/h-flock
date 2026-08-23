@@ -1,0 +1,20 @@
+CONTROL: restore swallowed Popen OSError
+source: 338edd35ba2df6f4d29d1478724f6f23add61b75
+mutation: replace `raise ProvableActualFailure(...)` in control/runner.py::_kick with `return`
+command: python3 -m pytest -q tests/test_control.py::test_resume_provable_kick_failure_records_partial_without_acknowledging_it
+exit status: 1
+
+F                                                                        [100%]
+=================================== FAILURES ===================================
+__ test_resume_provable_kick_failure_records_partial_without_acknowledging_it __
+
+>       with pytest.raises(runner.ProvableActualFailure, match="did not spawn"):
+E       Failed: DID NOT RAISE ProvableActualFailure
+
+tests/test_control.py:609: Failed
+----------------------------- Captured stdout call -----------------------------
+{"module":"control","event":"resume_agent_accepted","writer":"control","correlation_id":"corr-resume","destination":"dave"}
+=========================== short test summary info ============================
+FAILED tests/test_control.py::test_resume_provable_kick_failure_records_partial_without_acknowledging_it
+1 failed in 0.02s
+
