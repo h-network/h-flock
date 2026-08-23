@@ -6,6 +6,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).parents[1]
 BROADCAST = ROOT / "container" / "scenarios" / "reconcile-broadcast.py"
+UNICAST = ROOT / "container" / "scenarios" / "reconcile-unicast.py"
 
 
 def _record(stream_id, event, *, destination="all"):
@@ -55,3 +56,37 @@ def test_broadcast_reconciliation_refuses_legacy_attempt_record(tmp_path):
     assert "legacy_attempts=1" in result.stdout
     assert "REFUSED: legacy *_failed attempt records" in result.stdout
 
+
+def test_unicast_unknown_is_indeterminate_not_loss(tmp_path):
+    ledger = tmp_path / "ledger.tsv"
+    log = tmp_path / "custody.log"
+    dead = tmp_path / "dead.jsonl"
+    ingress = tmp_path / "ingress.jsonl"
+    injections = tmp_path / "injections.tsv"
+    ledger.write_text("1\tsid\tbench-source\tbob\t1.0\n")
+    log.write_text(_record("sid", "forward_unknown", destination="bob") + "\n")
+    dead.write_text("")
+    ingress.write_text("")
+    injections.write_text("")
+
+    result = subprocess.run(
+        [
+            sys.executable,
+            str(UNICAST),
+            str(ledger),
+            str(log),
+            str(dead),
+            str(ingress),
+            str(injections),
+        ],
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+
+    assert result.returncode == 5
+    assert "delivered_once=0" in result.stdout
+    assert "indeterminate=1" in result.stdout
+    assert "lost_attributed=0 lost_unexplained=0" in result.stdout
+    assert "INDETERMINATE_FORWARD 1 sid" in result.stdout
+    assert "LOSS_UNEXPLAINED" not in result.stdout
