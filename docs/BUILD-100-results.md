@@ -81,7 +81,7 @@ Those remain unit-controlled and are not claimed live here.
                      docs/evidence/build-100-713802e-run-identity.txt sha256 51fcc813f6385cb01ca0465b9c38f76964f1d93ffdfb1b8065aeafe4c3711b27
 
     verdict          PASS
-    VERIFIED BY      PENDING — assigned by architect
+    VERIFIED BY      api — author of the change? NO
 
 ## Gate results
 
