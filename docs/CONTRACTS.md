@@ -621,8 +621,9 @@ it as `correlation_id`, joining asynchronous actual state to
 retains the cause for the next attempt. If reconciliation finds the window
 already present, it consumes any marker without emitting a join: that envelope
 did not cause the existing window, and retaining its id would falsely attach a
-later crash recovery. A recovery or placeholder creation with no marker emits a
-valid `window_created` with `correlation_id` absent. Consumption happens before
+later crash recovery. A real-agent recovery with no marker emits a valid
+`window_created` with `correlation_id` absent; `__init__` placeholder creation
+does not emit that lifecycle event. Consumption happens before
 logging, deliberately preferring a missing join over a stale false join if
 tmuxhost dies at that boundary. Idempotent starts do not publish a cause because
 they require no new window.
