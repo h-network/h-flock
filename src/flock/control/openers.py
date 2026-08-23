@@ -26,8 +26,16 @@ class _IncompleteControl(RuntimeError):
     """A desired or actual-state attempt has an UNKNOWN outcome."""
 
 
+class ProvableActualFailure(RuntimeError):
+    """An actual-state action was observably rejected and did not occur."""
+
+
+class _PartialControl(RuntimeError):
+    """Some work was acknowledged before a later action provably failed."""
+
+
 def _record_control(kind: str):
-    """Record accepted, incomplete, or pre-mutation failure outcomes."""
+    """Record accepted, partially failed, incomplete, or pre-mutation failure outcomes."""
     def decorate(opener):
         @wraps(opener)
         def recorded(r, *, pod, tenant, envelope, **kwargs):
@@ -36,6 +44,13 @@ def _record_control(kind: str):
             correlation_id = envelope.get("correlation_id") if isinstance(envelope, dict) else None
             try:
                 result = opener(r, pod=pod, tenant=tenant, envelope=envelope, **kwargs)
+            except _PartialControl as exc:
+                log_record(
+                    "control", f"{kind}_partially_failed", correlation_id=correlation_id,
+                    destination=agent if isinstance(agent, str) else None,
+                    reason=str(exc),
+                )
+                raise exc.__cause__ from exc
             except _IncompleteControl as exc:
                 log_record(
                     "control", f"{kind}_incomplete", correlation_id=correlation_id,
@@ -90,6 +105,21 @@ def _actual_unknown(
         parts.append(f"actual acknowledged: {', '.join(actual_acknowledged)}")
     parts.append(f"{action} outcome UNKNOWN after {exc}")
     return _IncompleteControl("; ".join(parts))
+
+
+def _actual_failed(
+    committed: list[str],
+    action: str,
+    exc: ProvableActualFailure,
+    *,
+    actual_acknowledged: list[str] | None = None,
+) -> _PartialControl:
+    """Name acknowledged work and a later actual-state action known not to occur."""
+    parts = [f"acknowledged: {', '.join(committed)}"]
+    if actual_acknowledged:
+        parts.append(f"actual acknowledged: {', '.join(actual_acknowledged)}")
+    parts.append(f"{action} failed: {exc}")
+    return _PartialControl("; ".join(parts))
 
 
 def _target(envelope: dict, allowed_keys: frozenset[str]) -> tuple[str, dict]:
@@ -331,6 +361,11 @@ def resume_agent(
         try:
             kick_agent(agent)
             actual_acknowledged.append(f"kick {index + 1}")
+        except ProvableActualFailure as exc:
+            raise _actual_failed(
+                committed, f"kick {index + 1}", exc,
+                actual_acknowledged=actual_acknowledged,
+            ) from exc
         except Exception as exc:
             raise _actual_unknown(
                 committed, f"kick {index + 1}", exc,

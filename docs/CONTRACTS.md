@@ -349,7 +349,7 @@ preceding delivery marker can be attributed without guessing. The tenant
 `usage` Stream stores the same JSON object in its `usage` field, capped
 approximately at 10,000 entries (`src/flock/watchdog/activity.py:369-452`).
 
-Control openers (`src/flock/control/openers.py:29-58`) emit
+Control openers (`src/flock/control/openers.py:37-73`) emit
 `{start,stop,pause,resume}_agent_accepted` upon successfully acknowledging all
 desired-state writes in Redis (`writer: control`, carrying `destination: <agent>`
 and `correlation_id` when present). If request validation fails before any write
@@ -361,6 +361,15 @@ desired-state acknowledgement, not actual window or process creation.** For `Sta
 actual tmux windows and process lifecycles are reconciled asynchronously by
 `tmuxhost.reconcile_once`. For `StopAgent`, the opener attempts to kill the window
 synchronously inline after desired-state writes, with `tmuxhost` providing later cleanup.
+
+`resume_agent_partially_failed` is the distinct known-failure outcome: desired-state
+writes and any earlier actual-state actions named as acknowledged did occur, but
+a later kick was provably rejected by `Popen` and did not spawn a process. It is
+neither `_failed` (which would erase the acknowledged subset) nor `_incomplete`
+(which is reserved for an attempt whose outcome is UNKNOWN). Its reason names
+the acknowledged desired and actual subsets separately, then the failed kick;
+the failing kick never appears in either acknowledged list. The envelope is
+dead-lettered and the control layer does not retry it.
 
 ⚠ **Never log a payload.** Invariant 4 says the switch does not read one; the
 same restraint applies to everything else, and a payload is the one field that

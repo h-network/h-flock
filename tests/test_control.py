@@ -580,6 +580,49 @@ def test_resume_names_actual_acknowledgements_before_unknown_kick(capsys):
     assert "kick 2 outcome UNKNOWN after reply lost after second kick" in record["reason"]
 
 
+def test_resume_provable_kick_failure_records_partially_failed_without_acknowledging_it(
+    monkeypatch, capsys
+):
+    events = []
+    fake_tmux = types.ModuleType("flock.tmux")
+    fake_tmux.kill_window = lambda *args, **kwargs: (0, "", "")
+    fake_tmux.run_tmux = lambda *args, **kwargs: (0, "", "")
+    monkeypatch.setitem(sys.modules, "flock.tmux", fake_tmux)
+
+    spawns = []
+
+    def popen(command):
+        spawns.append(command)
+        if len(spawns) == 2:
+            raise FileNotFoundError("flock.port not found")
+        return object()
+
+    monkeypatch.setattr(runner.subprocess, "Popen", popen)
+
+    def fake_receive(r, **kwargs):
+        kwargs["openers"]["ResumeAgent"]({
+            "correlation_id": "corr-resume",
+            "payload": {"agent": "dave"},
+        })
+
+    monkeypatch.setattr(runner, "receive", fake_receive)
+    with pytest.raises(runner.ProvableActualFailure, match="did not spawn"):
+        deliver_one(
+            RecordingRedis(events, ingress_depth=2),
+            pod="acme", tenant="hq", agent="host", session_name="hq",
+        )
+
+    records = [json.loads(line) for line in capsys.readouterr().out.splitlines()]
+    assert [record["event"] for record in records] == ["resume_agent_partially_failed"]
+    assert records[0]["reason"] == (
+        "acknowledged: paused marker removed; "
+        "actual acknowledged: window resumed, kick 1; "
+        "kick 2 failed: port process did not spawn after flock.port not found"
+    )
+    assert "kick 2" not in records[0]["reason"].split("; actual acknowledged: ", 1)[1].split(";", 1)[0]
+    assert spawns == [["flock.port", "dave"], ["flock.port", "dave"]]
+
+
 def test_stop_partial_desired_write_names_committed_subset(capsys):
     class PurgeFails(RecordingRedis):
         def delete(self, *keys):

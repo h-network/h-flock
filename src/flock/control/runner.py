@@ -2,9 +2,9 @@
 
 import subprocess
 
-from flock.bus import log_record, receive
+from flock.bus import receive
 
-from .openers import pause_agent, resume_agent, start_agent, stop_agent
+from .openers import ProvableActualFailure, pause_agent, resume_agent, start_agent, stop_agent
 
 
 def _ensure_tmux(command: str, result: tuple[int, str, str]) -> None:
@@ -17,7 +17,10 @@ def _kick(agent: str) -> None:
     try:
         subprocess.Popen(["flock.port", agent])
     except OSError as exc:
-        log_record("port", "error", destination=agent, reason=f"port kick failed: {exc}")
+        # Popen has reaped a child that failed before exec: unlike a lost reply,
+        # this proves no delivery process exists. Preserve that distinction for
+        # resume_agent instead of manufacturing an acknowledged kick.
+        raise ProvableActualFailure(f"port process did not spawn after {exc}") from exc
 
 
 def deliver_one(
