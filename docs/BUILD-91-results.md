@@ -97,4 +97,9 @@ immutable controls snapshot named in the sign-off.
 
 ## Citation gate
 
-    PENDING — binds to the documentation commit, not the code commit
+    source sha       b29599824300e4a02f7bdbd99045cc8f5c8371ca
+    artefact         COMMIT
+    command          python3 tools/check_citations.py
+    exit status      0, read unpiped
+    result           0 hard failures, 54 near misses
+    evidence         docs/evidence/build-91-b295998-citations.log sha256 7f130293467df13a9a22748cfc93b163471d1fc3d87772444e6ef62be3f491e6
