@@ -95,8 +95,17 @@ Run any of those with --help. To see who you can talk to:
 
     office peers
 
-A message arrives in your terminal as `[message from <name>] …` — reply by name
-with `office send -a <name> <message>`. This directory is yours; work in it.
+A message arrives in your terminal as `[message from <name>] …` — reply by name:
+
+    office send -a <name> "one quoted argument"
+    office send -a <name> --stdin      < the body on stdin
+    office send -a <name> --file PATH  the body from a file
+
+⚠ The body is ONE argument. Unquoted words after the first are rejected, not
+sent — and anything long or multi-line belongs on --stdin or --file, which are
+never shell-parsed. `send` prints the destination and the bytes it accepted;
+if that byte count is not what you meant to send, it did not arrive intact.
+This directory is yours; work in it.
 
 You have a task board. Nothing will notify you about it — check it yourself:
 
