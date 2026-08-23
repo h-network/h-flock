@@ -188,13 +188,13 @@ def add_ticket_opener(
     except Exception as exc:
         log_record(
             "port",
-            "board_write_failed",
+            "board_write_unknown",
             correlation_id=corr_id,
             destination=agent,
-            reason=str(exc),
+            reason=f"board write outcome UNKNOWN after {exc}",
             task_id=ticket_obj.get("id", ""),
         )
-        raise DeadLetter("board_write_failed") from exc
+        raise DeadLetter("board_write_unknown") from exc
     if not isinstance(depth, int) or depth < 1:
         log_record(
             "port",

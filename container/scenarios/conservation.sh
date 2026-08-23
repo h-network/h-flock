@@ -232,7 +232,7 @@ if sent and windows:
     coverage = sum(right - left for left, right in merged)
     duration = max(0.0, run_end - run_start)
     coverage_fraction = coverage / duration if duration else 0.0
-duplicates, dead_loss, stranded, attributed, unexplained = [], [], [], [], []
+duplicates, dead_loss, stranded, indeterminate, attributed, unexplained = [], [], [], [], [], []
 event_time_failures = 0
 def event_times(sid, wanted=None):
     global event_time_failures
@@ -287,6 +287,13 @@ for seq, (sid, source, dst, sent_ts) in sent.items():
         if sid in ingress:
             stranded.append((seq, sid))
             continue
+        # A later opened/dead/ingress observation settles an unanswered write.
+        # With none of those, forward_unknown is neither a forward nor a loss:
+        # folding it into either side would manufacture evidence the switch did
+        # not observe, and treating it as loss could provoke a duplicate retry.
+        if any(rec.get("event") == "forward_unknown" for rec in events.get(sid, [])):
+            indeterminate.append((seq, sid))
+            continue
         # A recordless switch loss is strongest when same-source FIFO
         # neighbours bracket the kill. Prefer that direct ordering evidence to
         # the deliberately padded timestamp-window fallback.
@@ -298,14 +305,15 @@ for seq, (sid, source, dst, sent_ts) in sent.items():
                     cause = f"{kind}:{detail}"
                     break
         (attributed if cause else unexplained).append((seq, sid, cause or "none"))
-print(f"RECONCILE sent={len(sent)} delivered_once={sum(opened[sid] == 1 for sid, _, _, _ in sent.values())} duplicates={len(duplicates)} dead={len(dead_loss)} stranded={len(stranded)} lost_attributed={len(attributed)} lost_unexplained={len(unexplained)}")
+print(f"RECONCILE sent={len(sent)} delivered_once={sum(opened[sid] == 1 for sid, _, _, _ in sent.values())} duplicates={len(duplicates)} dead={len(dead_loss)} stranded={len(stranded)} indeterminate={len(indeterminate)} lost_attributed={len(attributed)} lost_unexplained={len(unexplained)}")
 print(f"PARSE_FAILURES docker_json={log_parse_failures} dead_json={dead_parse_failures} ingress_json={ingress_parse_failures} event_ts={event_time_failures}")
 print(f"INJECTION_COVERAGE seconds={coverage:.3f} fraction={coverage_fraction:.6f}")
 for row in duplicates[:10]: print("DUPLICATE", *row)
 for row in stranded[:10]: print("STRANDED", *row)
+for row in indeterminate[:10]: print("INDETERMINATE_FORWARD", *row)
 for row in attributed[:10]: print("LOSS_ATTRIBUTED", *row)
 for row in unexplained[:10]: print("LOSS_UNEXPLAINED", *row)
-sys.exit(4 if (log_parse_failures or dead_parse_failures or ingress_parse_failures or event_time_failures) else (2 if duplicates else (1 if unexplained else 0)))
+sys.exit(4 if (log_parse_failures or dead_parse_failures or ingress_parse_failures or event_time_failures) else (2 if duplicates else (5 if indeterminate else (1 if unexplained else 0))))
 PY
 }
 

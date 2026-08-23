@@ -194,7 +194,7 @@ def test_add_ticket_opener_writes_when_window_is_missing(mock_list_windows, caps
     assert record["count"] == 1
 
 
-def test_add_ticket_opener_dead_letters_failed_board_write(capsys):
+def test_add_ticket_opener_dead_letters_unknown_board_write(capsys):
     class FaultyRedis(MockRedis):
         def rpush(self, key, value):
             raise RuntimeError("board unavailable")
@@ -206,7 +206,7 @@ def test_add_ticket_opener_dead_letters_failed_board_write(capsys):
         payload={"title": "cannot land"},
     )
 
-    with pytest.raises(DeadLetter, match="board_write_failed"):
+    with pytest.raises(DeadLetter, match="board_write_unknown"):
         add_ticket_opener(
             FaultyRedis(),
             pod="acme",
@@ -217,8 +217,8 @@ def test_add_ticket_opener_dead_letters_failed_board_write(capsys):
         )
 
     record = json.loads(capsys.readouterr().out)
-    assert record["event"] == "board_write_failed"
-    assert record["reason"] == "board unavailable"
+    assert record["event"] == "board_write_unknown"
+    assert record["reason"] == "board write outcome UNKNOWN after board unavailable"
 
 
 def test_failed_board_write_is_parked_once_by_receive(capsys):
@@ -258,7 +258,7 @@ def test_failed_board_write_is_parked_once_by_receive(capsys):
     )
 
     events = [json.loads(line)["event"] for line in capsys.readouterr().out.splitlines()]
-    assert events == ["received", "board_write_failed", "dead_lettered"]
+    assert events == ["received", "board_write_unknown", "dead_lettered"]
     dead_key = prefix("acme", "hq", agent="backend", resource="dead")
     assert len(r.lists[dead_key]) == 1
 

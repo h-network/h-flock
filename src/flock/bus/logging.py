@@ -9,13 +9,13 @@ _WRITER = os.environ.get("FLOCK_WRITER")
 
 _ENVELOPE_EVENTS = {
     "sent",
-    "send_failed",
+    "send_unknown",
     "popped",
     "forwarded",
-    "forward_failed",
+    "forward_unknown",
     "source_stamped",
     "kick_started",
-    "kick_failed",
+    "kick_unknown",
     "dead_lettered",
     "received",
     "opened",

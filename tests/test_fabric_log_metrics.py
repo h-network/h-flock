@@ -90,6 +90,23 @@ def test_missing_stage_refuses_instead_of_averaging_fixture():
     assert _has(result.stdout, "received -> opened     REFUSED")
 
 
+def test_indeterminate_forward_is_its_own_refused_bucket(tmp_path):
+    lines = _complete("unknown-forward", 1)
+    lines[2] = _line("unknown-forward", "forward_unknown", 1.020)
+    log = tmp_path / "forward-unknown.jsonl"
+    log.write_text("\n".join(lines) + "\n")
+
+    result = _run(log, 1)
+
+    assert result.returncode == 1
+    assert _has(result.stdout, "indeterminate forwards 1")
+    assert _has(
+        result.stdout,
+        "forward_unknown 1 ⚠ REFUSED — write outcome is neither forwarded nor lost",
+    )
+    assert _has(result.stdout, "forwarded 0 / 1")
+
+
 def test_source_filter_excludes_control_paths(tmp_path):
     lines = _complete("bench-1", 1) + _complete("bench-2", 2)
     lines.extend(_complete("control", 3, source="api"))

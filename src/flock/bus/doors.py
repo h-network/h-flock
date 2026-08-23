@@ -83,7 +83,7 @@ def send(
             encode(envelope),
         )
     except Exception as exc:
-        emit(module, "send_failed", envelope, f"egress write failed: {exc}")
+        emit(module, "send_unknown", envelope, f"egress write outcome UNKNOWN after {exc}")
         raise
     emit(module, "sent", envelope)
     return envelope["stream_id"]
