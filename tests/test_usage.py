@@ -784,7 +784,7 @@ def test_codex_captured_session_fixture_model_and_tokens(tmp_path):
     r.values[prefix("acme", "hq", "sme-2", "launch")] = "codex"
 
     tailer = ActivityTailer(r, pod="acme", tenant="hq", home_root=tmp_path)
-    tailer.poll()
+    tailer._tail("sme-2", session_file, "codex")
 
     records = _usage_records(r)
     # The fixture contains 4 token_count records (ordinals 17, 141, 288, 414)
@@ -987,4 +987,147 @@ def test_office_usage_names_agy_agent_not_measurable(monkeypatch, capsys):
     assert architect_rows[0]["measurable"] is False
     assert architect_rows[0]["unpriced"] is True
     assert architect_rows[0]["usd"] is None
+
+
+def test_codex_session_rotation_resets_model(tmp_path):
+    """Rotation control: rotating to a new rollout with session_meta resets model rather than retaining previous rollout's model."""
+    import time
+    sessions_dir = tmp_path / ".codex" / "sessions"
+    sessions_dir.mkdir(parents=True, exist_ok=True)
+
+    # Rollout 1 with turn_context model-old
+    rollout_old = sessions_dir / "rollout-old.jsonl"
+    _write_lines(
+        rollout_old,
+        [
+            {"timestamp": "2026-08-23T14:00:00.000Z", "ordinal": 0, "type": "session_meta", "payload": {"cwd": "/workdir/sme-1"}},
+            {"timestamp": "2026-08-23T14:00:01.000Z", "ordinal": 1, "type": "turn_context", "payload": {"model": "gpt-5.6-sol"}},
+            {
+                "timestamp": "2026-08-23T14:00:02.000Z",
+                "ordinal": 2,
+                "type": "event_msg",
+                "payload": {
+                    "type": "token_count",
+                    "info": {"last_token_usage": {"input_tokens": 100, "output_tokens": 10}},
+                },
+            },
+        ],
+    )
+
+    r = UsageRedis(agents=("sme-1",))
+    r.values[prefix("acme", "hq", "sme-1", "launch")] = "codex"
+
+    tailer = ActivityTailer(r, pod="acme", tenant="hq", home_root=tmp_path)
+    tailer.poll()
+
+    records = _usage_records(r)
+    assert len(records) == 1
+    assert records[0]["model"] == "gpt-5.6-sol"
+
+    # Rollout 2 with session_meta fallback model-new (newer mtime)
+    time.sleep(0.01)
+    rollout_new = sessions_dir / "rollout-new.jsonl"
+    _write_lines(
+        rollout_new,
+        [
+            {
+                "timestamp": "2026-08-23T14:10:00.000Z",
+                "ordinal": 0,
+                "type": "session_meta",
+                "payload": {
+                    "cwd": "/workdir/sme-1",
+                    "base_instructions": {"provenance": {"type": "model", "model": "gpt-5-codex"}},
+                },
+            },
+            {
+                "timestamp": "2026-08-23T14:10:02.000Z",
+                "ordinal": 1,
+                "type": "event_msg",
+                "payload": {
+                    "type": "token_count",
+                    "info": {"last_token_usage": {"input_tokens": 200, "output_tokens": 20}},
+                },
+            },
+        ],
+    )
+
+    tailer.poll()
+    records = _usage_records(r)
+    assert len(records) == 2
+    # Second record MUST be gpt-5-codex from the new session, NOT gpt-5.6-sol from the old session
+    assert records[1]["model"] == "gpt-5-codex"
+
+
+def test_codex_restart_at_mid_session_offset_recovers_model(tmp_path):
+    """Restart control: watchdog restart at persisted offset recovers model from pre-offset turn_context."""
+    sessions_dir = tmp_path / ".codex" / "sessions"
+    sessions_dir.mkdir(parents=True, exist_ok=True)
+    rollout = sessions_dir / "rollout-resume.jsonl"
+
+    # Initial turn_context + first token_count
+    _write_lines(
+        rollout,
+        [
+            {"timestamp": "2026-08-23T14:00:00.000Z", "ordinal": 0, "type": "session_meta", "payload": {"cwd": "/workdir/sme-1"}},
+            {"timestamp": "2026-08-23T14:00:01.000Z", "ordinal": 1, "type": "turn_context", "payload": {"model": "gpt-5.6-sol"}},
+            {
+                "timestamp": "2026-08-23T14:00:02.000Z",
+                "ordinal": 2,
+                "type": "event_msg",
+                "payload": {
+                    "type": "token_count",
+                    "info": {"last_token_usage": {"input_tokens": 100, "output_tokens": 10}},
+                },
+            },
+        ],
+    )
+
+    r = UsageRedis(agents=("sme-1",))
+    r.values[prefix("acme", "hq", "sme-1", "launch")] = "codex"
+
+    # First tailer pass processes records and commits offset
+    tailer1 = ActivityTailer(r, pod="acme", tenant="hq", home_root=tmp_path)
+    tailer1.poll()
+    assert len(_usage_records(r)) == 1
+
+    # Append new turn after offset without re-emitting turn_context
+    with rollout.open("a", encoding="utf-8") as f:
+        f.write(
+            json.dumps({
+                "timestamp": "2026-08-23T14:05:00.000Z",
+                "ordinal": 3,
+                "type": "event_msg",
+                "payload": {
+                    "type": "token_count",
+                    "info": {"last_token_usage": {"input_tokens": 300, "output_tokens": 30}},
+                },
+            }) + "\n"
+        )
+
+    # Fresh tailer instance simulating watchdog restart with empty in-memory state
+    tailer2 = ActivityTailer(r, pod="acme", tenant="hq", home_root=tmp_path)
+    tailer2.poll()
+
+    records = _usage_records(r)
+    assert len(records) == 2
+    # Second usage record MUST recover gpt-5.6-sol from before offset, NOT 'unknown'
+    assert records[1]["model"] == "gpt-5.6-sol"
+    assert records[1]["input"] == 300
+
+
+def test_codex_session_ownership_rejects_arbitrary_cwd(tmp_path):
+    """Ownership control: _codex_session_belongs_to strictly accepts /workdir/{agent} and rejects arbitrary cwd."""
+    p_valid = tmp_path / "valid.jsonl"
+    _write_lines(p_valid, [
+        {"type": "session_meta", "payload": {"cwd": "/workdir/sme-2"}},
+    ])
+    assert ActivityTailer._codex_session_belongs_to(p_valid, "sme-2") is True
+    assert ActivityTailer._codex_session_belongs_to(p_valid, "other") is False
+
+    p_arbitrary = tmp_path / "arbitrary.jsonl"
+    _write_lines(p_arbitrary, [
+        {"type": "session_meta", "payload": {"cwd": "/tmp/sme-2"}},
+    ])
+    assert ActivityTailer._codex_session_belongs_to(p_arbitrary, "sme-2") is False
+
 

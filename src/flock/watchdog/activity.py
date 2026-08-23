@@ -243,7 +243,7 @@ class ActivityTailer:
         import collections
         self._seen_requests: dict[str, set[str]] = collections.defaultdict(set)
         self._attributed_markers: dict[str, set[str]] = collections.defaultdict(set)
-        self._codex_model: dict[str, str] = collections.defaultdict(str)
+        self._codex_session_models: dict[str, str] = {}
 
     def _profile(self, agent: str) -> str | None:
         return _text(self.r.get(prefix(self.pod, self.tenant, agent, "profile")))
@@ -253,7 +253,7 @@ class ActivityTailer:
 
     @staticmethod
     def _codex_session_belongs_to(path: Path, agent: str) -> bool:
-        """Use Codex's own session metadata or turn context to assign a shared rollout.
+        """Use Codex's own session metadata to assign a shared rollout.
 
         CODEX_HOME is an account directory, so agents on the default account or
         the same named profile legitimately share its sessions directory.  A
@@ -262,7 +262,24 @@ class ActivityTailer:
         """
         try:
             with path.open("rb") as session:
-                for _ in range(10):
+                raw = session.readline()
+            record = json.loads(raw)
+        except (OSError, UnicodeDecodeError, json.JSONDecodeError):
+            return False
+        payload = record.get("payload") if isinstance(record, dict) else None
+        return (
+            record.get("type") == "session_meta"
+            and isinstance(payload, dict)
+            and payload.get("cwd") == f"/workdir/{agent}"
+        )
+
+    @staticmethod
+    def _codex_model_at_offset(path: Path, offset: int) -> str:
+        """Recover active codex model from records up to offset."""
+        model = ""
+        try:
+            with path.open("rb") as session:
+                while session.tell() < offset:
                     raw = session.readline()
                     if not raw:
                         break
@@ -272,13 +289,21 @@ class ActivityTailer:
                         continue
                     if not isinstance(record, dict):
                         continue
+                    rtype = record.get("type")
                     payload = record.get("payload") if isinstance(record.get("payload"), dict) else {}
-                    cwd = payload.get("cwd")
-                    if isinstance(cwd, str) and (cwd == f"/workdir/{agent}" or cwd == f"-workdir-{agent}" or cwd.endswith(f"/{agent}")):
-                        return True
+                    if rtype == "turn_context":
+                        m = payload.get("model")
+                        if isinstance(m, str) and m:
+                            model = m
+                    elif rtype == "session_meta" and not model:
+                        base_inst = payload.get("base_instructions") if isinstance(payload.get("base_instructions"), dict) else {}
+                        prov = base_inst.get("provenance") if isinstance(base_inst.get("provenance"), dict) else {}
+                        m = prov.get("model") or payload.get("model")
+                        if isinstance(m, str) and m:
+                            model = m
         except OSError:
-            return False
-        return False
+            pass
+        return model
 
     def _newest(self, agent: str) -> tuple[Path, str] | None:
         profile = self._profile(agent)
@@ -506,6 +531,13 @@ class ActivityTailer:
             offset = 0
         parser = _claude_events if flavor == "claude" else _codex_events
 
+        current_model = ""
+        if flavor == "codex":
+            if offset > 0:
+                current_model = self._codex_session_models.get(path_text) or self._codex_model_at_offset(path, offset)
+            else:
+                current_model = self._codex_session_models.get(path_text, "")
+
         with path.open("rb") as session:
             session.seek(offset)
             committed_offset = offset
@@ -527,13 +559,13 @@ class ActivityTailer:
                     if rtype == "turn_context":
                         m = payload.get("model")
                         if isinstance(m, str) and m:
-                            self._codex_model[agent] = m
-                    elif rtype == "session_meta" and not self._codex_model[agent]:
+                            current_model = m
+                    elif rtype == "session_meta":
                         base_inst = payload.get("base_instructions") if isinstance(payload.get("base_instructions"), dict) else {}
                         prov = base_inst.get("provenance") if isinstance(base_inst.get("provenance"), dict) else {}
                         m = prov.get("model") or payload.get("model")
                         if isinstance(m, str) and m:
-                            self._codex_model[agent] = m
+                            current_model = m
 
                 timestamp = record.get("timestamp")
                 if not isinstance(timestamp, str) or not timestamp:
@@ -542,7 +574,7 @@ class ActivityTailer:
                     self._append(agent, timestamp, kind, tool)
 
                 if flavor == "codex":
-                    usage = _codex_usage(record, current_model=self._codex_model.get(agent, ""))
+                    usage = _codex_usage(record, current_model=current_model)
                 else:
                     usage = _claude_usage(record)
 
@@ -550,6 +582,9 @@ class ActivityTailer:
                     self._emit_usage(agent, timestamp, usage)
                 committed_offset = session.tell()
             offset = committed_offset
+
+        if flavor == "codex":
+            self._codex_session_models[path_text] = current_model
 
         offsets[path_text] = offset
         state = json.dumps({"offsets": offsets}, separators=(",", ":"))
