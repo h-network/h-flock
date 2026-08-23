@@ -1,0 +1,8 @@
+=== MUTATION RUN (expected exit 1) ===
+STRUCTURAL_VIOLATION:
+  src/flock/switch/service.py:274:os.environ["FLOCK_WRITER"] = "fault-injection"
+MUTATION_EXIT=1
+
+=== CLEAN RUN (expected exit 0) ===
+CLEAN: no FLOCK_WRITER assignments in src/
+CLEAN_EXIT=0
