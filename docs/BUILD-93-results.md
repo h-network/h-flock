@@ -43,7 +43,7 @@ Reference documentation in `docs/API.md` and `docs/CONTRACTS.md` has been update
 
 ## Negative Controls
 
-All controls ran against source `08218d2d603a11eead3e3905be80e0f7692c8bb8`.
+All controls ran against source `08218d2688d589958a841a60457d7b4110da3b83`.
 The exact outputs below are quoted from the immutable controls snapshot named in the sign-off:
 
 1. **First write failure emits incomplete (not failed):**
@@ -75,7 +75,7 @@ The exact outputs below are quoted from the immutable controls snapshot named in
 ## TEST SIGN-OFF
 
     claim            living documentation in API.md and CONTRACTS.md accurately describes shipped office send forms, byte acknowledgement, broadcast REMAINDER contrast, usage rate limits and agy unmeasurability, control opener accepted/incomplete/failed records, and reconciled async window reconciliation
-    source sha       08218d2d603a11eead3e3905be80e0f7692c8bb8
+    source sha       08218d2688d589958a841a60457d7b4110da3b83
     artefact         COMMIT
     host             local — pytest runner and citation validation
     command          python3 -m pytest -q
@@ -97,7 +97,7 @@ The exact outputs below are quoted from the immutable controls snapshot named in
 
 ## Citation gate
 
-    source sha       08218d2d603a11eead3e3905be80e0f7692c8bb8
+    source sha       08218d2688d589958a841a60457d7b4110da3b83
     command          python3 tools/check_citations.py
     exit status      0, read unpiped
     result           0 hard failures, 56 near misses
