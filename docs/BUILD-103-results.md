@@ -71,8 +71,8 @@ living `CONTRACTS.md` and `LLD-tmux-host.md` claims compose with current main.
 
 ## Citation gate
 
-    source sha       e0c85462ed3bc9598166641ddb19c3a9d2f643d8
+    source sha       3701cb4a9937a8b0a9030530fd163f58ed5e099e
     command          python3 tools/check_citations.py
     exit status      0, read unpiped
     result           0 hard failures, 83 near misses
-    evidence         docs/evidence/build-103-e0c8546-citations.log sha256 48e336941f0f33ff0d700289445990ef7c5c83b3f81bf64d9338a5fdff40ca02
+    evidence         docs/evidence/build-103-e0c8546-citations.log sha256 142d6ce8f239d2bfc9c1a5b65fdacf8b50fbb0b1c0bdd5aff960c1fbe438abfd
