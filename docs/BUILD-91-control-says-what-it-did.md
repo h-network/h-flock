@@ -66,6 +66,88 @@ what it exists to catch, and that agent is silent in exactly the same way. The
 difference is the token, and the token is per-profile in the window
 environment — see how `src/flock/tmux/ops.py` injects it.
 
+---
+
+# ⚠ AMENDMENT — rulings after `bus`'s refusal, 2026-08-23
+
+`bus` re-executed all five mutations independently: all five exit 1 at the
+claimed loci, so **the controls are genuine and the snapshots match**. The
+refusal is on product behaviour, and both findings are upheld. Two rulings were
+asked for.
+
+## Ruling 1 — accounts have a canonical record, and it is not the filesystem
+
+⚠ **`available_profiles()` is wrong in both directions**, which is worse than the
+gap it was closing. `bus` probed it exactly: token-only account →
+`('default',)`, so a **legitimately configured account is refused**; after
+`mkdir ~/.claude-typo` → `('default', 'typo')`, so **the artifact of the very bug
+this validates against becomes proof the input was valid.**
+
+**Config directories are derivative state.** `seedProfile` creates them, a
+previous bad hire creates them, and nothing removes them.
+
+**Ruling: persist what `setup.sh` configured, as tmux proposed.** `setup.sh`
+already knows the complete account list at configure time; it currently exposes
+only assignments and only non-empty tokens. Record the whole list, seed it into
+Redis from the entrypoint before the startup environment is unset, declare the
+key in `bus/resources.py`, and have **both** the office client and the fabric
+read that one set.
+
+⚠ **Absent key means DO NOT VALIDATE.** A tenant created before this key exists
+must not have every profile refused. `src/flock/bus/policy.py` already sets this
+precedent — `allows()` permits when policy is absent — and this follows it. Say
+so in a comment at the check, because the permissive branch is the one a later
+reader will mistake for a bug.
+
+⚠ **State the limit in the results doc**: an account added outside `setup.sh`
+(hand-seeded, `seed-home`) is not in the canonical list until setup runs again.
+That is an acceptable and *visible* failure — a refusal naming the accounts that
+exist — where today's is an invisible one.
+
+## Ruling 2 — three outcomes, because there are three
+
+⚠ **The decorator records the wrapper's return or exception, not what the control
+mutated**, and `bus` proved the consequence: `stop_agent_failed` with reason
+`tmux kill failed`, emitted **after** the roster `hdel` and the resource purge had
+already committed. Verified in the tree: `stop_agent` commits desired state and
+*then* calls `kill_window`; `pause_agent` sets the marker and *then* interrupts.
+
+**A record that says `failed` when the agent is already gone from the roster is
+worse than no record**, because a wrong record is trusted. That contradicts the
+title of this build.
+
+**Ruling: three records, named for what a reader must do next.**
+
+| record | meaning |
+|---|---|
+| `<kind>_confirmed` | desired state committed **and** actual state followed |
+| `<kind>_incomplete` | desired state committed, actual state did **not** follow. ⚠ **No rollback happened.** Must name what committed and which side effect failed |
+| `<kind>_failed` | nothing changed. Validation or the desired-state mutation itself failed |
+
+⚠ **`_incomplete`, not `_side_effect_failed`.** Both are honest; the reader of a
+control log is asking *"what is the state now, and what must I do"*, and
+`incomplete` answers that in one word while `side_effect_failed` describes the
+mechanism. `docs/NAMING-tmux.md` is yours and a naming review is on the board —
+**counter with a locus if you disagree** and I will take it.
+
+⚠ **`_incomplete` still dead-letters.** Partial is not success.
+
+## Ruling 3 — one finding neither of you raised, and it is mine
+
+`src/flock/watchdog/service.py` now does `continue` when
+`CLAUDE_OAUTH_TOKEN_<ACCOUNT>` is present. That correctly stops the false
+`absent` alert. ⚠ **It also means a token-authenticated agent is never checked at
+all**, so a **revoked or expired token is invisible** — the agent is dead and the
+watchdog is silent, which is the failure mode the check exists for.
+
+**I am not asking you to fix that in this build.** A token cannot be validated
+locally; presence is the only signal available without an API call. **State it as
+a known limit in the results doc**, in the comment at that `continue`, and I will
+put it on `TODO.md` myself. An untested claim that says so is fine; a silent one
+is not.
+
+---
+
 ## Done means
 
 Pushed to origin. Tests green. `TEST-SIGNOFF` filled in, ⚠ **`VERIFIED BY` is not
