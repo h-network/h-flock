@@ -80,7 +80,15 @@ poll_console() {
 }
 
 cleanup() {
-  [ "$KEEP" = "1" ] && { echo; echo "kept: $CONTAINER (--keep)"; return 0; }
+  if [ "$KEEP" = "1" ]; then
+    echo
+    if [ -n "$CONSOLE_PID" ]; then
+      echo "kept: container=$CONTAINER; console_pid=$CONSOLE_PID (stop console: kill $CONSOLE_PID)"
+    else
+      echo "kept: container=$CONTAINER; console=not-started"
+    fi
+    return 0
+  fi
   step "teardown"
   # Kill only the console this invocation started. A host-wide pkill pattern
   # killed unrelated SSH shells whose command line happened to contain it.
@@ -196,10 +204,15 @@ if [ "$CONSOLE" = "1" ]; then
   step "console"
   SECRET="$(openssl rand -hex 8 2>/dev/null || echo acceptsecret)"
   TOKEN="$(grep '^API_TOKEN=' container/.env | cut -d= -f2)"
+  # server.py already reads these credentials from the environment. Keeping
+  # them out of argv prevents ps and /proc/<pid>/cmdline exposing them for the
+  # entire lifetime of a console retained by --keep.
+  export API_TOKEN="$TOKEN"
+  export HFLOCK_SECRET="$SECRET"
   if [ "$NEGATIVE_GATE" != "console-ready" ]; then
     (cd clients/web && exec setsid python3 server.py --listen 0.0.0.0 --port "$CONSOLE_PORT" \
-        --api "http://127.0.0.1:${API_PORT}" --session "http://127.0.0.1:${SESSION_PORT}" \
-        --token "$TOKEN" --secret "$SECRET") > /tmp/accept-console.log 2>&1 &
+        --api "http://127.0.0.1:${API_PORT}" --session "http://127.0.0.1:${SESSION_PORT}") \
+        > /tmp/accept-console.log 2>&1 &
     CONSOLE_PID="$!"
   fi
   poll_console
