@@ -37,8 +37,9 @@ trap cleanup EXIT INT TERM
 echo "FAULT_INJECTION_ACTIVE kind=forward_unknown project=$PROJECT tenant=$TENANT"
 echo "FAULT_INJECTION_ACTIVE disposable=1 target=fault-src->fault-dst work=$WORK"
 
-# accept.sh refuses any existing project and records its own ownership before
-# teardown. --keep transfers the newly-created disposable tenant to this run.
+# The installer is driven directly with an explicit, current prompt sequence.
+# accept.sh is an operator acceptance path and its positional answers include
+# unrelated plumbing; this harness needs only a disposable bus tenant.
 EXISTING_PROJECT_RESOURCE="$({
   docker ps -aq --filter "label=com.docker.compose.project=$PROJECT"
   docker network ls -q --filter "label=com.docker.compose.project=$PROJECT"
@@ -48,18 +49,24 @@ if [ -n "$EXISTING_PROJECT_RESOURCE" ]; then
   echo "REFUSED: generated project $PROJECT already exists; this run did not create it" >&2
   exit 2
 fi
-bash container/accept.sh --tenant "$TENANT" --api-port "$API_PORT" \
-  --session-port "$SESSION_PORT" --keep --no-console >"$WORK/accept.log" 2>&1
+# pod, tenant, two agents, one-account token, default CLI, no exceptions,
+# no provider, no API, no Telegram, session port, and loopback-only console.
+printf 'acme\n%s\n2\narchitect\nsme-2\nn\n\n\n\nn\nn\nn\n%s\nn\n' \
+  "$TENANT" "$SESSION_PORT" | ./setup.sh >"$WORK/setup.log" 2>&1
 accept_rc=$?
 # We proved absence immediately before invoking accept.sh. If its project now
 # exists, this invocation created it even when a later acceptance gate failed;
 # record ownership before interpreting the status so failure cleanup is safe.
-if [ -n "$(docker ps -aq --filter "label=com.docker.compose.project=$PROJECT" | head -1)" ]; then
+if [ -n "$({
+  docker ps -aq --filter "label=com.docker.compose.project=$PROJECT"
+  docker network ls -q --filter "label=com.docker.compose.project=$PROJECT"
+  docker volume ls -q --filter "label=com.docker.compose.project=$PROJECT"
+} 2>/dev/null | head -1)" ]; then
   CREATED_PROJECT="$PROJECT"
 fi
 if [ "$accept_rc" -ne 0 ]; then
   echo "REFUSED: disposable tenant creation/acceptance exited $accept_rc" >&2
-  tail -20 "$WORK/accept.log" >&2
+  tail -20 "$WORK/setup.log" >&2
   exit "$accept_rc"
 fi
 if [ "$CREATED_PROJECT" != "$PROJECT" ] \
