@@ -58,7 +58,7 @@ as a follow-up; this spike deliberately does not write it.
                      docs/evidence/build-102-injector.log sha256 054823b3756759601b09cdac9c0ea16149ec9c96759bae7212d9f64924373a4d
                      docs/evidence/build-102-setup.log sha256 f4e8239069d91637e7fc6b8fd0491011a25179d40e335e38cc515e2321fdcc7d
     verdict          PASS — atomicity warranted; no Lua written
-    VERIFIED BY      PENDING — assigned by architect
+    VERIFIED BY      api — author of the change? NO
 
 ## Gates
 
