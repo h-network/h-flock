@@ -697,6 +697,38 @@ class DoorsAndRouterTest(unittest.TestCase):
             ["api", "bob", "carol"],
         )
 
+    def test_broadcast_ingress_write_exception_is_unknown(self):
+        class ReplyLostPipeline(FakePipeline):
+            def execute(self):
+                for key, value in self.commands:
+                    self.r.rpush(key, value)
+                raise ConnectionError("reply lost after broadcast writes")
+
+        send(
+            self.r,
+            pod="acme",
+            tenant="hq",
+            source="alice",
+            destination="all",
+            payload={"text": "ambiguous fanout"},
+        )
+        self.r.pipeline = lambda: ReplyLostPipeline(self.r)
+
+        output = io.StringIO()
+        with redirect_stdout(output), self.assertRaisesRegex(
+            ConnectionError, "reply lost after broadcast writes"
+        ):
+            Switch(self.r, pod="acme", tenant="hq").step()
+
+        records = [json.loads(line) for line in output.getvalue().splitlines()]
+        self.assertEqual([record["event"] for record in records], ["popped", "forward_unknown"])
+        self.assertEqual(
+            records[-1]["reason"],
+            "broadcast ingress write outcome UNKNOWN after reply lost after broadcast writes",
+        )
+        self.assertNotIn("forwarded", [record["event"] for record in records])
+        self.popen.assert_not_called()
+
     def test_broadcast_dead_letters_only_full_recipient_and_does_not_kick_it(self):
         bob_ingress = prefix("acme", "hq", "bob", "ingress")
         self.r.rpush(bob_ingress, "bob is full")
