@@ -331,6 +331,16 @@ preceding delivery marker can be attributed without guessing. The tenant
 `usage` Stream stores the same JSON object in its `usage` field, capped
 approximately at 10,000 entries (`src/flock/watchdog/activity.py:369-452`).
 
+Control openers (`src/flock/control/openers.py:29-56`) emit
+`{start,stop,pause,resume}_agent_accepted` upon successfully acknowledging all
+desired-state writes in Redis (`writer: control`, carrying `destination: <agent>`
+and `correlation_id` when present). If an opener raises an exception before
+state changes, it emits `{start,stop,pause,resume}_agent_failed` with `reason`
+before dead-lettering; if an error occurs after partial state mutation, it emits
+`{start,stop,pause,resume}_agent_incomplete`. ⚠ **`_accepted` records desired-state
+acknowledgement, not actual window or process creation.** Actual tmux windows and
+process lifecycles are reconciled asynchronously by `tmuxhost.reconcile_once`.
+
 ⚠ **Never log a payload.** Invariant 4 says the switch does not read one; the
 same restraint applies to everything else, and a payload is the one field that
 may hold something private. Headers are enough to trace an envelope end to end.
@@ -426,39 +436,60 @@ The agent-facing surface, and the only part of this a human touches. One binary
 on `PATH` in every agent window (`LLD-port-tmux` §1).
 
 ```bash
-office send -a <destination> <text>...    # kind defaults to Message
+office send -a <destination> "<text>"
+office send -a <destination> --stdin
+office send -a <destination> --file <path>
+office send --agent=<destination> "<text>"
+office send -a <destination> -- --<leading-dash-body>
 office broadcast <text>...              # tenant broadcast, everyone but you
 office hire <agent> [--cli claude|codex|agy] [--profile <account>]
-office peers | letGo | pause | resume
+office peers | letGo | let-go | pause | resume
 office add | list | take | done | cancel | hold | delete
 office status [<agent>]                 # presence, open ticket, last activity
 office cloneToAll <repo-url> [-a a,b] [--dry-run]
+office clone-to-all <repo-url> [-a a,b] [--dry-run]
 office usage [--agent <a>] [--since <ISO>] [--json]
 ```
 
-⚠ **Seventeen subcommands, and this block listed fifteen until 2026-08-22.**
+⚠ **Nineteen command names (including kebab-case aliases `let-go` and `clone-to-all`), and this block listed fifteen until 2026-08-22.**
 `cloneToAll` and `usage` were both shipped and both absent here. The list in
 `office/cli.py:_COMMANDS` is the authority; if the two disagree, the code is
 right and this is the stale one.
 
+- **`send`** delivers a message to one agent. The body is exactly one quoted
+  argument, `--stdin` (body read from standard input; empty stdin is refused), or
+  `--file <path>` (body read directly from a file without shell interpretation).
+  These payload sources are mutually exclusive. Use `--` before a body starting
+  with a dash. The acknowledgement is `sent to <destination>: <N> bytes (<stream_id>)` —
+  **the UTF-8 byte count is the signal** that confirms accepted payload size.
+  ⚠ **`broadcast` deliberately kept `argparse.REMAINDER` and does not follow
+  this** — multi-word text is unquoted for broadcast (`office broadcast <text>...`).
 - **`hire`** takes `--cli` and `--profile`. ⚠ **`--profile` decides both the
   config directory and the credential** — `~/.claude-<account>` and that
   account's OAuth token if one was given at setup. Omitted means the tenant's
-  default account. `StartAgent` has always accepted a profile
-  (`control/openers.py:71`); until 2026-08-23 only this command could not say
-  it, so every agent hired into a multi-account tenant silently landed on
-  `default`. ⚠ **`--cli` is validated against the three known values**, because
-  an unknown one used to be stored and then fail inside the window — which looks
-  exactly like a login prompt rather than a typo.
-- **`cloneToAll`** puts one repository in every `tmux` agent's workspace. It
+  default account. `--profile` is validated against existing accounts
+  (`available_profiles()`) at both the client CLI and fabric opener (`StartAgent`),
+  refusing unknown accounts with an explicit list of available accounts.
+  ⚠ **`--cli` is validated against the three known values** (`claude`, `codex`,
+  `agy`).
+- **`cloneToAll`** (and alias **`clone-to-all`**) puts one repository in every `tmux` agent's workspace. It
   fetches from the network **once** and clones the rest from that copy, then
   points each `origin` back at the real URL. `api` and `control` agents are
   skipped — they have no `/workdir`. Also on `PATH` under the bare name, which
   delegates here (`office/cli.py:clone_to_all_main`).
-- **`usage`** reports token counts and estimated cost per agent, from the `usage`
-  records the watchdog emits. ⚠ **A model absent from `container/config/pricing.json`
-  reads `unpriced`, never `0.00`** — a local model and an unpriced cloud model
-  must not become indistinguishable in a total.
+- **`status`** reports agent presence, open work ticket, and last activity feed.
+  An `agy` agent reads `not measurable (agy)` under the activity feed column.
+- **`usage`** reports token counts, active model, rate limits, and estimated cost per agent, from the `usage`
+  records the watchdog emits. Codex rows price against the model resolved from
+  `turn_context` (e.g. `gpt-5.6-sol` matching `gpt-5` pricing) and surface a rate-limit
+  column (`used_percent`, `plan_type`). ⚠ **Rate limits are verified against
+  the captured rollout fixture `tests/fixtures/codex-session-captured.jsonl` and
+  remain unproven against a live codex agent in acceptance.** An `agy` agent
+  reads `model: "not measurable"` with `-` for counts and `unpriced` in table output.
+  `office usage --json` includes `"measurable": false` on unmeasurable rows
+  (`agy`), while claude and codex rows omit the key.
+  ⚠ **A model absent from `container/config/pricing.json` reads `unpriced`, never `0.00`** —
+  a local model and an unpriced cloud model must not become indistinguishable in a total.
 
 ⚠ **Corrected in build 09 — this was seven separate binaries** (`send`,
 `sendMessage`, `sendBroadcast`, `peers`, `hire`, `letGo`, …) and is now one.
