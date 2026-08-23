@@ -66,7 +66,7 @@ The mutation was restored before the green run.
 
 ## Citation gate
 
-    source sha       PENDING
+    source sha       ea7e13e20e03063a2bca35e0c1008d101acd8992
     artefact         COMMIT
     command          python3 tools/check_citations.py
     exit status      0, read unpiped
