@@ -62,7 +62,7 @@ The mutation was restored before the green run.
                      docs/evidence/build-96-c92972b-pytest.log sha256 09cd22bd9c17ad0bc02f215d0defd19da18b596626c694e7286e9399ed6498ad
 
     verdict          PASS
-    VERIFIED BY      PENDING — assigned by architect
+    VERIFIED BY      api — author of the change? NO
 
 ## Citation gate
 
