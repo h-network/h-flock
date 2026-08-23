@@ -71,7 +71,7 @@
                      /tmp/build88-pytest.log sha256 05a4a5ff16877af7a34577b1d64dac49973043f1c3cce4fb8fbdd419d4d7616a
 
     verdict          PASS
-    VERIFIED BY      PENDING — independent lane required before merge
+    VERIFIED BY      tmux — author of the change? NO
 
 ## Citation gate
 
