@@ -124,22 +124,25 @@ lands, or the next reader will think the freeze broke.
 
 ## Sprint 5 — broadcast, and the six-record contract
 
-**Rows:** the broadcast half of *envelopes have no TTL or hop count* ·
-*`[message from x]` is an amateur sender field* · *the six-record contract has
-holes under load*
-**Files:** `src/flock/bus/doors.py`, `src/flock/switch/`, and most of the test
-suite.
+**Rows:** the broadcast half of *envelopes have no TTL or hop count* · *the
+six-record contract has holes under load*
+**Files:** `src/flock/bus/doors.py`, `src/flock/switch/`.
 
 | | |
 |---|---|
 | broadcast | `src/flock/bus/doors.py:60` skips the policy check when the destination is `all`, so the ACL covers every send except the one that fans out. A broadcast storm has nothing in front of it |
-| sender | the wire half is done — `source` is a fixed-width header field. The pane half still pastes the literal `[message from …]`, so the sender remains a string inside the body: unstylable, unfilterable, and collides with a message that contains the phrase |
 | contract | re-measure. The recorded rates predate v3, v4 and `send_refused`, so nobody knows whether the rewrite already fixed them |
 
-⚠ **The order inside this sprint is forced.** Every delivery test in the
-repository counts by grepping `[message from x]` — including the 100- and
-4-agent benchmarks. The sender change rewrites the instrument the measurement
-uses. **Sender first, or the contract measurement moves under you.**
+⚠ **This sprint got cheaper on 2026-08-23.** It carried a third row — reworking
+the `[message from x]` pane presentation — which was **decided against**: the
+sender is already a header field, the string is one line in one opener, and it
+is a published contract in both the api docs and the agent guide. See `TODO.md`.
+
+⚠ **That decision is also what unblocks the measurement.** Every delivery test
+counts by grepping `[message from x]`, so changing it would have rewritten the
+instrument this sprint measures with, forcing an order inside the sprint. Not
+changing it means the contract can be re-measured against the suite as it
+stands.
 
 ⚠ **The only sprint that needs the performance host.** Fold *local model:
 long-context behaviour unknown* into the same trip — nothing says what a local
