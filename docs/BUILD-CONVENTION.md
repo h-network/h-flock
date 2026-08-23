@@ -126,6 +126,21 @@ tenant and project; one per run, fresh each time.
   empty and exits 0 — silently, successfully, having done nothing. Also three
   occurrences
 - **one h-flock tenant at a time** on the lab
+- ⚠⚠ **A WORKAROUND YOU DO NOT REPORT MAKES THE PROBLEM INVISIBLE.**
+  If a default is unavailable — a port held, a path occupied — **name what holds
+  it in your results**, then work around it. Do not just pick another value and
+  move on; the next person picks another value too, and nobody ever learns the
+  host is accumulating state. ⚠ **This is exactly how four stranded networks
+  survived on this host until build 84 went looking**, and it recurred within the
+  week: build 94 found port `8099` — `accept.sh`'s own default console port —
+  held by an unexplained `python3` process, used `--console-port 8199`, and **the
+  process is still there.** The workaround was correct; reporting it is what made
+  it a finding instead of folklore.
+- ⚠ **Record `free -h` and `df -h /` before every run, in the results.** Not as
+  ceremony: **four acceptance runs out of four began with this VM already
+  swapping** — 1.2–1.9 GiB free of 7.8, and swap already in use — before a single
+  container existed. **A build that dies here is more likely to be the host than
+  the code**, and you cannot make that argument afterwards without the number.
 - ⚠⚠ **TEAR DOWN WITH COMPOSE, NEVER `docker rm`.**
   `docker compose -p h-flock-$TENANT down -v`. Removing containers by hand leaves
   the network behind **holding its subnet forever**, and nothing ever reclaims
