@@ -57,7 +57,7 @@ Those remain unit-controlled and are not claimed live here.
 ## TEST SIGN-OFF
 
     claim            a deliberately assembled live switch can emit forward_unknown and conservation carries it as INDETERMINATE_FORWARD without inventing loss or retrying
-    source sha       713802e
+    source sha       506a8e5
     artefact         COMMIT plus immutable live snapshots
     host             lab 172.16.0.14 — correctness tenant only
     command          bash container/scenarios/fault-forward-unknown.sh I_UNDERSTAND_THIS_INJECTS_AND_DESTROYS_A_TENANT
