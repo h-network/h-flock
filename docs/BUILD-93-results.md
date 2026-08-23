@@ -99,7 +99,7 @@ The exact outputs below are quoted from the immutable controls snapshot named in
                      docs/evidence/build-93-e925768-pytest.log sha256 d5d298f4936a9434322b7d1ad095c62963de563ead046b1833d29b47d04bf28b
 
     verdict          PASS
-    VERIFIED BY      PENDING — author of the change? NO
+    VERIFIED BY      tmux — author of the change? NO
 
 ## Citation gate
 
