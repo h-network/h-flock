@@ -109,22 +109,41 @@ def test_fault_harness_refuses_without_exact_destructive_phrase(arguments):
 
 def test_shipping_source_has_no_writer_assignments():
     """Structural invariant: shipping source never assigns FLOCK_WRITER or sets writer: fault-injection."""
+    import ast
     src_dir = ROOT / "src"
-    violations = []
-    allowed_logging_line = '_WRITER = os.environ.get("FLOCK_WRITER")'
+    py_files = sorted(src_dir.rglob("*.py"))
+    assert len(py_files) >= 10, f"Expected at least 10 python files in src/, found {len(py_files)}"
 
-    for path in sorted(src_dir.rglob("*.py")):
+    violations = []
+    known_read_found = 0
+    logging_rel_path = Path("src/flock/bus/logging.py")
+
+    for path in py_files:
         rel_path = path.relative_to(ROOT)
         text = path.read_text(encoding="utf-8")
-        for line_num, line in enumerate(text.splitlines(), start=1):
-            stripped = line.strip()
-            if "FLOCK_WRITER" in stripped:
-                if rel_path == Path("src/flock/bus/logging.py") and stripped == allowed_logging_line:
-                    continue
-                violations.append(f"{rel_path}:{line_num}:{stripped}")
-            elif "fault-injection" in stripped:
-                violations.append(f"{rel_path}:{line_num}:{stripped}")
+        try:
+            tree = ast.parse(text, filename=str(rel_path))
+        except SyntaxError as e:
+            violations.append(f"{rel_path}:{e.lineno}: SyntaxError: {e}")
+            continue
+
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Constant):
+                val = node.value
+                if val == "fault-injection":
+                    violations.append(f"{rel_path}:{node.lineno}: literal 'fault-injection'")
+                elif val == "FLOCK_WRITER":
+                    if rel_path == logging_rel_path:
+                        known_read_found += 1
+                    else:
+                        violations.append(f"{rel_path}:{node.lineno}: occurrence of 'FLOCK_WRITER'")
+            elif isinstance(node, ast.Name) and node.id == "FLOCK_WRITER":
+                violations.append(f"{rel_path}:{node.lineno}: identifier FLOCK_WRITER")
+
+    if known_read_found != 1:
+        violations.append(f"Expected exactly 1 known read of FLOCK_WRITER in {logging_rel_path}, found {known_read_found}")
 
     assert not violations, "Illegal FLOCK_WRITER or fault-injection in shipping source:\n" + "\n".join(violations)
+
 
 
