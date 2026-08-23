@@ -4,9 +4,10 @@
 
 - `StartAgent`, `StopAgent`, `PauseAgent`, and `ResumeAgent` emit one of three
   desired-state outcomes: `*_accepted` when every desired write committed,
-  `*_incomplete` when only a subset committed or an inline actual-state callback
-  failed, and `*_failed` when no write committed. Incomplete outcomes name the
-  committed subset and the failing write or side effect, then still dead-letter.
+  `*_incomplete` when a write's outcome is unknown, only a subset was
+  acknowledged, or an inline actual-state callback failed, and `*_failed` only
+  before any write was attempted. Write exceptions name acknowledged facts and,
+  separately, the in-flight write whose outcome is `UNKNOWN`, then dead-letter.
   **Build 91 records what control accepted, not what happened in actual state.**
   Tmuxhost confirmation after asynchronous reconciliation is a separate build.
 - `setup.sh` persists the complete configured account list as
@@ -38,7 +39,7 @@ partial commits are the corrections above.
 ## Negative controls
 
 All ten controls ran against source
-`982dc0a1124f9276594fa3cdb5dea4671bb2e1cf`. Exact output is retained in the
+`cb502be844dad09157a023befeb544a59b26ff82`. Exact output is retained in the
 immutable controls snapshot named in the sign-off.
 
 1. `accepted` → `confirmed`: all four cases in
@@ -56,9 +57,9 @@ immutable controls snapshot named in the sign-off.
 5. `incomplete` mislabeled `failed`: all four post-commit callback cases in
    `test_post_commit_side_effect_failure_records_incomplete` fail with the
    exact event mismatch; exit 1.
-6. Partial desired-state tracking disabled: both StartAgent and StopAgent
-   partial-write tests lose the committed subset and fail at their expected
-   exception locus; exit 1.
+6. Unknown-write classification removed: acknowledged-prefix, first-write, and
+   reply-lost-after-commit probes all lose their `incomplete` record and
+   `UNKNOWN` clause at the expected locus; exit 1.
 7. Token recognition disabled:
    `test_claude_profile_token_is_authenticated_without_credentials_file`
    observes an unexpected credential alert with `status: absent`; exit 1.
@@ -74,32 +75,28 @@ immutable controls snapshot named in the sign-off.
 
 ## TEST SIGN-OFF
 
-    claim            control records distinguish accepted desired state, explicitly named partial commits, and no-write failure without claiming actual state; setup seeds canonical accounts read identically by client and fabric with legacy absence permissive; token-auth Claude does not alert absent while genuine absence does
-    source sha       982dc0a1124f9276594fa3cdb5dea4671bb2e1cf
+    claim            control records distinguish accepted desired state, acknowledged facts plus unknown in-flight writes, and pre-write failure without claiming actual state; setup seeds canonical accounts read identically by client and fabric with legacy absence permissive; token-auth Claude does not alert absent while genuine absence does
+    source sha       cb502be844dad09157a023befeb544a59b26ff82
     artefact         COMMIT
     host             local — canonical Redis state and control/tmux boundaries used deterministic test doubles; setup/entrypoint persistence was inspected by focused executable tests
     command          python3 -m pytest -q
     exit status      0, read unpiped
 
     EXCLUDED         container image/build, accept.sh, live tenant, real tmux windows, real vendor authentication, and revoked-token detection
-    population       487 tests and 5 subtests; all repository tests collected
+    population       488 tests and 5 subtests; all repository tests collected
 
     control          ten property mutations listed above
     expected locus   the ten named focused tests above
     observed locus   the same ten focused tests above
-    signature        accepted-vs-confirmed mismatches; refused mismatch; fabric/client DID NOT RAISE; callback and partial-write incomplete failures; unexpected absent alert; two legacy refusals; missing default persistence; missing SADD seeding
+    signature        accepted-vs-confirmed mismatches; refused mismatch; fabric/client DID NOT RAISE; callback and UNKNOWN-write incomplete failures including reply loss after commit; unexpected absent alert; two legacy refusals; missing default persistence; missing SADD seeding
 
-    evidence         docs/evidence/build-91-982dc0a-controls.log sha256 4046a773ebf0e1d092613c1b5593641a9badbda13aded19780e9e6deb2cc3fb9
-                     docs/evidence/build-91-982dc0a-pytest.log sha256 72fab3f11a68fda96fb18a6e229acc0a2e50d085eab987172ca25e2f1195d65d
+    evidence         docs/evidence/build-91-cb502be-controls.log sha256 b8074a406b16a947358da7f16211c69cca9d2e220f42055b459799e40cf61f60
+                     docs/evidence/build-91-cb502be-pytest.log sha256 4b79dd46cabe172cd4a39e1d3027a4c94551083b0928f866013c273a9bcc1bd1
 
     verdict          PASS
     VERIFIED BY      PENDING — assigned verifier bus; author of the change? NO
 
 ## Citation gate
 
-    source sha       b29599824300e4a02f7bdbd99045cc8f5c8371ca
-    artefact         COMMIT
-    command          python3 tools/check_citations.py
-    exit status      0, read unpiped
-    result           0 hard failures, 54 near misses
-    evidence         docs/evidence/build-91-b295998-citations.log sha256 7f130293467df13a9a22748cfc93b163471d1fc3d87772444e6ef62be3f491e6
+    PENDING — binds to this pre-results documentation commit
+    EXCLUDED         the immediately following evidence-binding-only commit; its diff must be limited to replacing this block and adding the immutable citation artifact

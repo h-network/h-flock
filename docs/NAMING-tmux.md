@@ -84,7 +84,7 @@ Tier A is documentation, B internal code, C Redis/environment, and D wire.
 | `pause_agent` / `resume_agent` | `src/flock/control/openers.py:269-293` | identifier | Pause-marker and tmux-process operations implementing temporary suspension. | Port admin-state operations. | B |
 | `replace_window` | `src/flock/control/openers.py:101` | identifier | Callback that kills stale actual state so tmuxhost recreates it. | Rebind a port attachment. | B |
 | `*_accepted` | `src/flock/control/openers.py:53-56` | record | Every desired-state write committed; claims nothing about asynchronously reconciled actual state. | Accepted control-plane intent. | B |
-| `*_incomplete` | `src/flock/control/openers.py:39-45` | record | Some desired state committed or an inline actual-state attempt failed; names the committed subset and failure. | Partial control outcome requiring operator action. | B |
+| `*_incomplete` | `src/flock/control/openers.py:39-45` | record | A write outcome is unknown, only a subset was acknowledged, or an inline actual-state attempt failed; names facts separately from uncertainty. | Indeterminate or partial control outcome requiring operator action. | B |
 | `_STARTABLE_VABS` | `src/flock/control/openers.py:17` | identifier | port_type values lifecycle control accepts for new participants. | Supported port/media types. | B |
 | `_FIXED_PARTICIPANTS` | `src/flock/control/openers.py:18` | identifier | Built-in addresses that `StopAgent` cannot remove. | Reserved control-plane addresses. | B |
 | `provider` | `src/flock/control/openers.py:158` | wire | `StartAgent` payload field selecting a named model service. | Model uplink selection, not participant provider. | D |
