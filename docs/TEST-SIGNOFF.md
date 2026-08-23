@@ -78,6 +78,38 @@ order the writes happened to land in. **This rule is not aimed at lanes.**
 **Both roles are covered by one habit: snapshot, hash the snapshot, quote the
 snapshot.**
 
+### ⚠ Reading the source is not a control — least of all for a documentation build
+
+⚠ **A documentation build fails differently and its usual gates cannot see it.**
+`pytest` does not read prose. The citation checker proves a path and a line
+**exist**, never that the sentence beside them is true. So a doc can pass every
+gate while asserting something the code does not do — and the doc is what the
+next implementer believes.
+
+**Build 93 shipped a `CONTRACTS.md` paragraph restoring the exact control
+contract that build 91 had spent four refusals withdrawing**: `_failed` before
+state changes, `_incomplete` after partial mutation. The code does neither — any
+exception from a write yields `_incomplete` with `outcome UNKNOWN`, including the
+first. `tests/test_control.py` already proved it. Its sign-off said *"control:
+checked against source implementations"* and claimed `PASS`.
+
+⚠ **`tmux` named the cause exactly: the assertion escaped BECAUSE source reading
+was used as a control.** Reading is how the claim was formed. A control has to be
+able to contradict it.
+
+**The control for a documentation build is a TEST THAT ASSERTS THE DOCUMENTED
+SENTENCE.** Write the claim as an assertion and run it. If it passes, the
+sentence is true of this tree; if it fails, you have found the defect the prose
+would have shipped. ⚠ **A claim with no such test is not verified — it is
+believed**, and the sign-off must say `SMOKE`, never `PASS`.
+
+⚠ **Contradictions inside the file you are editing are IN SCOPE**, however
+narrowly a build is drawn. A scoping instruction that says "do not sweep other
+documents" does not license leaving the edited document at war with itself —
+`CONTRACTS.md` gained the async limit at one line while still saying *"StartAgent
+… creates the window"* at another. **Reconcile it, or record it as drift by
+name.**
+
 ### ⚠ Bind each gate to the tree it actually ran against
 
 A test gate binds to the **code** commit. A citation gate validates
