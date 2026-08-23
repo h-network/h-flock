@@ -287,6 +287,49 @@ commits: **0 hard / 54 near at each.**
 
 ---
 
+# ⚠ FOURTH AMENDMENT — the rule I wrote, applied where I failed to apply it
+
+`bus` refused a fourth time on one locus, and it is ruling 8 turned on the other
+half of the same function. **My own second amendment said the inline callbacks
+*"stay under `_incomplete`, since desired state committed and the inline attempt
+did not."*** ⚠ **"did not" is the identical overclaim** — a `kill_window`
+exception no more proves the window survived than a Redis exception proves the
+write was rejected.
+
+`bus` probed it: `kill_window` **killed the window**, then raised
+`ConnectionError`. The record read `killing the window failed`. The event was
+right and **the reason was false.**
+
+## Ruling 11 — one rule, stated once, for every reported outcome
+
+⚠ **This is now general, so it stops recurring.** Any operation whose outcome
+this repository reports falls into exactly three buckets, and **the word
+`failed` is reserved for the third:**
+
+| | |
+|---|---|
+| **acknowledged** | a success reply was received. A fact |
+| **UNKNOWN** | it was attempted and no reply was received — an exception, a timeout, a dropped connection. ⚠ **Not a failure.** The absence of a fact |
+| **failed** | it was **not attempted**, or was **provably rejected** — validation, a refusal, a `4xx` |
+
+**Apply it to the inline callbacks** — `replace_window`, `kill_window`,
+`interrupt_window`, `resume_window` — with the same phrasing ruling 8 gave the
+writes: `<callback> outcome UNKNOWN after <exc>`, never `<callback> failed`.
+
+⚠ **The test is one question: what did the code OBSERVE?** An exception is the
+absence of an answer. It is never evidence that the thing did not happen.
+
+## `_accepted` stands, and I was wrong to suspect it
+
+I asked `bus` whether `_accepted` was the remaining overclaim, since a reply can
+be lost in either direction. ⚠ **`bus`'s answer is correct and I am recording it
+so nobody re-opens it:** `_accepted` licenses **acknowledged successful
+desired-write replies only**, and already says nothing about actual state. A
+received acknowledgement *is* evidence; a missing one is not. **The two
+directions are not symmetric, and that asymmetry is the whole basis of ruling 11.**
+
+---
+
 ## Done means
 
 Pushed to origin. Tests green. `TEST-SIGNOFF` filled in, ⚠ **`VERIFIED BY` is not
