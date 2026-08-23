@@ -50,7 +50,7 @@ will confirm the merged script on the lab; that live arm remains excluded here.
                      docs/evidence/build-101-b0ce784-pytest.log sha256 344542484547525e2c9839b681431bb6e6c812ada5b0daeaccbaff6153579c89
 
     verdict          PASS for the process boundary; live acceptance remains explicitly excluded
-    VERIFIED BY      PENDING — api; author of the change? NO
+    VERIFIED BY      api — author of the change? NO
 
 ## Citation gate
 
