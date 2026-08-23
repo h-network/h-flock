@@ -74,5 +74,5 @@ The mutation was restored before generating final gate logs.
 
 ## Merged-tree verification
 
-    merged with      main at cef37d8
+    merged with      main at 3d7900e
     result           clean merge; 514 passed + 5 subtests passed, exit 0; citations 0 hard / 84 near, exit 0
