@@ -271,6 +271,21 @@ only one path creates either missing evidence or a duplicate custody record
 ⚠ `task_id`, not `id` — a bare `id` sits beside `stream_id` and `correlation_id`
 in the same record and reads as a third identity for the same thing.
 
+Standard process labels for `writer` reflect operational components: `control`,
+`switch`, `port`, `tmuxhost`, `watchdog`, `container`, and `usage` (or `bench-send`/`bench-port`
+during benchmarking).
+
+⚠ **`writer: fault-injection` identifies deliberately synthetic records.** It is
+set via `FLOCK_WRITER=fault-injection` exclusively by the scenario harnesses in
+`container/scenarios/` (such as `fault-forward-unknown.sh` and
+`partial-control-damage.sh`) when artificially provoking failure shapes like
+`forward_unknown` or `stop_agent_incomplete` on a disposable tenant. **It never
+appears in normal operation, and no shipping code in `src/` emits, assigns, or
+references the `fault-injection` writer or `FLOCK_WRITER` beyond the single read in
+`src/flock/bus/logging.py:8`.** An observer or log parser encountering `writer:
+fault-injection` knows the event represents deliberate fault-injection testing
+rather than a genuine operational failure or live system defect.
+
 The six successful-unicast custody records are a **set, not a sequence**. Join them by
 `stream_id`; do not reconstruct custody by sorting timestamps. `send` appends
 before it emits `sent`, so a fast switch can emit `popped` before the source

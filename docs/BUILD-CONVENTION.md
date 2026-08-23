@@ -136,6 +136,13 @@ tenant and project; one per run, fresh each time.
   held by an unexplained `python3` process, used `--console-port 8199`, and **the
   process is still there.** The workaround was correct; reporting it is what made
   it a finding instead of folklore.
+- ⚠ **`--keep` transfers the console process to the operator.** When
+  `container/accept.sh` is invoked with `--keep`, it deliberately preserves both
+  the container and the background console proxy host process. The terminal
+  output names the transferred process explicitly: `kept: container=<name>; console_pid=<pid> (stop console: kill <pid>)`
+  (or `console=not-started`). **The operator who kept the tenant is responsible for
+  stopping the host process via `kill <pid>` when done.** Failing to kill it leaves
+  orphan proxy processes holding default ports (`8099`) and retaining memory indefinitely.
 - ⚠ **`docker system df`'s "reclaimable" over-predicts what the FILESYSTEM gets
   back.** Measured 2026-08-24 on the lab: `docker builder prune -f` reported
   **5.548 GB** reclaimed against **5.578 GB** predicted — those agree, and the
