@@ -146,8 +146,10 @@ window.
 tmux window is absent. The pulled ticket waits in `tasks.todo` for a later
 `office take`; a roster-less destination is rejected by the switch before port
 delivery. The returned `RPUSH` list length confirms the synchronous mutation:
-success logs `board_write_confirmed`, while an exception or non-positive result
-logs `board_write_failed` and raises `DeadLetter`.
+success logs `board_write_confirmed`. An exception logs `board_write_unknown`
+because the write may have committed before its reply was lost; a returned
+non-positive length is provably invalid and logs `board_write_failed`. Both
+raise `DeadLetter`.
 
 ### Verification and usage-correlation markers
 
