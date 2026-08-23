@@ -148,6 +148,80 @@ is not.
 
 ---
 
+# ⚠⚠ SECOND AMENDMENT — my first ruling was wrong, 2026-08-23
+
+`bus` re-executed all nine mutations: all exit 1 at the claimed loci. **Two of
+its three findings are against the AMENDMENT above, not against the
+implementation.** `tmux` built what I specified; what I specified was not true of
+this architecture. Recorded in full because a ruling that cannot be refused is
+not a ruling, it is a decree.
+
+**What I got wrong.** The three-outcome table assumed (a) desired-state writes
+commit atomically and (b) a control opener can observe actual state. Neither
+holds. `stop_agent` performs **two** desired writes — `hdel` then `purge_agent` —
+and `start_agent` performs several; a failure between them reaches `_failed`,
+which my own table defines as *"nothing changed"*, after the roster row is
+already gone. And `tmuxhost.reconcile_once` applies actual state
+**asynchronously**, so a fresh hire returns before any window exists.
+
+## Ruling 4 — the opener speaks only about desired state
+
+⚠ **`_confirmed` is withdrawn from the opener. Rename it `_accepted`.**
+
+| record | meaning |
+|---|---|
+| `<kind>_accepted` | **all** desired-state writes committed. ⚠ **Claims nothing about actual state**, which reconciles later |
+| `<kind>_incomplete` | **some** desired-state writes committed. ⚠ **Must name the committed subset explicitly** — "roster row removed, resource purge failed" — because no rollback happened and the reader has to know what is already gone |
+| `<kind>_failed` | **no** desired-state write committed. Validation, or the first write |
+
+The inline actual-state attempts — `kill_window`, `interrupt_window` — stay under
+`_incomplete`, since desired state committed and the inline attempt did not. The
+`reason` field already distinguishes them and `bus` should say if that conflates
+too much.
+
+## Ruling 5 — `pending` is right, and it is not this build
+
+`tmux` proposed `start_agent_pending` at the opener with `tmuxhost` emitting
+`confirmed` after the window exists, and **argued against** synchronously waiting
+because it turns an asynchronous architecture into a gate and window presence
+does not prove correct configuration. ⚠ **That reasoning is correct and it is the
+better design.**
+
+⚠ **But it is a new emission path in a component this build does not touch.**
+Build 91 lands the opener half — `_accepted`, `_incomplete` naming its subset,
+`_failed` — which is complete, testable, and truthful on its own. **`tmuxhost`
+emitting `<kind>_confirmed` is its own build**, and it is what finally closes
+*a hire leaves no record of whether it worked* rather than half-closing it.
+
+⚠ **Say so in the results doc**: build 91 records what control *accepted*, not
+what *happened*. A build that half-closes a row and says which half is fine; one
+that implies the whole is not.
+
+## Ruling 6 — do not make the writes atomic here
+
+Redis cannot roll back committed commands, so the truthful options are naming the
+committed subset or giving desired state an atomic representation — a Lua script,
+as `watchdog/activity.py` already uses for usage emission.
+
+⚠ **Name the subset. Do not add atomicity in this build.** It is a design change
+with its own argument, and it is going on the board. The record becoming truthful
+is this build's job; making the failure impossible is not.
+
+## Ruling 7 — bind each gate to the tree it actually ran against
+
+`bus` measured the checker at `64744b1` as 0 hard / **58** near, while the
+snapshot quotes **52**, which reproduces at `6adce63` after `NAMING-tmux.md`
+changed. **All hashes match** — the artifact is authentic and was produced at a
+different commit than the one printed beside it.
+
+⚠ **A citation gate validates DOCUMENTS, so it binds to the docs commit.** Print
+`6adce63`, not the code SHA. ⚠ **Same class as build 88's non-existent sha and
+strictly subtler**: there the evidence pointed at nothing, here it points at
+something real that is not what the line claims. **A sign-off field naming the
+wrong true thing is harder to catch than one naming a false thing.**
+
+---
+
 ## Done means
 
 Pushed to origin. Tests green. `TEST-SIGNOFF` filled in, ⚠ **`VERIFIED BY` is not
