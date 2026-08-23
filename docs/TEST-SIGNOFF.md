@@ -103,6 +103,66 @@ sentence is true of this tree; if it fails, you have found the defect the prose
 would have shipped. ⚠ **A claim with no such test is not verified — it is
 believed**, and the sign-off must say `SMOKE`, never `PASS`.
 
+### ⚠ Narrowed: it is behavioural claims that source reading cannot control
+
+`bus`'s qualification, adopted — **without it this rule becomes ceremony.**
+
+**A claim about RUNTIME BEHAVIOUR needs a test that executes it.** "Reconciliation
+carries an indeterminate forward" is behavioural; a test asserting the source
+contains certain strings in a certain order proves nothing, which is exactly how
+build 92's broadcast defect survived its first submission.
+
+⚠ **A claim about STRUCTURE may be controlled by inspection** — "no JSON access
+below the fixed header", "no write verbs in an observation-only diff", "the
+binding diff touches only these two paths". These are properties *of the text*,
+so reading the text is the direct measurement rather than a substitute for one.
+
+**Two conditions when you do that**, or it is belief wearing a control's clothes:
+
+1. **Name it as a structural claim** in the sign-off, so a reader knows which kind
+   it is.
+2. **Mutate the structure and show the checker fails.** A structural control that
+   cannot go red is not a control.
+
+⚠ **Do not manufacture a runtime test for a structural property.** It will assert
+something adjacent to the claim and pass while the claim is false — the failure
+this rule exists to prevent, arrived at from the other side.
+
+**`tmux`'s boundary, also adopted, against the other ceremony risk:**
+
+- every **new** factual or contract claim must be reached by an **executable**
+  test, and every **new inference boundary** needs a mutation that makes that
+  claim false **at its locus**
+- ⚠ **a document may CITE an existing control** when it asserts exactly the same
+  property. A living contract quoting a property build 91 already controls does
+  not need build 91's controls rebuilt around it
+- **source reading, string-presence tests and adjacent tests never count**
+
+### ⚠ Verify the MERGED tree, not only the branch
+
+Confirmed by `tmux` on build 93 and now standing. A build is verified on its
+branch; it *lands* on a main that may have moved. **A document can be accurate on
+its own branch and false after merge**, and nothing in our gates would catch it:
+`pytest` runs on the branch, the citation checker runs on the branch, and neither
+sees what the merge produces.
+
+⚠ **A clean `git merge` is not a correctness result.** Build 93 predates build
+92, both edit `docs/CONTRACTS.md`, and the merge is clean **only because `api`
+never touched the paragraph build 92 rewrote.** That is luck.
+
+**Run the factual checks and both gates against the merged tree as well as the
+branch.** `tmux` did this unprompted and reported both sets of numbers.
+
+⚠ **`tmux`'s framing is the one to remember: a clean merge means the TEXT did not
+collide, never that the MEANINGS compose.** Build 93's merge was clean, every
+build-92 vocabulary change survived, `496 + 5` stayed green and `0 hard / 68
+near` held — and the merged living contract still made a false ownership claim
+about `StopAgent`.
+
+⚠ **Scope it, or it becomes ceremony.** This is for builds that touch a **living
+document or contract another build has moved since the branch point** — one
+temporary worktree and one gate run. **Not for every isolated patch.**
+
 ⚠ **Contradictions inside the file you are editing are IN SCOPE**, however
 narrowly a build is drawn. A scoping instruction that says "do not sweep other
 documents" does not license leaving the edited document at war with itself —
