@@ -139,7 +139,22 @@ the claim needed a fresh pre-results commit and a fresh binding commit to be tru
 again. A rule that requires re-doing a two-commit dance after every correction
 will be got wrong.
 
-**Bind to the FINAL commit, and prove the number reproduces there.**
+⚠ **And the obvious form of that is impossible — an author cannot print a
+commit's own SHA inside it.** Recording it needs a further commit, which is then
+the final one, and the recursion restarts. The first version of this rule said
+"bind to the final commit" and could not be complied with; **build 92 was refused
+against it, correctly, and then could not satisfy it either.**
+
+**So the rule is split between the two roles that can each do their half:**
+
+| | |
+|---|---|
+| **author** | names the commit they **measured at**, and states the number |
+| **verifier** | re-measures at the **branch tip** and confirms the two agree |
+
+⚠ **The number must reproduce at the tip a verifier checks out.** That is the
+tree anyone will actually have, it is checkable in one command, and it asks
+nobody to know a SHA before it exists.
 
 ```bash
 git archive <final-commit> | tar -x -C /tmp/verify
