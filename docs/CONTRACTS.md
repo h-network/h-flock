@@ -339,9 +339,10 @@ is attempted, the opener emits `{start,stop,pause,resume}_agent_failed` with `re
 before dead-lettering. If any write attempt encounters an exception (including
 the first write, where outcome is UNKNOWN with no writes acknowledged), the
 opener emits `{start,stop,pause,resume}_agent_incomplete`. ⚠ **`_accepted` records
-desired-state acknowledgement, not actual window or process creation.** Actual
-tmux windows and process lifecycles are reconciled asynchronously by
-`tmuxhost.reconcile_once`.
+desired-state acknowledgement, not actual window or process creation.** For `StartAgent`,
+actual tmux windows and process lifecycles are reconciled asynchronously by
+`tmuxhost.reconcile_once`. For `StopAgent`, the opener attempts to kill the window
+synchronously inline after desired-state writes, with `tmuxhost` providing later cleanup.
 
 ⚠ **Never log a payload.** Invariant 4 says the switch does not read one; the
 same restraint applies to everything else, and a payload is the one field that
@@ -526,7 +527,7 @@ the api validates.
 | `Message` | `tmux` | `{"text": "..."}` | pastes `[message from <source>] <text>` |
 | `Command` | `tmux` | `{"text": "..."}` | pastes `<text>` **bare** — it executes |
 | `StartAgent` | `control` | `{"agent": "networking", "cli": "claude", "port_type": "tmux"}` | publishes desired launch state, enrols (tmuxhost reconciles window and CLI) |
-| `StopAgent` | `control` | `{"agent": "networking"}` | removes roster row, purges identity state (tmuxhost kills window) |
+| `StopAgent` | `control` | `{"agent": "networking"}` | removes roster row, purges identity state, kills window inline (tmuxhost cleans up on reconcile) |
 | `PauseAgent` | `control` | `{"agent": "networking"}` | marks paused in Redis and interrupts CLI |
 | `ResumeAgent` | `control` | `{"agent": "networking"}` | clears pause in Redis, resumes CLI, kicks pending ingress |
 | `AddTicket` | `tmux` | `{"title", "description", "priority"}` | writes a ticket to that agent's `tasks.todo` — and **pastes nothing** |
@@ -574,14 +575,14 @@ identity state**, retaining its mailbox and other data and touching no tmux.
 differ only in whether the prefix is rendered — see `LLD-port-tmux` §3 for why
 that one difference is the whole security boundary.
 
-### `StartAgent` and `StopAgent` publish desired state — reconciliation is asynchronous (tmux)
+### `StartAgent` publishes desired state; `StopAgent` attempts actual-state teardown synchronously
 
 `StartAgent` publishes optional profile and provider state plus the launch key,
 then enrols the agent; tmuxhost reconciliation asynchronously creates its window
 and starts the CLI in it. Desired launch state is visible before the roster row that triggers
 reconciliation, while actual window creation still follows enrolment.
-`StopAgent` removes the roster row, purges classified identity state, and tmuxhost kills the window.
-They publish desired state, not synchronous window creation alone.
+`StopAgent` removes the roster row, purges classified identity state, and attempts to kill
+the window synchronously inline (`tmuxhost.reconcile_once` also cleans up any orphaned window later).
 
 ⚠ **For `port_type: "api"` there is only enrolment.** A client enrolment writes a
 roster row and stops: no launch key, no home, no window, no CLI. `StopAgent`
