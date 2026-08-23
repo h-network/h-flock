@@ -90,6 +90,11 @@ if [ "$CREATED_PROJECT" != "$PROJECT" ] \
   echo "REFUSED: expected newly-created project $PROJECT is absent" >&2
   exit 2
 fi
+if [ "$(docker inspect --format '{{ index .Config.Labels "com.docker.compose.project" }}' "$CONTAINER")" != "$PROJECT" ]; then
+  echo "REFUSED: container/project ownership mismatch" >&2
+  exit 2
+fi
+printf 'tenant=%s\nproject=%s\ncontainer=%s\n' "$TENANT" "$PROJECT" "$CONTAINER" >"$WORK/run-identity.txt"
 
 STATUS=""
 for _ in $(seq 1 60); do
@@ -163,6 +168,34 @@ for key in r.scan_iter(match=f"pod:{pod}:tenant:{tenant}:agent:*:{resource}"):
         print(json.dumps(parse(raw)))
 PY
 : >"$WORK/injections.tsv"
+
+# Evidence must belong to this run and be plausible before it can be committed.
+# Empty dead/ingress/injection queues are valid, but the ledger, custody stream,
+# setup, and identity are required to contain the run we just created.
+for required in run-identity.txt setup.log ledger.tsv custody.log; do
+  if [ ! -s "$WORK/$required" ]; then
+    echo "REFUSED: missing or empty artifact $WORK/$required" >&2
+    exit 1
+  fi
+done
+if ! grep -q "tenant=$TENANT" "$WORK/run-identity.txt" \
+  || ! grep -q "project=$PROJECT" "$WORK/run-identity.txt"; then
+  echo "REFUSED: run identity does not name the created tenant/project" >&2
+  exit 1
+fi
+STREAM_ID="$(cut -f2 "$WORK/ledger.tsv" | head -n1)"
+if [ -z "$STREAM_ID" ] \
+  || ! grep -q "$STREAM_ID" "$WORK/custody.log" \
+  || ! grep -q 'forward_unknown' "$WORK/custody.log"; then
+  echo "REFUSED: custody artifact is not for this run or lacks forward_unknown" >&2
+  exit 1
+fi
+for optional in dead.jsonl ingress.jsonl injections.tsv; do
+  if [ ! -f "$WORK/$optional" ]; then
+    echo "REFUSED: missing queue artifact $WORK/$optional" >&2
+    exit 1
+  fi
+done
 
 set +e
 python3 container/scenarios/reconcile-unicast.py \

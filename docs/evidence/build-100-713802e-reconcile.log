@@ -1,1 +1,4 @@
-sed: can't read /tmp/build100-live-5-artifacts.xmg4qa/build100-1787524736-2913860/reconcile.log: No such file or directory
+RECONCILE sent=1 delivered_once=0 duplicates=0 dead=0 stranded=0 indeterminate=1 lost_attributed=0 lost_unexplained=0
+PARSE_FAILURES docker_json=0 dead_json=0 ingress_json=0 event_ts=0 legacy_attempts=0
+INJECTION_COVERAGE seconds=0.000 fraction=0.000000
+INDETERMINATE_FORWARD 1 bce0f7dfe50341e89dccbd2a549c1443

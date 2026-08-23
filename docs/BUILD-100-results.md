@@ -21,22 +21,30 @@ marker and ownership check.
 
 ## Live result
 
-The lab run used source `713802e`, a fresh generated tenant, and no other
-h-flock tenant. The immutable custody snapshot contains these exact records:
+The lab rerun used source `713802e`, fresh tenant `bus100-1787525055-2919997`,
+and no other h-flock tenant. The immutable custody snapshot contains these
+exact records:
 
-    {"module":"fault_injection","event":"sent","writer":"fault-injection","stream_id":"c7d88f8abb4348769c8e443f8ec98cb2","correlation_id":"51d76bd064924c1a97c6bf348d0ad8e9","source":"fault-src","destination":"fault-dst"}
-    {"module":"switch","event":"popped","writer":"fault-injection","stream_id":"c7d88f8abb4348769c8e443f8ec98cb2","correlation_id":"51d76bd064924c1a97c6bf348d0ad8e9","source":"fault-src","destination":"fault-dst"}
-    {"module":"switch","event":"forward_unknown","writer":"fault-injection","stream_id":"c7d88f8abb4348769c8e443f8ec98cb2","correlation_id":"51d76bd064924c1a97c6bf348d0ad8e9","source":"fault-src","destination":"fault-dst","reason":"ingress write outcome UNKNOWN after BUILD100 deliberate missing ingress reply"}
+    {"module":"fault_injection","event":"sent","writer":"fault-injection","stream_id":"bce0f7dfe50341e89dccbd2a549c1443","source":"fault-src","destination":"fault-dst"}
+    {"module":"switch","event":"popped","writer":"fault-injection","stream_id":"bce0f7dfe50341e89dccbd2a549c1443","source":"fault-src","destination":"fault-dst"}
+    {"module":"switch","event":"forward_unknown","writer":"fault-injection","stream_id":"bce0f7dfe50341e89dccbd2a549c1443","source":"fault-src","destination":"fault-dst","reason":"ingress write outcome UNKNOWN after BUILD100 deliberate missing ingress reply"}
 
 The conservation executable consumed the live ledger, custody log, dead queue,
 ingress queue, and injection-window captures. Its immutable output was:
 
     RECONCILE sent=1 delivered_once=0 duplicates=0 dead=0 stranded=0 indeterminate=1 lost_attributed=0 lost_unexplained=0
-    INDETERMINATE_FORWARD 1 c7d88f8abb4348769c8e443f8ec98cb2
+    INDETERMINATE_FORWARD 1 bce0f7dfe50341e89dccbd2a549c1443
 
 The process returned rc5. No loss was reported, no duplicate was reported, and
 no retry was performed. The captured ingress and dead queues were empty, so the
 UNKNOWN was not later settled by a committed ingress or terminal dead copy.
+
+The capture also retained the generated tenant, compose project, and container
+identity. The harness now refuses before reconciliation if required artifacts
+are empty, if the custody stream lacks the run's ledger stream id and
+forward_unknown, or if the container label does not match the project created
+by this invocation. Empty queue snapshots remain valid and are checked for
+presence rather than non-zero size.
 
 ## Shapes not reached
 
@@ -63,13 +71,14 @@ Those remain unit-controlled and are not claimed live here.
     observed locus   same
     signature        live custody forward_unknown; RECONCILE indeterminate=1 lost_unexplained=0; process rc5
 
-    evidence         docs/evidence/build-100-713802e-custody.log sha256 c928a6b47b4d3935b153622e845c624ba65a2017e8e1672b976a76796c918bc0
-                     docs/evidence/build-100-713802e-reconcile.log sha256 8f9ada18d16ac83757ae4cf688b121a3969a74c341b148413fb3ebe000b9d5ac
-                     docs/evidence/build-100-713802e-ledger.tsv sha256 175e2fa04dd5c440b856e2b65a7e4c2f8c78fc748033a09a98ffbb5b633d6426
-                     docs/evidence/build-100-713802e-dead.jsonl sha256 8ce8c4e6e7d7a9858043090a44f578be650fc8bb78fa3d18fd53cd22f50557c2
-                     docs/evidence/build-100-713802e-ingress.jsonl sha256 8dca85f42a7518bd5f5b2353f0c5b1aa206977e98d13b8c1fc9fa2151b4828f4
-                     docs/evidence/build-100-713802e-injections.tsv sha256 4caf6112df237d12ffd3fbc4d2518a08945dec2332ab05229a20efccad323e03
-                     docs/evidence/build-100-713802e-setup.log sha256 8b8c0b58d5a44fb77ea5486d26b807b3695a63423bcc0c3b29114707db750a1b
+    evidence         docs/evidence/build-100-713802e-custody.log sha256 043b06a187c24570ef63b20dca3bbbd7d901900cdafa5a78a75a35afa6122fc3
+                     docs/evidence/build-100-713802e-reconcile.log sha256 7cc43a6440fede2029dce6c1d2f85cccc87e0357135919db158cfa52129b685f
+                     docs/evidence/build-100-713802e-ledger.tsv sha256 15e9e123bdeee8f0ee915ac59cc7b83322652ee47613633cc4ddf3224fccfac0
+                     docs/evidence/build-100-713802e-dead.jsonl sha256 01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b
+                     docs/evidence/build-100-713802e-ingress.jsonl sha256 01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b
+                     docs/evidence/build-100-713802e-injections.tsv sha256 01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b
+                     docs/evidence/build-100-713802e-setup.log sha256 57649a4232d3e3622ce37aba890e66467057a8b52595e7bdb2816aef04a5d3e4
+                     docs/evidence/build-100-713802e-run-identity.txt sha256 51fcc813f6385cb01ca0465b9c38f76964f1d93ffdfb1b8065aeafe4c3711b27
 
     verdict          PASS
     VERIFIED BY      PENDING — assigned by architect
