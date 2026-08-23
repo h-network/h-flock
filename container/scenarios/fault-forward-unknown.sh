@@ -118,7 +118,7 @@ docker exec "$CONTAINER" kill -STOP "$SWITCH_PID"
 docker exec -i \
   -e REDIS_URL=redis://127.0.0.1:6379/0 \
   -e FLOCK_WRITER=fault-injection \
-  "$CONTAINER" python3 - \
+  "$CONTAINER" sh -c 'exec python3 - "$@" >>/proc/1/fd/1 2>&1' -- \
     --pod acme --tenant "$TENANT" --source fault-src --destination fault-dst \
     --token "$TOKEN" --ledger /tmp/build100-ledger.tsv \
     < container/scenarios/inject-forward-unknown.py
