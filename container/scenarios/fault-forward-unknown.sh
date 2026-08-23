@@ -130,8 +130,13 @@ fi
 set -e
 
 docker cp "$CONTAINER:/tmp/build100-ledger.tsv" "$WORK/ledger.tsv" >/dev/null
-docker cp "$CONTAINER:/home/ubuntu/.flock/custody/custody.jsonl" \
-  "$WORK/custody.log" >/dev/null
+if ! docker cp "$CONTAINER:/home/ubuntu/.flock/custody/custody.jsonl" \
+  "$WORK/custody.log" >/dev/null 2>&1; then
+  # Some disposable images mount the retained volume root-owned. Docker's
+  # stdout is still the authoritative live custody stream, so capture it before
+  # teardown rather than weakening the container's ownership boundary.
+  docker logs "$CONTAINER" >"$WORK/custody.log" 2>&1
+fi
 # Capture the live queues instead of manufacturing empty inputs. The expected
 # emptiness is part of the result: if the write committed, ingress settles the
 # UNKNOWN as a strand and INDETERMINATE_FORWARD would be the wrong verdict.
