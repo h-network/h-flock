@@ -39,7 +39,7 @@ Reference documentation in `docs/API.md` and `docs/CONTRACTS.md` has been update
 ## TEST SIGN-OFF
 
     claim            living documentation in API.md and CONTRACTS.md accurately describes shipped office send forms, byte acknowledgement, broadcast REMAINDER contrast, usage rate limits and agy unmeasurability, and control opener accepted/failed records
-    source sha       0e9ef0e54d3205fa8130830cbdb94e24ef4bca1f
+    source sha       0e9ef0ed635f85124e28149ad1cef3fbb19bfeca
     artefact         COMMIT
     host             local — pytest runner and citation validation
     command          python3 -m pytest -q
@@ -56,7 +56,7 @@ Reference documentation in `docs/API.md` and `docs/CONTRACTS.md` has been update
 
 ## Citation gate
 
-    source sha       0e9ef0e54d3205fa8130830cbdb94e24ef4bca1f
+    source sha       0e9ef0ed635f85124e28149ad1cef3fbb19bfeca
     command          python3 tools/check_citations.py
     exit status      0, read unpiped
     result           0 hard failures, 56 near misses
