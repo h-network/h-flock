@@ -48,6 +48,32 @@ done
 # The profile named 'default' is the stock ~/.claude / ~/.codex — whatever this
 # image is already logged into. Only the EXTRA profiles cost a new login.
 PROFILES=(); PROFILE_MAP=(); CLI_MAP=()
+# ⚠ A CREDENTIAL, SO IT IS READ SILENTLY. Every other prompt echoes because
+# nothing typed before this point is secret — API_TOKEN is generated, never
+# typed. A token echoed here would sit in scrollback, in whatever recorded the
+# session, and in a `capture-pane` if setup were ever run inside a window.
+#
+# ⚠ BLANK KEEPS WHAT IS ALREADY THERE. setup.sh rewrites container/.env whole,
+# so without carrying the old value across, re-running it to add one agent would
+# silently delete every token — which is exactly how API_ENABLED=1 used to
+# vanish. Same read-it-back trick API_TOKEN already uses.
+TOKEN_VAR() { printf 'CLAUDE_OAUTH_TOKEN_%s' "$(printf '%s' "$1" | tr 'a-z-' 'A-Z_')"; }
+ask_token() {
+    local profile="$1" var existing prompt entered
+    var="$(TOKEN_VAR "$profile")"
+    existing="$(grep -s "^${var}=" container/.env | cut -d= -f2-)"
+    if [ -n "$existing" ]; then
+        prompt="  OAuth token for '$profile' [keep existing]: "
+    else
+        prompt="  OAuth token for '$profile' (blank to log in interactively later): "
+    fi
+    read -rsp "$prompt" entered; echo
+    [ -n "$entered" ] || entered="$existing"
+    eval "$var=\$entered"
+    TOKEN_VARS="$TOKEN_VARS $var"
+}
+TOKEN_VARS=""
+
 read -rp "Use more than one account in this tenant? [y/N]: " USE_PROFILES
 case "$USE_PROFILES" in
   [Yy]*)
@@ -56,8 +82,14 @@ case "$USE_PROFILES" in
     for i in $(seq 1 "$NP"); do
         if [ "$i" -eq 1 ]; then pdef="default"; else pdef="account-$i"; fi
         read -rp "  Account #$i name [$pdef]: " P
-        PROFILES+=("$(slug "${P:-$pdef}")")
+        P="$(slug "${P:-$pdef}")"
+        PROFILES+=("$P")
+        ask_token "$P"
     done
+    ;;
+  *)
+    # One account still has a name — `default` — and still wants a token.
+    ask_token default
     ;;
 esac
 
@@ -351,6 +383,15 @@ TOKEN="$(grep -s '^API_TOKEN=' container/.env | cut -d= -f2)"
     echo "TENANT=${TENANT}"
     echo "AGENTS=${AGENTS_CSV}"
     echo "API_TOKEN=${TOKEN}"
+    # ⚠ One per account, and only the ones that have a value. An empty
+    # CLAUDE_OAUTH_TOKEN_X= would reach the container as an empty string, which
+    # is NOT the same as absent — the CLI would see the variable set and treat
+    # it as a credential. Absent means "log in interactively", which is the
+    # existing path and must keep working.
+    for tv in $TOKEN_VARS; do
+        eval "tval=\${$tv:-}"
+        [ -n "$tval" ] && echo "${tv}=${tval}"
+    done
     echo "API_ENABLED=${API_ENABLED}"
     [ -n "$API_PORT" ] && echo "API_PORT=${API_PORT}"
     echo "SESSION_PORT=${SESSION_PORT}"

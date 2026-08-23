@@ -145,15 +145,16 @@ rm -f container/.env
 # for — which is why the answers are listed one per line below.
 #
 #   acme        pod                     n     more than one account?
-#   $TENANT     tenant                  ""    default CLI  -> claude
-#   2           how many agents         ""    any agents differing -> none
-#   architect   agent #1                n     local model provider?
-#   sme-2       agent #2                y     open the REST API door?
+#   $TENANT     tenant                  ""    OAuth token -> none, log in later
+#   2           how many agents         ""    default CLI  -> claude
+#   architect   agent #1                ""    any agents differing -> none
+#   sme-2       agent #2                n     local model provider?
+#                                       y     open the REST API door?
 #                                       n     telegram?
 #   $API_PORT   api host port           $SESSION_PORT  session host port
 #   y           reach from elsewhere    ""    tls cert path -> more choices
 #   n           generate self-signed?
-printf 'acme\n%s\n2\narchitect\nsme-2\nn\n\n\nn\ny\nn\n%s\n%s\ny\n\nn\n' \
+printf 'acme\n%s\n2\narchitect\nsme-2\nn\n\n\n\nn\ny\nn\n%s\n%s\ny\n\nn\n' \
   "$TENANT" "$API_PORT" "$SESSION_PORT" | ./setup.sh 2>&1 \
   | grep -E "healthy|error|Error|NEEDS LOGIN|logged in|wrote container/.env|not enabled" | head -10
 # setup.sh is the operation that creates the project. Record ownership only

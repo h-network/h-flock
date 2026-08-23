@@ -77,3 +77,48 @@ def test_provider_and_profile_coexist():
                      provider={"url": "http://x:8000", "model": "m"})
     assert "CLAUDE_CONFIG_DIR=/home/ubuntu/.claude-work" in env
     assert "AGENT_PROVIDER_URL=http://x:8000" in env
+
+
+def test_the_token_injected_is_the_one_for_that_agents_profile(monkeypatch):
+    """⚠ Two accounts must not receive each other's credential.
+
+    A token in the container environment is inherited by every window — a
+    single-account mechanism. Keyed to the profile, agent B never has account
+    A's token in its own environment.
+    """
+    monkeypatch.setenv("CLAUDE_OAUTH_TOKEN_WORK", "tok-work")
+    monkeypatch.setenv("CLAUDE_OAUTH_TOKEN_PERSONAL", "tok-personal")
+
+    work = window_env("a", cwd="/workdir/a", profile="work")
+    personal = window_env("b", cwd="/workdir/b", profile="personal")
+
+    assert "CLAUDE_CODE_OAUTH_TOKEN=tok-work" in work
+    assert "CLAUDE_CODE_OAUTH_TOKEN=tok-personal" in personal
+    assert "tok-personal" not in " ".join(work)
+    assert "tok-work" not in " ".join(personal)
+
+
+def test_an_unprofiled_agent_gets_the_default_accounts_token(monkeypatch):
+    monkeypatch.setenv("CLAUDE_OAUTH_TOKEN_DEFAULT", "tok-default")
+    env = window_env("a", cwd="/workdir/a")
+    assert "CLAUDE_CODE_OAUTH_TOKEN=tok-default" in env
+
+
+def test_a_hyphenated_profile_maps_to_an_underscored_variable(monkeypatch):
+    """`account-2` is a legal profile name; `CLAUDE_OAUTH_TOKEN_ACCOUNT-2` is not
+    a legal shell variable."""
+    monkeypatch.setenv("CLAUDE_OAUTH_TOKEN_ACCOUNT_2", "tok-2")
+    env = window_env("a", cwd="/workdir/a", profile="account-2")
+    assert "CLAUDE_CODE_OAUTH_TOKEN=tok-2" in env
+
+
+def test_no_token_means_the_variable_is_absent_not_empty(monkeypatch):
+    """⚠ Absent and empty are different to the CLI.
+
+    An empty CLAUDE_CODE_OAUTH_TOKEN looks like a credential that fails; absent
+    means log in interactively, which is the path that already works.
+    """
+    monkeypatch.delenv("CLAUDE_OAUTH_TOKEN_WORK", raising=False)
+    monkeypatch.setenv("CLAUDE_OAUTH_TOKEN_WORK", "")
+    env = window_env("a", cwd="/workdir/a", profile="work")
+    assert not [v for v in env if v.startswith("CLAUDE_CODE_OAUTH_TOKEN")]

@@ -248,6 +248,23 @@ def window_env(
             f"CLAUDE_CONFIG_DIR=/home/ubuntu/.claude-{profile}",
             f"CODEX_HOME=/home/ubuntu/.codex-{profile}",
         ])
+
+    # ⚠ PER WINDOW, KEYED TO THE PROFILE — never one token for the tenant.
+    # A token in the container environment is inherited by EVERY window, which
+    # is a single-account mechanism bolted onto a multi-account design: with two
+    # accounts it either overrides both profiles with one identity or is ignored
+    # where a profile already has credentials. Injecting it here means the
+    # profile decides both which config dir and which credential, so the two
+    # compose instead of competing.
+    #
+    # ⚠ Absent is not empty. No token means the variable is not set at all, and
+    # the agent logs in interactively as it always has — an empty string would
+    # look to the CLI like a credential that fails.
+    token = os.environ.get(
+        f"CLAUDE_OAUTH_TOKEN_{(profile or 'default').upper().replace('-', '_')}"
+    )
+    if token:
+        env_vars.append(f"CLAUDE_CODE_OAUTH_TOKEN={token}")
     # A local model instead of the vendor's. claude reads these itself; nothing
     # in h-flock talks to the model, so an agent on a local provider is an agent
     # like any other — same window, same paste, same activity file.
