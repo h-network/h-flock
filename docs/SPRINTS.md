@@ -133,6 +133,25 @@ are to verify.** That, not merge contention, is the constraint.
 sprint 4's alerts: the fault-injection harness from build 100, and the
 `window_created` signal the acceptance seat found while measuring a gap.
 
+⚠⚠ **CORRECTION, made before assigning: both are BIGGER than this plan first
+said, and the plan was wrong in the same way twice.** I wrote 9a as *point the
+existing harness at it* and 9b as *thread an id through*. Checking the code
+first — which is the discipline every lane has been held to today — neither is
+mechanical:
+
+- **build 100's harness wraps `rpush` only**, targets the **ingress** key, and
+  attaches to the **switch** process. A control-plane fault needs different Redis
+  verbs and a different target process. **Extending it is part of 9a's cost.**
+- **`tmuxhost` has no `correlation_id` to thread.** It reconciles from Redis, and
+  `start_agent` never persists one. 9b needs a **new piece of desired state**,
+  with a lifecycle, and it must tolerate `window_created` events that have **no
+  cause at all** — tmuxhost rebuilds missing windows with no control envelope
+  behind them.
+
+**Both are still worth doing and the sprint stands.** Recorded because a spec
+that calls something small when it is not wastes the lane's day, and I have said
+that to three lanes today.
+
 ### 9a — characterise a partial control failure, then decide about atomicity
 
 **Lane: `bus`.** ⚠ **A SPIKE, NOT A FIX.** The question is what a half-completed
