@@ -1,4 +1,34 @@
-=== MUTATION RUN (command: python3 -m pytest tests/test_fault_injection.py -k test_shipping_source_has_no_writer_assignments) ===
+=== MUTATION RUN 1: MISSING SCAN ROOT (expected exit 1) ===
+============================= test session starts ==============================
+platform linux -- Python 3.12.3, pytest-9.1.1, pluggy-1.6.0
+rootdir: /workspace/api/h-flock
+configfile: pyproject.toml
+plugins: anyio-4.14.2
+collected 9 items / 8 deselected / 1 selected
+
+tests/test_fault_injection.py F                                          [100%]
+
+=================================== FAILURES ===================================
+________________ test_shipping_source_has_no_writer_assignments ________________
+
+    def test_shipping_source_has_no_writer_assignments():
+        """Structural invariant: shipping source never assigns FLOCK_WRITER or sets writer: fault-injection."""
+        import ast
+        src_dir = ROOT / "missing-src"
+        py_files = sorted(src_dir.rglob("*.py"))
+>       assert len(py_files) >= 10, f"Expected at least 10 python files in src/, found {len(py_files)}"
+E       AssertionError: Expected at least 10 python files in src/, found 0
+E       assert 0 >= 10
+E        +  where 0 = len([])
+
+tests/test_fault_injection.py:115: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_fault_injection.py::test_shipping_source_has_no_writer_assignments
+======================= 1 failed, 8 deselected in 0.04s ========================
+
+MUTATION_1_EXIT=1
+
+=== MUTATION RUN 2: FLOCK_WRITER SETTER & LITERAL IN SRC (expected exit 1) ===
 ============================= test session starts ==============================
 platform linux -- Python 3.12.3, pytest-9.1.1, pluggy-1.6.0
 rootdir: /workspace/api/h-flock
@@ -56,11 +86,11 @@ E       assert not ["src/flock/switch/service.py:105: occurrence of 'FLOCK_WRITE
 tests/test_fault_injection.py:146: AssertionError
 =========================== short test summary info ============================
 FAILED tests/test_fault_injection.py::test_shipping_source_has_no_writer_assignments
-======================= 1 failed, 8 deselected in 0.07s ========================
+======================= 1 failed, 8 deselected in 0.08s ========================
 
-MUTATION_EXIT=1
+MUTATION_2_EXIT=1
 
-=== CLEAN RUN (command: python3 -m pytest tests/test_fault_injection.py -k test_shipping_source_has_no_writer_assignments) ===
+=== CLEAN RUN (expected exit 0) ===
 ============================= test session starts ==============================
 platform linux -- Python 3.12.3, pytest-9.1.1, pluggy-1.6.0 -- /usr/bin/python3
 cachedir: .pytest_cache
