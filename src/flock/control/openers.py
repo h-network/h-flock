@@ -35,7 +35,7 @@ class _PartialControl(RuntimeError):
 
 
 def _record_control(kind: str):
-    """Record accepted, partial, incomplete, or pre-mutation failure outcomes."""
+    """Record accepted, partially failed, incomplete, or pre-mutation failure outcomes."""
     def decorate(opener):
         @wraps(opener)
         def recorded(r, *, pod, tenant, envelope, **kwargs):
