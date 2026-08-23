@@ -5,7 +5,8 @@
 - `StartAgent`, `StopAgent`, `PauseAgent`, and `ResumeAgent` emit one of three
   desired-state outcomes: `*_accepted` when every desired write committed,
   `*_incomplete` when a write's outcome is unknown, only a subset was
-  acknowledged, or an inline actual-state callback failed, and `*_failed` only
+  acknowledged, or an inline actual-state callback raised without an
+  acknowledgement, and `*_failed` only
   before any write was attempted. Write exceptions name acknowledged facts and,
   separately, the in-flight write whose outcome is `UNKNOWN`, then dead-letter.
   Inline actual-state callback exceptions follow the same observation rule:
@@ -101,10 +102,5 @@ immutable controls snapshot named in the sign-off.
 
 ## Citation gate
 
-    source sha       bf9445df6fb0c5e8049fd7977752c9b06eccb3c0
-    artefact         COMMIT
-    command          python3 tools/check_citations.py
-    exit status      0, read unpiped
-    result           0 hard failures, 54 near misses
-    EXCLUDED         the immediately following evidence-binding commit: only this PENDING block is replaced and docs/evidence/build-91-bf9445d-citations.log is added; no product documentation or path citation changes
-    evidence         docs/evidence/build-91-bf9445d-citations.log sha256 7f130293467df13a9a22748cfc93b163471d1fc3d87772444e6ef62be3f491e6
+    PENDING — binds to this corrected pre-results documentation commit
+    EXCLUDED         the immediately following evidence-binding-only commit; its diff must be limited to replacing this block and adding the immutable citation artifact
