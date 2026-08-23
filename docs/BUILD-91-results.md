@@ -102,10 +102,10 @@ immutable controls snapshot named in the sign-off.
 
 ## Citation gate
 
-    source sha       bf9445df6fb0c5e8049fd7977752c9b06eccb3c0
+    source sha       378a740e2e8ff753a7fb94379b7a14ce52184da0
     artefact         COMMIT
     command          python3 tools/check_citations.py
     exit status      0, read unpiped
     result           0 hard failures, 54 near misses
-    EXCLUDED         the immediately following evidence-binding commit: only this PENDING block is replaced and docs/evidence/build-91-bf9445d-citations.log is added; no product documentation or path citation changes
-    evidence         docs/evidence/build-91-bf9445d-citations.log sha256 7f130293467df13a9a22748cfc93b163471d1fc3d87772444e6ef62be3f491e6
+    EXCLUDED         the immediately following evidence-binding commit: only this binding block is updated and docs/evidence/build-91-378a740-citations.log is added; no product documentation or path citation changes
+    evidence         docs/evidence/build-91-378a740-citations.log sha256 7f130293467df13a9a22748cfc93b163471d1fc3d87772444e6ef62be3f491e6
