@@ -20,6 +20,9 @@ class MockRedis:
         self.cause_map = cause_map or {}
 
     def get(self, key):
+        for agent, cause in self.cause_map.items():
+            if f":agent:{agent}:window.cause" in key:
+                return cause.encode("utf-8") if isinstance(cause, str) else cause
         for agent, cli in self.launch_map.items():
             if f":agent:{agent}:launch" in key:
                 return cli.encode("utf-8") if isinstance(cli, str) else cli
