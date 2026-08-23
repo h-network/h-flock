@@ -39,7 +39,7 @@ for _ in $(seq 1 60); do status="$(docker inspect --format '{{if .State.Health}}
 [ "$status" = healthy ] || { echo "REFUSED: tenant unhealthy" >&2; exit 2; }
 TOKEN="$(openssl rand -hex 16)"
 docker exec "$CONTAINER" redis-cli SET "pod:acme:tenant:${TENANT}:fault.injection" "$TOKEN" >/dev/null
-docker exec -i -e REDIS_URL=redis://127.0.0.1:6379/0 -e FLOCK_WRITER=fault-injection "$CONTAINER" sh -c 'set -o pipefail; python3 - "$@" 2>&1 | tee /proc/1/fd/1' -- \
+docker exec -i -e REDIS_URL=redis://127.0.0.1:6379/0 -e FLOCK_WRITER=fault-injection "$CONTAINER" sh -c 'python3 - "$@" 2>&1 | tee /proc/1/fd/1' -- \
   --pod acme --tenant "$TENANT" --agent sme-2 --token "$TOKEN" --snapshot /tmp/build102-snapshot.txt < container/scenarios/inject-partial-control.py >"$WORK/injector.log" 2>&1
 inject_rc=$?
 docker cp "$CONTAINER:/tmp/build102-snapshot.txt" "$WORK/snapshot.txt" >/dev/null 2>&1 || true
