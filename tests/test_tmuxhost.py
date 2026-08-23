@@ -54,6 +54,13 @@ class MockRedis:
             self.roster_agents.add(field)
             self.port_type_map[field] = value
 
+    def eval(self, script, numkeys, *args):
+        assert numkeys == 2
+        cause_key, roster_key, correlation_id, agent, agent_port_type = args
+        self.set(cause_key, correlation_id)
+        self.hset(roster_key, agent, agent_port_type)
+        return 1
+
     def hkeys(self, key):
         return {a.encode("utf-8") for a in self.roster_agents}
 

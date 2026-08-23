@@ -26,6 +26,9 @@ class RecordingRedis:
     def set(self, key, value):
         self.events.append(("set", key, value))
 
+    def eval(self, script, numkeys, *args):
+        self.events.append(("eval", numkeys, *args))
+
     def hdel(self, key, field):
         self.events.append(("hdel", key, field))
 
@@ -78,12 +81,85 @@ def test_fresh_start_publishes_window_cause_before_roster_visibility():
         ("hget", prefix("acme", "hq", resource="roster"), "dave"),
         ("set", prefix("acme", "hq", "dave", "launch"), "codex"),
         (
-            "set",
+            "eval",
+            2,
             prefix("acme", "hq", "dave", "window.cause"),
+            prefix("acme", "hq", resource="roster"),
             "hire-correlation",
+            "dave",
+            "tmux",
         ),
-        ("hset", prefix("acme", "hq", resource="roster"), "dave", "tmux"),
     ]
+
+
+def test_fresh_hire_cause_and_roster_are_atomic_on_real_redis(tmp_path):
+    import shutil
+    import socket
+    import subprocess
+    import time
+    from pathlib import Path
+
+    import redis
+
+    redis_bin = shutil.which("redis-server") or "/usr/bin/redis-server"
+    if not Path(redis_bin).exists():
+        pytest.fail(f"redis-server binary not found at {redis_bin} - real redis test is mandatory")
+
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as listener:
+        listener.bind(("127.0.0.1", 0))
+        redis_port = listener.getsockname()[1]
+
+    process = subprocess.Popen(
+        [
+            redis_bin,
+            "--port",
+            str(redis_port),
+            "--dir",
+            str(tmp_path),
+            "--save",
+            "",
+            "--appendonly",
+            "no",
+        ],
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+    )
+    try:
+        for _ in range(50):
+            try:
+                client = redis.Redis(host="127.0.0.1", port=redis_port, decode_responses=True)
+                if client.ping():
+                    break
+            except Exception:
+                time.sleep(0.05)
+        else:
+            pytest.fail(f"could not connect to real redis-server on port {redis_port}")
+
+        class ReplyLossRedis:
+            def __getattr__(self, name):
+                return getattr(client, name)
+
+            def eval(self, *args):
+                client.eval(*args)
+                raise ConnectionError("reply lost after atomic publish")
+
+        with pytest.raises(ConnectionError, match="reply lost after atomic publish"):
+            start_agent(
+                ReplyLossRedis(),
+                pod="acme",
+                tenant="hq",
+                envelope={
+                    "correlation_id": "hire-correlation",
+                    "payload": {"agent": "dave"},
+                },
+                replace_window=lambda _agent: None,
+            )
+
+        assert client.get(prefix("acme", "hq", "dave", "window.cause")) == "hire-correlation"
+        assert client.hget(prefix("acme", "hq", resource="roster"), "dave") == "tmux"
+    finally:
+        process.terminate()
+        process.wait(timeout=2)
 
 
 def test_start_agent_defaults_cli_to_claude():

@@ -2,8 +2,8 @@
 
 ## Result
 
-A fresh tmux `StartAgent` carrying a `correlation_id` persists that id in the
-per-agent `window.cause` key before publishing roster visibility. Control still
+A fresh tmux `StartAgent` carrying a `correlation_id` publishes that id in the
+per-agent `window.cause` key atomically with roster visibility. Control still
 returns after desired-state acknowledgements; it does not wait for tmuxhost or
 interpret window presence.
 
@@ -27,6 +27,13 @@ This prefers a missing join to a false one if tmuxhost dies after consumption
 and before stdout. Absence is preserved as absence; no later window borrows an
 old hire's identity.
 
+Cause and membership share one Lua boundary because cleanup after a sequential
+write cannot prove its own outcome after a connection loss. On a lost Lua
+reply, control truthfully emits `_incomplete`; the server has nevertheless
+committed both cause and roster or neither, so the rejected cause-without-roster
+state cannot exist. A mandatory real-Redis test performs the atomic write, loses
+the reply deliberately, and observes both values.
+
 ## Behavioural controls
 
 The integrated control invokes `start_agent`, leaves Redis as the only bridge,
@@ -39,6 +46,8 @@ asserting source text.
   borrow the old id.
 - Removing the already-present cleanup leaves the stale id available for a
   future recovery.
+- Removing the roster write from the Lua boundary leaves the cause without
+  membership and fails against a real redis-server.
 
 ## TEST SIGN-OFF
 
