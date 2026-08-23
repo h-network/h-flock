@@ -23,7 +23,7 @@ _TARGET_ONLY_KEYS = frozenset({"agent"})
 
 
 class _IncompleteControl(RuntimeError):
-    """Some desired state committed, or its inline actual-state attempt failed."""
+    """A desired or actual-state attempt has an UNKNOWN outcome."""
 
 
 def _record_control(kind: str):
@@ -75,6 +75,21 @@ def _write_desired(
         ) from exc
     committed.append(committed_label)
     return result
+
+
+def _actual_unknown(
+    committed: list[str],
+    action: str,
+    exc: Exception,
+    *,
+    actual_acknowledged: list[str] | None = None,
+) -> _IncompleteControl:
+    """Describe observed acknowledgements separately from an unanswered attempt."""
+    parts = [f"acknowledged: {', '.join(committed)}"]
+    if actual_acknowledged:
+        parts.append(f"actual acknowledged: {', '.join(actual_acknowledged)}")
+    parts.append(f"{action} outcome UNKNOWN after {exc}")
+    return _IncompleteControl("; ".join(parts))
 
 
 def _target(envelope: dict, allowed_keys: frozenset[str]) -> tuple[str, dict]:
@@ -218,9 +233,7 @@ def start_agent(
         try:
             replace_window(agent)
         except Exception as exc:
-            raise _IncompleteControl(
-                f"acknowledged: {', '.join(committed)}; replacing the stale window failed: {exc}"
-            ) from exc
+            raise _actual_unknown(committed, "replacing the stale window", exc) from exc
 
 
 @_record_control("stop_agent")
@@ -259,9 +272,7 @@ def stop_agent(
         try:
             kill_window(agent)
         except Exception as exc:
-            raise _IncompleteControl(
-                f"acknowledged: {', '.join(committed)}; killing the window failed: {exc}"
-            ) from exc
+            raise _actual_unknown(committed, "killing the window", exc) from exc
 
 
 @_record_control("pause_agent")
@@ -283,9 +294,7 @@ def pause_agent(
     try:
         interrupt_window(agent)
     except Exception as exc:
-        raise _IncompleteControl(
-            f"acknowledged: {', '.join(committed)}; interrupting the window failed: {exc}"
-        ) from exc
+        raise _actual_unknown(committed, "interrupting the window", exc) from exc
 
 
 @_record_control("resume_agent")
@@ -305,12 +314,25 @@ def resume_agent(
         committed, "paused marker removed", "paused marker removal",
         lambda: r.delete(prefix(pod, tenant, agent=agent, resource="paused")),
     )
+    actual_acknowledged: list[str] = []
     try:
         resume_window(agent)
-        depth = r.llen(prefix(pod, tenant, agent=agent, resource="ingress"))
-        for _ in range(depth):
-            kick_agent(agent)
+        actual_acknowledged.append("window resumed")
     except Exception as exc:
-        raise _IncompleteControl(
-            f"acknowledged: {', '.join(committed)}; resuming or kicking the window failed: {exc}"
+        raise _actual_unknown(committed, "resuming the window", exc) from exc
+    try:
+        depth = r.llen(prefix(pod, tenant, agent=agent, resource="ingress"))
+    except Exception as exc:
+        raise _actual_unknown(
+            committed, "reading ingress depth", exc,
+            actual_acknowledged=actual_acknowledged,
         ) from exc
+    for index in range(depth):
+        try:
+            kick_agent(agent)
+            actual_acknowledged.append(f"kick {index + 1}")
+        except Exception as exc:
+            raise _actual_unknown(
+                committed, f"kick {index + 1}", exc,
+                actual_acknowledged=actual_acknowledged,
+            ) from exc

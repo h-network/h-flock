@@ -534,6 +534,50 @@ def test_post_commit_side_effect_failure_records_incomplete(
     record = json.loads(capsys.readouterr().out.splitlines()[-1])
     assert record["event"] == f"{opener.__name__}_incomplete"
     assert f"acknowledged: {committed}" in record["reason"]
+    assert "outcome UNKNOWN" in record["reason"]
+
+
+def test_reply_loss_after_window_kill_reports_unknown_not_failed(capsys):
+    operations = []
+
+    def kill_then_lose_reply(agent):
+        operations.append(("window-killed", agent))
+        raise ConnectionError("reply lost after kill")
+
+    with pytest.raises(ConnectionError, match="reply lost after kill"):
+        stop_agent(
+            RecordingRedis(operations, roster_port_type="tmux"),
+            pod="acme", tenant="hq", envelope={"payload": {"agent": "dave"}},
+            kill_window=kill_then_lose_reply,
+        )
+    record = json.loads(capsys.readouterr().out.splitlines()[-1])
+    assert record["event"] == "stop_agent_incomplete"
+    assert record["reason"] == (
+        "acknowledged: roster row removed, agent resources purged, delivery lock cleared; "
+        "killing the window outcome UNKNOWN after reply lost after kill"
+    )
+    assert operations[-1] == ("window-killed", "dave")
+
+
+def test_resume_names_actual_acknowledgements_before_unknown_kick(capsys):
+    operations = []
+
+    def kick(agent):
+        operations.append(("kick", agent))
+        if len([item for item in operations if item[0] == "kick"]) == 2:
+            raise ConnectionError("reply lost after second kick")
+
+    with pytest.raises(ConnectionError, match="reply lost after second kick"):
+        resume_agent(
+            RecordingRedis(operations, ingress_depth=2),
+            pod="acme", tenant="hq", envelope={"payload": {"agent": "dave"}},
+            resume_window=lambda agent: operations.append(("resumed", agent)),
+            kick_agent=kick,
+        )
+    record = json.loads(capsys.readouterr().out.splitlines()[-1])
+    assert record["event"] == "resume_agent_incomplete"
+    assert "actual acknowledged: window resumed, kick 1" in record["reason"]
+    assert "kick 2 outcome UNKNOWN after reply lost after second kick" in record["reason"]
 
 
 def test_stop_partial_desired_write_names_committed_subset(capsys):
