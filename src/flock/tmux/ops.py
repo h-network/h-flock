@@ -293,6 +293,46 @@ def window_env(
     return env_vars
 
 
+
+def _seed_profile_dirs(profile: str | None) -> None:
+    """Populate a profiled CLI's config dir from the image's defaults.
+
+    ⚠ **Unprofiled agents need nothing** — they read `~/.claude` directly, which
+    the image already ships populated.
+
+    `seedProfile` comes from the base image, which owns first-run state and CLI
+    defaults; h-flock only decides *which* profile an agent gets. It copies from
+    the live config dir at runtime, so there is one source of truth rather than a
+    copy here that drifts from the image.
+
+    Never raises: a missing `seedProfile` means an older base, and an agent that
+    starts against an unseeded dir is a visible failure, not a silent one.
+    """
+    if not profile:
+        return
+    for cli in ("claude", "codex"):
+        try:
+            result = subprocess.run(
+                ["seedProfile", cli, profile],
+                capture_output=True, text=True, timeout=30,
+            )
+            if result.returncode != 0:
+                log_record(
+                    "tmux", "error",
+                    reason=f"seedProfile {cli} {profile} exited {result.returncode}: "
+                           f"{(result.stderr or '').strip()[:200]}",
+                )
+        except FileNotFoundError:
+            log_record("tmux", "error",
+                       reason="seedProfile is not on PATH — the base image predates it, "
+                              f"so profile {profile!r} is unseeded and its agents may "
+                              "stop on a first-run dialog")
+            return
+        except Exception as exc:
+            log_record("tmux", "error",
+                       reason=f"seedProfile {cli} {profile} failed: {exc}")
+
+
 def write_agent_guide(
     cwd: str, agent_name: str, tenant: str = "default", lead: str | None = None,
     profile: str | None = None,
@@ -305,6 +345,20 @@ def write_agent_guide(
             file_path = os.path.join(cwd, filename)
             with open(file_path, "w", encoding="utf-8") as f:
                 f.write(content)
+
+        # ⚠ SEED THE PROFILE DIR BEFORE TRUST, AND THE ORDER IS LOAD-BEARING.
+        # A CLI pointed at CLAUDE_CONFIG_DIR=~/.claude-<profile> does NOT fall
+        # back to ~/.claude for its settings or its first-run state — measured
+        # in the base image, where `CLAUDE_CONFIG_DIR=~/.claude-test claude`
+        # stops on the theme picker. So a profiled agent needs that directory
+        # populated or it waits forever for a keypress and looks exactly like an
+        # agent with nothing to say.
+        #
+        # ⚠ `seedProfile` never overwrites an existing file. The trust helpers
+        # below CREATE `<dir>/.claude.json`, so running them first leaves a file
+        # carrying trust and no `hasCompletedOnboarding` — which seedProfile then
+        # declines to touch, and the picker returns. Seed first, always.
+        _seed_profile_dirs(profile)
 
         ensure_claude_project_trusted(cwd, profile=profile)
         ensure_codex_project_trusted(cwd, profile=profile)

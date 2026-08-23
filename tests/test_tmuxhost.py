@@ -507,3 +507,49 @@ def test_trust_is_written_where_the_profile_reads_it(tmp_path, monkeypatch):
     assert profiled.exists(), "trust must land in the profile's config dir"
     assert "/workdir/bad" in json.loads(profiled.read_text())["projects"]
     assert not (tmp_path / ".claude.json").exists(), "and not in the default one"
+
+
+def test_profile_dirs_are_seeded_before_trust_is_written(tmp_path, monkeypatch):
+    """⚠ ORDER IS LOAD-BEARING, and the wrong order fails silently.
+
+    `seedProfile` never overwrites an existing file. The trust helpers CREATE
+    `<profile-dir>/.claude.json`, so seeding after them leaves a file carrying
+    trust and no `hasCompletedOnboarding` — which seedProfile then declines to
+    touch, and the agent stops on the theme picker with no error anywhere.
+    """
+    from flock.tmux import ops
+
+    calls = []
+    monkeypatch.setattr(ops.subprocess, "run",
+                        lambda cmd, **kw: calls.append(("seedProfile", cmd[1], cmd[2]))
+                        or __import__("subprocess").CompletedProcess(cmd, 0, "", ""))
+    monkeypatch.setattr(ops, "ensure_claude_project_trusted",
+                        lambda cwd, profile=None: calls.append(("trust", "claude", profile)))
+    monkeypatch.setattr(ops, "ensure_codex_project_trusted",
+                        lambda cwd, profile=None: calls.append(("trust", "codex", profile)))
+    monkeypatch.setattr(ops, "ensure_agy_project_trusted", lambda cwd: None)
+    monkeypatch.setattr(ops, "generate_agents_md", lambda *a, **k: "guide")
+
+    ops.write_agent_guide(str(tmp_path), "dave", "hq", profile="work")
+
+    kinds = [c[0] for c in calls]
+    assert "seedProfile" in kinds, "profile dir was never seeded"
+    assert kinds.index("seedProfile") < kinds.index("trust"), (
+        f"trust ran before seeding, which silently loses hasCompletedOnboarding: {calls}"
+    )
+
+
+def test_an_unprofiled_agent_is_not_seeded(tmp_path, monkeypatch):
+    """It reads ~/.claude directly, which the image already ships populated."""
+    from flock.tmux import ops
+
+    ran = []
+    monkeypatch.setattr(ops.subprocess, "run", lambda cmd, **kw: ran.append(cmd))
+    monkeypatch.setattr(ops, "ensure_claude_project_trusted", lambda *a, **k: None)
+    monkeypatch.setattr(ops, "ensure_codex_project_trusted", lambda *a, **k: None)
+    monkeypatch.setattr(ops, "ensure_agy_project_trusted", lambda *a, **k: None)
+    monkeypatch.setattr(ops, "generate_agents_md", lambda *a, **k: "guide")
+
+    ops.write_agent_guide(str(tmp_path), "dave", "hq", profile=None)
+
+    assert ran == [], f"an unprofiled agent should need no seeding, got {ran}"
