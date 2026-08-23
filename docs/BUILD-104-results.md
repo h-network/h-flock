@@ -8,7 +8,9 @@ standard operational process labels (`control`, `switch`, `port`, `tmuxhost`,
 explicitly that `writer: fault-injection` is set via `FLOCK_WRITER=fault-injection`
 exclusively by scenario harnesses in `container/scenarios/` when deliberately
 provoking synthetic failure shapes (`forward_unknown`, `stop_agent_incomplete`) on
-disposable tenants, and that it never appears in normal operation.
+disposable tenants, that it never appears in normal operation, and that no shipping
+code in `src/` emits, assigns, or references the `fault-injection` writer or `FLOCK_WRITER`
+beyond the single read in `src/flock/bus/logging.py:8`.
 
 `docs/BUILD-CONVENTION.md` §3.0 now documents that `container/accept.sh --keep`
 transfers ownership of the background console proxy host process to the operator
@@ -17,26 +19,27 @@ the operator responsible for killing the process to prevent leaked host proxies.
 
 ## Structural control
 
-The claim *"writer: fault-injection never appears in normal operation"* is a
-**structural claim**: no shipping code path in `src/` sets `FLOCK_WRITER` or
-assigns `"fault-injection"`.
+The claim *"writer: fault-injection never appears in normal operation and is unreferenced in shipping source"*
+is a **structural claim**: no shipping code path in `src/` sets `FLOCK_WRITER` or
+assigns/references `"fault-injection"`.
 
 Per `docs/TEST-SIGNOFF.md`, this invariant is persistently controlled by
 `test_shipping_source_has_no_writer_assignments` in
-`tests/test_fault_injection.py:110-128`, which statically inspects all python files in
-`src/` and rejects every `FLOCK_WRITER` occurrence except the exact known read line
-`_WRITER = os.environ.get("FLOCK_WRITER")` in `src/flock/bus/logging.py`, and rejects
-the literal string `"fault-injection"` anywhere in `src/`.
+`tests/test_fault_injection.py:110-147`:
+- **Population anchor**: Asserts `len(py_files) >= 10` in `src/`.
+- **Known-read anchor**: Asserts that the single known environment read `_WRITER = os.environ.get("FLOCK_WRITER")` in `src/flock/bus/logging.py` was parsed and encountered exactly once.
+- **AST traversal**: Rejects any other `FLOCK_WRITER` identifier/constant, and rejects any literal `"fault-injection"` anywhere in `src/`.
 
 - **Clean run**: `python3 -m pytest tests/test_fault_injection.py -k test_shipping_source_has_no_writer_assignments` passes with exit 0.
 - **Negative mutation**: Mutating `src/flock/switch/service.py` with
-  `os.environ.update({"FLOCK_WRITER": "fault-injection"})` triggers the assertion in
-  `test_shipping_source_has_no_writer_assignments` at `tests/test_fault_injection.py:128`
-  identifying `src/flock/switch/service.py:270` and exits 1:
+  `os.environ.update({"FLOCK_WRITER": "fault-injection"})` inside `step()` triggers the assertion in
+  `test_shipping_source_has_no_writer_assignments` at `tests/test_fault_injection.py:146`
+  identifying `src/flock/switch/service.py:105` and exits 1:
 
       FAILED tests/test_fault_injection.py::test_shipping_source_has_no_writer_assignments
       AssertionError: Illegal FLOCK_WRITER or fault-injection in shipping source:
-        src/flock/switch/service.py:270:os.environ.update({"FLOCK_WRITER": "fault-injection"}),
+        src/flock/switch/service.py:105: occurrence of 'FLOCK_WRITER'
+        src/flock/switch/service.py:105: literal 'fault-injection'
       MUTATION_EXIT=1
 
 The mutation was restored before generating final gate logs.
@@ -44,7 +47,7 @@ The mutation was restored before generating final gate logs.
 ## TEST SIGN-OFF
 
     claim            writer: fault-injection documented in CONTRACTS as scenario-only, structural check confirms absent in src/, and --keep console transfer documented in BUILD-CONVENTION
-    source sha       14b549d
+    source sha       df55595
     artefact         COMMIT
     host             local — structural inspection and documentation audit
     command          python3 -m pytest -q
@@ -54,24 +57,24 @@ The mutation was restored before generating final gate logs.
     population       514 tests and 5 subtests; all repository tests collected
 
     control          structural mutation: assign FLOCK_WRITER in src/flock/switch/service.py via update/dict
-    expected locus   test_shipping_source_has_no_writer_assignments assertion exit 1 at tests/test_fault_injection.py:128
+    expected locus   test_shipping_source_has_no_writer_assignments assertion exit 1 at tests/test_fault_injection.py:146
     observed locus   same
-    signature        AssertionError: Illegal FLOCK_WRITER or fault-injection in shipping source: src/flock/switch/service.py:270; MUTATION_EXIT=1
+    signature        AssertionError: Illegal FLOCK_WRITER or fault-injection in shipping source: src/flock/switch/service.py:105; MUTATION_EXIT=1
 
-    evidence         docs/evidence/build-104-controls.log sha256 aac5d25362e66d9c1043c19c4226fb0ab161561416ce467a2bb0224a3fb57183
-                     docs/evidence/build-104-pytest.log sha256 ef82ac323b87acef285772325ec22d24c8411370bd7abd56b92fc20daac4b880
+    evidence         docs/evidence/build-104-controls.log sha256 a23c99216a54e89be064b871ef33086fafafb719ee94b0f0a781809c04230fa9
+                     docs/evidence/build-104-pytest.log sha256 a9a6ac5cb54cdfc3c3365b692cc0e6ebd203567f35d430efbb3d2550b4c2805e
 
     verdict          PASS (structural claim verified with negative mutation control)
     VERIFIED BY      PENDING — assigned by architect
 
 ## Citation gate
 
-    source sha       14b549d
+    source sha       df55595
     artefact         COMMIT
     command          python3 tools/check_citations.py
     exit status      0, read unpiped
     result           0 hard failures, 85 near misses
-    evidence         docs/evidence/build-104-citations.log sha256 ed759311eb26b7ed420990b1a2f7e52dee0993bab07bfb810dab227b43e69249
+    evidence         docs/evidence/build-104-citations.log sha256 9bcf42e131fe48e26b10bc3d685962b638d71d02f6c5acf1e411c91355960747
 
 ## Merged-tree verification
 
