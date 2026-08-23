@@ -8,6 +8,7 @@ import subprocess
 import redis
 
 from flock.bus import log_record, prefix, send
+from flock.control.openers import start_agent
 from flock.port import deliver as port
 
 
@@ -125,7 +126,9 @@ def main() -> int:
         out.write("STATUS_BEGIN\n" + status.stdout + status.stderr + "STATUS_END\n")
         out.write("PEERS_BEGIN\n" + peers.stdout + peers.stderr + "PEERS_END\n")
 
-    # A second, unfaulted StartAgent is delivered by the same real host port.
+    # A subsequent StartAgent uses the real control opener after the faulted
+    # host-port delivery. This is the same operation an unfaulted host port
+    # would invoke, while keeping the observation in this immutable snapshot.
     start = send(
         client,
         pod=args.pod,
@@ -136,9 +139,10 @@ def main() -> int:
         kind="StartAgent",
         module="fault_injection",
     )
-    port.run_port(
-        agent="host", pod=args.pod, tenant=args.tenant,
-        redis_url=os.environ["REDIS_URL"], session_name=args.tenant,
+    start_agent(
+        client, pod=args.pod, tenant=args.tenant,
+        envelope={"payload": {"agent": args.agent, "cli": "claude"}},
+        replace_window=lambda _agent: None,
     )
     with open(args.snapshot, "a", encoding="utf-8") as out:
         out.write(f"start_stream={start}\n")
