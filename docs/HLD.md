@@ -368,6 +368,28 @@ its own symptom** with nothing fixed.
 The lead has the other half: `office status`, a **pull**, and a guide telling it
 to check before assigning and hold work rather than repair.
 
+### ⚠ Why there is a lead at all, and it is not an org chart
+
+`lead` is a tenant-level Redis value, marked by `office peers` and read at window
+creation. **It exists because a model will not take direction from something it
+reads as a peer.**
+
+Every agent can already message every other — peer-to-peer works and is used. But
+a message *from a peer* reads as information, and a message *from the lead* reads
+as instruction. Without the title the models negotiate: they discuss the request,
+propose alternatives, and ask who decided. With it they act.
+
+⚠ **So the title is a protocol affordance rather than a management structure**, and
+that matters when reading everything else here. A maintainer coordinating
+specialists across separate modules is the intended shape, not a workaround for
+something the fabric fails to do; the parts of that role worth automating are the
+mechanical ones — a ticket that does not announce itself, a message budget counted
+by hand — and they are in [`TODO.md`](TODO.md), not here.
+
+⚠ **Remove `lead` and the failure will not look like a missing feature.** It will
+look like the agents becoming discursive, which reads as a model problem and is
+not one.
+
 ## 9. Two things that are pulled, not pushed
 
 **Boards.** A ticket waits until an agent asks. Nothing notifies, nothing
