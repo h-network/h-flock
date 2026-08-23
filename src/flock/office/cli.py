@@ -229,7 +229,10 @@ def _status_row(r, *, pod: str, tenant: str, agent: str, now: datetime) -> str:
         opened = _age(ticket.get("started_ts"), now=now)
         task = f'"{ticket["title"]}"' + (f" {opened}" if opened else "")
 
-    if presence_state == "unknown":
+    launch_cli = _text(r.get(prefix(pod, tenant, agent=agent, resource="launch")))
+    if launch_cli == "agy":
+        activity = "not measurable (agy)"
+    elif presence_state == "unknown":
         activity = "no activity feed"
     else:
         last = _age(decoded_presence.get("last_activity"), now=now)
@@ -654,6 +657,7 @@ def _usage_command(argv: list[str]) -> None:
 
     import collections
     aggregates = collections.defaultdict(lambda: {"input": 0, "cache_read": 0, "cache_write": 0, "output": 0})
+    latest_rate_limits = {}
 
     for item in entries:
         raw_fields = item[1] if isinstance(item, tuple) and len(item) == 2 else item
@@ -684,6 +688,21 @@ def _usage_command(argv: list[str]) -> None:
         aggregates[key]["cache_read"] += int(rec.get("cache_read", 0) or 0)
         aggregates[key]["cache_write"] += int(rec.get("cache_write", 0) or 0)
         aggregates[key]["output"] += int(rec.get("output", 0) or 0)
+        if rec.get("rate_limits"):
+            latest_rate_limits[key] = rec["rate_limits"]
+
+    # Check for enrolled agents running unmeasurable CLIs (agy)
+    try:
+        all_members = sorted(members(r, pod=pod, tenant=tenant))
+    except Exception:
+        all_members = []
+    agy_agents = set()
+    for ag in all_members:
+        if args.agent is not None and ag != args.agent:
+            continue
+        launch_val = _text(r.get(prefix(pod, tenant, agent=ag, resource="launch")))
+        if launch_val == "agy":
+            agy_agents.add(ag)
 
     pricing = load_pricing()
     rows = []
@@ -700,7 +719,7 @@ def _usage_command(argv: list[str]) -> None:
         )
         if is_priced and cost is not None:
             total_usd += cost
-        rows.append({
+        row_dict = {
             "agent": agent,
             "cli": cli,
             "model": model,
@@ -710,23 +729,56 @@ def _usage_command(argv: list[str]) -> None:
             "output": counts["output"],
             "usd": round(cost, 4) if (is_priced and cost is not None) else None,
             "unpriced": not is_priced,
+        }
+        if (agent, cli, model) in latest_rate_limits:
+            row_dict["rate_limits"] = latest_rate_limits[(agent, cli, model)]
+        rows.append(row_dict)
+
+    for ag in sorted(agy_agents):
+        rows.append({
+            "agent": ag,
+            "cli": "agy",
+            "model": "not measurable",
+            "input": 0,
+            "cache_read": 0,
+            "cache_write": 0,
+            "output": 0,
+            "usd": None,
+            "unpriced": True,
+            "measurable": False,
         })
 
     if args.json:
         print(json.dumps({"rows": rows, "total_usd": round(total_usd, 2)}, indent=2))
         return
 
-    print(f"{'agent':<10}{'cli':<8}{'model':<23}{'input':>7}{'cache_r':>10}{'cache_w':>9}{'output':>9}{'USD':>10}")
+    has_rate_limits = any("rate_limits" in r for r in rows)
+    header = f"{'agent':<10}{'cli':<8}{'model':<23}{'input':>7}{'cache_r':>10}{'cache_w':>9}{'output':>9}{'USD':>10}"
+    if has_rate_limits:
+        header += f"{'limit':>15}"
+    print(header)
     for row in rows:
-        in_str = _format_token_count(row["input"])
-        cr_str = _format_token_count(row["cache_read"])
-        cw_str = _format_token_count(row["cache_write"])
-        out_str = _format_token_count(row["output"])
+        is_unmeasurable = row.get("measurable") is False
+        in_str = "-" if is_unmeasurable else _format_token_count(row["input"])
+        cr_str = "-" if is_unmeasurable else _format_token_count(row["cache_read"])
+        cw_str = "-" if is_unmeasurable else _format_token_count(row["cache_write"])
+        out_str = "-" if is_unmeasurable else _format_token_count(row["output"])
         usd_str = "unpriced" if row["unpriced"] else f"{row['usd']:.2f}"
-        print(
+        line = (
             f"{row['agent']:<10}{row['cli']:<8}{row['model']:<23}"
             f"{in_str:>7}{cr_str:>10}{cw_str:>9}{out_str:>9}{usd_str:>10}"
         )
+        if has_rate_limits:
+            rl = row.get("rate_limits") or {}
+            prim = rl.get("primary") or {}
+            used_pct = prim.get("used_percent")
+            plan = rl.get("plan_type")
+            if used_pct is not None:
+                rl_str = f"{int(used_pct)}% ({plan})" if plan else f"{int(used_pct)}%"
+            else:
+                rl_str = "-"
+            line += f"{rl_str:>15}"
+        print(line)
     if rows:
         print(f"{'':>66}{'------':>10}")
         print(f"{'':>66}{total_usd:>10.2f}")

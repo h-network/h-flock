@@ -106,7 +106,7 @@ def _codex_events(record: dict) -> list[tuple[str, str | None]]:
     return []
 
 
-def _codex_usage(record: dict) -> dict | None:
+def _codex_usage(record: dict, current_model: str = "") -> dict | None:
     payload = record.get("payload") if isinstance(record.get("payload"), dict) else record
     record_type = str(record.get("type", ""))
     payload_type = str(payload.get("type", ""))
@@ -151,7 +151,7 @@ def _codex_usage(record: dict) -> dict | None:
     ):
         return None
 
-    model = str(payload.get("model") or record.get("model") or "unknown")
+    model = current_model or str(payload.get("model") or record.get("model") or "unknown")
     request_id = str(payload.get("request_id") or payload.get("id") or record.get("id") or "")
 
     input_tokens = int(
@@ -183,7 +183,11 @@ def _codex_usage(record: dict) -> dict | None:
         or 0
     )
 
-    return {
+    rate_limits = payload.get("rate_limits") if isinstance(payload.get("rate_limits"), dict) else (
+        record.get("rate_limits") if isinstance(record.get("rate_limits"), dict) else None
+    )
+
+    usage_dict = {
         "cli": "codex",
         "model": model,
         "request_id": request_id,
@@ -192,6 +196,9 @@ def _codex_usage(record: dict) -> dict | None:
         "cache_write": cache_write,
         "output": output_tokens,
     }
+    if rate_limits:
+        usage_dict["rate_limits"] = rate_limits
+    return usage_dict
 
 
 _EMIT_USAGE_LUA = """
@@ -236,6 +243,7 @@ class ActivityTailer:
         import collections
         self._seen_requests: dict[str, set[str]] = collections.defaultdict(set)
         self._attributed_markers: dict[str, set[str]] = collections.defaultdict(set)
+        self._codex_session_models: dict[str, str] = {}
 
     def _profile(self, agent: str) -> str | None:
         return _text(self.r.get(prefix(self.pod, self.tenant, agent, "profile")))
@@ -264,6 +272,38 @@ class ActivityTailer:
             and isinstance(payload, dict)
             and payload.get("cwd") == f"/workdir/{agent}"
         )
+
+    @staticmethod
+    def _codex_model_at_offset(path: Path, offset: int) -> str:
+        """Recover active codex model from records up to offset."""
+        model = ""
+        try:
+            with path.open("rb") as session:
+                while session.tell() < offset:
+                    raw = session.readline()
+                    if not raw:
+                        break
+                    try:
+                        record = json.loads(raw)
+                    except (OSError, UnicodeDecodeError, json.JSONDecodeError):
+                        continue
+                    if not isinstance(record, dict):
+                        continue
+                    rtype = record.get("type")
+                    payload = record.get("payload") if isinstance(record.get("payload"), dict) else {}
+                    if rtype == "turn_context":
+                        m = payload.get("model")
+                        if isinstance(m, str) and m:
+                            model = m
+                    elif rtype == "session_meta" and not model:
+                        base_inst = payload.get("base_instructions") if isinstance(payload.get("base_instructions"), dict) else {}
+                        prov = base_inst.get("provenance") if isinstance(base_inst.get("provenance"), dict) else {}
+                        m = prov.get("model") or payload.get("model")
+                        if isinstance(m, str) and m:
+                            model = m
+        except OSError:
+            pass
+        return model
 
     def _newest(self, agent: str) -> tuple[Path, str] | None:
         profile = self._profile(agent)
@@ -422,6 +462,8 @@ class ActivityTailer:
             record["stream_id"] = stream_id
         if correlation_id:
             record["correlation_id"] = correlation_id
+        if "rate_limits" in usage:
+            record["rate_limits"] = usage["rate_limits"]
 
         raw = json.dumps(record, separators=(",", ":"))
         usage_stream = prefix(self.pod, self.tenant, resource="usage")
@@ -488,7 +530,13 @@ class ActivityTailer:
         if offset > size:
             offset = 0
         parser = _claude_events if flavor == "claude" else _codex_events
-        usage_parser = _claude_usage if flavor == "claude" else _codex_usage
+
+        current_model = ""
+        if flavor == "codex":
+            if offset > 0:
+                current_model = self._codex_session_models.get(path_text) or self._codex_model_at_offset(path, offset)
+            else:
+                current_model = self._codex_session_models.get(path_text, "")
 
         with path.open("rb") as session:
             session.seek(offset)
@@ -504,16 +552,39 @@ class ActivityTailer:
                 if not isinstance(record, dict):
                     committed_offset = session.tell()
                     continue
+
+                if flavor == "codex":
+                    rtype = record.get("type")
+                    payload = record.get("payload") if isinstance(record.get("payload"), dict) else {}
+                    if rtype == "turn_context":
+                        m = payload.get("model")
+                        if isinstance(m, str) and m:
+                            current_model = m
+                    elif rtype == "session_meta":
+                        base_inst = payload.get("base_instructions") if isinstance(payload.get("base_instructions"), dict) else {}
+                        prov = base_inst.get("provenance") if isinstance(base_inst.get("provenance"), dict) else {}
+                        m = prov.get("model") or payload.get("model")
+                        if isinstance(m, str) and m:
+                            current_model = m
+
                 timestamp = record.get("timestamp")
                 if not isinstance(timestamp, str) or not timestamp:
                     timestamp = _now()
                 for kind, tool in parser(record):
                     self._append(agent, timestamp, kind, tool)
-                usage = usage_parser(record)
+
+                if flavor == "codex":
+                    usage = _codex_usage(record, current_model=current_model)
+                else:
+                    usage = _claude_usage(record)
+
                 if usage is not None:
                     self._emit_usage(agent, timestamp, usage)
                 committed_offset = session.tell()
             offset = committed_offset
+
+        if flavor == "codex":
+            self._codex_session_models[path_text] = current_model
 
         offsets[path_text] = offset
         state = json.dumps({"offsets": offsets}, separators=(",", ":"))

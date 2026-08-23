@@ -762,3 +762,372 @@ def test_unresolved_markers_correlated_within_ceiling(tmp_path):
     assert len(records) == 1
     assert records[0]["stream_id"] == "stream-turn-050"
     assert records[0]["correlation_id"] == "corr-turn-050"
+
+
+def test_codex_captured_session_fixture_model_and_tokens(tmp_path):
+    """Build 88: parse live captured codex rollout fixture tests/fixtures/codex-session-captured.jsonl.
+
+    Proves:
+    1. Model is resolved from turn_context ('gpt-5.6-sol'), not 'unknown'.
+    2. Uses last_token_usage per turn, NEVER cumulative total_token_usage.
+    3. Rate limits (used_percent, plan_type, resets_at) are extracted into usage records.
+    """
+    fixture_path = Path(__file__).parent / "fixtures" / "codex-session-captured.jsonl"
+    assert fixture_path.exists(), f"Fixture file {fixture_path} must exist"
+
+    # Set up session file in agent sme-2's codex session dir
+    session_file = tmp_path / ".codex" / "sessions" / "rollout-captured.jsonl"
+    session_file.parent.mkdir(parents=True, exist_ok=True)
+    session_file.write_bytes(fixture_path.read_bytes())
+
+    r = UsageRedis(agents=("sme-2",))
+    r.values[prefix("acme", "hq", "sme-2", "launch")] = "codex"
+
+    tailer = ActivityTailer(r, pod="acme", tenant="hq", home_root=tmp_path)
+    tailer._tail("sme-2", session_file, "codex")
+
+    records = _usage_records(r)
+    # The fixture contains 4 token_count records (ordinals 17, 141, 288, 414)
+    assert len(records) == 4
+
+    for rec in records:
+        assert rec["cli"] == "codex"
+        assert rec["model"] == "gpt-5.6-sol"
+        assert "rate_limits" in rec
+        assert rec["rate_limits"]["primary"]["used_percent"] == 18.0
+        assert rec["rate_limits"]["plan_type"] == "prolite"
+        assert rec["rate_limits"]["primary"]["resets_at"] == 1787813260
+
+    # Record 1 (ordinal 17): last and total are both 14,132
+    assert records[0]["input"] == 14132
+    assert records[0]["cache_read"] == 11008
+    assert records[0]["output"] == 113
+
+    # Record 2 (ordinal 141): last is 64,831 vs total 533,066
+    assert records[1]["input"] == 64831
+    assert records[1]["input"] != 533066
+    assert records[1]["cache_read"] == 64256
+    assert records[1]["output"] == 1282
+
+    # Record 3 (ordinal 288): last is 80,177 vs total 1,810,189
+    assert records[2]["input"] == 80177
+    assert records[2]["input"] != 1810189
+    assert records[2]["cache_read"] == 79616
+    assert records[2]["output"] == 634
+
+    # Record 4 (ordinal 414): last is 111,751 vs total 3,332,258
+    assert records[3]["input"] == 111751
+    assert records[3]["input"] != 3332258
+    assert records[3]["cache_read"] == 109312
+    assert records[3]["output"] == 71
+
+    # Total input across the 4 turns
+    total_input = sum(rec["input"] for rec in records)
+    assert total_input == 270891
+    assert total_input != (14132 + 533066 + 1810189 + 3332258)
+
+
+def test_codex_mid_session_model_change(tmp_path):
+    """Build 88 §1: mid-session model change in turn_context is followed rather than averaged over."""
+    session_file = tmp_path / ".codex" / "sessions" / "rollout-multi-model.jsonl"
+    session_file.parent.mkdir(parents=True, exist_ok=True)
+
+    records_data = [
+        {"timestamp": "2026-08-23T14:00:00.000Z", "ordinal": 0, "type": "session_meta", "payload": {"cwd": "/workdir/sme-1"}},
+        {"timestamp": "2026-08-23T14:00:01.000Z", "ordinal": 1, "type": "turn_context", "payload": {"model": "gpt-5.6-sol"}},
+        {
+            "timestamp": "2026-08-23T14:00:02.000Z",
+            "ordinal": 2,
+            "type": "event_msg",
+            "payload": {
+                "type": "token_count",
+                "info": {"last_token_usage": {"input_tokens": 1000, "output_tokens": 100}},
+            },
+        },
+        # Mid-session model switch to gpt-5-codex
+        {"timestamp": "2026-08-23T14:05:00.000Z", "ordinal": 10, "type": "turn_context", "payload": {"model": "gpt-5-codex"}},
+        {
+            "timestamp": "2026-08-23T14:05:05.000Z",
+            "ordinal": 15,
+            "type": "event_msg",
+            "payload": {
+                "type": "token_count",
+                "info": {"last_token_usage": {"input_tokens": 2000, "output_tokens": 200}},
+            },
+        },
+    ]
+    _write_lines(session_file, records_data)
+
+    r = UsageRedis(agents=("sme-1",))
+    r.values[prefix("acme", "hq", "sme-1", "launch")] = "codex"
+
+    tailer = ActivityTailer(r, pod="acme", tenant="hq", home_root=tmp_path)
+    tailer.poll()
+
+    records = _usage_records(r)
+    assert len(records) == 2
+    assert records[0]["model"] == "gpt-5.6-sol"
+    assert records[0]["input"] == 1000
+    assert records[1]["model"] == "gpt-5-codex"
+    assert records[1]["input"] == 2000
+
+
+def test_codex_session_meta_fallback_model(tmp_path):
+    """Build 88 §1: session_meta base_instructions provenance model serves as fallback."""
+    session_file = tmp_path / ".codex" / "sessions" / "rollout-meta.jsonl"
+    session_file.parent.mkdir(parents=True, exist_ok=True)
+
+    records_data = [
+        {
+            "timestamp": "2026-08-23T14:00:00.000Z",
+            "ordinal": 0,
+            "type": "session_meta",
+            "payload": {
+                "cwd": "/workdir/sme-1",
+                "base_instructions": {"provenance": {"type": "model", "model": "gpt-5-codex"}},
+            },
+        },
+        {
+            "timestamp": "2026-08-23T14:00:02.000Z",
+            "ordinal": 2,
+            "type": "event_msg",
+            "payload": {
+                "type": "token_count",
+                "info": {"last_token_usage": {"input_tokens": 500, "output_tokens": 50}},
+            },
+        },
+    ]
+    _write_lines(session_file, records_data)
+
+    r = UsageRedis(agents=("sme-1",))
+    r.values[prefix("acme", "hq", "sme-1", "launch")] = "codex"
+
+    tailer = ActivityTailer(r, pod="acme", tenant="hq", home_root=tmp_path)
+    tailer.poll()
+
+    records = _usage_records(r)
+    assert len(records) == 1
+    assert records[0]["model"] == "gpt-5-codex"
+    assert records[0]["input"] == 500
+
+
+def test_office_usage_surfaces_codex_rate_limits(monkeypatch, capsys):
+    """Build 88 §4: office usage surfaces rate limits (used_percent and plan_type)."""
+    r = UsageRedis(agents=("sme-2",))
+    r.values[prefix("acme", "hq", "sme-2", "launch")] = "codex"
+
+    usage_key = prefix("acme", "hq", resource="usage")
+    usage_entry = json.dumps({
+        "agent": "sme-2",
+        "cli": "codex",
+        "model": "gpt-5.6-sol",
+        "input": 111751,
+        "cache_read": 109312,
+        "cache_write": 0,
+        "output": 71,
+        "ts": "2026-08-23T14:20:00.000Z",
+        "rate_limits": {
+            "limit_id": "codex",
+            "primary": {"used_percent": 18.0, "window_minutes": 10080, "resets_at": 1787813260},
+            "plan_type": "prolite",
+        },
+    })
+    r.xadd(usage_key, {"usage": usage_entry})
+
+    monkeypatch.setattr(cli, "_context", lambda: (r, "acme", "hq", "sme-2"))
+
+    cli.main(["usage"])
+    out = capsys.readouterr().out
+    assert "sme-2" in out
+    assert "codex" in out
+    assert "gpt-5.6-sol" in out
+    assert "18% (prolite)" in out
+
+    cli.main(["usage", "--json"])
+    json_out = json.loads(capsys.readouterr().out)
+    assert len(json_out["rows"]) == 1
+    assert json_out["rows"][0]["rate_limits"]["primary"]["used_percent"] == 18.0
+    assert json_out["rows"][0]["rate_limits"]["plan_type"] == "prolite"
+
+
+def test_office_usage_names_agy_agent_not_measurable(monkeypatch, capsys):
+    """Build 88 §3: office usage names agy agents as not measurable rather than omitting or zeroing."""
+    r = UsageRedis(agents=("architect", "backend"))
+    r.values[prefix("acme", "hq", "architect", "launch")] = "agy"
+    r.values[prefix("acme", "hq", "backend", "launch")] = "claude"
+
+    usage_key = prefix("acme", "hq", resource="usage")
+    backend_usage = json.dumps({
+        "agent": "backend",
+        "cli": "claude",
+        "model": "claude-opus-4",
+        "input": 10000,
+        "cache_read": 0,
+        "cache_write": 0,
+        "output": 1000,
+        "ts": "2026-08-23T14:00:00.000Z",
+    })
+    r.xadd(usage_key, {"usage": backend_usage})
+
+    monkeypatch.setattr(cli, "_context", lambda: (r, "acme", "hq", "backend"))
+
+    cli.main(["usage"])
+    out = capsys.readouterr().out
+    assert "architect" in out
+    assert "agy" in out
+    assert "not measurable" in out
+    assert "backend" in out
+
+    cli.main(["usage", "--json"])
+    json_out = json.loads(capsys.readouterr().out)
+    architect_rows = [r for r in json_out["rows"] if r["agent"] == "architect"]
+    assert len(architect_rows) == 1
+    assert architect_rows[0]["cli"] == "agy"
+    assert architect_rows[0]["model"] == "not measurable"
+    assert architect_rows[0]["measurable"] is False
+    assert architect_rows[0]["unpriced"] is True
+    assert architect_rows[0]["usd"] is None
+
+
+def test_codex_session_rotation_resets_model(tmp_path):
+    """Rotation control: rotating to a new rollout with session_meta resets model rather than retaining previous rollout's model."""
+    import time
+    sessions_dir = tmp_path / ".codex" / "sessions"
+    sessions_dir.mkdir(parents=True, exist_ok=True)
+
+    # Rollout 1 with turn_context model-old
+    rollout_old = sessions_dir / "rollout-old.jsonl"
+    _write_lines(
+        rollout_old,
+        [
+            {"timestamp": "2026-08-23T14:00:00.000Z", "ordinal": 0, "type": "session_meta", "payload": {"cwd": "/workdir/sme-1"}},
+            {"timestamp": "2026-08-23T14:00:01.000Z", "ordinal": 1, "type": "turn_context", "payload": {"model": "gpt-5.6-sol"}},
+            {
+                "timestamp": "2026-08-23T14:00:02.000Z",
+                "ordinal": 2,
+                "type": "event_msg",
+                "payload": {
+                    "type": "token_count",
+                    "info": {"last_token_usage": {"input_tokens": 100, "output_tokens": 10}},
+                },
+            },
+        ],
+    )
+
+    r = UsageRedis(agents=("sme-1",))
+    r.values[prefix("acme", "hq", "sme-1", "launch")] = "codex"
+
+    tailer = ActivityTailer(r, pod="acme", tenant="hq", home_root=tmp_path)
+    tailer.poll()
+
+    records = _usage_records(r)
+    assert len(records) == 1
+    assert records[0]["model"] == "gpt-5.6-sol"
+
+    # Rollout 2 with session_meta fallback model-new (newer mtime)
+    time.sleep(0.01)
+    rollout_new = sessions_dir / "rollout-new.jsonl"
+    _write_lines(
+        rollout_new,
+        [
+            {
+                "timestamp": "2026-08-23T14:10:00.000Z",
+                "ordinal": 0,
+                "type": "session_meta",
+                "payload": {
+                    "cwd": "/workdir/sme-1",
+                    "base_instructions": {"provenance": {"type": "model", "model": "gpt-5-codex"}},
+                },
+            },
+            {
+                "timestamp": "2026-08-23T14:10:02.000Z",
+                "ordinal": 1,
+                "type": "event_msg",
+                "payload": {
+                    "type": "token_count",
+                    "info": {"last_token_usage": {"input_tokens": 200, "output_tokens": 20}},
+                },
+            },
+        ],
+    )
+
+    tailer.poll()
+    records = _usage_records(r)
+    assert len(records) == 2
+    # Second record MUST be gpt-5-codex from the new session, NOT gpt-5.6-sol from the old session
+    assert records[1]["model"] == "gpt-5-codex"
+
+
+def test_codex_restart_at_mid_session_offset_recovers_model(tmp_path):
+    """Restart control: watchdog restart at persisted offset recovers model from pre-offset turn_context."""
+    sessions_dir = tmp_path / ".codex" / "sessions"
+    sessions_dir.mkdir(parents=True, exist_ok=True)
+    rollout = sessions_dir / "rollout-resume.jsonl"
+
+    # Initial turn_context + first token_count
+    _write_lines(
+        rollout,
+        [
+            {"timestamp": "2026-08-23T14:00:00.000Z", "ordinal": 0, "type": "session_meta", "payload": {"cwd": "/workdir/sme-1"}},
+            {"timestamp": "2026-08-23T14:00:01.000Z", "ordinal": 1, "type": "turn_context", "payload": {"model": "gpt-5.6-sol"}},
+            {
+                "timestamp": "2026-08-23T14:00:02.000Z",
+                "ordinal": 2,
+                "type": "event_msg",
+                "payload": {
+                    "type": "token_count",
+                    "info": {"last_token_usage": {"input_tokens": 100, "output_tokens": 10}},
+                },
+            },
+        ],
+    )
+
+    r = UsageRedis(agents=("sme-1",))
+    r.values[prefix("acme", "hq", "sme-1", "launch")] = "codex"
+
+    # First tailer pass processes records and commits offset
+    tailer1 = ActivityTailer(r, pod="acme", tenant="hq", home_root=tmp_path)
+    tailer1.poll()
+    assert len(_usage_records(r)) == 1
+
+    # Append new turn after offset without re-emitting turn_context
+    with rollout.open("a", encoding="utf-8") as f:
+        f.write(
+            json.dumps({
+                "timestamp": "2026-08-23T14:05:00.000Z",
+                "ordinal": 3,
+                "type": "event_msg",
+                "payload": {
+                    "type": "token_count",
+                    "info": {"last_token_usage": {"input_tokens": 300, "output_tokens": 30}},
+                },
+            }) + "\n"
+        )
+
+    # Fresh tailer instance simulating watchdog restart with empty in-memory state
+    tailer2 = ActivityTailer(r, pod="acme", tenant="hq", home_root=tmp_path)
+    tailer2.poll()
+
+    records = _usage_records(r)
+    assert len(records) == 2
+    # Second usage record MUST recover gpt-5.6-sol from before offset, NOT 'unknown'
+    assert records[1]["model"] == "gpt-5.6-sol"
+    assert records[1]["input"] == 300
+
+
+def test_codex_session_ownership_rejects_arbitrary_cwd(tmp_path):
+    """Ownership control: _codex_session_belongs_to strictly accepts /workdir/{agent} and rejects arbitrary cwd."""
+    p_valid = tmp_path / "valid.jsonl"
+    _write_lines(p_valid, [
+        {"type": "session_meta", "payload": {"cwd": "/workdir/sme-2"}},
+    ])
+    assert ActivityTailer._codex_session_belongs_to(p_valid, "sme-2") is True
+    assert ActivityTailer._codex_session_belongs_to(p_valid, "other") is False
+
+    p_arbitrary = tmp_path / "arbitrary.jsonl"
+    _write_lines(p_arbitrary, [
+        {"type": "session_meta", "payload": {"cwd": "/tmp/sme-2"}},
+    ])
+    assert ActivityTailer._codex_session_belongs_to(p_arbitrary, "sme-2") is False
+
+
