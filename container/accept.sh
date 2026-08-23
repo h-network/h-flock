@@ -136,7 +136,24 @@ step "install — driving setup.sh as a person would"
 export VERIFY_AFTER_SECONDS=5
 
 rm -f container/.env
-printf 'acme\n%s\n2\narchitect\nsme-2\nn\nn\ny\nn\n%s\n%s\ny\n\nn\n' \
+# ⚠ POSITIONAL, AND setup.sh's PROMPT ORDER IS PART OF THIS FILE'S CONTRACT.
+# Two answers were inserted on 2026-08-23 when "Default CLI" and "any agents
+# differing" moved OUT of the accounts branch so a single-account tenant can
+# still choose codex or agy. Both are blank here: claude for everyone, no
+# exceptions. Adding a prompt to setup.sh without adding an answer here shifts
+# every later field and the tenant comes up configured as something nobody asked
+# for — which is why the answers are listed one per line below.
+#
+#   acme        pod                     n     more than one account?
+#   $TENANT     tenant                  ""    default CLI  -> claude
+#   2           how many agents         ""    any agents differing -> none
+#   architect   agent #1                n     local model provider?
+#   sme-2       agent #2                y     open the REST API door?
+#                                       n     telegram?
+#   $API_PORT   api host port           $SESSION_PORT  session host port
+#   y           reach from elsewhere    ""    tls cert path -> more choices
+#   n           generate self-signed?
+printf 'acme\n%s\n2\narchitect\nsme-2\nn\n\n\nn\ny\nn\n%s\n%s\ny\n\nn\n' \
   "$TENANT" "$API_PORT" "$SESSION_PORT" | ./setup.sh 2>&1 \
   | grep -E "healthy|error|Error|NEEDS LOGIN|logged in|wrote container/.env|not enabled" | head -10
 # setup.sh is the operation that creates the project. Record ownership only

@@ -72,27 +72,38 @@ mget() { eval "printf '%s' \"\${$(_mk "$1" "$2"):-}\""; }
 
 for a in "${AGENTS[@]}"; do mset CLI "$a" claude; mset PROF "$a" default; done
 
+# ⚠ WHICH CLI IS ASKED ALWAYS. IT USED TO BE INSIDE THE ACCOUNTS BRANCH, so a
+# single-account tenant silently got claude for every agent with no way to say
+# otherwise — the only route through was writing AGENT_CLIS= into container/.env
+# by hand. Measured twice in two days while standing up offices that wanted
+# codex and agy. Accounts and frameworks are independent questions and are now
+# asked independently.
+read -rp "  Default CLI (claude/codex/agy) [claude]: " DEF_CLI
+DEF_CLI="$(slug "${DEF_CLI:-claude}")"
+for a in "${AGENTS[@]}"; do mset CLI "$a" "$DEF_CLI"; done
+
 if [ "${#PROFILES[@]}" -gt 0 ]; then
-    # Defaults plus exceptions, not a question per agent: eleven agents times
-    # framework-and-account is twenty-two answers for what is usually uniform.
     echo "  Accounts: ${PROFILES[*]}"
     read -rp "  Default account for every agent [${PROFILES[0]}]: " DEF_PROFILE
     DEF_PROFILE="$(slug "${DEF_PROFILE:-${PROFILES[0]}}")"
-    read -rp "  Default CLI (claude/codex/agy) [claude]: " DEF_CLI
-    DEF_CLI="$(slug "${DEF_CLI:-claude}")"
-    for a in "${AGENTS[@]}"; do mset CLI "$a" "$DEF_CLI"; mset PROF "$a" "$DEF_PROFILE"; done
+    for a in "${AGENTS[@]}"; do mset PROF "$a" "$DEF_PROFILE"; done
+fi
 
-    echo "  Agents: ${AGENTS[*]}"
-    read -rp "  Any agents differing from that? (space-separated, blank for none): " EXC
-    for want in ${EXC//,/ }; do
+# Defaults plus exceptions, not a question per agent: eleven agents times
+# framework-and-account is twenty-two answers for what is usually uniform.
+echo "  Agents: ${AGENTS[*]}"
+read -rp "  Any agents differing from that? (space-separated, blank for none): " EXC
+for want in ${EXC//,/ }; do
         want="$(slug "$want")"
         printf '%s\n' "${AGENTS[@]}" | grep -qx "$want" || { echo "  (skipping '$want' — not an agent)"; continue; }
         read -rp "    $want — CLI [$DEF_CLI]: " C; mset CLI "$want" "$(slug "${C:-$DEF_CLI}")"
-        read -rp "    $want — account [$DEF_PROFILE]: " P; P="$(slug "${P:-$DEF_PROFILE}")"
-        if printf '%s\n' "${PROFILES[@]}" | grep -qx "$P"; then mset PROF "$want" "$P"
-        else echo "    (no account '$P' — keeping $(mget PROF "$want"))"; fi
-    done
-fi
+        # Only ask which account when there is more than one to choose from.
+        if [ "${#PROFILES[@]}" -gt 0 ]; then
+            read -rp "    $want — account [$DEF_PROFILE]: " P; P="$(slug "${P:-$DEF_PROFILE}")"
+            if printf '%s\n' "${PROFILES[@]}" | grep -qx "$P"; then mset PROF "$want" "$P"
+            else echo "    (no account '$P' — keeping $(mget PROF "$want"))"; fi
+        fi
+done
 
 # ⚠ agy keeps its state in ~/.gemini/antigravity-cli and exposes no equivalent of
 # CLAUDE_CONFIG_DIR / CODEX_HOME, so it cannot be pointed at a second account.
