@@ -286,6 +286,33 @@ def test_profile_codex_is_unknown_even_without_an_auth_file(tmp_path, capsys):
     capsys.readouterr()
 
 
+def test_claude_profile_token_is_authenticated_without_credentials_file(
+    tmp_path, monkeypatch, capsys
+):
+    r = WatchRedis()
+    r.values[_key("architect", "launch")] = "claude"
+    r.values[_key("architect", "profile")] = "work"
+    monkeypatch.setenv("CLAUDE_OAUTH_TOKEN_WORK", "token-authenticated")
+
+    Watchdog(r, pod="acme", tenant="hq", session_name="hq", home_root=tmp_path).check_credentials(now=NOW)
+
+    assert prefix("acme", "hq", resource="alerts") not in r.streams
+    assert r.hashes.get(prefix("acme", "hq", resource="credential.alerted"), {}) == {}
+    assert capsys.readouterr().out == ""
+
+
+def test_claude_without_token_or_credentials_still_alerts_absent(tmp_path, monkeypatch, capsys):
+    r = WatchRedis()
+    r.values[_key("architect", "launch")] = "claude"
+    monkeypatch.delenv("CLAUDE_OAUTH_TOKEN_DEFAULT", raising=False)
+
+    Watchdog(r, pod="acme", tenant="hq", session_name="hq", home_root=tmp_path).check_credentials(now=NOW)
+
+    alert = json.loads(r.streams[prefix("acme", "hq", resource="alerts")][0][1]["alert"])
+    assert alert["status"] == "absent"
+    capsys.readouterr()
+
+
 def test_provider_agent_needs_no_vendor_credential_and_clears_stale_status(tmp_path):
     r = WatchRedis()
     r.values[_key("architect", "launch")] = "claude"

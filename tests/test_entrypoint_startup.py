@@ -58,3 +58,16 @@ def test_entrypoint_configures_redis_aof_persistence():
     assert "--appendfsync everysec" in script
     assert "from flock.bus.resources import purge_transport" in script
 
+
+def test_entrypoint_seeds_canonical_accounts_before_unsetting_startup_env():
+    script = Path("container/entrypoint.sh").read_text()
+    seed = script.index('accounts_key="pod:${POD}:tenant:${TENANT}:accounts"')
+    unset = script.index("unset AGENT_CLIS AGENT_PROFILES AGENT_PROVIDERS FLOCK_ACCOUNTS")
+    assert seed < unset
+    assert 'rcli SADD "$accounts_key" "$_account"' in script
+
+
+def test_setup_persists_complete_account_list_even_for_single_account():
+    script = Path("setup.sh").read_text()
+    assert 'echo "FLOCK_ACCOUNTS=$(IFS=,; echo "${PROFILES[*]}")"' in script
+    assert 'echo "FLOCK_ACCOUNTS=default"' in script

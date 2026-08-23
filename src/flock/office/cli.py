@@ -10,7 +10,7 @@ from collections.abc import Sequence
 from datetime import datetime, timezone
 from pathlib import Path
 
-from flock.bus import is_member, log_record, members, prefix, record_task_event, resp as redis, send, port_type
+from flock.bus import available_profiles, is_member, log_record, members, prefix, record_task_event, resp as redis, send, port_type
 from .pricing import calculate_cost, find_model_rates, load_pricing
 
 # ⚠ A tenant with a Redis password exports REDIS_URL carrying it. Without one
@@ -291,13 +291,19 @@ def _control_command(command: str, argv: list[str]) -> None:
                             help="account whose config dir and credential this agent uses "
                                  "(default: the tenant's default account)")
     args = parser.parse_args(argv)
+    r, pod, tenant, source = _context()
+    if command == "hire" and args.profile:
+        profiles = available_profiles(r, pod=pod, tenant=tenant)
+        if profiles is not None and args.profile not in profiles:
+            parser.error(
+                f"unknown account {args.profile!r}; available accounts: {', '.join(profiles)}"
+            )
     payload = {"agent": args.agent}
     if command == "hire":
         payload["cli"] = args.cli
         if args.profile:
             payload["profile"] = args.profile
 
-    r, pod, tenant, source = _context()
     stream_id = send(
         r,
         pod=pod,

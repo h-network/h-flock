@@ -382,6 +382,11 @@ TOKEN="$(grep -s '^API_TOKEN=' container/.env | cut -d= -f2)"
     echo "POD=${POD}"
     echo "TENANT=${TENANT}"
     echo "AGENTS=${AGENTS_CSV}"
+    if [ "${#PROFILES[@]}" -gt 0 ]; then
+        echo "FLOCK_ACCOUNTS=$(IFS=,; echo "${PROFILES[*]}")"
+    else
+        echo "FLOCK_ACCOUNTS=default"
+    fi
     echo "API_TOKEN=${TOKEN}"
     # ⚠ One per account, and only the ones that have a value. An empty
     # CLAUDE_OAUTH_TOKEN_X= would reach the container as an empty string, which

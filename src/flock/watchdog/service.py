@@ -260,6 +260,13 @@ class Watchdog:
             profile = _text(self.r.get(prefix(self.pod, self.tenant, agent, "profile")))
             account = profile or "default"
             if cli == "claude":
+                token_name = f"CLAUDE_OAUTH_TOKEN_{account.upper().replace('-', '_')}"
+                if os.environ.get(token_name):
+                    # tmux.ops injects this value into the matching window as
+                    # CLAUDE_CODE_OAUTH_TOKEN. No credentials file is expected.
+                    # Known limit: presence cannot detect an expired or revoked
+                    # token; that requires a remote authentication probe.
+                    continue
                 directory = ".claude" if account == "default" else f".claude-{account}"
                 path = self.home_root / directory / ".credentials.json"
             elif cli == "codex":

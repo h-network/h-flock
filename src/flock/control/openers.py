@@ -1,10 +1,18 @@
 """Openers for agent lifecycle control envelopes."""
 
 import json
-
 from collections.abc import Callable
+from functools import wraps
 
-from flock.bus import SEGMENT_REGEX, prefix, purge_agent, port_type, tags_key
+from flock.bus import (
+    AGENT_STATE_RESOURCES,
+    SEGMENT_REGEX,
+    available_profiles,
+    log_record,
+    prefix,
+    port_type,
+    tags_key,
+)
 
 _STARTABLE_VABS = {"tmux", "api"}
 _FIXED_PARTICIPANTS = {"api", "host"}
@@ -12,6 +20,76 @@ _START_AGENT_KEYS = frozenset(
     {"agent", "port_type", "cli", "profile", "provider", "export", "import"}
 )
 _TARGET_ONLY_KEYS = frozenset({"agent"})
+
+
+class _IncompleteControl(RuntimeError):
+    """A desired or actual-state attempt has an UNKNOWN outcome."""
+
+
+def _record_control(kind: str):
+    """Record accepted, incomplete, or pre-mutation failure outcomes."""
+    def decorate(opener):
+        @wraps(opener)
+        def recorded(r, *, pod, tenant, envelope, **kwargs):
+            payload = envelope.get("payload", {}) if isinstance(envelope, dict) else {}
+            agent = payload.get("agent") if isinstance(payload, dict) else None
+            correlation_id = envelope.get("correlation_id") if isinstance(envelope, dict) else None
+            try:
+                result = opener(r, pod=pod, tenant=tenant, envelope=envelope, **kwargs)
+            except _IncompleteControl as exc:
+                log_record(
+                    "control", f"{kind}_incomplete", correlation_id=correlation_id,
+                    destination=agent if isinstance(agent, str) else None,
+                    reason=str(exc),
+                )
+                raise exc.__cause__ from exc
+            except Exception as exc:
+                log_record(
+                    "control", f"{kind}_failed", correlation_id=correlation_id,
+                    destination=agent if isinstance(agent, str) else None,
+                    reason=str(exc) or type(exc).__name__,
+                )
+                raise
+            log_record(
+                "control", f"{kind}_accepted", correlation_id=correlation_id,
+                destination=agent if isinstance(agent, str) else None,
+            )
+            return result
+        return recorded
+    return decorate
+
+
+def _write_desired(
+    committed: list[str],
+    committed_label: str,
+    failure_label: str,
+    mutation: Callable[[], object],
+) -> object:
+    """Run one desired-state write and preserve the observed commit boundary."""
+    try:
+        result = mutation()
+    except Exception as exc:
+        acknowledged = f"acknowledged: {', '.join(committed)}" if committed else "none acknowledged"
+        raise _IncompleteControl(
+            f"{acknowledged}; {failure_label} outcome UNKNOWN after {exc}"
+        ) from exc
+    committed.append(committed_label)
+    return result
+
+
+def _actual_unknown(
+    committed: list[str],
+    action: str,
+    exc: Exception,
+    *,
+    actual_acknowledged: list[str] | None = None,
+) -> _IncompleteControl:
+    """Describe observed acknowledgements separately from an unanswered attempt."""
+    parts = [f"acknowledged: {', '.join(committed)}"]
+    if actual_acknowledged:
+        parts.append(f"actual acknowledged: {', '.join(actual_acknowledged)}")
+    parts.append(f"{action} outcome UNKNOWN after {exc}")
+    return _IncompleteControl("; ".join(parts))
 
 
 def _target(envelope: dict, allowed_keys: frozenset[str]) -> tuple[str, dict]:
@@ -27,6 +105,7 @@ def _target(envelope: dict, allowed_keys: frozenset[str]) -> tuple[str, dict]:
     return agent, payload
 
 
+@_record_control("start_agent")
 def start_agent(
     r,
     *,
@@ -55,13 +134,24 @@ def start_agent(
         raise ValueError("StartAgent payload.port_type must be 'tmux' or 'api'")
 
     roster_key = prefix(pod, tenant, resource="roster")
+    committed: list[str] = []
     if agent_port_type == "api":
         if policy_supplied:
             policy_key = tags_key(pod, tenant, agent)
-            r.delete(policy_key)
+            _write_desired(
+                committed, "policy reset", "policy reset", lambda: r.delete(policy_key)
+            )
             for side, values in policy.items():
-                r.hset(policy_key, side, json.dumps(values, separators=(",", ":")))
-        r.hset(roster_key, agent, agent_port_type)
+                _write_desired(
+                    committed, f"{side} policy published", f"{side} policy publish",
+                    lambda side=side, values=values: r.hset(
+                        policy_key, side, json.dumps(values, separators=(",", ":"))
+                    ),
+                )
+        _write_desired(
+            committed, "roster row published", "roster row publish",
+            lambda: r.hset(roster_key, agent, agent_port_type),
+        )
         return
 
     cli = payload.get("cli", "claude")
@@ -71,6 +161,11 @@ def start_agent(
     profile = payload.get("profile")
     if profile:
         prefix("check", "check", agent=profile, resource="profile")
+        profiles = available_profiles(r, pod=pod, tenant=tenant)
+        if profiles is not None and profile not in profiles:
+            raise ValueError(
+                f"unknown account {profile!r}; available accounts: {', '.join(profiles)}"
+            )
     elif profile not in (None, ""):
         raise ValueError("StartAgent payload.profile must be a segment string")
 
@@ -93,7 +188,10 @@ def start_agent(
         old_profile = r.get(profile_key) if existing_port_type == "tmux" else None
         old_profile = old_profile.decode() if isinstance(old_profile, bytes) else old_profile
         config_changed = config_changed or (existing_port_type == "tmux" and old_profile != profile)
-        r.set(profile_key, profile)
+        _write_desired(
+            committed, "profile published", "profile publish",
+            lambda: r.set(profile_key, profile),
+        )
 
     if provider:
         # Same ordering rule as profile: published before roster visibility, or
@@ -102,24 +200,43 @@ def start_agent(
         old_provider = r.get(provider_key) if existing_port_type == "tmux" else None
         old_provider = old_provider.decode() if isinstance(old_provider, bytes) else old_provider
         config_changed = config_changed or (existing_port_type == "tmux" and old_provider != provider)
-        r.set(provider_key, provider)
+        _write_desired(
+            committed, "provider published", "provider publish",
+            lambda: r.set(provider_key, provider),
+        )
 
     launch_key = prefix(pod, tenant, agent=agent, resource="launch")
     # Publish all launch state before roster membership: tmuxhost reconciles on
     # that row and an early window cannot be corrected by name-idempotent create.
-    r.set(launch_key, cli)
+    _write_desired(
+        committed, "launch published", "launch publish", lambda: r.set(launch_key, cli)
+    )
     if policy_supplied:
         policy_key = tags_key(pod, tenant, agent)
-        r.delete(policy_key)
+        _write_desired(
+            committed, "policy reset", "policy reset", lambda: r.delete(policy_key)
+        )
         for side, values in policy.items():
-            r.hset(policy_key, side, json.dumps(values, separators=(",", ":")))
-    r.hset(roster_key, agent, agent_port_type)
+            _write_desired(
+                committed, f"{side} policy published", f"{side} policy publish",
+                lambda side=side, values=values: r.hset(
+                    policy_key, side, json.dumps(values, separators=(",", ":"))
+                ),
+            )
+    _write_desired(
+        committed, "roster row published", "roster row publish",
+        lambda: r.hset(roster_key, agent, agent_port_type),
+    )
     if config_changed:
         # Remove only stale actual state. tmuxhost observes the roster row and
         # recreates the window through its canonical lead/profile/provider path.
-        replace_window(agent)
+        try:
+            replace_window(agent)
+        except Exception as exc:
+            raise _actual_unknown(committed, "replacing the stale window", exc) from exc
 
 
+@_record_control("stop_agent")
 def stop_agent(
     r,
     *,
@@ -134,12 +251,31 @@ def stop_agent(
         raise ValueError(f"cannot stop fixed participant: {agent}")
     roster_key = prefix(pod, tenant, resource="roster")
     agent_port_type = port_type(r, pod=pod, tenant=tenant, agent=agent)
-    r.hdel(roster_key, agent)
-    purge_agent(r, pod=pod, tenant=tenant, agent=agent)
+    committed: list[str] = []
+    _write_desired(
+        committed, "roster row removed", "roster row removal",
+        lambda: r.hdel(roster_key, agent),
+    )
+    state_keys = [
+        prefix(pod, tenant, agent=agent, resource=resource)
+        for resource in sorted(AGENT_STATE_RESOURCES)
+    ]
+    _write_desired(
+        committed, "agent resources purged", "agent resource purge",
+        lambda: r.delete(*state_keys),
+    )
+    _write_desired(
+        committed, "delivery lock cleared", "delivery lock clear",
+        lambda: r.hdel(prefix(pod, tenant, resource="delivering"), agent),
+    )
     if agent_port_type != "api":
-        kill_window(agent)
+        try:
+            kill_window(agent)
+        except Exception as exc:
+            raise _actual_unknown(committed, "killing the window", exc) from exc
 
 
+@_record_control("pause_agent")
 def pause_agent(
     r,
     *,
@@ -150,10 +286,18 @@ def pause_agent(
 ) -> None:
     """Mark an agent paused, then interrupt its CLI without changing membership."""
     agent, _ = _target(envelope, _TARGET_ONLY_KEYS)
-    r.set(prefix(pod, tenant, agent=agent, resource="paused"), 1)
-    interrupt_window(agent)
+    committed: list[str] = []
+    _write_desired(
+        committed, "paused marker published", "paused marker publish",
+        lambda: r.set(prefix(pod, tenant, agent=agent, resource="paused"), 1),
+    )
+    try:
+        interrupt_window(agent)
+    except Exception as exc:
+        raise _actual_unknown(committed, "interrupting the window", exc) from exc
 
 
+@_record_control("resume_agent")
 def resume_agent(
     r,
     *,
@@ -165,8 +309,30 @@ def resume_agent(
 ) -> None:
     """Clear pause, resume the CLI, then kick once per queued ingress envelope."""
     agent, _ = _target(envelope, _TARGET_ONLY_KEYS)
-    r.delete(prefix(pod, tenant, agent=agent, resource="paused"))
-    resume_window(agent)
-    depth = r.llen(prefix(pod, tenant, agent=agent, resource="ingress"))
-    for _ in range(depth):
-        kick_agent(agent)
+    committed: list[str] = []
+    _write_desired(
+        committed, "paused marker removed", "paused marker removal",
+        lambda: r.delete(prefix(pod, tenant, agent=agent, resource="paused")),
+    )
+    actual_acknowledged: list[str] = []
+    try:
+        resume_window(agent)
+        actual_acknowledged.append("window resumed")
+    except Exception as exc:
+        raise _actual_unknown(committed, "resuming the window", exc) from exc
+    try:
+        depth = r.llen(prefix(pod, tenant, agent=agent, resource="ingress"))
+    except Exception as exc:
+        raise _actual_unknown(
+            committed, "reading ingress depth", exc,
+            actual_acknowledged=actual_acknowledged,
+        ) from exc
+    for index in range(depth):
+        try:
+            kick_agent(agent)
+            actual_acknowledged.append(f"kick {index + 1}")
+        except Exception as exc:
+            raise _actual_unknown(
+                committed, f"kick {index + 1}", exc,
+                actual_acknowledged=actual_acknowledged,
+            ) from exc

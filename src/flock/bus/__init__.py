@@ -1,5 +1,6 @@
 """The stable bus library surface."""
 
+from .accounts import available_profiles
 from .doors import DeadLetter, receive, send
 from .envelope import EnvelopeError, build, encode, parse
 from .keys import RESERVED, SEGMENT_REGEX, prefix
@@ -40,6 +41,7 @@ __all__ = [
     "send",
     "port_type",
     "AGENT_DATA_RESOURCES",
+    "available_profiles",
     "AGENT_STATE_RESOURCES",
     "DURABLE_DATA_RESOURCES",
     "DYNAMIC_RESOURCE_PATTERNS",
