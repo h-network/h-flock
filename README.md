@@ -225,7 +225,8 @@ $AGENT_GUIDE     a short guide, also written to AGENTS.md and CLAUDE.md
 ```
 
 ```bash
-office send -a frontend can you take a look at this?
+office send -a frontend "can you take a look at this?"
+office send -a frontend --file report.md    # or --stdin; never shell-parsed
 office broadcast standup in five
 office peers                       # who you can talk to
 office status                      # who is working, on what, since when
