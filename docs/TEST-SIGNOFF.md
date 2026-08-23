@@ -28,6 +28,7 @@ TEST SIGN-OFF
   signature        the failure's text / code
 
   evidence         <path> + sha256 if it will be torn down
+                   ⚠ the path must be IMMUTABLE — see below
 
   verdict          PASS | REFUSED | SMOKE
   VERIFIED BY      <lane>   author of the change?  YES | NO
@@ -41,6 +42,41 @@ TEST SIGN-OFF
 
   COMPARISON       baseline sha · same host · same session · interleaved?
 ```
+
+---
+
+## ⚠ Evidence must sit at an immutable path
+
+**A hash and a read are one claim only if nothing can change between them.**
+
+`evidence /tmp/build-NN.log sha256 <hash>` looks rigorous and is not. `/tmp` is
+mutable and shared: the author re-runs, the file is overwritten in place, and the
+hash in the document now describes content nobody can produce again. Every later
+reader — including the author — is quoting a file they cannot prove they read.
+
+**Do this instead:**
+
+1. **Snapshot first**, to a path nothing will rewrite:
+   `cp /tmp/build-NN.log docs/evidence/build-NN-<sha>.log`
+2. **Hash the snapshot**, not the original.
+3. **Quote from the snapshot** in the sign-off and in any refusal.
+
+⚠ **A refusal that asserts what an artifact contains must QUOTE the lines**, not
+summarise them. A summary of a file the reader cannot re-open is unfalsifiable,
+and the author's only options are to comply blindly or to argue from a second
+unverifiable reading.
+
+⚠ **And if an author complies with a refusal without pushing back, RE-READ.**
+Compliance is not confirmation. Build 88 came within one commit of having two
+working negative controls rebuilt to satisfy a finding that was mistaken — the
+verifier asserted from a mutable path, the author regenerated the evidence rather
+than checking, and the original artifact was destroyed by that regeneration.
+⚠ **The architect made the same evidence-association error in the same hour**,
+hashing and then reading `/tmp` in separate steps, and was saved only by the
+order the writes happened to land in. **This rule is not aimed at lanes.**
+
+**Both roles are covered by one habit: snapshot, hash the snapshot, quote the
+snapshot.**
 
 ---
 
