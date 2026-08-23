@@ -71,6 +71,7 @@ def test_keep_transfers_console_ownership_without_credentials_in_argv(tmp_path):
 pathlib.Path('../../console-env').write_text(
     os.environ.get('API_TOKEN', '') + '\\n' + os.environ.get('HFLOCK_SECRET', '') + '\\n'
 )
+pathlib.Path('../../console-pid').write_text(str(os.getpid()))
 time.sleep(60)
 """
     )
@@ -99,14 +100,19 @@ time.sleep(60)
         timeout=20,
     )
 
-    match = re.search(
-        r"kept: container=h-flock-keep-proof-tenant-1; console_pid=(\d+) "
-        r"\(stop console: kill \1\)",
-        proc.stdout,
-    )
-    assert match, proc.stdout + proc.stderr
-    console_pid = int(match.group(1))
+    for _ in range(100):
+        if (root / "console-pid").exists():
+            break
+        time.sleep(0.01)
+    console_pid = int((root / "console-pid").read_text())
     try:
+        match = re.search(
+            r"kept: container=h-flock-keep-proof-tenant-1; console_pid=(\d+) "
+            r"\(stop console: kill \1\)",
+            proc.stdout,
+        )
+        assert match, proc.stdout + proc.stderr
+        assert int(match.group(1)) == console_pid
         for _ in range(100):
             if (root / "console-env").exists():
                 break
