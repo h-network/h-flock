@@ -112,13 +112,17 @@ def test_shipping_source_has_no_writer_assignments():
     import re
     src_dir = ROOT / "src"
     violations = []
-    pattern = re.compile(r'FLOCK_WRITER\s*=|os\.environ\[.*FLOCK_WRITER.*\]\s*=')
-    for path in src_dir.rglob("*.py"):
+    pattern = re.compile(
+        r'FLOCK_WRITER\s*='
+        r'|os\.environ\[.*FLOCK_WRITER.*\]\s*='
+        r'|os\.environ\.(setdefault|update)\([^)]*FLOCK_WRITER'
+        r'|os\.putenv\([^)]*FLOCK_WRITER'
+        r'|["\']fault-injection["\']'
+    )
+    for path in sorted(src_dir.rglob("*.py")):
         rel_path = path.relative_to(ROOT)
         text = path.read_text(encoding="utf-8")
         for line_num, line in enumerate(text.splitlines(), start=1):
-            if rel_path == Path("src/flock/bus/logging.py") and line_num == 8:
-                continue
             if pattern.search(line):
                 violations.append(f"{rel_path}:{line_num}:{line.strip()}")
     assert not violations, "Illegal FLOCK_WRITER assignments in shipping source:\n" + "\n".join(violations)

@@ -1,8 +1,9 @@
-citations checked: 853 (679 unique)
+citations checked: 854 (680 unique)
 NEAR docs/AUDIT-2026-08-11-comparison.md:37: ops.py:56: symbol 'set' not within 3 lines
 NEAR docs/AUDIT.md:32: tmuxhost/host.py:201: symbol 'AttributeError' not within 3 lines
 NEAR docs/AUDIT.md:72: tmuxhost/host.py:167-170: symbol 'provider' not within 3 lines
 NEAR docs/AUDIT.md:118: container/entrypoint.sh:107-113: symbol 'REDIS_URL' not within 3 lines
+NEAR docs/BUILD-104-results.md:33: tests/test_fault_injection.py:124: symbol 'test_shipping_source_has_no_writer_assignments' not within 3 lines
 NEAR docs/BUILD-40-audit-wave-2.md:29: tmuxhost/host.py:167-170: symbol 'provider' not within 3 lines
 NEAR docs/BUILD-41-audit-wave-3.md:71: container/entrypoint.sh:107-113: symbol 'REDIS_URL' not within 3 lines
 NEAR docs/BUILD-44-tmux-report.md:18: LLD-container.md:188: symbol 'flock.session' not within 3 lines
@@ -84,4 +85,4 @@ NEAR docs/VERIFY-2026-08-22-bus.md:75: CONTRACTS.md:735-737: symbol 'pending.ver
 NEAR docs/VERIFY-2026-08-22-tmux.md:21: src/flock/watchdog/service.py:386: symbol 'VERIFY_AFTER_SECONDS' not within 3 lines
 NEAR docs/VERIFY-2026-08-22.md:55: bus/logging.py:78: symbol 'CONTRACTS' not within 3 lines
 hard failures: 0
-near misses: 84
+near misses: 85
