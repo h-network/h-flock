@@ -60,7 +60,17 @@ custody stages.
 
 ---
 
-## Sprint 2 — control says what it did — IN VERIFICATION as build 91
+## ~~Sprint 2 — control says what it did~~ — SHIPPED as build 91
+
+⚠ **Merged 2026-08-23 at `463df5d`**, verified by `bus` (author NO) **after five
+refusals — four of them against the architect's contract, not the code.** The
+rule that came out of it is general and is in `BUILD-91` ruling 11: *acknowledged
+is a fact, UNKNOWN is an attempt with no reply, `failed` is reserved for not
+attempted or provably rejected.* ⚠ **It then found five more sites outside this
+build**, two of which could make the custody log report a delivery loss that
+never happened — see `TODO.md`. ⚠ **The hire row is only HALF closed**: control
+records what it *accepted*, and whether the window actually appeared is
+`tmuxhost`'s to say.
 
 **Rows:** *a hire leaves no record of whether it worked* · *`--profile` is not
 validated against the accounts that exist* · the watchdog half of
