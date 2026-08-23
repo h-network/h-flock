@@ -78,6 +78,18 @@ def test_start_agent_defaults_cli_to_claude():
     ]
 
 
+def test_fresh_start_accepts_desired_state_without_claiming_actual_state(capsys):
+    events = []
+    start_agent(
+        RecordingRedis(events), pod="acme", tenant="hq",
+        envelope={"payload": {"agent": "dave"}},
+        replace_window=lambda agent: events.append(("replace_window", agent)),
+    )
+    record = json.loads(capsys.readouterr().out.splitlines()[-1])
+    assert record["event"] == "start_agent_accepted"
+    assert not any(event[0] == "replace_window" for event in events)
+
+
 def test_start_agent_writes_profile_before_roster_visibility():
     events = []
     start_agent(
@@ -450,13 +462,13 @@ def test_fresh_hire_with_profile_and_provider_leaves_creation_to_tmuxhost(monkey
         (resume_agent, {"resume_window": lambda agent: None, "kick_agent": lambda agent: None}),
     ],
 )
-def test_control_openers_record_confirmed_outcome(opener, callbacks, capsys):
+def test_control_openers_record_accepted_outcome(opener, callbacks, capsys):
     opener(
         RecordingRedis([], roster_port_type="api"), pod="acme", tenant="hq",
         envelope={"correlation_id": "corr-1", "payload": {"agent": "dave"}}, **callbacks,
     )
     record = json.loads(capsys.readouterr().out.splitlines()[-1])
-    assert record["event"] == f"{opener.__name__}_confirmed"
+    assert record["event"] == f"{opener.__name__}_accepted"
     assert record["destination"] == "dave"
     assert record["correlation_id"] == "corr-1"
 
@@ -498,17 +510,17 @@ def test_start_agent_permits_profile_when_legacy_accounts_key_is_absent():
     [
         (start_agent, RecordingRedis([], roster_port_type="tmux"),
          {"replace_window": lambda agent: (_ for _ in ()).throw(RuntimeError("replace failed"))},
-         "desired launch state committed"),
+         "launch published, roster row published"),
         (stop_agent, RecordingRedis([], roster_port_type="tmux"),
          {"kill_window": lambda agent: (_ for _ in ()).throw(RuntimeError("kill failed"))},
-         "roster removal and agent-state purge committed"),
+         "roster row removed, agent resources purged, delivery lock cleared"),
         (pause_agent, RecordingRedis([]),
          {"interrupt_window": lambda agent: (_ for _ in ()).throw(RuntimeError("interrupt failed"))},
-         "paused marker committed"),
+         "paused marker published"),
         (resume_agent, RecordingRedis([]),
          {"resume_window": lambda agent: (_ for _ in ()).throw(RuntimeError("resume failed")),
           "kick_agent": lambda agent: None},
-         "paused marker removal committed"),
+         "paused marker removed"),
     ],
 )
 def test_post_commit_side_effect_failure_records_incomplete(
@@ -522,3 +534,56 @@ def test_post_commit_side_effect_failure_records_incomplete(
     record = json.loads(capsys.readouterr().out.splitlines()[-1])
     assert record["event"] == f"{opener.__name__}_incomplete"
     assert committed in record["reason"]
+
+
+def test_stop_partial_desired_write_names_committed_subset(capsys):
+    class PurgeFails(RecordingRedis):
+        def delete(self, *keys):
+            self.events.append(("delete-attempt", *keys))
+            raise RuntimeError("purge write failed")
+
+    events = []
+    with pytest.raises(RuntimeError, match="purge write failed"):
+        stop_agent(
+            PurgeFails(events, roster_port_type="tmux"), pod="acme", tenant="hq",
+            envelope={"payload": {"agent": "dave"}}, kill_window=lambda agent: None,
+        )
+    record = json.loads(capsys.readouterr().out.splitlines()[-1])
+    assert record["event"] == "stop_agent_incomplete"
+    assert record["reason"] == (
+        "roster row removed; agent resource purge failed: purge write failed"
+    )
+    assert events[1] == ("hdel", prefix("acme", "hq", resource="roster"), "dave")
+
+
+def test_start_partial_desired_write_names_committed_subset(capsys):
+    class RosterPublishFails(RecordingRedis):
+        def hset(self, key, field, value):
+            if key == prefix("acme", "hq", resource="roster"):
+                raise RuntimeError("roster publish failed")
+            super().hset(key, field, value)
+
+    with pytest.raises(RuntimeError, match="roster publish failed"):
+        start_agent(
+            RosterPublishFails([]), pod="acme", tenant="hq",
+            envelope={"payload": {"agent": "dave"}}, replace_window=lambda agent: None,
+        )
+    record = json.loads(capsys.readouterr().out.splitlines()[-1])
+    assert record["event"] == "start_agent_incomplete"
+    assert record["reason"] == (
+        "launch published; roster row publish failed: roster publish failed"
+    )
+
+
+def test_first_desired_write_failure_records_failed(capsys):
+    class FirstWriteFails(RecordingRedis):
+        def set(self, key, value):
+            raise RuntimeError("first write failed")
+
+    with pytest.raises(RuntimeError, match="first write failed"):
+        start_agent(
+            FirstWriteFails([]), pod="acme", tenant="hq",
+            envelope={"payload": {"agent": "dave"}}, replace_window=lambda agent: None,
+        )
+    record = json.loads(capsys.readouterr().out.splitlines()[-1])
+    assert record["event"] == "start_agent_failed"
