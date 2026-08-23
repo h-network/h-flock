@@ -580,7 +580,7 @@ def test_resume_names_actual_acknowledgements_before_unknown_kick(capsys):
     assert "kick 2 outcome UNKNOWN after reply lost after second kick" in record["reason"]
 
 
-def test_resume_provable_kick_failure_records_partial_without_acknowledging_it(
+def test_resume_provable_kick_failure_records_partially_failed_without_acknowledging_it(
     monkeypatch, capsys
 ):
     events = []
@@ -613,7 +613,7 @@ def test_resume_provable_kick_failure_records_partial_without_acknowledging_it(
         )
 
     records = [json.loads(line) for line in capsys.readouterr().out.splitlines()]
-    assert [record["event"] for record in records] == ["resume_agent_partial"]
+    assert [record["event"] for record in records] == ["resume_agent_partially_failed"]
     assert records[0]["reason"] == (
         "acknowledged: paused marker removed; "
         "actual acknowledged: window resumed, kick 1; "

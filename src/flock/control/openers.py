@@ -46,7 +46,7 @@ def _record_control(kind: str):
                 result = opener(r, pod=pod, tenant=tenant, envelope=envelope, **kwargs)
             except _PartialControl as exc:
                 log_record(
-                    "control", f"{kind}_partial", correlation_id=correlation_id,
+                    "control", f"{kind}_partially_failed", correlation_id=correlation_id,
                     destination=agent if isinstance(agent, str) else None,
                     reason=str(exc),
                 )

@@ -362,7 +362,7 @@ actual tmux windows and process lifecycles are reconciled asynchronously by
 `tmuxhost.reconcile_once`. For `StopAgent`, the opener attempts to kill the window
 synchronously inline after desired-state writes, with `tmuxhost` providing later cleanup.
 
-`resume_agent_partial` is the distinct known-failure outcome: desired-state
+`resume_agent_partially_failed` is the distinct known-failure outcome: desired-state
 writes and any earlier actual-state actions named as acknowledged did occur, but
 a later kick was provably rejected by `Popen` and did not spawn a process. It is
 neither `_failed` (which would erase the acknowledged subset) nor `_incomplete`

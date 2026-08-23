@@ -4,7 +4,7 @@
 
 `control.runner._kick` no longer swallows a `Popen` `OSError`. It raises a
 typed `ProvableActualFailure`, and `resume_agent` records
-`resume_agent_partial` when earlier desired or actual work was acknowledged
+`resume_agent_partially_failed` when earlier desired or actual work was acknowledged
 before that known failure. The failed kick is named as failed and is absent
 from `actual acknowledged`; the envelope dead-letters and control does not
 retry it.
@@ -15,7 +15,7 @@ returned-invalid-depth `board_write_failed` case.
 
 ## Outcome decision
 
-`_partial` is the third semantic shape the kick needs:
+`_partially_failed` is the third semantic shape the kick needs:
 
 - `_accepted` is false because the requested kick did not happen.
 - `_incomplete` is false because no reply is missing: `Popen` rejected the
@@ -23,7 +23,7 @@ returned-invalid-depth `board_write_failed` case.
 - `_failed` is false for the whole control operation because the paused marker
   removal, window resume, and any earlier kicks were acknowledged facts.
 
-`_partial` says exactly that a named subset was acknowledged and a later named
+`_partially_failed` says exactly that a named subset was acknowledged and a later named
 action provably failed. The reason keeps desired acknowledgements, actual
 acknowledgements, and the failed action separate. This preserves Build 91's
 rule without stretching UNKNOWN or erasing facts.
@@ -38,7 +38,7 @@ original defect, not a nearby failure.
 
 ## TEST SIGN-OFF
 
-    claim            a Popen OSError cannot become an acknowledged kick; prior facts plus the known failed kick produce resume_agent_partial
+    claim            a Popen OSError cannot become an acknowledged kick; prior facts plus the known failed kick produce resume_agent_partially_failed
     source sha       338edd35ba2df6f4d29d1478724f6f23add61b75
     artefact         COMMIT
     host             local — deterministic Popen, tmux and Redis doubles
