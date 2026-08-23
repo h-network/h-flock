@@ -253,6 +253,17 @@ def start_agent(
                     policy_key, side, json.dumps(values, separators=(",", ":"))
                 ),
             )
+    correlation_id = envelope.get("correlation_id")
+    if existing_port_type != "tmux" and isinstance(correlation_id, str) and correlation_id:
+        # A fresh tmux membership makes a later window necessary. Publish its
+        # cause before roster visibility so tmuxhost cannot observe the hire
+        # without also observing the join key. Idempotent starts do not replace
+        # this marker: their envelope did not cause a new window.
+        cause_key = prefix(pod, tenant, agent=agent, resource="window.cause")
+        _write_desired(
+            committed, "window cause published", "window cause publish",
+            lambda: r.set(cause_key, correlation_id),
+        )
     _write_desired(
         committed, "roster row published", "roster row publish",
         lambda: r.hset(roster_key, agent, agent_port_type),

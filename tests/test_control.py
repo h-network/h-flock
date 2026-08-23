@@ -62,6 +62,30 @@ def test_start_agent_publishes_desired_state_without_creating_window():
     ]
 
 
+def test_fresh_start_publishes_window_cause_before_roster_visibility():
+    events = []
+    start_agent(
+        RecordingRedis(events),
+        pod="acme",
+        tenant="hq",
+        envelope={
+            "correlation_id": "hire-correlation",
+            "payload": {"agent": "dave", "cli": "codex"},
+        },
+        replace_window=lambda agent: events.append(("replace_window", agent)),
+    )
+    assert events == [
+        ("hget", prefix("acme", "hq", resource="roster"), "dave"),
+        ("set", prefix("acme", "hq", "dave", "launch"), "codex"),
+        (
+            "set",
+            prefix("acme", "hq", "dave", "window.cause"),
+            "hire-correlation",
+        ),
+        ("hset", prefix("acme", "hq", resource="roster"), "dave", "tmux"),
+    ]
+
+
 def test_start_agent_defaults_cli_to_claude():
     events = []
     start_agent(

@@ -613,6 +613,20 @@ reconciliation, while actual window creation still follows enrolment.
 `StopAgent` removes the roster row, purges classified identity state, and attempts to kill
 the window synchronously inline (`tmuxhost.reconcile_once` also cleans up any orphaned window later).
 
+For a fresh tmux membership carrying a `correlation_id`, `StartAgent` also
+publishes the per-agent `window.cause` key before roster visibility. The first
+successful `window_created` atomically consumes that one-shot value and carries
+it as `correlation_id`, joining asynchronous actual state to
+`start_agent_accepted` without making control wait. A failed window creation
+retains the cause for the next attempt. If reconciliation finds the window
+already present, it consumes any marker without emitting a join: that envelope
+did not cause the existing window, and retaining its id would falsely attach a
+later crash recovery. A recovery or placeholder creation with no marker emits a
+valid `window_created` with `correlation_id` absent. Consumption happens before
+logging, deliberately preferring a missing join over a stale false join if
+tmuxhost dies at that boundary. Idempotent starts do not publish a cause because
+they require no new window.
+
 ⚠ **For `port_type: "api"` there is only enrolment.** A client enrolment writes a
 roster row and stops: no launch key, no home, no window, no CLI. `StopAgent`
 removes the row and purges classified identity state, touching no tmux; retained

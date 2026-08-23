@@ -7,6 +7,7 @@ AGENT_STATE_RESOURCES = frozenset(
     {
         "blocked",
         "launch",
+        "window.cause",
         "profile",
         "provider",
         "paused",
