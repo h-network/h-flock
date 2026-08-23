@@ -141,6 +141,40 @@ invariant is feature-specific, **not** a tool beside `check_citations.py`, which
 is for repository-wide properties. Getting that wrong makes every future
 structural claim a candidate for the repo-wide gate.
 
+### ⚠ Anchor the ALLOWANCE, not the matcher — build 104's five refusals
+
+**Every structural check has an exemption, and the exemption is where it rots.**
+
+Build 104's gate was rebuilt four times. **Each mechanism change closed one hole
+and opened another:**
+
+| mechanism | closed | opened |
+|---|---|---|
+| per-line regex | bracket assignment | multiline `os.environ.update` |
+| whole-file string scan | multiline | content classification |
+| AST node walk | structure | the exact-content allowance |
+
+⚠ **The cause was the same every time: the ALLOWANCE was re-expressed more
+loosely than the thing it allows.** The matcher kept getting smarter while the
+exemption drifted from *"this exact line"* to *"this file"* — and a setter
+dropped into the exempted file inherited the exemption.
+
+**The fix is not a fifth matcher.** Anchor the allowance to **what the line
+is** — build 104 ends by requiring the full AST shape of
+`_WRITER = os.environ.get("FLOCK_WRITER")`: an `Assign`, to that name, whose
+value is a `Call` to `os.environ.get`, with one argument and no keywords, and
+**only that argument node is exempt.** Then the matcher stops mattering.
+
+⚠ **And anchor the POPULATION.** The same gate passed while scanning **nothing**
+— `tmux` proved it by repointing the root at a directory that does not exist.
+Assert a non-zero count **and** that a known member was actually found: a count
+proves you scanned *some* tree, the known member proves you scanned the *right*
+one.
+
+⚠ **Not one of these five was visible by reading.** Every one needed the check
+run against a case its author had not imagined. **A gate nobody has attacked is
+worse than no gate, because it is trusted.**
+
 ⚠ **Do not manufacture a runtime test for a structural property.** It will assert
 something adjacent to the claim and pass while the claim is false — the failure
 this rule exists to prevent, arrived at from the other side.
