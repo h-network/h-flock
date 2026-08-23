@@ -82,7 +82,12 @@ All controls ran against source
 
 ## Citation gate
 
-    PENDING — regenerate and verify against the corrected final tree
+    source sha       5ad570ba5c4836b728290e538cdec0b7ebe2260c
+    artefact         COMMIT
+    command          python3 tools/check_citations.py
+    exit status      0, read unpiped
+    result           0 hard failures, 68 near misses
+    evidence         docs/evidence/build-92-5ad570b-citations.log sha256 aae0f2f2e9e26b9fdc1ba2caaa191c76ad353be61312505c38d1945b8e5b23dd
 
 ## Excluded documentation finding
 
