@@ -23,7 +23,13 @@ later sweep. `TODO.md` has been wrong four times in one day for exactly this.
 
 ---
 
-## Sprint 1 — the `office` command tells the truth
+## ~~Sprint 1 — the `office` command tells the truth~~ — SHIPPED as build 87
+
+⚠ **Merged 2026-08-23 at `1212fa7`**, verified by `tmux` (author NO), and confirmed
+live on h-lab by an acceptance run that exercises the three unquoted `office
+send` calls in `plumbing-check.sh` (`BUILD-89-results`). All three rows closed.
+**The agent guide changed in the same merge** — it was still teaching the form
+the new parser rejects.
 
 **Rows:** *`office send` cannot carry a real payload* · *`--agent=NAME` is
 rejected with a message that does not say why* · *command naming is
@@ -54,7 +60,7 @@ custody stages.
 
 ---
 
-## Sprint 2 — control says what it did
+## Sprint 2 — control says what it did — IN VERIFICATION as build 91
 
 **Rows:** *a hire leaves no record of whether it worked* · *`--profile` is not
 validated against the accounts that exist* · the watchdog half of
@@ -72,7 +78,13 @@ worked. Today the only way to find out is to attach to a pane.
 
 ---
 
-## Sprint 3 — cost is either right or says it isn't
+## ~~Sprint 3 — cost is either right or says it isn't~~ — SHIPPED as build 88
+
+⚠ **Merged 2026-08-23 at `60ba4dd`**, verified by `tmux` (author NO) after a
+refusal that found three real defects. ⚠ **Two halves remain and have their own
+`TODO.md` rows**: `rate_limits` has never run against a live codex agent, and
+`office status` still says `unknown` for agy in the column beside the one that
+was fixed. The agy claim itself is proven live against a real hired agent.
 
 **Rows:** *presence and cost are not comparable across CLIs* · the open half of
 *nothing says what a run costs* · two findings from the 2026-08-23 live run
@@ -204,6 +216,22 @@ sentence, not a feature.
 ⚠ **Precedence is one test and one sentence**: when a profile has both a token
 and a seeded credential file, which wins? It decides whether the help text says
 *"paste a token"* or *"paste a token, and it replaces any login you seeded"*.
+
+---
+
+## ⚠ Rows added after this plan was written
+
+Today's builds and acceptance runs opened six rows that no sprint above covers.
+**Re-slot them before picking sprint 4** — three of them are consequences of
+sprint 2 and belong next to it, not at the bottom of a list:
+
+- `tmuxhost` should emit the control confirmation — the half of *a hire leaves no
+  record* that build 91 does **not** close
+- control desired-state writes are not atomic, so a partial hire is possible
+- a revoked OAuth token is invisible to the watchdog
+- acceptance never exercises `office usage` or `office status`
+- codex `rate_limits` has never been seen working live
+- `office status` says `unknown` for an agy agent
 
 ---
 

@@ -78,6 +78,32 @@ order the writes happened to land in. **This rule is not aimed at lanes.**
 **Both roles are covered by one habit: snapshot, hash the snapshot, quote the
 snapshot.**
 
+### ⚠ Bind each gate to the tree it actually ran against
+
+A test gate binds to the **code** commit. A citation gate validates
+**documents**, so it binds to the **docs** commit — and those differ whenever a
+results file lands after the code.
+
+⚠ **Build 91 recorded 0 hard / 52 near beside a code SHA where the checker
+actually says 58.** Every hash matched and the artifact was authentic; it was
+produced at a different commit than the line named. **A field naming the wrong
+TRUE thing is harder to catch than one naming a false thing** — build 88's
+non-existent sha was found in one command, this took a verifier re-running the
+checker at the named commit.
+
+**The number must reproduce at the commit printed beside it. Check that it does.**
+
+### ⚠ The recursion, and how to bind through it
+
+A results document that records a citation-gate result **is itself a document
+the gate checks**, so writing the answer down can change the answer.
+
+`bus`'s rule, adopted: **bind to the pre-results commit, and have the sign-off
+explicitly exclude the evidence-binding edit — proving that diff is limited to
+the binding field and the artifact.** A binding edit that adds no new `path:line`
+citation cannot move the count, and saying so is what makes the exclusion
+checkable rather than asserted.
+
 ---
 
 ## The three rules that decide the verdict
