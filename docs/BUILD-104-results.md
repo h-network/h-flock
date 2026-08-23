@@ -70,10 +70,10 @@ The mutation was restored before generating final gate logs.
     artefact         COMMIT
     command          python3 tools/check_citations.py
     exit status      0, read unpiped
-    result           0 hard failures, 84 near misses
+    result           0 hard failures, 85 near misses
     evidence         docs/evidence/build-104-citations.log sha256 ed759311eb26b7ed420990b1a2f7e52dee0993bab07bfb810dab227b43e69249
 
 ## Merged-tree verification
 
     merged with      main at 3d7900e
-    result           clean merge; 514 passed + 5 subtests passed, exit 0; citations 0 hard / 84 near, exit 0
+    result           clean merge; 514 passed + 5 subtests passed, exit 0; citations 0 hard / 85 near, exit 0
