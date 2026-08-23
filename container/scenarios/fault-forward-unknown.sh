@@ -15,8 +15,8 @@ RUN_ID="$(date +%s)-$$"
 TENANT="bus100-${RUN_ID}"
 PROJECT="h-flock-${TENANT}"
 CONTAINER="${PROJECT}-tenant-1"
-API_PORT="${BUILD100_API_PORT:-8100}"
-SESSION_PORT="${BUILD100_SESSION_PORT:-8101}"
+API_PORT="${BUILD100_API_PORT:-18100}"
+SESSION_PORT="${BUILD100_SESSION_PORT:-18101}"
 WORK="${BUILD100_WORK:-/tmp/build100-${RUN_ID}}"
 CREATED_PROJECT=""
 SWITCH_PID=""
@@ -37,9 +37,10 @@ trap cleanup EXIT INT TERM
 echo "FAULT_INJECTION_ACTIVE kind=forward_unknown project=$PROJECT tenant=$TENANT"
 echo "FAULT_INJECTION_ACTIVE disposable=1 target=fault-src->fault-dst work=$WORK"
 
-# The installer is driven directly with an explicit, current prompt sequence.
-# accept.sh is an operator acceptance path and its positional answers include
-# unrelated plumbing; this harness needs only a disposable bus tenant.
+# This harness owns the compose project directly. The operator acceptance path
+# has unrelated interactive doors and agents; Build 100 needs only a disposable
+# bus tenant, and an explicit environment makes the ports and disabled API
+# visible rather than dependent on a prompt stream.
 EXISTING_PROJECT_RESOURCE="$({
   docker ps -aq --filter "label=com.docker.compose.project=$PROJECT"
   docker network ls -q --filter "label=com.docker.compose.project=$PROJECT"
@@ -49,10 +50,25 @@ if [ -n "$EXISTING_PROJECT_RESOURCE" ]; then
   echo "REFUSED: generated project $PROJECT already exists; this run did not create it" >&2
   exit 2
 fi
-# pod, tenant, two agents, one-account token, default CLI, no exceptions,
-# no provider, no API, no Telegram, session port, and loopback-only console.
-printf 'acme\n%s\n2\narchitect\nsme-2\nn\n\n\n\nn\nn\nn\n%s\nn\n' \
-  "$TENANT" "$SESSION_PORT" | ./setup.sh >"$WORK/setup.log" 2>&1
+# A token is required by the image even though both doors are disabled.
+TOKEN="$(openssl rand -hex 16)"
+{
+  echo "POD=acme"
+  echo "TENANT=$TENANT"
+  echo "AGENTS=architect:tmux,sme-2:tmux"
+  echo "FLOCK_ACCOUNTS=default"
+  echo "API_TOKEN=$TOKEN"
+  echo "API_ENABLED=0"
+  echo "API_PORT=$API_PORT"
+  echo "SESSION_PORT=$SESSION_PORT"
+  echo "API_HOST=127.0.0.1"
+  echo "SESSION_HOST=127.0.0.1"
+  echo "VERIFY_AFTER_SECONDS=120"
+  echo "INGRESS_MAX=300"
+} > container/.env
+chmod 600 container/.env
+docker compose -p "$PROJECT" --env-file container/.env \
+  -f container/compose.yaml up -d --build >"$WORK/setup.log" 2>&1
 accept_rc=$?
 # We proved absence immediately before invoking accept.sh. If its project now
 # exists, this invocation created it even when a later acceptance gate failed;
@@ -72,6 +88,17 @@ fi
 if [ "$CREATED_PROJECT" != "$PROJECT" ] \
   || [ -z "$(docker ps -q --filter "label=com.docker.compose.project=$PROJECT" | head -1)" ]; then
   echo "REFUSED: expected newly-created project $PROJECT is absent" >&2
+  exit 2
+fi
+
+STATUS=""
+for _ in $(seq 1 60); do
+  STATUS="$(docker inspect --format '{{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}' "$CONTAINER" 2>/dev/null || true)"
+  [ "$STATUS" = "healthy" ] && break
+  sleep 2
+done
+if [ "$STATUS" != "healthy" ]; then
+  echo "REFUSED: owned tenant did not become healthy (status=${STATUS:-unknown})" >&2
   exit 2
 fi
 
