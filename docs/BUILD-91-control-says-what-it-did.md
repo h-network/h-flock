@@ -222,6 +222,71 @@ wrong true thing is harder to catch than one naming a false thing.**
 
 ---
 
+# ⚠⚠⚠ THIRD AMENDMENT — `_failed` cannot mean "nothing changed", 2026-08-23
+
+`bus` re-executed all ten mutations, confirmed the citation gate reproduces at
+its bound commit, and refused on **one structural locus that is again mine.**
+
+⚠ **A write that raised did not necessarily fail.** `_write_desired` treats an
+exception from a Redis call as proof that call did not commit. It is not: the
+connection can drop **after Redis commits and before the reply arrives.**
+`bus` probed exactly that — the first `stop_agent` `hdel` committed, then raised
+`ConnectionError`, and because `committed` was still empty the record read
+`stop_agent_failed`, meaning *"no desired write committed"*, with the roster row
+already gone.
+
+**Tracking prior acknowledged writes cannot fix this**, because the problem is
+the failing write itself, not the ones before it.
+
+## Ruling 8 — three states, and each licenses exactly one inference
+
+⚠ **`_failed` is narrowed to pre-write failure only.** It may be emitted **only**
+when nothing was attempted — validation, a fixed participant, an unknown account.
+There, and only there, is *"nothing changed"* provable.
+
+⚠ **Any exception raised BY a write yields `_incomplete`**, including the first
+write, including when nothing was acknowledged.
+
+| record | what a reader may conclude |
+|---|---|
+| `<kind>_accepted` | every desired write was **acknowledged**. Desired state is set. ⚠ Still says nothing about actual state |
+| `<kind>_incomplete` | ⚠ **conclude nothing — read the reason.** It must name the writes that were **acknowledged** and, separately, the write whose outcome is **UNKNOWN** |
+| `<kind>_failed` | nothing was attempted. Nothing changed |
+
+⚠ **The two halves of `_incomplete`'s reason are different in kind and must read
+differently.** "Acknowledged" is a fact. "Unknown" is an absence of one. A reason
+like *"no write acknowledged; roster row removal outcome UNKNOWN after connection
+error"* is correct and reads oddly on purpose — the oddness is the information.
+
+⚠ **Why this matters operationally, not just philosophically:** `_failed` invites
+*"retry, nothing happened."* If the `hdel` did commit, the retry operates on
+state the operator does not have. A later `StartAgent` would re-add an agent
+whose resources were purged.
+
+## Ruling 9 — a note on my own record here
+
+⚠ **Three refusals of this build, and all three were my contract, not the
+implementation.** `_confirmed` claimed actual state that reconciles
+asynchronously; `_failed` assumed desired writes commit atomically; `_failed`
+assumed a raised write did not commit.
+
+**One pattern: I keep specifying more certainty than the system can supply.**
+Recorded here rather than in a private note because the next person writing a
+contract in this repository should see that the architect got it wrong three
+times in a row on the same axis, and that a lane refusing the specification is
+what caught it each time.
+
+## Ruling 10 — `bus`'s answer on citation recursion is adopted
+
+`bus`: *pre-results binding is practical if the final sign-off explicitly
+excludes the evidence-binding edit and proves its diff is limited to that field
+and artifact.* ⚠ **Correct, and it generalises** — going into
+`docs/TEST-SIGNOFF.md`. Here `b295998..9ea6191` is the `PENDING` replacement plus
+the evidence, and I ran the checker independently in extracted trees at both
+commits: **0 hard / 54 near at each.**
+
+---
+
 ## Done means
 
 Pushed to origin. Tests green. `TEST-SIGNOFF` filled in, ⚠ **`VERIFIED BY` is not
