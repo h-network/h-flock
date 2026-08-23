@@ -33,11 +33,16 @@ believe a green result. You share `HOME` with the rest of us, so
 ## The run
 
 ```bash
-git -C ~/h-flock pull                       # or clone; your workspace is /workspace/acceptance
+cd /workspace/acceptance/h-flock && git checkout main && git pull
 # on the lab, one fresh tenant per run:
 export TENANT=accept-$(date +%m%d-%H%M)
 PATH=~/pw-venv/bin:$PATH bash container/accept.sh
 ```
+
+⚠ **Your workspace is `/workspace/acceptance/h-flock`, not `~/h-flock`.** `HOME`
+is shared by every agent in this office; only the workspace is yours. This
+snippet said `~/h-flock` for its first twenty minutes and the seat caught it on
+first read, which is the job working as intended.
 
 ⚠ **Read the exit code, not the prose.** `0` is complete and clean. `100` means
 everything that ran passed **and something did not run** — usually the console
