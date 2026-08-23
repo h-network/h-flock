@@ -1,4 +1,5 @@
 import ast
+import io
 import json
 import subprocess
 import tomllib
@@ -101,6 +102,7 @@ def test_root_help_lists_whole_surface_without_environment_or_redis(monkeypatch,
         "status",
         "hire",
         "letGo",
+        "let-go",
         "pause",
         "resume",
         "list",
@@ -111,13 +113,14 @@ def test_root_help_lists_whole_surface_without_environment_or_redis(monkeypatch,
         "delete",
         "add",
         "cloneToAll",
+        "clone-to-all",
     ):
         assert command in output
 
 
 @pytest.mark.parametrize(
     "command",
-    ["send", "broadcast", "peers", "status", "hire", "letGo", "pause", "resume", "list", "take", "done", "cancel", "hold", "delete", "add", "cloneToAll"],
+    ["send", "broadcast", "peers", "status", "hire", "letGo", "let-go", "pause", "resume", "list", "take", "done", "cancel", "hold", "delete", "add", "cloneToAll", "clone-to-all"],
 )
 def test_every_subcommand_has_environment_free_help(monkeypatch, command):
     monkeypatch.delenv("AGENT_NAME", raising=False)
@@ -142,7 +145,7 @@ def test_clone_to_all_help_uses_no_hardcoded_agent_names(monkeypatch, capsys):
 def test_send_treats_inner_flags_as_literal_message(office_env, monkeypatch, capsys):
     calls = []
     monkeypatch.setattr(cli, "send", lambda r, **kwargs: calls.append(kwargs) or "stream-one")
-    cli.main(["send", "-a", "backend", "run:", "office", "send", "-a", "frontend", "hi"])
+    cli.main(["send", "-a", "backend", "run: office send -a frontend hi"])
     assert calls == [
         {
             "pod": "acme",
@@ -154,7 +157,89 @@ def test_send_treats_inner_flags_as_literal_message(office_env, monkeypatch, cap
             "module": "port",
         }
     ]
-    assert capsys.readouterr().out.strip() == "stream-one"
+    assert capsys.readouterr().out.strip() == "sent to backend: 31 bytes (stream-one)"
+
+
+def test_send_preserves_a_quoted_body_containing_office_flags(office_env, monkeypatch):
+    calls = []
+    monkeypatch.setattr(cli, "send", lambda r, **kwargs: calls.append(kwargs) or "stream-one")
+
+    cli.main([
+        "send",
+        "-a",
+        "backend",
+        "a body that contains --stdin and --file and -a inside it",
+    ])
+
+    assert calls[0]["payload"] == {
+        "text": "a body that contains --stdin and --file and -a inside it"
+    }
+
+
+def test_send_reads_stdin_and_reports_utf8_bytes(office_env, monkeypatch, capsys):
+    calls = []
+    monkeypatch.setattr(cli, "send", lambda r, **kwargs: calls.append(kwargs) or "stream-stdin")
+    monkeypatch.setattr("sys.stdin", io.StringIO("line one\nλ\n"))
+
+    cli.main(["send", "--agent=backend", "--stdin"])
+
+    assert calls[0]["payload"] == {"text": "line one\nλ\n"}
+    assert capsys.readouterr().out.strip() == "sent to backend: 12 bytes (stream-stdin)"
+
+
+def test_send_reads_file_without_shell_parsing(office_env, monkeypatch, tmp_path, capsys):
+    report = tmp_path / "hardware report.txt"
+    report.write_text("show --stdin\n-a stays data\n", encoding="utf-8")
+    calls = []
+    monkeypatch.setattr(cli, "send", lambda r, **kwargs: calls.append(kwargs) or "stream-file")
+
+    cli.main(["send", "-a", "backend", "--file", str(report)])
+
+    assert calls[0]["payload"] == {"text": "show --stdin\n-a stays data\n"}
+    assert capsys.readouterr().out.strip() == "sent to backend: 27 bytes (stream-file)"
+
+
+def test_send_refuses_mixed_or_empty_input(office_env, monkeypatch, tmp_path, capsys):
+    monkeypatch.setattr(cli, "send", lambda *args, **kwargs: pytest.fail("refused input was sent"))
+
+    monkeypatch.setattr("sys.stdin", io.StringIO("from pipe"))
+    with pytest.raises(SystemExit) as mixed:
+        cli.main(["send", "-a", "backend", "--stdin", "positional"])
+    assert mixed.value.code == 1
+    assert "exactly one" in capsys.readouterr().err
+
+    monkeypatch.setattr("sys.stdin", io.StringIO(""))
+    with pytest.raises(SystemExit) as empty:
+        cli.main(["send", "-a", "backend", "--stdin"])
+    assert empty.value.code == 1
+    assert "received no message text" in capsys.readouterr().err
+
+
+def test_send_double_dash_allows_literal_option_body(office_env, monkeypatch):
+    calls = []
+    monkeypatch.setattr(cli, "send", lambda r, **kwargs: calls.append(kwargs) or "stream")
+
+    cli.main(["send", "-a", "backend", "--", "--stdin"])
+
+    assert calls[0]["payload"] == {"text": "--stdin"}
+
+
+@pytest.mark.parametrize("command", ["letGo", "let-go"])
+def test_let_go_aliases_share_the_control_contract(office_env, monkeypatch, command):
+    calls = []
+    monkeypatch.setattr(cli, "send", lambda r, **kwargs: calls.append(kwargs) or "stream")
+
+    cli.main([command, "backend"])
+
+    assert calls[0]["kind"] == "StopAgent"
+    assert calls[0]["payload"] == {"agent": "backend"}
+
+
+@pytest.mark.parametrize("command", ["cloneToAll", "clone-to-all"])
+def test_clone_to_all_aliases_share_the_parser(office_env, command, capsys):
+    cli.main([command, "git@example.test:team/project.git", "--dry-run"])
+
+    assert "would clone" in capsys.readouterr().out
 
 
 def test_broadcast_resolves_tmux_peers_without_self_or_plumbing(office_env, monkeypatch):

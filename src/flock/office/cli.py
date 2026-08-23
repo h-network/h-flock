@@ -24,6 +24,7 @@ _COMMANDS = (
     "status",
     "hire",
     "letGo",
+    "let-go",
     "pause",
     "resume",
     "list",
@@ -34,6 +35,7 @@ _COMMANDS = (
     "delete",
     "add",
     "cloneToAll",
+    "clone-to-all",
     "usage",
 )
 
@@ -55,6 +57,7 @@ def _root_parser() -> argparse.ArgumentParser:
         "status": "show agent presence and open work",
         "hire": "enrol a new agent",
         "letGo": "retire an agent",
+        "let-go": "retire an agent",
         "pause": "pause an agent's CLI",
         "resume": "resume an agent's CLI and inbox",
         "list": "show a task board",
@@ -65,6 +68,7 @@ def _root_parser() -> argparse.ArgumentParser:
         "delete": "permanently remove a task",
         "add": "add a task to another agent's board",
         "cloneToAll": "clone a repository into agent workspaces",
+        "clone-to-all": "clone a repository into agent workspaces",
         "usage": "show token usage and estimated cost",
     }
     for name in _COMMANDS:
@@ -101,23 +105,41 @@ def _message(r, *, pod: str, tenant: str, source: str, destination: str, text: s
 def _send_command(argv: list[str]) -> None:
     parser = _operation_parser("send", "Send a message to one agent.")
     parser.add_argument("-a", "--agent", metavar="AGENT", help="destination agent")
-    parser.add_argument("text", nargs=argparse.REMAINDER, help="message text")
-    if argv in (["-h"], ["--help"]):
-        parser.parse_args(argv)
+    sources = parser.add_mutually_exclusive_group()
+    sources.add_argument("--stdin", action="store_true", help="read message text from stdin")
+    sources.add_argument("--file", type=Path, metavar="PATH", help="read message text from a file")
+    parser.add_argument(
+        "text",
+        nargs="?",
+        help="one quoted message argument; use -- before text that begins with a dash",
+    )
+    args = parser.parse_args(argv)
 
-    # Parse only the destination prefix. Everything after it is message data, not
-    # CLI syntax; an inner `-a` must survive when explaining office commands.
-    if len(argv) < 2 or argv[0] not in ("-a", "--agent"):
+    if not args.agent:
         raise OfficeError("office send requires -a <agent>")
-    destination = argv[1]
-    words = argv[2:]
-    if not words:
-        raise OfficeError("office send requires message text")
+    if (args.stdin or args.file is not None) and args.text is not None:
+        raise OfficeError("office send accepts exactly one of positional text, --stdin, or --file")
+    if args.stdin:
+        text = sys.stdin.read()
+        if text == "":
+            raise OfficeError("office send --stdin received no message text")
+    elif args.file is not None:
+        try:
+            text = args.file.read_text(encoding="utf-8")
+        except OSError as exc:
+            raise OfficeError(f"cannot read message file {str(args.file)!r}: {exc}") from exc
+    elif args.text is not None:
+        text = args.text
+    else:
+        raise OfficeError("office send requires message text, --stdin, or --file")
 
     r, pod, tenant, source = _context()
-    if not is_member(r, pod=pod, tenant=tenant, agent=destination):
-        raise OfficeError(f"unknown destination agent {destination!r}")
-    print(_message(r, pod=pod, tenant=tenant, source=source, destination=destination, text=" ".join(words)))
+    if not is_member(r, pod=pod, tenant=tenant, agent=args.agent):
+        raise OfficeError(f"unknown destination agent {args.agent!r}")
+    stream_id = _message(
+        r, pod=pod, tenant=tenant, source=source, destination=args.agent, text=text
+    )
+    print(f"sent to {args.agent}: {len(text.encode('utf-8'))} bytes ({stream_id})")
 
 
 def _broadcast_command(argv: list[str]) -> None:
@@ -761,8 +783,8 @@ def _run(args: list[str]) -> None:
             _peers_command(remainder)
         elif command == "status":
             _status_command(remainder)
-        elif command in ("hire", "letGo", "pause", "resume"):
-            _control_command(command, remainder)
+        elif command in ("hire", "letGo", "let-go", "pause", "resume"):
+            _control_command("letGo" if command == "let-go" else command, remainder)
         elif command == "list":
             _list_command(remainder)
         elif command == "take":
@@ -777,7 +799,7 @@ def _run(args: list[str]) -> None:
             _delete_command(remainder)
         elif command == "add":
             _add_command(remainder)
-        elif command == "cloneToAll":
+        elif command in ("cloneToAll", "clone-to-all"):
             _clone_to_all_command(remainder)
         elif command == "usage":
             _usage_command(remainder)
