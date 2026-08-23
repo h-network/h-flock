@@ -126,6 +126,22 @@ tenant and project; one per run, fresh each time.
   empty and exits 0 — silently, successfully, having done nothing. Also three
   occurrences
 - **one h-flock tenant at a time** on the lab
+- ⚠⚠ **TEAR DOWN WITH COMPOSE, NEVER `docker rm`.**
+  `docker compose -p h-flock-$TENANT down -v`. Removing containers by hand leaves
+  the network behind **holding its subnet forever**, and nothing ever reclaims
+  it. ⚠ **This is not hypothetical and it is not one host.** An audit on
+  2026-08-23 found **four stranded `h-flock-*_default` networks on the lab** —
+  `after`, `mainb`, `nemo`, `vabt`, each with zero containers — plus one on
+  another host that is the likely cause of a pool exhaustion reported there. Four
+  more stranded networks on the lab belong to other projects, so the habit is not
+  ours alone. **Check `docker network ls` after your run**; a network named for
+  your tenant that outlives it means you tore down the wrong way
+- ⚠ **The lab is SHARED and it is small.** 7.8 GB total, and it has been measured
+  at **39 running containers with 1 GB free and swap already in use** before any
+  h-flock tenant starts. An image build is the heaviest thing acceptance does.
+  **Check `free -h` before a run and say what it was in your results** — a build
+  that dies on this host is more likely to be memory than anything in the code,
+  and "one tenant at a time" describes h-flock's tenants, not the box's load
 - ⚠ **to attribute an INVISIBLE loss, bracket it by FIFO position.** A frame that
   vanished with no records cannot be attributed by its own timestamps — it has
   none. But a per-source queue is FIFO, so the frames **before and after it from
