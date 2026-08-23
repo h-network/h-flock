@@ -57,7 +57,7 @@
 ## TEST SIGN-OFF — full repository gate
 
     claim            ActivityTailer resolves codex model from turn_context, scopes model to session path with offset recovery, extracts last_token_usage per turn, captures rate limits, and office status/usage names agy agents as not measurable
-    source sha       7de0dd8
+    source sha       af3f8ef
     artefact         COMMIT
     host             local — hermetic in-memory Redis double, captured codex fixture, and unpiped test runner
     command          python3 -m pytest -q
@@ -75,7 +75,7 @@
 
 ## Citation gate
 
-    source sha       7de0dd8
+    source sha       af3f8ef
     command          python3 tools/check_citations.py
     exit status      0, read unpiped
     result           0 hard failures, 45 near misses
