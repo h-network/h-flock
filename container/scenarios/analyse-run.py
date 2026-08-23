@@ -29,6 +29,7 @@ import sys
 # the spawn, `kick_started -> received` is the process actually starting and
 # popping. Without it the two are one 669 ms number and indistinguishable.
 STAGES = ["sent", "popped", "forwarded", "kick_started", "received", "opened"]
+LEGACY_ATTEMPT_EVENTS = {"send_failed", "forward_failed", "kick_failed"}
 
 
 def ts(value: str) -> float:
@@ -55,6 +56,8 @@ def main() -> int:
     paths: dict[tuple, dict] = collections.defaultdict(dict)
     parse_failures = 0
     dead = 0
+    indeterminate_forwards = set()
+    legacy_attempts = 0
     writers = collections.Counter()
     selected_writers = set(args.writer)
     excluded_writers = set(args.exclude_writer)
@@ -84,8 +87,17 @@ def main() -> int:
             continue
         writers[writer] += 1
         event = rec.get("event")
+        if event in LEGACY_ATTEMPT_EVENTS:
+            legacy_attempts += 1
         if event == "dead_lettered":
             dead += 1
+        if event == "forward_unknown":
+            sid = rec.get("stream_id")
+            if sid and sid != "unknown" and (
+                not args.source_prefix
+                or str(rec.get("source", "")).startswith(args.source_prefix)
+            ):
+                indeterminate_forwards.add(sid)
         if event not in STAGES:
             continue
         sid = rec.get("stream_id")
@@ -100,10 +112,19 @@ def main() -> int:
     if parse_failures:
         print(f"REFUSED: {parse_failures} unparseable JSON lines — the log is not trustworthy")
         return 4
+    if legacy_attempts:
+        print(
+            f"REFUSED: {legacy_attempts} legacy *_failed attempt records — "
+            "use a version-specific analyser"
+        )
+        return 4
 
     n = len(paths)
     expect = args.expect or n
-    print(f"envelopes {n:,}   expected {expect:,}   dead-lettered {dead}   parse failures 0")
+    print(
+        f"envelopes {n:,}   expected {expect:,}   dead-lettered {dead}   "
+        f"indeterminate forwards {len(indeterminate_forwards)}   parse failures 0"
+    )
     census = "  ".join(f"{writer}={count}" for writer, count in sorted(writers.items())) or "none"
     bench_writers = sorted({"bench-send", "bench-port"}.intersection(writers))
     writer_errors = []
@@ -125,7 +146,12 @@ def main() -> int:
     print(f"writers: {census}{suffix}")
 
     print("\n== every step logged? ==")
-    incomplete = writer_refused
+    incomplete = writer_refused or bool(indeterminate_forwards)
+    if indeterminate_forwards:
+        print(
+            f"  forward_unknown {len(indeterminate_forwards):>7,}  ⚠ REFUSED — "
+            "write outcome is neither forwarded nor lost"
+        )
     for stage in STAGES:
         have = sum(1 for p in paths.values() if stage in p)
         frac = have / expect if expect else 0

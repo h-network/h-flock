@@ -1,0 +1,42 @@
+CONTROL 3: misclassify acknowledged invalid board depth as UNKNOWN
+F                                                                        [100%]
+=================================== FAILURES ===================================
+_______ test_add_ticket_opener_rejects_acknowledged_invalid_board_depth ________
+
+capsys = <_pytest.capture.CaptureFixture object at 0x70e911a4d1f0>
+
+    def test_add_ticket_opener_rejects_acknowledged_invalid_board_depth(capsys):
+        class InvalidDepthRedis(MockRedis):
+            def rpush(self, key, value):
+                return 0
+    
+        env = build_envelope(
+            kind="AddTicket",
+            source="architect",
+            destination="backend",
+            payload={"title": "invalid acknowledgement"},
+        )
+    
+        with pytest.raises(DeadLetter, match="board_write_failed"):
+            add_ticket_opener(
+                InvalidDepthRedis(),
+                pod="acme",
+                tenant="hq",
+                agent="backend",
+                envelope=env,
+                session_name="hq",
+            )
+    
+        record = json.loads(capsys.readouterr().out)
+>       assert record["event"] == "board_write_failed"
+E       AssertionError: assert 'board_write_unknown' == 'board_write_failed'
+E         
+E         - board_write_failed
+E         + board_write_unknown
+
+tests/test_port.py:247: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_port.py::test_add_ticket_opener_rejects_acknowledged_invalid_board_depth
+1 failed in 0.02s
+
+exit status: 1

@@ -1,0 +1,20 @@
+CONTROL 2: fold forward_unknown into loss
+F                                                                        [100%]
+=================================== FAILURES ===================================
+__________ test_forward_unknown_is_not_folded_into_forwarded_or_loss ___________
+
+    def test_forward_unknown_is_not_folded_into_forwarded_or_loss():
+        text = SCRIPT.read_text()
+    
+        classification = text.index('rec.get("event") == "forward_unknown"')
+        loss_attribution = text.index("cause = switch_kill_bracket")
+        assert classification < loss_attribution
+>       assert 'indeterminate.append((seq, sid))' in text
+E       assert 'indeterminate.append((seq, sid))' in '#!/usr/bin/env bash\n# Conservation under injected switch and port death.\n# Run on the Docker host and redirect stdo...econciliation =="\nreconcile "$WORK/ledger.tsv" clean\nif [ "${BROADCAST69:-0}" = "1" ]; then\n  run_broadcast69\nfi\n'
+
+tests/test_conservation_contract.py:13: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_conservation_contract.py::test_forward_unknown_is_not_folded_into_forwarded_or_loss
+1 failed in 0.01s
+
+exit status: 1

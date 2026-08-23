@@ -265,7 +265,8 @@ class DoorsAndRouterTest(unittest.TestCase):
                 payload={},
             )
         records = [json.loads(line) for line in output.getvalue().splitlines()]
-        self.assertEqual([record["event"] for record in records], ["send_failed"])
+        self.assertEqual([record["event"] for record in records], ["send_unknown"])
+        self.assertEqual(records[0]["reason"], "egress write outcome UNKNOWN after redis down")
         self.assertNotEqual(records[0]["stream_id"], "unknown")
 
     def test_ingress_write_failure_is_logged_without_forward_or_kick(self):
@@ -287,7 +288,10 @@ class DoorsAndRouterTest(unittest.TestCase):
         records = [json.loads(line) for line in output.getvalue().splitlines()]
         self.assertEqual(
             [record["event"] for record in records],
-            ["popped", "forward_failed"],
+            ["popped", "forward_unknown"],
+        )
+        self.assertEqual(
+            records[-1]["reason"], "ingress write outcome UNKNOWN after redis down"
         )
         self.popen.assert_not_called()
 
@@ -664,9 +668,12 @@ class DoorsAndRouterTest(unittest.TestCase):
         with redirect_stdout(output):
             self.assertTrue(Switch(self.r, pod="acme", tenant="hq").step())
         records = [json.loads(line) for line in output.getvalue().splitlines()]
-        error = next(record for record in records if record["event"] == "kick_failed")
+        error = next(record for record in records if record["event"] == "kick_unknown")
         self.assertEqual(error["destination"], "bob")
         self.assertNotEqual(error["stream_id"], "unknown")
+        self.assertEqual(
+            error["reason"], "port kick outcome UNKNOWN after flock.port not found"
+        )
         self.assertNotIn("kick_started", [record["event"] for record in records])
         self.assertEqual(len(self.r.lists[prefix("acme", "hq", "bob", "ingress")]), 1)
 
@@ -689,6 +696,38 @@ class DoorsAndRouterTest(unittest.TestCase):
             sorted(call.args[0][1] for call in self.popen.call_args_list),
             ["api", "bob", "carol"],
         )
+
+    def test_broadcast_ingress_write_exception_is_unknown(self):
+        class ReplyLostPipeline(FakePipeline):
+            def execute(self):
+                for key, value in self.commands:
+                    self.r.rpush(key, value)
+                raise ConnectionError("reply lost after broadcast writes")
+
+        send(
+            self.r,
+            pod="acme",
+            tenant="hq",
+            source="alice",
+            destination="all",
+            payload={"text": "ambiguous fanout"},
+        )
+        self.r.pipeline = lambda: ReplyLostPipeline(self.r)
+
+        output = io.StringIO()
+        with redirect_stdout(output), self.assertRaisesRegex(
+            ConnectionError, "reply lost after broadcast writes"
+        ):
+            Switch(self.r, pod="acme", tenant="hq").step()
+
+        records = [json.loads(line) for line in output.getvalue().splitlines()]
+        self.assertEqual([record["event"] for record in records], ["popped", "forward_unknown"])
+        self.assertEqual(
+            records[-1]["reason"],
+            "broadcast ingress write outcome UNKNOWN after reply lost after broadcast writes",
+        )
+        self.assertNotIn("forwarded", [record["event"] for record in records])
+        self.popen.assert_not_called()
 
     def test_broadcast_dead_letters_only_full_recipient_and_does_not_kick_it(self):
         bob_ingress = prefix("acme", "hq", "bob", "ingress")

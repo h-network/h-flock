@@ -299,9 +299,9 @@ though the unchanged frame still carries L2 `destination: all`;
 `stream_id` are correct for a broadcast. More than one record for the same
 `(stream_id, event, recipient)` is a duplicate; the recipient dimension is
 unnecessary for unicast. `stream_id`
-is required on the seven envelope events above and absent on the rest. A parsed frame can
-carry its `stream_id` on all seven possible events above, but a successful
-unicast has six:
+is required on the seven custody events above and the joinable attempt records
+below, and absent on lifecycle records. A parsed frame carries its `stream_id`
+on each of those records, but a successful unicast has six custody records:
 `dead_lettered` replaces a later success path rather than joining it.
 
 ⚠ A malformed frame may have no trustworthy identifier. Its `popped` and
@@ -316,13 +316,31 @@ enqueued envelope whose custody could be joined to the six-record set. It
 carries `source`, `destination` and `reason`, but no `stream_id`.
 
 Four joinable **attempt records** describe work around custody without claiming
-a handover: `send_failed` means an assembled frame was not written to egress;
-`forward_failed` means a popped frame was not written to ingress;
-`kick_started` means the switch successfully spawned a port process; and
-`kick_failed` means it could not. The kick records name the actual destination
-port, including one record per recipient of a broadcast. They do not prove that
-the port ran, popped, or delivered anything; only `received` and `opened` make
-those later claims.
+a handover. `send_unknown` means the egress write was attempted but raised, so
+its outcome is unknown; `forward_unknown` says the same for an ingress write;
+`kick_started` means `Popen` returned and acknowledged the spawn attempt; and
+`kick_unknown` means `Popen` raised, so whether the process started is unknown.
+The reason names the attempted operation and says `outcome UNKNOWN after`, never
+that it failed. The kick records name the actual destination port, including one
+record per recipient of a broadcast. They do not prove that the port ran,
+popped, or delivered anything; only `received` and `opened` make those later
+claims.
+
+⚠ **Conservation carries an unresolved `forward_unknown` in its own
+`indeterminate` bucket.** It is neither counted as forwarded (which could create
+a phantom handover) nor as lost (which could invite a duplicate retry). Later
+evidence can settle it: an `opened` record proves delivery, and a retained
+ingress frame proves the write committed but stranded. With no such evidence,
+the conservation gate refuses rather than choosing a side. There is no retry.
+For broadcast, the one frame-level `forward_unknown` makes every recipient with
+no later `opened` record indeterminate; a recipient that did open is settled as
+delivered. It is never reported as a known broadcast loss.
+
+⚠ **Attempt-record names are a version boundary.** The current analysers refuse
+a log containing legacy `send_failed`, `forward_failed`, or `kick_failed`
+instead of interpreting the same observation differently on either side of the
+rename. Use a version-specific analyser for a historical custody file; do not
+mix old and current attempt semantics in one conservation result.
 
 An `event: usage` record is an observation, not another custody handover. It
 uses `writer: usage` and carries `agent`, `cli`, `model`, `input`, `cache_read`,
@@ -351,7 +369,7 @@ flock.port <agent>          # e.g.  flock.port frontend
 
 Fire and forget — the switch does not wait, does not read a return code, and
 does not retry (`LLD-bus-and-switch` §3.3, rail 3). It emits `kick_started` when
-`Popen` returns or `kick_failed` when spawning raises, then throws the process
+`Popen` returns or `kick_unknown` when spawning raises, then throws the process
 handle away. Those attempt records do not claim that the port ran or delivered.
 
 ⚠ **The switch must set `signal.signal(signal.SIGCHLD, signal.SIG_IGN)` at
@@ -511,8 +529,10 @@ while its window is crashed or not yet reconciled. A name absent from the roster
 never reaches this opener because the switch dead-letters it first.
 
 The opener confirms the synchronous `RPUSH` from its returned list length and
-logs `board_write_confirmed`. A failed or unconfirmed write logs
-`board_write_failed` and raises `DeadLetter`; it never creates a
+logs `board_write_confirmed`. An exception logs `board_write_unknown` because
+the write may have committed before its reply was lost; a returned non-positive
+length is provably invalid and logs `board_write_failed`. Both raise `DeadLetter`;
+neither creates a
 `pending.verify` marker or a `blocked` state because no CLI consumption is
 expected for a board write.
 
@@ -605,6 +625,22 @@ HSET pod:$POD:tenant:$TENANT:roster backend tmux frontend tmux systems tmux api 
 
 `HSET` is idempotent, so bringing the container up twice converges
 (`LLD-container` §5).
+
+The tenant-level `accounts` SET is the canonical list of configured CLI
+accounts:
+
+```text
+SMEMBERS pod:$POD:tenant:$TENANT:accounts
+```
+
+`setup.sh` writes the complete list as `FLOCK_ACCOUNTS`; entrypoint replaces
+and seeds this SET before removing the startup variable. Both `office hire` and
+the `StartAgent` fabric opener read this one resource. Config directories are
+derivative state and never establish that an account exists. An absent key is
+deliberately permissive for tenants created before the resource shipped; a
+present key makes an unknown profile a visible refusal naming the canonical
+accounts. Hand-seeding a directory does not add an account — setup must run
+again.
 
 ⚠ **Corrected in build 03 — this used to say "nothing else writes the roster".**
 `StartAgent` and `StopAgent` `HSET` and `HDEL` it; this runtime write path is how

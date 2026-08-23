@@ -81,12 +81,12 @@ class Switch:
         except OSError as exc:
             log_record(
                 "switch",
-                "kick_failed",
+                "kick_unknown",
                 stream_id=envelope.get("stream_id"),
                 correlation_id=envelope.get("correlation_id"),
                 source=envelope.get("l2", {}).get("source"),
                 destination=agent,
-                reason=f"port kick failed: {exc}",
+                reason=f"port kick outcome UNKNOWN after {exc}",
             )
             return
         # Popen success proves only that the switch started a delivery attempt;
@@ -161,7 +161,10 @@ class Switch:
             try:
                 depths = pipe.execute()
             except Exception as exc:
-                emit("switch", "forward_failed", envelope, f"broadcast ingress write failed: {exc}")
+                emit(
+                    "switch", "forward_unknown", envelope,
+                    f"broadcast ingress write outcome UNKNOWN after {exc}",
+                )
                 raise
             accepted = []
             for agent, depth in zip(recipients, depths):
@@ -180,7 +183,10 @@ class Switch:
         try:
             depth = self.r.rpush(prefix(self.pod, self.tenant, destination, "ingress"), raw)
         except Exception as exc:
-            emit("switch", "forward_failed", envelope, f"ingress write failed: {exc}")
+            emit(
+                "switch", "forward_unknown", envelope,
+                f"ingress write outcome UNKNOWN after {exc}",
+            )
             raise
         if depth > self.ingress_max:
             self._dead_letter_full(sender, destination, raw, envelope, depth)
