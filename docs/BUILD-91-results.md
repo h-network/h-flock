@@ -98,7 +98,7 @@ immutable controls snapshot named in the sign-off.
                      docs/evidence/build-91-bd706a6-pytest.log sha256 a01e89b065a53e56a8429bd0a0e0172ba4b72b92c670cb723015b8c3638e31e9
 
     verdict          PASS
-    VERIFIED BY      PENDING — assigned verifier bus; author of the change? NO
+    VERIFIED BY      bus — author of the change? NO
 
 ## Citation gate
 
