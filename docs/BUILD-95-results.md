@@ -61,8 +61,8 @@ original defect, not a nearby failure.
 
 ## Citation gate
 
-    source sha       338edd35ba2df6f4d29d1478724f6f23add61b75
+    source sha       9519b30c22095d13220383b48e26cc4a82844d03
     command          python3 tools/check_citations.py
     exit status      0, read unpiped
     result           0 hard failures, 76 near misses
-    evidence         docs/evidence/build-95-338edd3-citations.log sha256 ee8f53ae33b77d366e7661bcdc9674dafe24c09bb69939caa3690e96c8206dee
+    evidence         docs/evidence/build-95-338edd3-citations.log sha256 c57fe19c25f0e38ff36942da88eb0773f1322c72e7dce4956f4c7404b581fd37
