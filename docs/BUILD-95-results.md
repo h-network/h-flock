@@ -57,7 +57,7 @@ original defect, not a nearby failure.
                      docs/evidence/build-95-9865604-pytest.log sha256 fd39180f0f051fe2f87cc079f84533862b7c63a746da2d7f70bfd8b98b8c86e8
 
     verdict          PASS
-    VERIFIED BY      PENDING — assigned by architect; author of the change? NO
+    VERIFIED BY      bus — author of the change? NO
 
 ## Citation gate
 
