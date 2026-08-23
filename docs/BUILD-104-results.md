@@ -60,7 +60,7 @@ All mutations were restored before generating final gate logs.
                      docs/evidence/build-104-pytest.log sha256 f149380882e5a676f7a4ca3144523b73dae3eb31a2665115ace6c159d4c5712d
 
     verdict          PASS (structural claim verified with negative mutation controls)
-    VERIFIED BY      PENDING — assigned by architect
+    VERIFIED BY      tmux — author of the change? NO
 
 ## Citation gate
 
