@@ -124,7 +124,36 @@ Confirm live afterwards.
 
 ---
 
-## Sprint 9 — finish what today half-finished — PLANNED 2026-08-24
+## ~~Sprint 9 — finish what today half-finished~~ — SHIPPED 2026-08-24
+
+⚠ **Both merged: build 102 (`bus`, verified by `api`) and build 103 (`tmux`,
+verified by `bus`). 513 tests.**
+
+⚠⚠ **The two builds interlocked, and that is the result worth keeping.** `bus`
+spent 102 proving desired-state writes are non-atomic and leave residue. `tmux`
+added a new piece of state to that exact sequence in 103. Then `bus`, as
+verifier, **reproduced** the consequence rather than arguing it: an incomplete
+`StartAgent` stranded `window.cause`, and a later window would `GETDEL` it and
+attribute itself to a hire that never completed. **Neither lane failed. The
+sprint caught it because the two halves were scheduled together.**
+
+⚠ **And the fix generalised backwards.** `tmux` solved it with neither of the two
+options the architect offered — not cleanup, not a flipped order — but by making
+the dangerous state **unobservable**: roster `HSET` before cause `SET` inside one
+Lua call, because **Redis Lua cannot roll back, so the ORDER decides which
+partial can exist.** That reading then produced a third, cheaper answer to 102's
+own atomicity question, now on `TODO.md`: `stop_agent` removes the roster first
+and purges after, so **reversing it turns an invisible corruption into a visible
+one, for free.**
+
+⚠ **What 102 established, which nobody knew:** a half-removed agent does not look
+broken — it **vanishes**, because the roster row is the part that got removed.
+Re-hiring the same name **succeeds**, inheriting a `paused` or `blocked` marker
+and a held `delivering` lock, so its mail cannot be delivered. It also produced
+**the first live `_incomplete` in this repository's history** — the shape five
+refusals designed, outside a unit test for the first time.
+
+### The original plan
 
 ⚠ **Two builds, because with four lanes at most two may author if the other two
 are to verify.** That, not merge contention, is the constraint.
