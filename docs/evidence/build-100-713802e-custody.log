@@ -1,0 +1,42 @@
+{"module":"container","writer":"container","event":"started","reason":"redis pid=13"}
+/usr/local/bin/entrypoint.sh: line 23: /home/ubuntu/.flock/custody/custody.jsonl: Permission denied
+13:C 24 Aug 2026 00:44:30.857 # oO0OoO0OoO0Oo Redis is starting oO0OoO0OoO0Oo
+13:C 24 Aug 2026 00:44:30.857 # Redis version=7.0.15, bits=64, commit=00000000, modified=0, pid=13, just started
+13:C 24 Aug 2026 00:44:30.857 # Configuration loaded
+13:M 24 Aug 2026 00:44:30.862 * Increased maximum number of open files to 10032 (it was originally set to 1024).
+13:M 24 Aug 2026 00:44:30.862 * monotonic clock: POSIX clock_gettime
+13:M 24 Aug 2026 00:44:30.878 * Running mode=standalone, port=6379.
+13:M 24 Aug 2026 00:44:30.878 # Server initialized
+13:M 24 Aug 2026 00:44:30.878 # WARNING Memory overcommit must be enabled! Without it, a background save or replication may fail under low memory condition. Being disabled, it can can also cause failures without low memory condition, see https://github.com/jemalloc/jemalloc/issues/1328. To fix this issue add 'vm.overcommit_memory = 1' to /etc/sysctl.conf and then reboot or run the command 'sysctl vm.overcommit_memory=1' for this to take effect.
+13:M 24 Aug 2026 00:44:30.909 * Creating AOF base file appendonly.aof.1.base.rdb on server start
+13:M 24 Aug 2026 00:44:30.929 * Creating AOF incr file appendonly.aof.1.incr.aof on server start
+13:M 24 Aug 2026 00:44:30.929 * Ready to accept connections
+/usr/local/bin/entrypoint.sh: line 23: /home/ubuntu/.flock/custody/custody.jsonl: Permission denied
+{"module":"container","writer":"container","event":"transport_purged","count":0}
+{"module":"container","writer":"container","event":"roster_seeded","count":4}
+/usr/local/bin/entrypoint.sh: line 23: /home/ubuntu/.flock/custody/custody.jsonl: Permission denied
+{"module":"container","writer":"container","event":"started","reason":"tmuxhost pid=28"}
+/usr/local/bin/entrypoint.sh: line 23: /home/ubuntu/.flock/custody/custody.jsonl: Permission denied
+{"ts":"2026-08-23T22:44:32.313Z","module":"tmuxhost","event":"started","writer":"tmuxhost","reason":"session=bus100-1787525055-2919997"}
+{"ts":"2026-08-23T22:44:32.453Z","module":"tmuxhost","event":"window_created","writer":"tmuxhost","destination":"architect"}
+{"ts":"2026-08-23T22:44:32.645Z","module":"tmuxhost","event":"window_created","writer":"tmuxhost","destination":"sme-2"}
+/usr/local/bin/entrypoint.sh: line 23: /home/ubuntu/.flock/custody/custody.jsonl: Permission denied
+{"module":"container","writer":"container","event":"windows_ready","count":2}
+{"module":"container","writer":"container","event":"started","reason":"switch pid=60"}
+{"module":"container","writer":"container","event":"started","reason":"watchdog pid=61"}
+{"module":"container","writer":"container","event":"api_disabled","reason":"API_ENABLED is not 1"}
+{"module":"container","writer":"container","event":"started","reason":"session pid=62"}
+/usr/local/bin/entrypoint.sh: line 23: /home/ubuntu/.flock/custody/custody.jsonl: Permission denied
+/usr/local/bin/entrypoint.sh: line 23: /home/ubuntu/.flock/custody/custody.jsonl: Permission denied
+/usr/local/bin/entrypoint.sh: line 23: /home/ubuntu/.flock/custody/custody.jsonl: Permission denied
+/usr/local/bin/entrypoint.sh: line 23: /home/ubuntu/.flock/custody/custody.jsonl: Permission denied
+{"v":1,"ts":"2026-08-23T22:44:34.032Z","kind":"credential","account":"default","cli":"claude","status":"absent","expires_ts":null,"writer":"watchdog"}
+INFO:     Started server process [62]
+INFO:     Waiting for application startup.
+INFO:     Application startup complete.
+INFO:     Uvicorn running on http://0.0.0.0:8081 (Press CTRL+C to quit)
+{"ts":"2026-08-23T22:44:41.506Z","module":"fault_injection","event":"active","writer":"fault-injection","source":"fault-src","destination":"fault-dst","reason":"BUILD100 deliberate one-shot ingress reply loss"}
+{"ts":"2026-08-23T22:44:41.511Z","module":"fault_injection","event":"sent","writer":"fault-injection","stream_id":"bce0f7dfe50341e89dccbd2a549c1443","correlation_id":"86bf15553cab40b08a476a8e64c1c753","source":"fault-src","destination":"fault-dst"}
+{"ts":"2026-08-23T22:44:41.512Z","module":"switch","event":"popped","writer":"fault-injection","stream_id":"bce0f7dfe50341e89dccbd2a549c1443","correlation_id":"86bf15553cab40b08a476a8e64c1c753","source":"fault-src","destination":"fault-dst"}
+{"ts":"2026-08-23T22:44:41.512Z","module":"switch","event":"forward_unknown","writer":"fault-injection","stream_id":"bce0f7dfe50341e89dccbd2a549c1443","correlation_id":"86bf15553cab40b08a476a8e64c1c753","source":"fault-src","destination":"fault-dst","reason":"ingress write outcome UNKNOWN after BUILD100 deliberate missing ingress reply"}
+{"ts":"2026-08-23T22:44:41.512Z","module":"fault_injection","event":"observed","writer":"fault-injection","source":"fault-src","destination":"fault-dst","reason":"BUILD100 deliberate missing ingress reply"}

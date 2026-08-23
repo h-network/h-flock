@@ -1,0 +1,94 @@
+ Image h-flock:latest Building 
+#1 [internal] load local bake definitions
+#1 reading from stdin 552B done
+#1 DONE 0.0s
+
+#2 [internal] load build definition from Dockerfile
+#2 transferring dockerfile: 6.99kB 0.0s done
+#2 DONE 0.1s
+
+#3 [internal] load metadata for ghcr.io/h-network/base@sha256:10406097c8954af16c62cf0088dea147065146bf4f667c361da96384ed02cbdc
+#3 DONE 0.9s
+
+#4 [internal] load .dockerignore
+#4 transferring context: 2B done
+#4 DONE 0.1s
+
+#5 [internal] load build context
+#5 DONE 0.0s
+
+#6 [ 1/13] FROM ghcr.io/h-network/base@sha256:10406097c8954af16c62cf0088dea147065146bf4f667c361da96384ed02cbdc
+#6 resolve ghcr.io/h-network/base@sha256:10406097c8954af16c62cf0088dea147065146bf4f667c361da96384ed02cbdc 0.1s done
+#6 DONE 0.2s
+
+#5 [internal] load build context
+#5 transferring context: 2.77kB 0.0s done
+#5 DONE 0.0s
+
+#7 [ 2/13] RUN apt-get update  && apt-get install -y --no-install-recommends redis-server tini procps  && rm -rf /var/lib/apt/lists/*
+#7 CACHED
+
+#8 [ 6/13] COPY src/ ./src/
+#8 CACHED
+
+#9 [ 9/13] RUN mkdir -p /etc/flock  && cp /app/container/config/pricing.json /etc/flock/pricing.json  && chown -R ubuntu:ubuntu /home/ubuntu/.claude /home/ubuntu/.codex /app/container /etc/flock
+#9 CACHED
+
+#10 [10/13] COPY container/entrypoint.sh /usr/local/bin/entrypoint.sh
+#10 CACHED
+
+#11 [ 5/13] COPY pyproject.toml ./
+#11 CACHED
+
+#12 [ 8/13] COPY container/config/pricing.json         /app/container/config/pricing.json
+#12 CACHED
+
+#13 [11/13] RUN chmod +x /usr/local/bin/entrypoint.sh
+#13 CACHED
+
+#14 [12/13] RUN mkdir -p /home/ubuntu/.gemini/antigravity-cli/cache  && python3 -c "import json, os; p='/home/ubuntu/.gemini/antigravity-cli/cache/onboarding.json'; d=json.load(open(p)) if os.path.exists(p) else {}; d.update({'consumerOnboardingComplete': True, 'enterpriseOnboardingComplete': False, 'onboardingComplete': True}); json.dump(d, open(p,'w'), indent=2)"  && chown -R ubuntu:ubuntu /home/ubuntu/.gemini
+#14 CACHED
+
+#15 [ 3/13] RUN python3 -m venv "/opt/flock"
+#15 CACHED
+
+#16 [ 4/13] WORKDIR /app
+#16 CACHED
+
+#17 [ 7/13] RUN pip install --no-cache-dir .
+#17 CACHED
+
+#18 [13/13] RUN mkdir -p /home/ubuntu/.flock/tmux /workdir  && chown -R ubuntu:ubuntu /home/ubuntu/.flock /opt/flock /workdir
+#18 CACHED
+
+#19 exporting to image
+#19 exporting layers
+#19 exporting layers 0.3s done
+#19 exporting manifest sha256:7b51bd8482b7867397aabc58591a9184f6145a40b2a0538d2d2901fc191e3743
+#19 exporting manifest sha256:7b51bd8482b7867397aabc58591a9184f6145a40b2a0538d2d2901fc191e3743 0.1s done
+#19 exporting config sha256:8de84add2d5c48f65c4363e874e8d4cee71d6e2a02f1a6cc0f84f5daf8fe99dd
+#19 exporting config sha256:8de84add2d5c48f65c4363e874e8d4cee71d6e2a02f1a6cc0f84f5daf8fe99dd 0.1s done
+#19 exporting attestation manifest sha256:26fc8cf8682562f75bd9d4b393b6c4ef39251bdbe1eb5e5008df89f78ce9f197 0.1s done
+#19 exporting manifest list sha256:963e99401211c8dc68112193ed227bddf93243ccb58e9e5b89957056235c106c
+#19 exporting manifest list sha256:963e99401211c8dc68112193ed227bddf93243ccb58e9e5b89957056235c106c 0.1s done
+#19 naming to docker.io/library/h-flock:latest
+#19 naming to docker.io/library/h-flock:latest 0.0s done
+#19 unpacking to docker.io/library/h-flock:latest
+#19 unpacking to docker.io/library/h-flock:latest 0.4s done
+#19 DONE 2.1s
+
+#20 resolving provenance for metadata file
+#20 DONE 0.1s
+ Image h-flock:latest Built 
+ Network h-flock-bus100-1787525055-2919997_default Creating 
+ Network h-flock-bus100-1787525055-2919997_default Creating 
+ Volume h-flock-bus100-1787525055-2919997-custody Creating 
+ Volume h-flock-bus100-1787525055-2919997-custody Creating 
+ Volume h-flock-bus100-1787525055-2919997-custody Created 
+ Volume h-flock-bus100-1787525055-2919997-custody Created 
+ Network h-flock-bus100-1787525055-2919997_default Created 
+ Network h-flock-bus100-1787525055-2919997_default Created 
+ Container h-flock-bus100-1787525055-2919997-tenant-1 Creating 
+ Container h-flock-bus100-1787525055-2919997-tenant-1 Created 
+ Container h-flock-bus100-1787525055-2919997-tenant-1 Starting 
+ Container h-flock-bus100-1787525055-2919997-tenant-1 Started 
