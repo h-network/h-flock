@@ -107,8 +107,9 @@ def test_tmuxhost_initial_session_resolves_agent_provider(mock_run_tmux, monkeyp
 
     new_session = next(call.args for call in mock_run_tmux.call_args_list if "new-session" in call.args)
     command = " ".join(new_session)
-    assert "ANTHROPIC_BASE_URL=http://model.test:8000" in command
-    assert "ANTHROPIC_DEFAULT_OPUS_MODEL=served-model" in command
+    # ⚠ The provider intent, not the CLI variables — `startAgent` translates.
+    assert "AGENT_PROVIDER_URL=http://model.test:8000" in command
+    assert "AGENT_PROVIDER_MODEL=served-model" in command
 
 
 @patch("flock.tmux.ops.run_tmux")

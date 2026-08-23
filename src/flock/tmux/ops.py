@@ -256,40 +256,29 @@ def window_env(
     # apply to it, and a missing login is not a fault for this agent
     # (LLD-watchdog). Do not seed it a profile expecting one.
     if provider:
-        # ⚠ A previous subscription's ANTHROPIC_* wins over what we set here, so
-        # strip the inherited ones first. Stale vars in the environment are the
-        # quietest way for this to appear misconfigured.
-        env_vars[1:1] = [
-            "-u", "ANTHROPIC_API_KEY",
-            "-u", "ANTHROPIC_MODEL",
-            "-u", "ANTHROPIC_SMALL_FAST_MODEL",
-            "-u", "ANTHROPIC_BASE_URL",
-            "-u", "ANTHROPIC_AUTH_TOKEN",
-        ]
+        # ⚠ STATE THE INTENT; THE BASE IMAGE TRANSLATES IT. `startAgent` turns
+        # these into the CLI's own variables, and it knows things h-flock should
+        # not have to: that claude wants the URL WITHOUT `/v1` because it appends
+        # `/v1/messages` itself, that all three model tiers must carry the same
+        # id or the others fall back to vendor names the local server does not
+        # serve, and that inherited `ANTHROPIC_*` must be stripped first.
+        #
+        # ⚠ **AND IT REFUSES WHAT IT CANNOT DO.** `startAgent codex` and
+        # `startAgent agy` with these set exit 3 instead of starting. h-flock
+        # built `ANTHROPIC_*` by hand until 2026-08-23, which meant a codex agent
+        # carrying a provider ran against the VENDOR while `setup.sh` printed
+        # `(local)` beside its name — cost and privacy both differing from what
+        # the operator was told, silently. Delegating buys that refusal.
         url = (provider.get("url") or "").rstrip("/")
-        # ⚠ NO /v1. claude appends /v1/messages itself; a base url carrying /v1
-        # yields /v1/v1/messages, a 404, and empty output. codex is the opposite
-        # and wants /v1, which is exactly how this gets copied in wrong.
-        if url.endswith("/v1"):
-            url = url[: -len("/v1")]
         if url:
-            env_vars.append(f"ANTHROPIC_BASE_URL={url}")
-        # A local server usually ignores the token, but claude refuses to start
-        # without one — send a placeholder rather than nothing.
-        env_vars.append(f"ANTHROPIC_AUTH_TOKEN={provider.get('token') or 'local'}")
+            env_vars.append(f"AGENT_PROVIDER_URL={url}")
+        if provider.get("token"):
+            env_vars.append(f"AGENT_PROVIDER_TOKEN={provider['token']}")
         model = provider.get("model")
         if model:
-            # ⚠ All three tiers, same id. claude picks a tier internally, so
-            # setting one leaves the others falling back to real Anthropic names
-            # the server does not serve — and the failure is reported as
-            # "issue with the selected model claude-sonnet-…", a model error for
-            # what is a configuration problem. The id must match GET /v1/models
-            # byte for byte.
-            env_vars.extend([
-                f"ANTHROPIC_DEFAULT_OPUS_MODEL={model}",
-                f"ANTHROPIC_DEFAULT_SONNET_MODEL={model}",
-                f"ANTHROPIC_DEFAULT_HAIKU_MODEL={provider.get('small_model') or model}",
-            ])
+            env_vars.append(f"AGENT_PROVIDER_MODEL={model}")
+            if provider.get("small_model"):
+                env_vars.append(f"AGENT_PROVIDER_SMALL_MODEL={provider['small_model']}")
     return env_vars
 
 
