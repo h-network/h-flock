@@ -107,6 +107,28 @@ def test_fault_harness_refuses_without_exact_destructive_phrase(arguments):
     )
 
 
+def _is_allowed_logging_read(node: "ast.AST") -> bool:
+    import ast
+    if not isinstance(node, ast.Assign):
+        return False
+    if len(node.targets) != 1 or not isinstance(node.targets[0], ast.Name) or node.targets[0].id != "_WRITER":
+        return False
+    val = node.value
+    if not isinstance(val, ast.Call):
+        return False
+    if not (isinstance(val.func, ast.Attribute) and val.func.attr == "get"):
+        return False
+    if not (isinstance(val.func.value, ast.Attribute) and val.func.value.attr == "environ"):
+        return False
+    if not (isinstance(val.func.value.value, ast.Name) and val.func.value.value.id == "os"):
+        return False
+    if len(val.args) != 1 or not isinstance(val.args[0], ast.Constant) or val.args[0].value != "FLOCK_WRITER":
+        return False
+    if val.keywords:
+        return False
+    return True
+
+
 def test_shipping_source_has_no_writer_assignments():
     """Structural invariant: shipping source never assigns FLOCK_WRITER or sets writer: fault-injection."""
     import ast
@@ -127,15 +149,19 @@ def test_shipping_source_has_no_writer_assignments():
             violations.append(f"{rel_path}:{e.lineno}: SyntaxError: {e}")
             continue
 
+        allowed_nodes = set()
+        if rel_path == logging_rel_path:
+            for node in ast.walk(tree):
+                if _is_allowed_logging_read(node):
+                    known_read_found += 1
+                    allowed_nodes.add(id(node.value.args[0]))
+
         for node in ast.walk(tree):
             if isinstance(node, ast.Constant):
-                val = node.value
-                if val == "fault-injection":
+                if node.value == "fault-injection":
                     violations.append(f"{rel_path}:{node.lineno}: literal 'fault-injection'")
-                elif val == "FLOCK_WRITER":
-                    if rel_path == logging_rel_path:
-                        known_read_found += 1
-                    else:
+                elif node.value == "FLOCK_WRITER":
+                    if id(node) not in allowed_nodes:
                         violations.append(f"{rel_path}:{node.lineno}: occurrence of 'FLOCK_WRITER'")
             elif isinstance(node, ast.Name) and node.id == "FLOCK_WRITER":
                 violations.append(f"{rel_path}:{node.lineno}: identifier FLOCK_WRITER")
@@ -144,6 +170,7 @@ def test_shipping_source_has_no_writer_assignments():
         violations.append(f"Expected exactly 1 known read of FLOCK_WRITER in {logging_rel_path}, found {known_read_found}")
 
     assert not violations, "Illegal FLOCK_WRITER or fault-injection in shipping source:\n" + "\n".join(violations)
+
 
 
 
