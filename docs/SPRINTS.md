@@ -229,6 +229,29 @@ and a seeded credential file, which wins? It decides whether the help text says
 
 ---
 
+## The doc round — builds 92, 93, 94 — SHIPPED 2026-08-23
+
+Cut from a documentation audit, then re-scoped when the audit showed the work
+was not documentation.
+
+| build | lane | verified by | outcome |
+|---|---|---|---|
+| 92 | `bus` | `tmux` | **merged** — one refusal: the broadcast reconciliation still folded an ambiguous forward into known loss |
+| 93 | `api` | `tmux` | **merged** — two refusals, both a doc asserting what the code does not do |
+| 94 | `acceptance` | — | `EXIT:0` plus a coverage map showing pause, resume and every failure shape have never run live |
+
+⚠ **The audit's most useful output was that one item was not a doc task at all.**
+`CONTRACTS.md` defined `send_failed` as *"was not written to egress"* — the
+inference build 91 withdrew — while the **code** overclaimed identically. Fixing
+the prose alone would have left a doc saying UNKNOWN over code emitting `failed`,
+with the doc looking authoritative. It went into build 92 with the code.
+
+⚠ **And the README carried a `README.md` example the merge had just broken.**
+`office send -a frontend can you take a look at this?` — seven unquoted words,
+rejected since build 87. Nobody opened the README before merging, including me.
+
+---
+
 ## ⚠ Rows added after this plan was written
 
 Today's builds and acceptance runs opened six rows that no sprint above covers.
