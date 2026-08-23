@@ -1,0 +1,586 @@
+CONTROL 1
+FFFF                                                                     [100%]
+=================================== FAILURES ===================================
+____ test_control_openers_record_confirmed_outcome[start_agent-callbacks0] _____
+
+opener = <function start_agent at 0x7efc7a6d9bc0>
+callbacks = {'replace_window': <function <lambda> at 0x7efc7a6db100>}
+capsys = <_pytest.capture.CaptureFixture object at 0x7efc7a6e5d90>
+
+    @pytest.mark.parametrize(
+        ("opener", "callbacks"),
+        [
+            (start_agent, {"replace_window": lambda agent: None}),
+            (stop_agent, {"kill_window": lambda agent: None}),
+            (pause_agent, {"interrupt_window": lambda agent: None}),
+            (resume_agent, {"resume_window": lambda agent: None, "kick_agent": lambda agent: None}),
+        ],
+    )
+    def test_control_openers_record_confirmed_outcome(opener, callbacks, capsys):
+        opener(
+            RecordingRedis([], roster_port_type="api"), pod="acme", tenant="hq",
+            envelope={"correlation_id": "corr-1", "payload": {"agent": "dave"}}, **callbacks,
+        )
+        record = json.loads(capsys.readouterr().out.splitlines()[-1])
+>       assert record["event"] == f"{opener.__name__}_confirmed"
+E       AssertionError: assert 'start_agent_completed' == 'start_agent_confirmed'
+E         
+E         - start_agent_confirmed
+E         ?               ----
+E         + start_agent_completed
+E         ?                ++++
+
+tests/test_control.py:459: AssertionError
+_____ test_control_openers_record_confirmed_outcome[stop_agent-callbacks1] _____
+
+opener = <function stop_agent at 0x7efc7a6d9d00>
+callbacks = {'kill_window': <function <lambda> at 0x7efc7a6db1a0>}
+capsys = <_pytest.capture.CaptureFixture object at 0x7efc7a6ca780>
+
+    @pytest.mark.parametrize(
+        ("opener", "callbacks"),
+        [
+            (start_agent, {"replace_window": lambda agent: None}),
+            (stop_agent, {"kill_window": lambda agent: None}),
+            (pause_agent, {"interrupt_window": lambda agent: None}),
+            (resume_agent, {"resume_window": lambda agent: None, "kick_agent": lambda agent: None}),
+        ],
+    )
+    def test_control_openers_record_confirmed_outcome(opener, callbacks, capsys):
+        opener(
+            RecordingRedis([], roster_port_type="api"), pod="acme", tenant="hq",
+            envelope={"correlation_id": "corr-1", "payload": {"agent": "dave"}}, **callbacks,
+        )
+        record = json.loads(capsys.readouterr().out.splitlines()[-1])
+>       assert record["event"] == f"{opener.__name__}_confirmed"
+E       AssertionError: assert 'stop_agent_completed' == 'stop_agent_confirmed'
+E         
+E         - stop_agent_confirmed
+E         ?              ----
+E         + stop_agent_completed
+E         ?               ++++
+
+tests/test_control.py:459: AssertionError
+____ test_control_openers_record_confirmed_outcome[pause_agent-callbacks2] _____
+
+opener = <function pause_agent at 0x7efc7a6d9e40>
+callbacks = {'interrupt_window': <function <lambda> at 0x7efc7a6db240>}
+capsys = <_pytest.capture.CaptureFixture object at 0x7efc7a6e6c00>
+
+    @pytest.mark.parametrize(
+        ("opener", "callbacks"),
+        [
+            (start_agent, {"replace_window": lambda agent: None}),
+            (stop_agent, {"kill_window": lambda agent: None}),
+            (pause_agent, {"interrupt_window": lambda agent: None}),
+            (resume_agent, {"resume_window": lambda agent: None, "kick_agent": lambda agent: None}),
+        ],
+    )
+    def test_control_openers_record_confirmed_outcome(opener, callbacks, capsys):
+        opener(
+            RecordingRedis([], roster_port_type="api"), pod="acme", tenant="hq",
+            envelope={"correlation_id": "corr-1", "payload": {"agent": "dave"}}, **callbacks,
+        )
+        record = json.loads(capsys.readouterr().out.splitlines()[-1])
+>       assert record["event"] == f"{opener.__name__}_confirmed"
+E       AssertionError: assert 'pause_agent_completed' == 'pause_agent_confirmed'
+E         
+E         - pause_agent_confirmed
+E         ?               ----
+E         + pause_agent_completed
+E         ?                ++++
+
+tests/test_control.py:459: AssertionError
+____ test_control_openers_record_confirmed_outcome[resume_agent-callbacks3] ____
+
+opener = <function resume_agent at 0x7efc7a6d9f80>
+callbacks = {'resume_window': <function <lambda> at 0x7efc7a6db2e0>, 'kick_agent': <function <lambda> at 0x7efc7a6db380>}
+capsys = <_pytest.capture.CaptureFixture object at 0x7efc7a6e6ed0>
+
+    @pytest.mark.parametrize(
+        ("opener", "callbacks"),
+        [
+            (start_agent, {"replace_window": lambda agent: None}),
+            (stop_agent, {"kill_window": lambda agent: None}),
+            (pause_agent, {"interrupt_window": lambda agent: None}),
+            (resume_agent, {"resume_window": lambda agent: None, "kick_agent": lambda agent: None}),
+        ],
+    )
+    def test_control_openers_record_confirmed_outcome(opener, callbacks, capsys):
+        opener(
+            RecordingRedis([], roster_port_type="api"), pod="acme", tenant="hq",
+            envelope={"correlation_id": "corr-1", "payload": {"agent": "dave"}}, **callbacks,
+        )
+        record = json.loads(capsys.readouterr().out.splitlines()[-1])
+>       assert record["event"] == f"{opener.__name__}_confirmed"
+E       AssertionError: assert 'resume_agent_completed' == 'resume_agent_confirmed'
+E         
+E         - resume_agent_confirmed
+E         ?                ----
+E         + resume_agent_completed
+E         ?                 ++++
+
+tests/test_control.py:459: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_control.py::test_control_openers_record_confirmed_outcome[start_agent-callbacks0]
+FAILED tests/test_control.py::test_control_openers_record_confirmed_outcome[stop_agent-callbacks1]
+FAILED tests/test_control.py::test_control_openers_record_confirmed_outcome[pause_agent-callbacks2]
+FAILED tests/test_control.py::test_control_openers_record_confirmed_outcome[resume_agent-callbacks3]
+4 failed in 0.03s
+
+exit status: 1
+
+CONTROL 2
+F                                                                        [100%]
+=================================== FAILURES ===================================
+____________ test_refused_start_records_failure_before_dead_letter _____________
+
+capsys = <_pytest.capture.CaptureFixture object at 0x7a0d3015d730>
+
+    def test_refused_start_records_failure_before_dead_letter(capsys):
+        with pytest.raises(ValueError, match="unknown payload key 'typo'"):
+            start_agent(
+                RecordingRedis([]), pod="acme", tenant="hq",
+                envelope={"correlation_id": "corr-2", "payload": {"agent": "dave", "typo": True}},
+                replace_window=lambda agent: None,
+            )
+        record = json.loads(capsys.readouterr().out.splitlines()[-1])
+>       assert record["event"] == "start_agent_failed"
+E       AssertionError: assert 'start_agent_refused' == 'start_agent_failed'
+E         
+E         - start_agent_failed
+E         ?              ^^^
+E         + start_agent_refused
+E         ?             ++ ^^
+
+tests/test_control.py:472: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_control.py::test_refused_start_records_failure_before_dead_letter
+1 failed in 0.02s
+
+exit status: 1
+
+CONTROL 3
+F                                                                        [100%]
+=================================== FAILURES ===================================
+_________ test_start_agent_refuses_unknown_profile_and_lists_available _________
+
+    def test_start_agent_refuses_unknown_profile_and_lists_available():
+>       with pytest.raises(ValueError, match="unknown account 'typo'; available accounts: default, work"):
+E       Failed: DID NOT RAISE ValueError
+
+tests/test_control.py:478: Failed
+----------------------------- Captured stdout call -----------------------------
+{"ts":"2026-08-23T17:28:44.100Z","module":"control","event":"start_agent_confirmed","writer":"control","destination":"dave"}
+=========================== short test summary info ============================
+FAILED tests/test_control.py::test_start_agent_refuses_unknown_profile_and_lists_available
+1 failed in 0.02s
+
+exit status: 1
+
+CONTROL 4
+F                                                                        [100%]
+=================================== FAILURES ===================================
+________________ test_hire_reads_canonical_accounts_from_redis _________________
+
+office_env = <test_office.MockRedis object at 0x7165e409ede0>
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x7165e409ecc0>
+capsys = <_pytest.capture.CaptureFixture object at 0x7165e409ef00>
+
+    def test_hire_reads_canonical_accounts_from_redis(office_env, monkeypatch, capsys):
+        office_env.sets[prefix("acme", "hq", resource="accounts")] = {b"default", b"work"}
+        sent = []
+        monkeypatch.setattr(cli, "send", lambda *args, **kwargs: sent.append(kwargs))
+>       with pytest.raises(SystemExit) as exc:
+E       Failed: DID NOT RAISE SystemExit
+
+tests/test_office.py:690: Failed
+----------------------------- Captured stdout call -----------------------------
+None
+=========================== short test summary info ============================
+FAILED tests/test_office.py::test_hire_reads_canonical_accounts_from_redis - ...
+1 failed in 0.03s
+
+exit status: 1
+
+CONTROL 5
+FFFF                                                                     [100%]
+=================================== FAILURES ===================================
+_ test_post_commit_side_effect_failure_records_incomplete[start_agent-redis0-callbacks0-desired launch state committed] _
+
+opener = <function start_agent at 0x7b6ab9d69bc0>
+redis = <test_control.RecordingRedis object at 0x7b6ab9d5e570>
+callbacks = {'replace_window': <function <lambda> at 0x7b6ab9d6b600>}
+committed = 'desired launch state committed'
+capsys = <_pytest.capture.CaptureFixture object at 0x7b6ab9d79730>
+
+    @pytest.mark.parametrize(
+        ("opener", "redis", "callbacks", "committed"),
+        [
+            (start_agent, RecordingRedis([], roster_port_type="tmux"),
+             {"replace_window": lambda agent: (_ for _ in ()).throw(RuntimeError("replace failed"))},
+             "desired launch state committed"),
+            (stop_agent, RecordingRedis([], roster_port_type="tmux"),
+             {"kill_window": lambda agent: (_ for _ in ()).throw(RuntimeError("kill failed"))},
+             "roster removal and agent-state purge committed"),
+            (pause_agent, RecordingRedis([]),
+             {"interrupt_window": lambda agent: (_ for _ in ()).throw(RuntimeError("interrupt failed"))},
+             "paused marker committed"),
+            (resume_agent, RecordingRedis([]),
+             {"resume_window": lambda agent: (_ for _ in ()).throw(RuntimeError("resume failed")),
+              "kick_agent": lambda agent: None},
+             "paused marker removal committed"),
+        ],
+    )
+    def test_post_commit_side_effect_failure_records_incomplete(
+        opener, redis, callbacks, committed, capsys
+    ):
+        with pytest.raises(RuntimeError, match="failed"):
+            opener(
+                redis, pod="acme", tenant="hq",
+                envelope={"payload": {"agent": "dave"}}, **callbacks,
+            )
+        record = json.loads(capsys.readouterr().out.splitlines()[-1])
+>       assert record["event"] == f"{opener.__name__}_incomplete"
+E       AssertionError: assert 'start_agent_failed' == 'start_agent_incomplete'
+E         
+E         - start_agent_incomplete
+E         ?              -----  ^^
+E         + start_agent_failed
+E         ?             ++   ^
+
+tests/test_control.py:523: AssertionError
+_ test_post_commit_side_effect_failure_records_incomplete[stop_agent-redis1-callbacks1-roster removal and agent-state purge committed] _
+
+opener = <function stop_agent at 0x7b6ab9d69d00>
+redis = <test_control.RecordingRedis object at 0x7b6ab9d5e540>
+callbacks = {'kill_window': <function <lambda> at 0x7b6ab9d6b6a0>}
+committed = 'roster removal and agent-state purge committed'
+capsys = <_pytest.capture.CaptureFixture object at 0x7b6ab9d78f20>
+
+    @pytest.mark.parametrize(
+        ("opener", "redis", "callbacks", "committed"),
+        [
+            (start_agent, RecordingRedis([], roster_port_type="tmux"),
+             {"replace_window": lambda agent: (_ for _ in ()).throw(RuntimeError("replace failed"))},
+             "desired launch state committed"),
+            (stop_agent, RecordingRedis([], roster_port_type="tmux"),
+             {"kill_window": lambda agent: (_ for _ in ()).throw(RuntimeError("kill failed"))},
+             "roster removal and agent-state purge committed"),
+            (pause_agent, RecordingRedis([]),
+             {"interrupt_window": lambda agent: (_ for _ in ()).throw(RuntimeError("interrupt failed"))},
+             "paused marker committed"),
+            (resume_agent, RecordingRedis([]),
+             {"resume_window": lambda agent: (_ for _ in ()).throw(RuntimeError("resume failed")),
+              "kick_agent": lambda agent: None},
+             "paused marker removal committed"),
+        ],
+    )
+    def test_post_commit_side_effect_failure_records_incomplete(
+        opener, redis, callbacks, committed, capsys
+    ):
+        with pytest.raises(RuntimeError, match="failed"):
+            opener(
+                redis, pod="acme", tenant="hq",
+                envelope={"payload": {"agent": "dave"}}, **callbacks,
+            )
+        record = json.loads(capsys.readouterr().out.splitlines()[-1])
+>       assert record["event"] == f"{opener.__name__}_incomplete"
+E       AssertionError: assert 'stop_agent_failed' == 'stop_agent_incomplete'
+E         
+E         - stop_agent_incomplete
+E         + stop_agent_failed
+
+tests/test_control.py:523: AssertionError
+_ test_post_commit_side_effect_failure_records_incomplete[pause_agent-redis2-callbacks2-paused marker committed] _
+
+opener = <function pause_agent at 0x7b6ab9d69e40>
+redis = <test_control.RecordingRedis object at 0x7b6ab9d5e5d0>
+callbacks = {'interrupt_window': <function <lambda> at 0x7b6ab9d6b740>}
+committed = 'paused marker committed'
+capsys = <_pytest.capture.CaptureFixture object at 0x7b6ab9d7a8a0>
+
+    @pytest.mark.parametrize(
+        ("opener", "redis", "callbacks", "committed"),
+        [
+            (start_agent, RecordingRedis([], roster_port_type="tmux"),
+             {"replace_window": lambda agent: (_ for _ in ()).throw(RuntimeError("replace failed"))},
+             "desired launch state committed"),
+            (stop_agent, RecordingRedis([], roster_port_type="tmux"),
+             {"kill_window": lambda agent: (_ for _ in ()).throw(RuntimeError("kill failed"))},
+             "roster removal and agent-state purge committed"),
+            (pause_agent, RecordingRedis([]),
+             {"interrupt_window": lambda agent: (_ for _ in ()).throw(RuntimeError("interrupt failed"))},
+             "paused marker committed"),
+            (resume_agent, RecordingRedis([]),
+             {"resume_window": lambda agent: (_ for _ in ()).throw(RuntimeError("resume failed")),
+              "kick_agent": lambda agent: None},
+             "paused marker removal committed"),
+        ],
+    )
+    def test_post_commit_side_effect_failure_records_incomplete(
+        opener, redis, callbacks, committed, capsys
+    ):
+        with pytest.raises(RuntimeError, match="failed"):
+            opener(
+                redis, pod="acme", tenant="hq",
+                envelope={"payload": {"agent": "dave"}}, **callbacks,
+            )
+        record = json.loads(capsys.readouterr().out.splitlines()[-1])
+>       assert record["event"] == f"{opener.__name__}_incomplete"
+E       AssertionError: assert 'pause_agent_failed' == 'pause_agent_incomplete'
+E         
+E         - pause_agent_incomplete
+E         ?              -----  ^^
+E         + pause_agent_failed
+E         ?             ++   ^
+
+tests/test_control.py:523: AssertionError
+_ test_post_commit_side_effect_failure_records_incomplete[resume_agent-redis3-callbacks3-paused marker removal committed] _
+
+opener = <function resume_agent at 0x7b6ab9d69f80>
+redis = <test_control.RecordingRedis object at 0x7b6ab9d5e600>
+callbacks = {'resume_window': <function <lambda> at 0x7b6ab9d6b7e0>, 'kick_agent': <function <lambda> at 0x7b6ab9d6b880>}
+committed = 'paused marker removal committed'
+capsys = <_pytest.capture.CaptureFixture object at 0x7b6ab9d7b740>
+
+    @pytest.mark.parametrize(
+        ("opener", "redis", "callbacks", "committed"),
+        [
+            (start_agent, RecordingRedis([], roster_port_type="tmux"),
+             {"replace_window": lambda agent: (_ for _ in ()).throw(RuntimeError("replace failed"))},
+             "desired launch state committed"),
+            (stop_agent, RecordingRedis([], roster_port_type="tmux"),
+             {"kill_window": lambda agent: (_ for _ in ()).throw(RuntimeError("kill failed"))},
+             "roster removal and agent-state purge committed"),
+            (pause_agent, RecordingRedis([]),
+             {"interrupt_window": lambda agent: (_ for _ in ()).throw(RuntimeError("interrupt failed"))},
+             "paused marker committed"),
+            (resume_agent, RecordingRedis([]),
+             {"resume_window": lambda agent: (_ for _ in ()).throw(RuntimeError("resume failed")),
+              "kick_agent": lambda agent: None},
+             "paused marker removal committed"),
+        ],
+    )
+    def test_post_commit_side_effect_failure_records_incomplete(
+        opener, redis, callbacks, committed, capsys
+    ):
+        with pytest.raises(RuntimeError, match="failed"):
+            opener(
+                redis, pod="acme", tenant="hq",
+                envelope={"payload": {"agent": "dave"}}, **callbacks,
+            )
+        record = json.loads(capsys.readouterr().out.splitlines()[-1])
+>       assert record["event"] == f"{opener.__name__}_incomplete"
+E       AssertionError: assert 'resume_agent_failed' == 'resume_agent_incomplete'
+E         
+E         - resume_agent_incomplete
+E         ?               -----  ^^
+E         + resume_agent_failed
+E         ?              ++   ^
+
+tests/test_control.py:523: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_control.py::test_post_commit_side_effect_failure_records_incomplete[start_agent-redis0-callbacks0-desired launch state committed]
+FAILED tests/test_control.py::test_post_commit_side_effect_failure_records_incomplete[stop_agent-redis1-callbacks1-roster removal and agent-state purge committed]
+FAILED tests/test_control.py::test_post_commit_side_effect_failure_records_incomplete[pause_agent-redis2-callbacks2-paused marker committed]
+FAILED tests/test_control.py::test_post_commit_side_effect_failure_records_incomplete[resume_agent-redis3-callbacks3-paused marker removal committed]
+4 failed in 0.04s
+
+exit status: 1
+
+CONTROL 6
+F                                                                        [100%]
+=================================== FAILURES ===================================
+_____ test_claude_profile_token_is_authenticated_without_credentials_file ______
+
+tmp_path = PosixPath('/tmp/pytest-of-ubuntu/pytest-1145/test_claude_profile_token_is_a0')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x720b17535250>
+capsys = <_pytest.capture.CaptureFixture object at 0x720b17559040>
+
+    def test_claude_profile_token_is_authenticated_without_credentials_file(
+        tmp_path, monkeypatch, capsys
+    ):
+        r = WatchRedis()
+        r.values[_key("architect", "launch")] = "claude"
+        r.values[_key("architect", "profile")] = "work"
+        monkeypatch.setenv("CLAUDE_OAUTH_TOKEN_WORK", "token-authenticated")
+    
+        Watchdog(r, pod="acme", tenant="hq", session_name="hq", home_root=tmp_path).check_credentials(now=NOW)
+    
+>       assert prefix("acme", "hq", resource="alerts") not in r.streams
+E       assert 'pod:acme:tenant:hq:alerts' not in {'pod:acme:tenant:hq:alerts': [('1-0', {'alert': '{"v":1,"ts":"2026-08-09T14:00:00.000Z","kind":"credential","account":"work","cli":"claude","status":"absent","expires_ts":null,"writer":"watchdog"}'})]}
+E        +  where 'pod:acme:tenant:hq:alerts' = prefix('acme', 'hq', resource='alerts')
+E        +  and   {'pod:acme:tenant:hq:alerts': [('1-0', {'alert': '{"v":1,"ts":"2026-08-09T14:00:00.000Z","kind":"credential","account":"work","cli":"claude","status":"absent","expires_ts":null,"writer":"watchdog"}'})]} = <test_watchdog.WatchRedis object at 0x720b17559310>.streams
+
+tests/test_watchdog.py:299: AssertionError
+----------------------------- Captured stdout call -----------------------------
+{"v":1,"ts":"2026-08-09T14:00:00.000Z","kind":"credential","account":"work","cli":"claude","status":"absent","expires_ts":null,"writer":"watchdog"}
+=========================== short test summary info ============================
+FAILED tests/test_watchdog.py::test_claude_profile_token_is_authenticated_without_credentials_file
+1 failed in 0.04s
+
+exit status: 1
+
+CONTROL 7
+FF                                                                       [100%]
+=================================== FAILURES ===================================
+_____ test_start_agent_permits_profile_when_legacy_accounts_key_is_absent ______
+
+    def test_start_agent_permits_profile_when_legacy_accounts_key_is_absent():
+        events = []
+>       start_agent(
+            RecordingRedis(events), pod="acme", tenant="hq",
+            envelope={"payload": {"agent": "dave", "profile": "legacy"}},
+            replace_window=lambda agent: None,
+        )
+
+tests/test_control.py:488: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+src/flock/control/openers.py:30: in recorded
+    result = opener(r, pod=pod, tenant=tenant, envelope=envelope, **kwargs)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+r = <test_control.RecordingRedis object at 0x7f211f0240b0>, pod = 'acme'
+tenant = 'hq', envelope = {'payload': {'agent': 'dave', 'profile': 'legacy'}}
+replace_window = <function test_start_agent_permits_profile_when_legacy_accounts_key_is_absent.<locals>.<lambda> at 0x7f211e403060>
+
+    @_record_control("start_agent")
+    def start_agent(
+        r,
+        *,
+        pod: str,
+        tenant: str,
+        envelope: dict,
+        replace_window: Callable[[str], object],
+    ) -> None:
+        """Publish desired state; tmuxhost is the one implementation that creates windows."""
+        agent, payload = _target(envelope, _START_AGENT_KEYS)
+        policy = {}
+        policy_supplied = any(side in payload for side in ("export", "import"))
+        for side in ("export", "import"):
+            values = payload.get(side)
+            if values is None:
+                continue
+            if (
+                not isinstance(values, list)
+                or not all(isinstance(value, str) and SEGMENT_REGEX.fullmatch(value) for value in values)
+            ):
+                raise ValueError(f"StartAgent payload.{side} must be a list of tag names")
+            policy[side] = sorted(set(values))
+    
+        agent_port_type = payload.get("port_type", "tmux")
+        if agent_port_type not in _STARTABLE_VABS:
+            raise ValueError("StartAgent payload.port_type must be 'tmux' or 'api'")
+    
+        roster_key = prefix(pod, tenant, resource="roster")
+        if agent_port_type == "api":
+            if policy_supplied:
+                policy_key = tags_key(pod, tenant, agent)
+                r.delete(policy_key)
+                for side, values in policy.items():
+                    r.hset(policy_key, side, json.dumps(values, separators=(",", ":")))
+            r.hset(roster_key, agent, agent_port_type)
+            return
+    
+        cli = payload.get("cli", "claude")
+        if not isinstance(cli, str) or not cli:
+            raise ValueError("StartAgent payload.cli must be a non-empty string")
+    
+        profile = payload.get("profile")
+        if profile:
+            prefix("check", "check", agent=profile, resource="profile")
+            profiles = available_profiles(r, pod=pod, tenant=tenant)
+            if profiles is not None and profile not in profiles:
+>               raise ValueError(
+                    f"unknown account {profile!r}; available accounts: {', '.join(profiles)}"
+E                   ValueError: unknown account 'legacy'; available accounts:
+
+src/flock/control/openers.py:114: ValueError
+----------------------------- Captured stdout call -----------------------------
+{"ts":"2026-08-23T17:29:29.019Z","module":"control","event":"start_agent_failed","writer":"control","destination":"dave","reason":"unknown account 'legacy'; available accounts: "}
+_______ test_hire_legacy_tenant_without_accounts_key_remains_permissive ________
+
+office_env = <test_office.MockRedis object at 0x7f211e456060>
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x7f211ef337d0>
+capsys = <_pytest.capture.CaptureFixture object at 0x7f211e456180>
+
+    def test_hire_legacy_tenant_without_accounts_key_remains_permissive(
+        office_env, monkeypatch, capsys
+    ):
+        sent = {}
+        monkeypatch.setattr(cli, "send", lambda r, **kwargs: sent.update(kwargs) or "stream-1")
+>       cli.main(["hire", "dave", "--profile", "legacy"])
+
+tests/test_office.py:702: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+src/flock/office/cli.py:802: in main
+    _run(list(sys.argv[1:] if argv is None else argv))
+src/flock/office/cli.py:845: in _run
+    _control_command("letGo" if command == "let-go" else command, remainder)
+src/flock/office/cli.py:298: in _control_command
+    parser.error(
+/usr/lib/python3.12/argparse.py:2677: in error
+    self.exit(2, _('%(prog)s: error: %(message)s\n') % args)
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = ArgumentParser(prog='office hire', usage=None, description='Enrol a new agent.', formatter_class=<class 'argparse.HelpFormatter'>, conflict_handler='error', add_help=True)
+status = 2
+message = "office hire: error: unknown account 'legacy'; available accounts: \n"
+
+    def exit(self, status=0, message=None):
+        if message:
+            self._print_message(message, _sys.stderr)
+>       _sys.exit(status)
+E       SystemExit: 2
+
+/usr/lib/python3.12/argparse.py:2664: SystemExit
+----------------------------- Captured stderr call -----------------------------
+usage: office hire [-h] [--cli {claude,codex,agy}] [--profile ACCOUNT] agent
+office hire: error: unknown account 'legacy'; available accounts: 
+=========================== short test summary info ============================
+FAILED tests/test_control.py::test_start_agent_permits_profile_when_legacy_accounts_key_is_absent
+FAILED tests/test_office.py::test_hire_legacy_tenant_without_accounts_key_remains_permissive
+2 failed in 0.06s
+
+exit status: 1
+
+CONTROL 8
+F                                                                        [100%]
+=================================== FAILURES ===================================
+______ test_setup_persists_complete_account_list_even_for_single_account _______
+
+    def test_setup_persists_complete_account_list_even_for_single_account():
+        script = Path("setup.sh").read_text()
+        assert 'echo "FLOCK_ACCOUNTS=$(IFS=,; echo "${PROFILES[*]}")"' in script
+>       assert 'echo "FLOCK_ACCOUNTS=default"' in script
+E       assert 'echo "FLOCK_ACCOUNTS=default"' in '#!/usr/bin/env bash\n# setup.sh — run this on the HOST. Asks for the tenant layout, writes\n# container/.env, and bri... an agent\'s window, then save it so the next rebuild keeps it:"\necho "    ./container/seed-home.sh out $CONTAINER"\n'
+
+tests/test_entrypoint_startup.py:73: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_entrypoint_startup.py::test_setup_persists_complete_account_list_even_for_single_account
+1 failed in 0.04s
+
+exit status: 1
+
+CONTROL 9
+F                                                                        [100%]
+=================================== FAILURES ===================================
+____ test_entrypoint_seeds_canonical_accounts_before_unsetting_startup_env _____
+
+    def test_entrypoint_seeds_canonical_accounts_before_unsetting_startup_env():
+        script = Path("container/entrypoint.sh").read_text()
+        seed = script.index('accounts_key="pod:${POD}:tenant:${TENANT}:accounts"')
+        unset = script.index("unset AGENT_CLIS AGENT_PROFILES AGENT_PROVIDERS FLOCK_ACCOUNTS")
+        assert seed < unset
+>       assert 'rcli SADD "$accounts_key" "$_account"' in script
+E       assert 'rcli SADD "$accounts_key" "$_account"' in '#!/usr/bin/env bash\n# Brings up one tenant. Holds no logic of its own — it starts the modules in\n# dependency order..."reason":"API_ENABLED is not 1"}\'\nfi\nstart session env API_TOKEN="$api_token" python3 -m flock.session\n\nwait -n\n'
+
+tests/test_entrypoint_startup.py:67: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_entrypoint_startup.py::test_entrypoint_seeds_canonical_accounts_before_unsetting_startup_env
+1 failed in 0.03s
+
+exit status: 1
+

@@ -1,0 +1,57 @@
+citations checked: 786 (635 unique)
+NEAR docs/AUDIT-2026-08-11-comparison.md:37: ops.py:56: symbol 'set' not within 3 lines
+NEAR docs/AUDIT.md:32: tmuxhost/host.py:201: symbol 'AttributeError' not within 3 lines
+NEAR docs/AUDIT.md:72: tmuxhost/host.py:167-170: symbol 'provider' not within 3 lines
+NEAR docs/AUDIT.md:118: container/entrypoint.sh:107-113: symbol 'REDIS_URL' not within 3 lines
+NEAR docs/BUILD-40-audit-wave-2.md:29: tmuxhost/host.py:167-170: symbol 'provider' not within 3 lines
+NEAR docs/BUILD-41-audit-wave-3.md:71: container/entrypoint.sh:107-113: symbol 'REDIS_URL' not within 3 lines
+NEAR docs/BUILD-44-tmux-report.md:18: LLD-container.md:188: symbol 'flock.session' not within 3 lines
+NEAR docs/BUILD-44-tmux-report.md:67: CONTRACTS.md:710: symbol 'ROSTER_POLL_SECONDS' not within 3 lines
+NEAR docs/BUILD-51-kicked-lpop.md:14: doors.py:58: symbol 'receive' not within 3 lines
+NEAR docs/BUILD-53-frame.md:43: envelope.py:19: symbol '_segment' not within 3 lines
+NEAR docs/BUILD-65-results.md:30: src/flock/bus/doors.py:53-62: symbol 'rpush' not within 3 lines
+NEAR docs/BUILD-65-results.md:35: src/flock/switch/service.py:85-99: symbol 'source_stamped' not within 3 lines
+NEAR docs/BUILD-65-results.md:48: src/flock/bus/doors.py:91-105: symbol 'dead_lettered' not within 3 lines
+NEAR docs/BUILD-65-results.md:50: src/flock/bus/doors.py:96-106: symbol 'opened' not within 3 lines
+NEAR docs/BUILD-72-fixed-header.md:116: bus/logging.py:46: symbol 'ts' not within 3 lines
+NEAR docs/BUILD-76-vab-review.md:98: src/flock/bus/doors.py:55-70: symbol 'send' not within 3 lines
+NEAR docs/BUILD-76-vab-review.md:101: src/flock/bus/envelope.py:251-265: symbol 'FLOW' not within 3 lines
+NEAR docs/BUILD-76-vab-review.md:110: src/flock/switch/service.py:115-141: symbol 'FLOW' not within 3 lines
+NEAR docs/BUILD-76-vab-review.md:128: src/flock/switch/service.py:178-187: symbol 'FLOW' not within 3 lines
+NEAR docs/BUILD-76-vab-review.md:147: src/flock/switch/service.py:199-220: symbol 'FLOW' not within 3 lines
+NEAR docs/BUILD-76-vab-review.md:152: src/flock/switch/service.py:178-185: symbol 'FLOW' not within 3 lines
+NEAR docs/BUILD-76-vab-review.md:153: src/flock/switch/service.py:153-172: symbol 'FLOW' not within 3 lines
+NEAR docs/BUILD-76-vab-review.md:155: src/flock/bus/envelope.py:242-248: symbol 'NAMING' not within 3 lines
+NEAR docs/BUILD-76-vab-review.md:156: src/flock/bus/doors.py:103-123: symbol 'FLOW' not within 3 lines
+NEAR docs/BUILD-76-vab-review.md:201: src/flock/switch/service.py:178-185: symbol 'FLOW' not within 3 lines
+NEAR docs/BUILD-76-vab-review.md:202: src/flock/bus/doors.py:68-89: symbol 'FLOW' not within 3 lines
+NEAR docs/BUILD-76-vab-review.md:206: src/flock/bus/doors.py:43-143: symbol 'FLOW' not within 3 lines
+NEAR docs/BUILD-76-vab-review.md:207: src/flock/bus/envelope.py:37-71: symbol 'NAMING' not within 3 lines
+NEAR docs/BUILD-76-vab-review.md:229: src/flock/bus/keys.py:5-31: symbol 'NAMING' not within 3 lines
+NEAR docs/BUILD-76-vab-review.md:251: src/flock/switch/service.py:90-91: symbol 'FLOW' not within 3 lines
+NEAR docs/BUILD-76-vab-review.md:253: src/flock/switch/service.py:131-133: symbol 'FLOW' not within 3 lines
+NEAR docs/BUILD-76-vab-review.md:263: src/flock/bus/keys.py:10-20: symbol 'NAMING' not within 3 lines
+NEAR docs/BUILD-77-review-api-optin.md:45: container/entrypoint.sh:313-317: symbol 'API_ENABLED' not within 3 lines
+NEAR docs/BUILD-81-delivery-verification.md:24: verification.py:100-102: symbol '_input_times' not within 3 lines
+NEAR docs/BUILD-82-usage-and-cost.md:85: watchdog/verification.py:100-102: symbol 'DeliveryVerifier.poll' not within 3 lines
+NEAR docs/DESIGN-layers.md:170: doors.py:34: symbol 'require_allowed' not within 3 lines
+NEAR docs/DESIGN-layers.md:171: switch/service.py:129: symbol 'l2.source' not within 3 lines
+NEAR docs/DESIGN-layers.md:521: tmux/ops.py:371: symbol 'paste_text' not within 3 lines
+NEAR docs/NAMING-tmux.md:20: src/flock/tmux/ops.py:229: symbol 'window_env' not within 3 lines
+NEAR docs/NAMING-tmux.md:21: src/flock/tmux/ops.py:371: symbol 'paste_text' not within 3 lines
+NEAR docs/NAMING-tmux.md:25: src/flock/tmux/ops.py:112: symbol 'profile' not within 3 lines
+NEAR docs/NAMING-tmux.md:26: src/flock/tmux/ops.py:235: symbol 'provider' not within 3 lines
+NEAR docs/NAMING-tmux.md:33: container/entrypoint.sh:292: symbol 'host' not within 3 lines
+NEAR docs/NAMING-tmux.md:66: src/flock/watchdog/service.py:386: symbol 'VERIFY_AFTER_SECONDS' not within 3 lines
+NEAR docs/NAMING-tmux.md:117: container/entrypoint.sh:323: symbol 'WATCHDOG_ENABLED' not within 3 lines
+NEAR docs/TODO.md:32: tmux/ops.py:258-291: symbol 'ANTHROPIC_BASE_URL' not within 3 lines
+NEAR docs/TODO.md:125: ops.py:56: symbol 'set' not within 3 lines
+NEAR docs/TODO.md:126: entrypoint.sh:112: symbol 'REDIS_URL' not within 3 lines
+NEAR docs/VERIFY-2026-08-22-bus.md:71: CONTRACTS.md:693-695: symbol 'blocked' not within 3 lines
+NEAR docs/VERIFY-2026-08-22-bus.md:75: CONTRACTS.md:735-737: symbol 'pending.verify' not within 3 lines
+NEAR docs/VERIFY-2026-08-22-tmux.md:21: src/flock/watchdog/service.py:386: symbol 'VERIFY_AFTER_SECONDS' not within 3 lines
+NEAR docs/VERIFY-2026-08-22.md:55: bus/logging.py:78: symbol 'CONTRACTS' not within 3 lines
+hard failures: 0
+near misses: 52
+
+exit status: 0

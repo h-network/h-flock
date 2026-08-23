@@ -75,20 +75,21 @@ Tier A is documentation, B internal code, C Redis/environment, and D wire.
 | name | where it lives | kind | what it means, in one line | networking analogue, if any | tier |
 |---|---|---|---|---|---|
 | `control` | `src/flock/control/runner.py:1` | doc term | port_type that opens tenant lifecycle envelopes addressed to fixed participant `host`. | Control plane. | A |
-| `port_type` | `src/flock/control/openers.py:10` | doc term | Selects the receiving implementation (`tmux`, `api`, or `control`); its intended expansion is not recoverable here. | Port/media type, but the acronym does not convey it. | A |
-| `host` | `src/flock/control/openers.py:11` | identifier | Fixed roster participant/address for lifecycle operations, not tmuxhost. | Control-plane destination address. | B |
+| `port_type` | `src/flock/control/openers.py:9` | doc term | Selects the receiving implementation (`tmux`, `api`, or `control`); its intended expansion is not recoverable here. | Port/media type, but the acronym does not convey it. | A |
+| `host` | `src/flock/control/openers.py:10` | identifier | Fixed roster participant/address for lifecycle operations, not tmuxhost. | Control-plane destination address. | B |
 | `deliver_one` | `src/flock/control/runner.py:23` | identifier | Pops and opens one lifecycle envelope; same name as port's port_type dispatcher. | Control-plane receive operation. | B |
 | `StartAgent` / `StopAgent` | `src/flock/control/runner.py:102` | wire | Envelope kinds that add/remove participant desired state and port_type-specific state. | Provision/deprovision a port. | D |
 | `PauseAgent` / `ResumeAgent` | `src/flock/control/runner.py:104` | wire | Envelope kinds that stop/restart a tmux CLI while preserving membership and queues. | Administratively down/up a port. | D |
-| `start_agent` / `stop_agent` | `src/flock/control/openers.py:58-157` | identifier | Desired-state mutations implementing lifecycle kinds. | Port provisioning operations. | B |
-| `pause_agent` / `resume_agent` | `src/flock/control/openers.py:178-193` | identifier | Pause-marker and tmux-process operations implementing temporary suspension. | Port admin-state operations. | B |
-| `replace_window` | `src/flock/control/openers.py:64` | identifier | Callback that kills stale actual state so tmuxhost recreates it. | Rebind a port attachment. | B |
-| `_STARTABLE_VABS` | `src/flock/control/openers.py:10` | identifier | port_type values lifecycle control accepts for new participants. | Supported port/media types. | B |
-| `_FIXED_PARTICIPANTS` | `src/flock/control/openers.py:11` | identifier | Built-in addresses that `StopAgent` cannot remove. | Reserved control-plane addresses. | B |
-| `provider` | `src/flock/control/openers.py:110` | wire | `StartAgent` payload field selecting a named model service. | Model uplink selection, not participant provider. | D |
-| `cli` | `src/flock/control/openers.py:95` | wire | `StartAgent` payload name for the desired agent program. | Attachment implementation. | D |
-| `launch` | `src/flock/control/openers.py:140` | redis key | Stored name for the same desired agent program called `cli` on the wire. | Attachment implementation. | C |
-| `agent` | `src/flock/control/openers.py:49` | wire | Lifecycle target participant name, even when the participant is an API client. | Address/port identity; “agent” is narrower than the set. | D |
+| `start_agent` / `stop_agent` | `src/flock/control/openers.py:68-172` | identifier | Desired-state mutations implementing lifecycle kinds. | Port provisioning operations. | B |
+| `pause_agent` / `resume_agent` | `src/flock/control/openers.py:198-218` | identifier | Pause-marker and tmux-process operations implementing temporary suspension. | Port admin-state operations. | B |
+| `replace_window` | `src/flock/control/openers.py:74` | identifier | Callback that kills stale actual state so tmuxhost recreates it. | Rebind a port attachment. | B |
+| `*_incomplete` | `src/flock/control/openers.py:31-37` | record | Desired state committed but actual state did not follow; names the committed state and failed side effect. | Partial control outcome requiring operator action. | B |
+| `_STARTABLE_VABS` | `src/flock/control/openers.py:9` | identifier | port_type values lifecycle control accepts for new participants. | Supported port/media types. | B |
+| `_FIXED_PARTICIPANTS` | `src/flock/control/openers.py:10` | identifier | Built-in addresses that `StopAgent` cannot remove. | Reserved control-plane addresses. | B |
+| `provider` | `src/flock/control/openers.py:120` | wire | `StartAgent` payload field selecting a named model service. | Model uplink selection, not participant provider. | D |
+| `cli` | `src/flock/control/openers.py:105` | wire | `StartAgent` payload name for the desired agent program. | Attachment implementation. | D |
+| `launch` | `src/flock/control/openers.py:150` | redis key | Stored name for the same desired agent program called `cli` on the wire. | Attachment implementation. | C |
+| `agent` | `src/flock/control/openers.py:59` | wire | Lifecycle target participant name, even when the participant is an API client. | Address/port identity; “agent” is narrower than the set. | D |
 
 ## `container/`
 
