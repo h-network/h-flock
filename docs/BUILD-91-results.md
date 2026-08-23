@@ -102,5 +102,10 @@ immutable controls snapshot named in the sign-off.
 
 ## Citation gate
 
-    PENDING — binds to this corrected pre-results documentation commit
-    EXCLUDED         the immediately following evidence-binding-only commit; its diff must be limited to replacing this block and adding the immutable citation artifact
+    source sha       9dfb6886b5c1c177002d6dc355039c4d19b8819f
+    artefact         COMMIT
+    command          python3 tools/check_citations.py
+    exit status      0, read unpiped
+    result           0 hard failures, 54 near misses
+    EXCLUDED         the immediately following evidence-binding commit: only this PENDING block is replaced and docs/evidence/build-91-9dfb688-citations.log is added; no product documentation or path citation changes
+    evidence         docs/evidence/build-91-9dfb688-citations.log sha256 7f130293467df13a9a22748cfc93b163471d1fc3d87772444e6ef62be3f491e6
