@@ -105,3 +105,21 @@ def test_fault_harness_refuses_without_exact_destructive_phrase(arguments):
     assert result.stderr == (
         "REFUSED: pass I_UNDERSTAND_THIS_INJECTS_AND_DESTROYS_A_TENANT exactly\n"
     )
+
+
+def test_shipping_source_has_no_writer_assignments():
+    """Structural invariant: shipping source never assigns FLOCK_WRITER or sets writer: fault-injection."""
+    import re
+    src_dir = ROOT / "src"
+    violations = []
+    pattern = re.compile(r'FLOCK_WRITER\s*=|os\.environ\[.*FLOCK_WRITER.*\]\s*=')
+    for path in src_dir.rglob("*.py"):
+        rel_path = path.relative_to(ROOT)
+        text = path.read_text(encoding="utf-8")
+        for line_num, line in enumerate(text.splitlines(), start=1):
+            if rel_path == Path("src/flock/bus/logging.py") and line_num == 8:
+                continue
+            if pattern.search(line):
+                violations.append(f"{rel_path}:{line_num}:{line.strip()}")
+    assert not violations, "Illegal FLOCK_WRITER assignments in shipping source:\n" + "\n".join(violations)
+

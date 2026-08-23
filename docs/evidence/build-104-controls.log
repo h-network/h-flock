@@ -1,8 +1,53 @@
-=== MUTATION RUN (expected exit 1) ===
-STRUCTURAL_VIOLATION:
-  src/flock/switch/service.py:270:        os.environ["FLOCK_WRITER"] = "fault-injection",
+=== MUTATION RUN (command: python3 -m pytest tests/test_fault_injection.py -k test_shipping_source_has_no_writer_assignments) ===
+============================= test session starts ==============================
+platform linux -- Python 3.12.3, pytest-9.1.1, pluggy-1.6.0
+rootdir: /workspace/api/h-flock
+configfile: pyproject.toml
+plugins: anyio-4.14.2
+collected 9 items / 8 deselected / 1 selected
+
+tests/test_fault_injection.py F                                          [100%]
+
+=================================== FAILURES ===================================
+________________ test_shipping_source_has_no_writer_assignments ________________
+
+    def test_shipping_source_has_no_writer_assignments():
+        """Structural invariant: shipping source never assigns FLOCK_WRITER or sets writer: fault-injection."""
+        import re
+        src_dir = ROOT / "src"
+        violations = []
+        pattern = re.compile(r'FLOCK_WRITER\s*=|os\.environ\[.*FLOCK_WRITER.*\]\s*=')
+        for path in src_dir.rglob("*.py"):
+            rel_path = path.relative_to(ROOT)
+            text = path.read_text(encoding="utf-8")
+            for line_num, line in enumerate(text.splitlines(), start=1):
+                if rel_path == Path("src/flock/bus/logging.py") and line_num == 8:
+                    continue
+                if pattern.search(line):
+                    violations.append(f"{rel_path}:{line_num}:{line.strip()}")
+>       assert not violations, "Illegal FLOCK_WRITER assignments in shipping source:\n" + "\n".join(violations)
+E       AssertionError: Illegal FLOCK_WRITER assignments in shipping source:
+E         src/flock/switch/service.py:270:os.environ["FLOCK_WRITER"] = "fault-injection",
+E       assert not ['src/flock/switch/service.py:270:os.environ["FLOCK_WRITER"] = "fault-injection",']
+
+tests/test_fault_injection.py:124: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_fault_injection.py::test_shipping_source_has_no_writer_assignments
+======================= 1 failed, 8 deselected in 0.06s ========================
+
 MUTATION_EXIT=1
 
-=== CLEAN RUN (expected exit 0) ===
-CLEAN: no FLOCK_WRITER assignments in src/
+=== CLEAN RUN (command: python3 -m pytest tests/test_fault_injection.py -k test_shipping_source_has_no_writer_assignments) ===
+============================= test session starts ==============================
+platform linux -- Python 3.12.3, pytest-9.1.1, pluggy-1.6.0 -- /usr/bin/python3
+cachedir: .pytest_cache
+rootdir: /workspace/api/h-flock
+configfile: pyproject.toml
+plugins: anyio-4.14.2
+collecting ... collected 9 items / 8 deselected / 1 selected
+
+tests/test_fault_injection.py::test_shipping_source_has_no_writer_assignments PASSED [100%]
+
+======================= 1 passed, 8 deselected in 0.05s ========================
+
 CLEAN_EXIT=0
