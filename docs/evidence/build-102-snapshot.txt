@@ -1,0 +1,13 @@
+stop_stream=ba706f9ff4c64eb9bce7d38a0e30d68d
+STATE roster=absent
+STATE resources=present
+STATE delivery_lock=present
+STATUS_BEGIN
+  architect   idle      —                                  no activity yet
+STATUS_END
+PEERS_BEGIN
+
+PEERS_END
+start_stream=b9382b2543c84ee58ab9f09e40dea944
+START_RESULT roster=present
+START_RESULT resources=present
