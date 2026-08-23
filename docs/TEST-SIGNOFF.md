@@ -98,11 +98,33 @@ checker at the named commit.
 A results document that records a citation-gate result **is itself a document
 the gate checks**, so writing the answer down can change the answer.
 
-`bus`'s rule, adopted: **bind to the pre-results commit, and have the sign-off
-explicitly exclude the evidence-binding edit — proving that diff is limited to
-the binding field and the artifact.** A binding edit that adds no new `path:line`
-citation cannot move the count, and saying so is what makes the exclusion
-checkable rather than asserted.
+⚠ **Do NOT solve this with commit choreography.** The first answer here was
+`bus`'s — bind to the pre-results commit and have the sign-off exclude the
+binding edit, proving that diff is limited to the field and the artifact. It is
+sound, and **it broke the first time anything else was corrected**: a one-word
+prose fix landed after the binding, the excluded diff grew a third member, and
+the claim needed a fresh pre-results commit and a fresh binding commit to be true
+again. A rule that requires re-doing a two-commit dance after every correction
+will be got wrong.
+
+**Bind to the FINAL commit, and prove the number reproduces there.**
+
+```bash
+git archive <final-commit> | tar -x -C /tmp/verify
+cd /tmp/verify && python3 tools/check_citations.py
+```
+
+⚠ **The number a sign-off records must be true of the tree that CONTAINS the
+record.** That is the tree anyone will check out, it needs no exclusion clause,
+and it verifies in one command instead of an argument about what a diff touched.
+
+**On the recursion itself:** writing the count down can only move it if the
+written text adds or removes a `path:line` citation — and a binding block records
+numbers and shas, not citations. So the record is a **fixed point** by
+construction, and *measuring at the final tree proves it is one.* If it ever is
+not, iterate: write, measure, correct, measure again, until the recorded number
+is the number that tree produces. ⚠ **An evidence `.log` is not scanned** — the
+checker reads Markdown — so adding an artifact cannot move the count either.
 
 ---
 
