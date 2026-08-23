@@ -613,6 +613,30 @@ reconciliation, while actual window creation still follows enrolment.
 `StopAgent` removes the roster row, purges classified identity state, and attempts to kill
 the window synchronously inline (`tmuxhost.reconcile_once` also cleans up any orphaned window later).
 
+For a fresh tmux membership carrying a `correlation_id`, `StartAgent` atomically
+publishes the per-agent `window.cause` key with roster visibility. The first
+successful `window_created` atomically consumes that one-shot value and carries
+it as `correlation_id`, joining asynchronous actual state to
+`start_agent_accepted` without making control wait. A failed window creation
+retains the cause for the next attempt. If reconciliation finds the window
+already present, it consumes any marker without emitting a join: that envelope
+did not cause the existing window, and retaining its id would falsely attach a
+later crash recovery. A real-agent recovery with no marker emits a valid
+`window_created` with `correlation_id` absent; `__init__` placeholder creation
+does not emit that lifecycle event. Consumption happens before
+logging, deliberately preferring a missing join over a stale false join if
+tmuxhost dies at that boundary. Idempotent starts do not publish a cause because
+they require no new window.
+
+The cause and roster row are one Lua write boundary because neither sequential
+ordering is truthful: cause-first could strand an id when roster publication
+fails, while roster-first could let tmuxhost create before the id is visible.
+If the operation commits but its reply is lost, control conservatively emits
+`start_agent_incomplete`; Redis nevertheless contains both values. The Lua
+script writes the roster first because Redis does not roll back earlier script
+writes after a command error: a server-side failure may expose a cause-less
+membership, but never a cause without the membership that request published.
+
 ⚠ **For `port_type: "api"` there is only enrolment.** A client enrolment writes a
 roster row and stops: no launch key, no home, no window, no CLI. `StopAgent`
 removes the row and purges classified identity state, touching no tmux; retained

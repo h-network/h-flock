@@ -21,6 +21,12 @@ _START_AGENT_KEYS = frozenset(
 )
 _TARGET_ONLY_KEYS = frozenset({"agent"})
 
+_PUBLISH_WINDOW_CAUSE_LUA = """
+redis.call('HSET', KEYS[2], ARGV[2], ARGV[3])
+redis.call('SET', KEYS[1], ARGV[1])
+return 1
+"""
+
 
 class _IncompleteControl(RuntimeError):
     """A desired or actual-state attempt has an UNKNOWN outcome."""
@@ -253,10 +259,32 @@ def start_agent(
                     policy_key, side, json.dumps(values, separators=(",", ":"))
                 ),
             )
-    _write_desired(
-        committed, "roster row published", "roster row publish",
-        lambda: r.hset(roster_key, agent, agent_port_type),
-    )
+    correlation_id = envelope.get("correlation_id")
+    if existing_port_type != "tmux" and isinstance(correlation_id, str) and correlation_id:
+        # A fresh tmux membership makes a later window necessary. Publish its
+        # cause before roster visibility so tmuxhost cannot observe the hire
+        # without also observing the join key. Idempotent starts do not replace
+        # this marker: their envelope did not cause a new window.
+        cause_key = prefix(pod, tenant, agent=agent, resource="window.cause")
+        _write_desired(
+            committed,
+            "window cause and roster row published",
+            "window cause and roster row publish",
+            lambda: r.eval(
+                _PUBLISH_WINDOW_CAUSE_LUA,
+                2,
+                cause_key,
+                roster_key,
+                correlation_id,
+                agent,
+                agent_port_type,
+            ),
+        )
+    else:
+        _write_desired(
+            committed, "roster row published", "roster row publish",
+            lambda: r.hset(roster_key, agent, agent_port_type),
+        )
     if config_changed:
         # Remove only stale actual state. tmuxhost observes the roster row and
         # recreates the window through its canonical lead/profile/provider path.

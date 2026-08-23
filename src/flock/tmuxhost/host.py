@@ -78,8 +78,27 @@ class TmuxHost:
             return None
         return raw_lead.decode() if isinstance(raw_lead, bytes) else str(raw_lead)
 
+    def take_window_cause(self, r: redis.Redis, agent: str) -> str | None:
+        """Consume the one-shot hire cause for a newly created window.
+
+        Consumption before logging prefers an absent join over a stale, false
+        join if tmuxhost dies between the Redis operation and stdout.
+        """
+        key = prefix(self.pod, self.tenant, agent=agent, resource="window.cause")
+        raw = r.getdel(key)
+        if not raw:
+            return None
+        return raw.decode() if isinstance(raw, bytes) else str(raw)
+
+    def log_window_created(self, r: redis.Redis, agent: str) -> None:
+        log_record(
+            "tmuxhost", "window_created", destination=agent,
+            correlation_id=self.take_window_cause(r, agent),
+        )
+
     def ensure_server_and_session(
         self,
+        r: redis.Redis,
         initial_window: str = "__init__",
         cli: str | None = None,
         profile: str | None = None,
@@ -113,7 +132,7 @@ class TmuxHost:
             if code != 0:
                 log_record("tmuxhost", "error", reason=f"Failed to create tmux session: {err}")
             elif initial_window != "__init__":
-                log_record("tmuxhost", "window_created", destination=initial_window)
+                self.log_window_created(r, initial_window)
 
         # Set session & server options
         tmux_ops.run_tmux("set-option", "-g", "exit-empty", "off", socket=self.socket)
@@ -125,6 +144,7 @@ class TmuxHost:
 
     def create_window(
         self,
+        r: redis.Redis,
         agent_name: str,
         cli: str | None = None,
         profile: str | None = None,
@@ -147,7 +167,7 @@ class TmuxHost:
             lead=lead, profile=profile
         )
         if ret == 0:
-            log_record("tmuxhost", "window_created", destination=agent_name)
+            self.log_window_created(r, agent_name)
             return True
         else:
             log_record("tmuxhost", "error", destination=agent_name, reason=f"new-window failed: {stderr}")
@@ -175,6 +195,7 @@ class TmuxHost:
         first_provider = self.get_agent_provider(r, first_agent) if first_agent != "__init__" else None
 
         self.ensure_server_and_session(
+            r,
             initial_window=first_agent,
             cli=first_cli,
             profile=first_profile,
@@ -190,7 +211,12 @@ class TmuxHost:
                 cli = self.get_agent_cli(r, agent)
                 profile = self.get_agent_profile(r, agent)
                 provider = self.get_agent_provider(r, agent)
-                self.create_window(agent, cli=cli, profile=profile, lead=lead, provider=provider)
+                self.create_window(r, agent, cli=cli, profile=profile, lead=lead, provider=provider)
+
+        # A cause marker beside an already-present window did not cause that
+        # window. Consume it without attaching it to a later crash recovery.
+        for agent in roster_agents & existing_windows:
+            self.take_window_cause(r, agent)
 
         # Re-fetch after creations to decide cleanup
         existing_windows = self.get_windows()

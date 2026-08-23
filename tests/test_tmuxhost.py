@@ -3,18 +3,26 @@ import os
 import tempfile
 import pytest
 from unittest.mock import patch, MagicMock
+from flock.control import start_agent
 from flock.tmuxhost.host import TmuxHost, generate_agents_md, write_agent_guide, ensure_claude_project_trusted
 
 
 class MockRedis:
-    def __init__(self, roster_agents, port_type_map=None, launch_map=None, profile_map=None, provider_map=None):
+    def __init__(
+        self, roster_agents, port_type_map=None, launch_map=None, profile_map=None,
+        provider_map=None, cause_map=None,
+    ):
         self.roster_agents = set(roster_agents)
         self.port_type_map = port_type_map or {a: "tmux" for a in roster_agents}
         self.launch_map = launch_map or {}
         self.profile_map = profile_map or {}
         self.provider_map = provider_map or {}
+        self.cause_map = cause_map or {}
 
     def get(self, key):
+        for agent, cause in self.cause_map.items():
+            if f":agent:{agent}:window.cause" in key:
+                return cause.encode("utf-8") if isinstance(cause, str) else cause
         for agent, cli in self.launch_map.items():
             if f":agent:{agent}:launch" in key:
                 return cli.encode("utf-8") if isinstance(cli, str) else cli
@@ -25,6 +33,33 @@ class MockRedis:
             if f":agent:{agent}:provider" in key:
                 return provider.encode("utf-8") if isinstance(provider, str) else provider
         return None
+
+    def getdel(self, key):
+        for agent in list(self.cause_map):
+            if f":agent:{agent}:window.cause" in key:
+                value = self.cause_map.pop(agent)
+                return value.encode("utf-8") if isinstance(value, str) else value
+        return None
+
+    def set(self, key, value):
+        if key.endswith(":window.cause"):
+            agent = key.split(":agent:", 1)[1].split(":", 1)[0]
+            self.cause_map[agent] = value
+        elif key.endswith(":launch"):
+            agent = key.split(":agent:", 1)[1].split(":", 1)[0]
+            self.launch_map[agent] = value
+
+    def hset(self, key, field, value):
+        if key.endswith(":roster"):
+            self.roster_agents.add(field)
+            self.port_type_map[field] = value
+
+    def eval(self, script, numkeys, *args):
+        assert numkeys == 2
+        cause_key, roster_key, correlation_id, agent, agent_port_type = args
+        self.set(cause_key, correlation_id)
+        self.hset(roster_key, agent, agent_port_type)
+        return 1
 
     def hkeys(self, key):
         return {a.encode("utf-8") for a in self.roster_agents}
@@ -60,6 +95,93 @@ def test_tmuxhost_reconciliation(mock_run_tmux):
     calls = [c[0] for c in mock_run_tmux.call_args_list]
     assert any("new-window" in c for c in calls)
     assert any("kill-window" in c for c in calls)
+
+
+@patch("flock.tmux.ops.run_tmux")
+def test_window_created_consumes_hire_cause_and_recovery_borrows_none(mock_run_tmux, capsys):
+    mock_run_tmux.side_effect = [
+        (0, "", ""),
+        (0, "", ""),
+        (0, "", ""),
+        (0, "", ""),
+    ]
+    r = MockRedis([], cause_map={"dave": "hire-correlation"})
+    host = TmuxHost(
+        pod="acme", tenant="hq", redis_url="redis://127.0.0.1:6379/0", session_name="hq"
+    )
+
+    assert host.create_window(r, "dave") is True
+    assert host.create_window(r, "dave") is True
+
+    records = [json.loads(line) for line in capsys.readouterr().out.splitlines()]
+    created = [record for record in records if record["event"] == "window_created"]
+    assert created[0]["correlation_id"] == "hire-correlation"
+    assert "correlation_id" not in created[1]
+    assert r.cause_map == {}
+
+
+@patch("flock.tmux.ops.run_tmux")
+def test_start_acceptance_and_later_window_creation_share_correlation(mock_run_tmux, capsys):
+    mock_run_tmux.side_effect = [(0, "", ""), (0, "", "")]
+    r = MockRedis([])
+    host = TmuxHost(
+        pod="acme", tenant="hq", redis_url="redis://127.0.0.1:6379/0", session_name="hq"
+    )
+
+    start_agent(
+        r,
+        pod="acme",
+        tenant="hq",
+        envelope={"correlation_id": "hire-correlation", "payload": {"agent": "dave"}},
+        replace_window=lambda _agent: None,
+    )
+    # The two components share only Redis. No call or timing dependency joins
+    # them; this later reconciliation can happen after an arbitrary poll gap.
+    assert host.create_window(r, "dave") is True
+
+    records = [json.loads(line) for line in capsys.readouterr().out.splitlines()]
+    accepted = next(record for record in records if record["event"] == "start_agent_accepted")
+    created = next(record for record in records if record["event"] == "window_created")
+    assert accepted["correlation_id"] == "hire-correlation"
+    assert created["correlation_id"] == accepted["correlation_id"]
+    assert r.cause_map == {}
+
+
+@patch("flock.tmux.ops.run_tmux")
+def test_existing_window_discards_unconsumed_cause_without_emitting_join(mock_run_tmux, capsys):
+    mock_run_tmux.side_effect = [
+        (0, "", ""),
+        (0, "", ""),
+        (0, "", ""),
+        (0, "", ""),
+        (0, "alice", ""),
+        (0, "alice", ""),
+    ]
+    r = MockRedis(["alice"], cause_map={"alice": "stale-correlation"})
+    host = TmuxHost(
+        pod="acme", tenant="hq", redis_url="redis://127.0.0.1:6379/0", session_name="hq"
+    )
+
+    host.reconcile_once(r)
+
+    assert r.cause_map == {}
+    records = [json.loads(line) for line in capsys.readouterr().out.splitlines()]
+    assert not any(record["event"] == "window_created" for record in records)
+
+
+@patch("flock.tmux.ops.run_tmux")
+def test_failed_window_creation_retains_cause_for_retry(mock_run_tmux, capsys):
+    mock_run_tmux.side_effect = [(0, "", ""), (1, "", "tmux rejected window")]
+    r = MockRedis([], cause_map={"dave": "hire-correlation"})
+    host = TmuxHost(
+        pod="acme", tenant="hq", redis_url="redis://127.0.0.1:6379/0", session_name="hq"
+    )
+
+    assert host.create_window(r, "dave") is False
+
+    assert r.cause_map == {"dave": "hire-correlation"}
+    records = [json.loads(line) for line in capsys.readouterr().out.splitlines()]
+    assert not any(record["event"] == "window_created" for record in records)
 
 
 @patch("flock.tmux.ops.run_tmux")
