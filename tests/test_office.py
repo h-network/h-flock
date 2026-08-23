@@ -630,6 +630,7 @@ def test_hire_carries_a_profile_into_the_start_agent_payload(office_env, monkeyp
     """
     sent = {}
     monkeypatch.setattr(cli, "send", lambda r, **kw: sent.update(kw) or "stream-1")
+    monkeypatch.setattr(cli, "available_profiles", lambda: ("default", "work"))
 
     cli.main(["hire", "dave", "--cli", "codex", "--profile", "work"])
 
@@ -662,3 +663,16 @@ def test_hire_refuses_an_unknown_cli_at_the_prompt(office_env, capsys):
         cli.main(["hire", "dave", "--cli", "banana"])
     assert exc.value.code == 2
     assert "banana" in capsys.readouterr().err
+
+
+def test_hire_refuses_unknown_profile_at_client_with_available_accounts(
+    office_env, monkeypatch, capsys
+):
+    monkeypatch.setattr(cli, "available_profiles", lambda: ("default", "work"))
+    sent = []
+    monkeypatch.setattr(cli, "send", lambda *args, **kwargs: sent.append(kwargs))
+    with pytest.raises(SystemExit) as exc:
+        cli.main(["hire", "dave", "--profile", "typo"])
+    assert exc.value.code == 2
+    assert sent == []
+    assert "unknown account 'typo'; available accounts: default, work" in capsys.readouterr().err

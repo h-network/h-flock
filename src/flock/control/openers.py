@@ -1,10 +1,11 @@
 """Openers for agent lifecycle control envelopes."""
 
 import json
+from functools import wraps
 
 from collections.abc import Callable
 
-from flock.bus import SEGMENT_REGEX, prefix, purge_agent, port_type, tags_key
+from flock.bus import SEGMENT_REGEX, available_profiles, log_record, prefix, purge_agent, port_type, tags_key
 
 _STARTABLE_VABS = {"tmux", "api"}
 _FIXED_PARTICIPANTS = {"api", "host"}
@@ -12,6 +13,32 @@ _START_AGENT_KEYS = frozenset(
     {"agent", "port_type", "cli", "profile", "provider", "export", "import"}
 )
 _TARGET_ONLY_KEYS = frozenset({"agent"})
+
+
+def _record_control(kind: str):
+    """Record both the accepted outcome and any refusal before it is dead-lettered."""
+    def decorate(opener):
+        @wraps(opener)
+        def recorded(r, *, pod, tenant, envelope, **kwargs):
+            payload = envelope.get("payload", {}) if isinstance(envelope, dict) else {}
+            agent = payload.get("agent") if isinstance(payload, dict) else None
+            correlation_id = envelope.get("correlation_id") if isinstance(envelope, dict) else None
+            try:
+                result = opener(r, pod=pod, tenant=tenant, envelope=envelope, **kwargs)
+            except Exception as exc:
+                log_record(
+                    "control", f"{kind}_failed", correlation_id=correlation_id,
+                    destination=agent if isinstance(agent, str) else None,
+                    reason=str(exc) or type(exc).__name__,
+                )
+                raise
+            log_record(
+                "control", f"{kind}_confirmed", correlation_id=correlation_id,
+                destination=agent if isinstance(agent, str) else None,
+            )
+            return result
+        return recorded
+    return decorate
 
 
 def _target(envelope: dict, allowed_keys: frozenset[str]) -> tuple[str, dict]:
@@ -27,6 +54,7 @@ def _target(envelope: dict, allowed_keys: frozenset[str]) -> tuple[str, dict]:
     return agent, payload
 
 
+@_record_control("start_agent")
 def start_agent(
     r,
     *,
@@ -71,6 +99,11 @@ def start_agent(
     profile = payload.get("profile")
     if profile:
         prefix("check", "check", agent=profile, resource="profile")
+        profiles = available_profiles()
+        if profile not in profiles:
+            raise ValueError(
+                f"unknown account {profile!r}; available accounts: {', '.join(profiles)}"
+            )
     elif profile not in (None, ""):
         raise ValueError("StartAgent payload.profile must be a segment string")
 
@@ -120,6 +153,7 @@ def start_agent(
         replace_window(agent)
 
 
+@_record_control("stop_agent")
 def stop_agent(
     r,
     *,
@@ -140,6 +174,7 @@ def stop_agent(
         kill_window(agent)
 
 
+@_record_control("pause_agent")
 def pause_agent(
     r,
     *,
@@ -154,6 +189,7 @@ def pause_agent(
     interrupt_window(agent)
 
 
+@_record_control("resume_agent")
 def resume_agent(
     r,
     *,

@@ -1,3 +1,4 @@
+import json
 import sys
 import types
 
@@ -72,7 +73,9 @@ def test_start_agent_defaults_cli_to_claude():
     ]
 
 
-def test_start_agent_writes_profile_before_roster_visibility():
+def test_start_agent_writes_profile_before_roster_visibility(tmp_path, monkeypatch):
+    (tmp_path / ".codex-client-b").mkdir()
+    monkeypatch.setenv("HOME", str(tmp_path))
     events = []
     start_agent(
         RecordingRedis(events),
@@ -406,7 +409,9 @@ def test_changed_existing_hire_retires_stale_window_after_desired_state(monkeypa
     ]
 
 
-def test_fresh_hire_with_profile_and_provider_leaves_creation_to_tmuxhost(monkeypatch):
+def test_fresh_hire_with_profile_and_provider_leaves_creation_to_tmuxhost(monkeypatch, tmp_path):
+    (tmp_path / ".claude-work").mkdir()
+    monkeypatch.setenv("HOME", str(tmp_path))
     events = []
     fake_tmux = types.ModuleType("flock.tmux")
     fake_tmux.kill_window = lambda session, agent, socket=None: (
@@ -432,3 +437,47 @@ def test_fresh_hire_with_profile_and_provider_leaves_creation_to_tmuxhost(monkey
     assert ("set", prefix("acme", "hq", "iris", "profile"), "work") in events
     assert ("set", prefix("acme", "hq", "iris", "provider"), "gpu") in events
     assert not any(event[0] == "kill" for event in events)
+
+
+@pytest.mark.parametrize(
+    ("opener", "callbacks"),
+    [
+        (start_agent, {"replace_window": lambda agent: None}),
+        (stop_agent, {"kill_window": lambda agent: None}),
+        (pause_agent, {"interrupt_window": lambda agent: None}),
+        (resume_agent, {"resume_window": lambda agent: None, "kick_agent": lambda agent: None}),
+    ],
+)
+def test_control_openers_record_confirmed_outcome(opener, callbacks, capsys):
+    opener(
+        RecordingRedis([], roster_port_type="api"), pod="acme", tenant="hq",
+        envelope={"correlation_id": "corr-1", "payload": {"agent": "dave"}}, **callbacks,
+    )
+    record = json.loads(capsys.readouterr().out.splitlines()[-1])
+    assert record["event"] == f"{opener.__name__}_confirmed"
+    assert record["destination"] == "dave"
+    assert record["correlation_id"] == "corr-1"
+
+
+def test_refused_start_records_failure_before_dead_letter(capsys):
+    with pytest.raises(ValueError, match="unknown payload key 'typo'"):
+        start_agent(
+            RecordingRedis([]), pod="acme", tenant="hq",
+            envelope={"correlation_id": "corr-2", "payload": {"agent": "dave", "typo": True}},
+            replace_window=lambda agent: None,
+        )
+    record = json.loads(capsys.readouterr().out.splitlines()[-1])
+    assert record["event"] == "start_agent_failed"
+    assert record["destination"] == "dave"
+    assert "unknown payload key" in record["reason"]
+
+
+def test_start_agent_refuses_unknown_profile_and_lists_available(tmp_path, monkeypatch):
+    (tmp_path / ".claude-work").mkdir()
+    monkeypatch.setenv("HOME", str(tmp_path))
+    with pytest.raises(ValueError, match="unknown account 'typo'; available accounts: default, work"):
+        start_agent(
+            RecordingRedis([]), pod="acme", tenant="hq",
+            envelope={"payload": {"agent": "dave", "profile": "typo"}},
+            replace_window=lambda agent: None,
+        )
