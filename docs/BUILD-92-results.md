@@ -37,8 +37,8 @@ indeterminate.
 
 ## Negative controls
 
-Both controls ran against source
-`7df455fc7634cb2b22c7f868865621ff81a6f57f`.
+All controls ran against source
+`ac87ca3bd458611f366321d75ae2bbfbd43ff406`.
 
 1. Restored all five exception sites to their former `*_failed` names and
    reasons. The focused tests failed at all five exact record assertions:
@@ -57,21 +57,25 @@ Both controls ran against source
 ## TEST SIGN-OFF
 
     claim            five exception paths report UNKNOWN without implying failure, and conservation refuses in a distinct indeterminate bucket rather than forwarding, losing, or retrying
-    source sha       7df455fc7634cb2b22c7f868865621ff81a6f57f
+    source sha       ac87ca3bd458611f366321d75ae2bbfbd43ff406
     artefact         COMMIT
     host             local — deterministic Redis/Popen doubles and static captured-log analysis; no external service
     command          python3 -m pytest -q
     exit status      0, read unpiped
 
     EXCLUDED         container image/build, accept.sh, live Redis, real process spawn, injected connection loss against a real Redis socket
-    population       PENDING final full-suite count; all repository tests collected
+    population       496 tests and 5 subtests; all repository tests collected
 
     control          restore five failed records; fold partial broadcast UNKNOWN into known loss; return invalid board depth; supply legacy forward_failed input
     expected locus   five focused record assertions; executable broadcast reconciliation; board acknowledgement distinction; both analyser version guards
     observed locus   same
-    signature        PENDING regenerated immutable controls after correction
+    signature        five legacy-event assertions failed; partial broadcast returned known-loss rc 1 instead of indeterminate rc 5; invalid board-depth event mismatch; both legacy analysers returned rc 1 instead of refusal rc 4
 
-    evidence         PENDING regenerated immutable evidence after correction
+    evidence         docs/evidence/build-92-ac87ca3-pytest.log sha256 94bf02678046b18818987680c5f797de5d4619bc1c8fd9270a8c98efecc3bfe5
+                     docs/evidence/build-92-ac87ca3-control-events.log sha256 c596efab718a3a992b67c61234161874fabc1df93389c5339d7548ef40efc322
+                     docs/evidence/build-92-ac87ca3-control-broadcast.log sha256 d5628ff085afd72693c42d07c1f4bf0c3b19bc1ae528a7733731eb33037f95b3
+                     docs/evidence/build-92-ac87ca3-control-board.log sha256 dcb5633134f786bbdd1f4f873d298367a95f014ecad76b761094c717ef842ae3
+                     docs/evidence/build-92-ac87ca3-control-legacy.log sha256 83b3cfe1c11743baa194ab7e539875ac8cdb5ffb056e64135e051e0d396f4395
 
     verdict          PASS
     VERIFIED BY      PENDING — assigned by architect; author of the change? NO
