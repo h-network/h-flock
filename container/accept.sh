@@ -219,4 +219,18 @@ fi
 echo "  ⚠ This is the operator's path, not the whole product. It does not run for"
 echo "    hours, does not inject failures, and cannot tell you whether anything"
 echo "    looks right."
-exit "$FAILED"
+# ⚠ A SKIP IS NOT A PASS, AND THE EXIT CODE HAS TO SAY SO.
+# This used to be `exit "$FAILED"`, so a run that never opened a browser printed
+# "⚠ NOT CHECKED: console-flows" and returned 0. The comment above already said
+# "Never let a skip read as a pass" — which was true of the OUTPUT and false of
+# the STATUS, and status is what a person glances at and what any wrapper reads.
+#
+# ⚠ Distinguishable on purpose: 1+ means a step FAILED, 100 means everything run
+# passed but something was not run. A caller can tell "broken" from "incomplete"
+# without parsing prose.
+if [ "$FAILED" != "0" ]; then
+  exit "$FAILED"
+elif [ -n "$SKIPPED" ]; then
+  exit 100
+fi
+exit 0

@@ -61,6 +61,26 @@ the six-stage conservation. All were against
 `sha256:74c290e5db49…`, established after the fact, and both hosts happened to
 hold the same one. That was luck, not method.
 
+### 3.0b ⚠ Acceptance needs a playwright venv on the lab, or it skips the console
+
+`container/accept.sh` checks the console **flows** — that a hire reaches the
+terminals view, that a closed tab stays closed, that typed input survives a
+reload. Those need playwright, which is **not** in the tenant image because it
+is the operator's tooling, not the product's.
+
+```bash
+PATH=~/pw-venv/bin:$PATH bash container/accept.sh
+```
+
+⚠ **Without it the run does not fail — it reports `⚠ NOT CHECKED: console-flows`
+and now exits 100.** That exit code is the whole point: `1+` means a step failed,
+`100` means everything that ran passed and something did not run. It used to exit
+`0`, which is how acceptance ran "clean" for weeks on a host with no browser
+while checking only that the port answered.
+
+**On `h-lab@172.16.0.14` the venv already exists at `~/pw-venv`.** On a new host,
+create it before believing a green acceptance.
+
 ### 3.0 ⚠ The two hosts, and which question each answers
 
 We all run as unix user `ubuntu` with a shared `HOME=/home/ubuntu`, so
