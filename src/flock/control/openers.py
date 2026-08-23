@@ -69,11 +69,10 @@ def _write_desired(
     try:
         result = mutation()
     except Exception as exc:
-        if committed:
-            raise _IncompleteControl(
-                f"{', '.join(committed)}; {failure_label} failed: {exc}"
-            ) from exc
-        raise
+        acknowledged = f"acknowledged: {', '.join(committed)}" if committed else "none acknowledged"
+        raise _IncompleteControl(
+            f"{acknowledged}; {failure_label} outcome UNKNOWN after {exc}"
+        ) from exc
     committed.append(committed_label)
     return result
 
@@ -220,7 +219,7 @@ def start_agent(
             replace_window(agent)
         except Exception as exc:
             raise _IncompleteControl(
-                f"{', '.join(committed)}; replacing the stale window failed: {exc}"
+                f"acknowledged: {', '.join(committed)}; replacing the stale window failed: {exc}"
             ) from exc
 
 
@@ -261,7 +260,7 @@ def stop_agent(
             kill_window(agent)
         except Exception as exc:
             raise _IncompleteControl(
-                f"{', '.join(committed)}; killing the window failed: {exc}"
+                f"acknowledged: {', '.join(committed)}; killing the window failed: {exc}"
             ) from exc
 
 
@@ -285,7 +284,7 @@ def pause_agent(
         interrupt_window(agent)
     except Exception as exc:
         raise _IncompleteControl(
-            f"{', '.join(committed)}; interrupting the window failed: {exc}"
+            f"acknowledged: {', '.join(committed)}; interrupting the window failed: {exc}"
         ) from exc
 
 
@@ -313,5 +312,5 @@ def resume_agent(
             kick_agent(agent)
     except Exception as exc:
         raise _IncompleteControl(
-            f"{', '.join(committed)}; resuming or kicking the window failed: {exc}"
+            f"acknowledged: {', '.join(committed)}; resuming or kicking the window failed: {exc}"
         ) from exc

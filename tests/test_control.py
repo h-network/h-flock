@@ -533,7 +533,7 @@ def test_post_commit_side_effect_failure_records_incomplete(
         )
     record = json.loads(capsys.readouterr().out.splitlines()[-1])
     assert record["event"] == f"{opener.__name__}_incomplete"
-    assert committed in record["reason"]
+    assert f"acknowledged: {committed}" in record["reason"]
 
 
 def test_stop_partial_desired_write_names_committed_subset(capsys):
@@ -551,7 +551,7 @@ def test_stop_partial_desired_write_names_committed_subset(capsys):
     record = json.loads(capsys.readouterr().out.splitlines()[-1])
     assert record["event"] == "stop_agent_incomplete"
     assert record["reason"] == (
-        "roster row removed; agent resource purge failed: purge write failed"
+        "acknowledged: roster row removed; agent resource purge outcome UNKNOWN after purge write failed"
     )
     assert events[1] == ("hdel", prefix("acme", "hq", resource="roster"), "dave")
 
@@ -571,11 +571,11 @@ def test_start_partial_desired_write_names_committed_subset(capsys):
     record = json.loads(capsys.readouterr().out.splitlines()[-1])
     assert record["event"] == "start_agent_incomplete"
     assert record["reason"] == (
-        "launch published; roster row publish failed: roster publish failed"
+        "acknowledged: launch published; roster row publish outcome UNKNOWN after roster publish failed"
     )
 
 
-def test_first_desired_write_failure_records_failed(capsys):
+def test_first_desired_write_exception_records_unknown_incomplete(capsys):
     class FirstWriteFails(RecordingRedis):
         def set(self, key, value):
             raise RuntimeError("first write failed")
@@ -586,4 +586,30 @@ def test_first_desired_write_failure_records_failed(capsys):
             envelope={"payload": {"agent": "dave"}}, replace_window=lambda agent: None,
         )
     record = json.loads(capsys.readouterr().out.splitlines()[-1])
-    assert record["event"] == "start_agent_failed"
+    assert record["event"] == "start_agent_incomplete"
+    assert record["reason"] == (
+        "none acknowledged; launch publish outcome UNKNOWN after first write failed"
+    )
+
+
+def test_reply_loss_after_first_write_records_unknown_not_failed(capsys):
+    class ReplyLostAfterCommit(RecordingRedis):
+        def hdel(self, key, field):
+            self.events.append(("hdel-committed", key, field))
+            raise ConnectionError("reply lost after commit")
+
+    events = []
+    with pytest.raises(ConnectionError, match="reply lost after commit"):
+        stop_agent(
+            ReplyLostAfterCommit(events, roster_port_type="tmux"),
+            pod="acme", tenant="hq", envelope={"payload": {"agent": "dave"}},
+            kill_window=lambda agent: None,
+        )
+    record = json.loads(capsys.readouterr().out.splitlines()[-1])
+    assert record["event"] == "stop_agent_incomplete"
+    assert record["reason"] == (
+        "none acknowledged; roster row removal outcome UNKNOWN after reply lost after commit"
+    )
+    assert events[-1] == (
+        "hdel-committed", prefix("acme", "hq", resource="roster"), "dave"
+    )
