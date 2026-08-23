@@ -428,7 +428,8 @@ on `PATH` in every agent window (`LLD-port-tmux` §1).
 ```bash
 office send -a <destination> <text>...    # kind defaults to Message
 office broadcast <text>...              # tenant broadcast, everyone but you
-office peers | hire | letGo | pause | resume
+office hire <agent> [--cli claude|codex|agy] [--profile <account>]
+office peers | letGo | pause | resume
 office add | list | take | done | cancel | hold | delete
 office status [<agent>]                 # presence, open ticket, last activity
 office cloneToAll <repo-url> [-a a,b] [--dry-run]
@@ -440,6 +441,15 @@ office usage [--agent <a>] [--since <ISO>] [--json]
 `office/cli.py:_COMMANDS` is the authority; if the two disagree, the code is
 right and this is the stale one.
 
+- **`hire`** takes `--cli` and `--profile`. ⚠ **`--profile` decides both the
+  config directory and the credential** — `~/.claude-<account>` and that
+  account's OAuth token if one was given at setup. Omitted means the tenant's
+  default account. `StartAgent` has always accepted a profile
+  (`control/openers.py:71`); until 2026-08-23 only this command could not say
+  it, so every agent hired into a multi-account tenant silently landed on
+  `default`. ⚠ **`--cli` is validated against the three known values**, because
+  an unknown one used to be stored and then fail inside the window — which looks
+  exactly like a login prompt rather than a typo.
 - **`cloneToAll`** puts one repository in every `tmux` agent's workspace. It
   fetches from the network **once** and clones the rest from that copy, then
   points each `origin` back at the real URL. `api` and `control` agents are

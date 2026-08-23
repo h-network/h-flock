@@ -250,11 +250,27 @@ def _control_command(command: str, argv: list[str]) -> None:
     parser = _operation_parser(command, descriptions[command])
     parser.add_argument("agent", help="target agent")
     if command == "hire":
-        parser.add_argument("--cli", default="claude", help="CLI to start (default: claude)")
+        # ⚠ `choices` rather than a free string. An unknown value was accepted,
+        # stored, and then `startAgent <typo>` failed inside the window — which
+        # looks exactly like a login prompt, a first-run dialog, or an agent
+        # with nothing to say. A typo should fail at the prompt.
+        parser.add_argument("--cli", default="claude", choices=("claude", "codex", "agy"),
+                            help="CLI to start (default: claude)")
+        # ⚠ StartAgent has always carried a profile — `control/openers.py`
+        # validates it, persists it BEFORE roster visibility so tmuxhost sees the
+        # right account when it reconciles, and rebuilds the window when it
+        # changes. Only this command could not say it, so every agent hired into
+        # a multi-account tenant landed on `default` with default's config dir —
+        # and, since 2026-08-23, default's OAuth token. Nothing said so.
+        parser.add_argument("--profile", metavar="ACCOUNT",
+                            help="account whose config dir and credential this agent uses "
+                                 "(default: the tenant's default account)")
     args = parser.parse_args(argv)
     payload = {"agent": args.agent}
     if command == "hire":
         payload["cli"] = args.cli
+        if args.profile:
+            payload["profile"] = args.profile
 
     r, pod, tenant, source = _context()
     stream_id = send(

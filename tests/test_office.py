@@ -525,3 +525,46 @@ def test_status_survives_a_blocked_key_of_the_wrong_type(office_env, capsys):
 
 
 
+
+
+def test_hire_carries_a_profile_into_the_start_agent_payload(office_env, monkeypatch, capsys):
+    """⚠ StartAgent always accepted a profile; only this command could not say it.
+
+    Without it, every agent hired into a multi-account tenant landed on the
+    default config dir — and since the OAuth work, on the default account's
+    credential — with nothing reporting that it had happened.
+    """
+    sent = {}
+    monkeypatch.setattr(cli, "send", lambda r, **kw: sent.update(kw) or "stream-1")
+
+    cli.main(["hire", "dave", "--cli", "codex", "--profile", "work"])
+
+    assert sent["kind"] == "StartAgent"
+    assert sent["payload"]["agent"] == "dave"
+    assert sent["payload"]["cli"] == "codex"
+    assert sent["payload"]["profile"] == "work"
+
+
+def test_hire_without_a_profile_sends_none_rather_than_an_empty_one(office_env, monkeypatch, capsys):
+    """Absent means the tenant's default, which openers.py already handles.
+
+    An empty string would fail its segment validation and dead-letter the hire.
+    """
+    sent = {}
+    monkeypatch.setattr(cli, "send", lambda r, **kw: sent.update(kw) or "stream-1")
+
+    cli.main(["hire", "dave"])
+
+    assert "profile" not in sent["payload"]
+
+
+def test_hire_refuses_an_unknown_cli_at_the_prompt(office_env, capsys):
+    """⚠ It used to be accepted, stored, and fail inside the window instead.
+
+    `startAgent <typo>` produces a window that opens and never speaks — the same
+    signature as a login prompt or a first-run dialog, and nothing logs an error.
+    """
+    with pytest.raises(SystemExit) as exc:
+        cli.main(["hire", "dave", "--cli", "banana"])
+    assert exc.value.code == 2
+    assert "banana" in capsys.readouterr().err
