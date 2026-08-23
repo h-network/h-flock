@@ -301,7 +301,19 @@ def test_correlation_joins_marker_and_omits_unattributable_usage(tmp_path):
 
 
 def test_codex_token_count_event_parsing(tmp_path):
-    """Codex rollout token_count event correctly parsed into 4 buckets."""
+    """⚠ THE REAL SHAPE, captured from a live codex session on 2026-08-23.
+
+    This test used to construct `{"type": "token_count", "payload": {"input_tokens": ...}}`
+    — flat, invented, and a shape codex has never written. It passed, and the
+    extractor read `payload` directly, so every real record produced zeros under
+    model `unknown`. A live agent logged 28,908 input tokens and h-flock recorded
+    nothing.
+
+    ⚠ `last_token_usage`, not `total_token_usage`: total is cumulative for the
+    session. Two real records read total 14,373 then 28,908 while last read
+    14,373 then 14,535, so summing total gives 43,281 for a session that used
+    28,908.
+    """
     r = UsageRedis(agents=("tmux",))
     r.values[prefix("acme", "hq", "tmux", "launch")] = "codex"
     session = tmp_path / ".codex" / "sessions" / "2026" / "08" / "rollout-tmux.jsonl"
@@ -310,44 +322,62 @@ def test_codex_token_count_event_parsing(tmp_path):
         [
             {"type": "session_meta", "payload": {"cwd": "/workdir/tmux"}},
             {
-                "type": "token_count",
-                "timestamp": "2026-08-22T11:00:00.000Z",
+                "type": "event_msg",
+                "timestamp": "2026-08-23T11:58:46.354Z",
                 "payload": {
-                    "request_id": "codex_req_001",
-                    "model": "gpt-5-codex",
-                    "input_tokens": 8100,
-                    "cached_tokens": 412000,
-                    "cache_write_tokens": 0,
-                    "output_tokens": 12000,
+                    "type": "token_count",
+                    "info": {
+                        "total_token_usage": {
+                            "input_tokens": 28908, "cached_input_tokens": 22016,
+                            "cache_write_input_tokens": 0, "output_tokens": 134,
+                        },
+                        "last_token_usage": {
+                            "input_tokens": 14535, "cached_input_tokens": 11008,
+                            "cache_write_input_tokens": 0, "output_tokens": 14,
+                        },
+                    },
                 },
             },
         ],
     )
-    tailer = ActivityTailer(r, pod="acme", tenant="hq", home_root=tmp_path)
-    tailer.poll()
+
+    ActivityTailer(r, pod="acme", tenant="hq", home_root=tmp_path).poll()
 
     records = _usage_records(r)
     assert len(records) == 1
     rec = records[0]
+    assert rec["input"] == 14535, "took the cumulative total instead of the turn"
+    assert rec["cache_read"] == 11008
+    assert rec["output"] == 14
     assert rec["cli"] == "codex"
-    assert rec["model"] == "gpt-5-codex"
-    assert rec["input"] == 8100
-    assert rec["cache_read"] == 412000
-    assert rec["cache_write"] == 0
-    assert rec["output"] == 12000
 
-    cost, is_priced = calculate_cost(
-        rec["model"],
-        input_tokens=rec["input"],
-        cache_read=rec["cache_read"],
-        cache_write=rec["cache_write"],
-        output_tokens=rec["output"],
+
+def test_a_codex_token_count_with_no_tokens_is_not_a_usage_record(tmp_path):
+    """⚠ codex writes these during startup and teardown.
+
+    Measured: an agent that logged in and was retired produced nine records,
+    every one all-zero under model `unknown` — which reads in a cost table
+    exactly like an agent that ran and cost nothing.
+    """
+    r = UsageRedis(agents=("tmux",))
+    r.values[prefix("acme", "hq", "tmux", "launch")] = "codex"
+    session = tmp_path / ".codex" / "sessions" / "2026" / "08" / "rollout-tmux.jsonl"
+    _write_lines(
+        session,
+        [
+            {"type": "session_meta", "payload": {"cwd": "/workdir/tmux"}},
+            {
+                "type": "event_msg",
+                "timestamp": "2026-08-23T11:58:20.000Z",
+                "payload": {"type": "token_count", "info": {"last_token_usage": {
+                    "input_tokens": 0, "cached_input_tokens": 0,
+                    "cache_write_input_tokens": 0, "output_tokens": 0}}},
+            },
+        ],
     )
-    assert is_priced is True
-    # gpt-5-codex: input $2.5, cache_read $1.25, output $10 per 1M tokens
-    expected_cost = (8100 * 2.5 + 412000 * 1.25 + 12000 * 10.0) / 1_000_000.0
-    assert cost == pytest.approx(expected_cost)
 
+    ActivityTailer(r, pod="acme", tenant="hq", home_root=tmp_path).poll()
+    assert _usage_records(r) == []
 
 def test_office_usage_cli_table_and_json(monkeypatch, capsys):
     """office usage CLI formats table with totals, unpriced flags, and JSON."""

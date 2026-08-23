@@ -113,7 +113,22 @@ def _codex_usage(record: dict) -> dict | None:
 
     usage = None
     if record_type == "token_count" or payload_type == "token_count":
-        usage = payload
+        # ⚠ `last_token_usage`, NEVER `total_token_usage`. Measured on a live
+        # codex session 2026-08-23: total is CUMULATIVE for the session and last
+        # is that turn alone. Two records read total 14,373 then 28,908 while
+        # last read 14,373 then 14,535 — so summing total across records gives
+        # 43,281 for a session that used 28,908. One usage record is emitted per
+        # parsed record and they are summed, so the per-turn figure is the only
+        # correct one.
+        info = payload.get("info") if isinstance(payload.get("info"), dict) else {}
+        for key in ("last_token_usage", "usage"):
+            if isinstance(info.get(key), dict):
+                usage = info[key]
+                break
+        # ⚠ It used to take `payload` itself here, which carries no counts at
+        # all — they are two levels down. Every codex record therefore emitted
+        # zeros under model `unknown`, which reads in a cost table exactly like
+        # an agent that ran and cost nothing.
     elif isinstance(payload.get("usage"), dict):
         usage = payload.get("usage")
     elif isinstance(payload.get("info", {}).get("usage"), dict):
@@ -122,6 +137,18 @@ def _codex_usage(record: dict) -> dict | None:
         usage = payload
 
     if usage is None:
+        return None
+
+    # ⚠ A record carrying no tokens is not a usage record. codex writes
+    # token_count events during startup and teardown whose counts are all zero;
+    # emitting them makes an agent that did nothing appear in a cost table under
+    # a model nobody can identify.
+    if not any(
+        int(usage.get(k) or 0)
+        for k in ("input_tokens", "prompt_tokens", "input",
+                  "cached_input_tokens", "cache_read_input_tokens",
+                  "output_tokens", "completion_tokens", "output")
+    ):
         return None
 
     model = str(payload.get("model") or record.get("model") or "unknown")
@@ -135,6 +162,7 @@ def _codex_usage(record: dict) -> dict | None:
     )
     cache_read = int(
         usage.get("cached_tokens")
+        or usage.get("cached_input_tokens")   # codex's spelling
         or usage.get("cache_read_tokens")
         or usage.get("cache_read_input_tokens")
         or usage.get("cache_read", 0)
@@ -143,6 +171,7 @@ def _codex_usage(record: dict) -> dict | None:
     )
     cache_write = int(
         usage.get("cache_write_tokens")
+        or usage.get("cache_write_input_tokens")   # codex's spelling
         or usage.get("cache_creation_input_tokens")
         or usage.get("cache_write", 0)
         or 0
