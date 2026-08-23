@@ -50,7 +50,7 @@
   - *Observed locus:* `test_codex_session_ownership_rejects_arbitrary_cwd` FAILED with `assert True is False`; exit 1.
 - **Control 6 (Codex rate limits):**
   - *Mutation:* Omit `rate_limits` extraction in `_codex_usage`.
-  - *Observed locus:* `test_codex_captured_session_fixture_model_and_tokens` FAILED with `KeyError: 'rate_limits'`; exit 1.
+  - *Observed locus:* `test_codex_captured_session_fixture_model_and_tokens` FAILED with `assert 'rate_limits' in rec`; exit 1.
 
 ---
 
