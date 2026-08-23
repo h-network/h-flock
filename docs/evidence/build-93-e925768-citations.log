@@ -1,4 +1,4 @@
-citations checked: 809 (653 unique)
+citations checked: 814 (657 unique)
 NEAR docs/AUDIT-2026-08-11-comparison.md:37: ops.py:56: symbol 'set' not within 3 lines
 NEAR docs/AUDIT.md:32: tmuxhost/host.py:201: symbol 'AttributeError' not within 3 lines
 NEAR docs/AUDIT.md:72: tmuxhost/host.py:167-170: symbol 'provider' not within 3 lines

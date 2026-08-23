@@ -11,7 +11,7 @@ tests/test_control.py F                                                  [100%]
 =================================== FAILURES ===================================
 ________ test_first_desired_write_exception_records_unknown_incomplete _________
 
-capsys = <_pytest.capture.CaptureFixture object at 0x7ce7d4e95460>
+capsys = <_pytest.capture.CaptureFixture object at 0x763f5c8f7f80>
 
     def test_first_desired_write_exception_records_unknown_incomplete(capsys):
         class FirstWriteFails(RecordingRedis):
@@ -35,7 +35,7 @@ E         ?             ++   ^
 tests/test_control.py:633: AssertionError
 =========================== short test summary info ============================
 FAILED tests/test_control.py::test_first_desired_write_exception_records_unknown_incomplete
-======================= 1 failed, 53 deselected in 0.02s =======================
+======================= 1 failed, 53 deselected in 0.03s =======================
 
 === CONTROL 2: Refusal emits incomplete instead of failed (exit status: 1) ===
 ============================= test session starts ==============================
@@ -50,7 +50,7 @@ tests/test_control.py F                                                  [100%]
 =================================== FAILURES ===================================
 ____________ test_refused_start_records_failure_before_dead_letter _____________
 
-capsys = <_pytest.capture.CaptureFixture object at 0x79f216a4a6c0>
+capsys = <_pytest.capture.CaptureFixture object at 0x782259c87fe0>
 
     def test_refused_start_records_failure_before_dead_letter(capsys):
         with pytest.raises(ValueError, match="unknown payload key 'typo'"):
@@ -86,9 +86,9 @@ tests/test_office.py F                                                   [100%]
 =================================== FAILURES ===================================
 ________________ test_hire_reads_canonical_accounts_from_redis _________________
 
-office_env = <test_office.MockRedis object at 0x778d20da36e0>
-monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x778d20da3770>
-capsys = <_pytest.capture.CaptureFixture object at 0x778d20da3a40>
+office_env = <test_office.MockRedis object at 0x7eaa536e3500>
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x7eaa536e3170>
+capsys = <_pytest.capture.CaptureFixture object at 0x7eaa536e3860>
 
     def test_hire_reads_canonical_accounts_from_redis(office_env, monkeypatch, capsys):
         office_env.sets[prefix("acme", "hq", resource="accounts")] = {b"default", b"work"}
@@ -102,7 +102,7 @@ tests/test_office.py:690: Failed
 None
 =========================== short test summary info ============================
 FAILED tests/test_office.py::test_hire_reads_canonical_accounts_from_redis - ...
-======================= 1 failed, 67 deselected in 0.03s =======================
+======================= 1 failed, 67 deselected in 0.02s =======================
 
 === CONTROL 4: office send omits byte count from acknowledgement (exit status: 1) ===
 ============================= test session starts ==============================
@@ -117,9 +117,9 @@ tests/test_office.py F                                                   [100%]
 =================================== FAILURES ===================================
 _________________ test_send_reads_stdin_and_reports_utf8_bytes _________________
 
-office_env = <test_office.MockRedis object at 0x7e480c68f620>
-monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x7e480c68f6b0>
-capsys = <_pytest.capture.CaptureFixture object at 0x7e480c68f920>
+office_env = <test_office.MockRedis object at 0x7e539391f620>
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x7e539391f6b0>
+capsys = <_pytest.capture.CaptureFixture object at 0x7e539391f920>
 
     def test_send_reads_stdin_and_reports_utf8_bytes(office_env, monkeypatch, capsys):
         calls = []
@@ -140,4 +140,46 @@ tests/test_office.py:192: AssertionError
 =========================== short test summary info ============================
 FAILED tests/test_office.py::test_send_reads_stdin_and_reports_utf8_bytes - A...
 ======================= 1 failed, 67 deselected in 0.03s =======================
+
+=== CONTROL 5: StopAgent omits synchronous inline kill_window (exit status: 1) ===
+============================= test session starts ==============================
+platform linux -- Python 3.12.3, pytest-9.1.1, pluggy-1.6.0
+rootdir: /workspace/api/h-flock
+configfile: pyproject.toml
+plugins: anyio-4.14.2
+collected 54 items / 53 deselected / 1 selected
+
+tests/test_control.py F                                                  [100%]
+
+=================================== FAILURES ===================================
+_______________ test_stop_agent_orders_roster_launch_then_window _______________
+
+    def test_stop_agent_orders_roster_launch_then_window():
+        events = []
+        r = RecordingRedis(events, roster_port_type="tmux")
+        stop_agent(
+            r,
+            pod="acme",
+            tenant="hq",
+            envelope={"payload": {"agent": "dave"}},
+            kill_window=lambda agent: events.append(("kill_window", agent)),
+        )
+>       assert events == [
+            ("hget", prefix("acme", "hq", resource="roster"), "dave"),
+            ("hdel", prefix("acme", "hq", resource="roster"), "dave"),
+            ("delete", *(prefix("acme", "hq", "dave", resource) for resource in sorted(AGENT_STATE_RESOURCES))),
+            ("hdel", prefix("acme", "hq", resource="delivering"), "dave"),
+            ("kill_window", "dave"),
+        ]
+E       AssertionError: assert [('hget', 'po...ing', 'dave')] == [('hget', 'po...dow', 'dave')]
+E         
+E         Right contains one more item: ('kill_window', 'dave')
+E         Use -v to get more diff
+
+tests/test_control.py:227: AssertionError
+----------------------------- Captured stdout call -----------------------------
+{"ts":"2026-08-23T20:40:59.550Z","module":"control","event":"stop_agent_accepted","writer":"control","destination":"dave"}
+=========================== short test summary info ============================
+FAILED tests/test_control.py::test_stop_agent_orders_roster_launch_then_window
+======================= 1 failed, 53 deselected in 0.02s =======================
 
