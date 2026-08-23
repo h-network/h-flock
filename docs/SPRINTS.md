@@ -124,6 +124,76 @@ Confirm live afterwards.
 
 ---
 
+## Sprint 9 — finish what today half-finished — PLANNED 2026-08-24
+
+⚠ **Two builds, because with four lanes at most two may author if the other two
+are to verify.** That, not merge contention, is the constraint.
+
+⚠ **Both items use something built today**, which is why they come before
+sprint 4's alerts: the fault-injection harness from build 100, and the
+`window_created` signal the acceptance seat found while measuring a gap.
+
+### 9a — characterise a partial control failure, then decide about atomicity
+
+**Lane: `bus`.** ⚠ **A SPIKE, NOT A FIX.** The question is what a half-completed
+control operation actually leaves behind — and whether that is bad enough to
+justify making desired-state writes atomic.
+
+`stop_agent` writes three times and `start_agent` several, with no transaction.
+Build 91 made the **record** truthful (`_incomplete`, naming the acknowledged
+subset) **without making the failure impossible.** Nobody has seen what a real
+one leaves.
+
+**Build 100's harness can now produce one.** Inject a fault between the roster
+`hdel` and the resource purge on a live tenant, then report:
+
+- exactly what state survives — roster row, agent resources, delivery lock,
+  window
+- what `office status` and `office peers` say about that agent afterwards
+- whether a subsequent `StartAgent` for the same name succeeds, fails, or
+  produces something worse than either
+- ⚠ **the `_incomplete` record itself, live** — it has never been produced
+  outside a unit test, and this is the cheapest honest way to reach one
+
+⚠ **Then argue whether atomicity is warranted**, with the damage in front of you
+rather than imagined. The option is a Lua script, as `watchdog/activity.py`
+already uses. **"Not worth it" is a legitimate and expected answer** — a
+mid-sequence Redis failure is rare, and the record is already truthful. **Do not
+write the Lua script in this build.**
+
+### 9b — close the hire row properly: join `window_created` to its cause
+
+**Lane: `tmux`.** Rows: *join `window_created` to the control record* and the
+open half of *a hire leaves no record of whether it worked*.
+
+⚠ **This row shrank on measurement rather than on argument.** It assumed
+`tmuxhost` needed a new confirmation record. It does not —
+`src/flock/tmuxhost/host.py:116` and `src/flock/tmuxhost/host.py:150` **already
+emit `window_created`.** The only thing missing is a `correlation_id`, so nothing
+can say *which hire produced which window*.
+
+**Thread the id through.** Then `start_agent_accepted` and `window_created` join,
+and the question *"did the hire work"* becomes answerable from the log — which is
+what the original row asked for and build 91 could only half-deliver.
+
+⚠ **Do NOT make control wait for it.** `tmux` argued this and was right: waiting
+turns an asynchronous architecture into a gate, and window presence does not
+prove correct configuration.
+
+⚠ **The gap is 4.091 s, measured on a live tenant** (`BUILD-94-results`). Whatever
+you build must tolerate it.
+
+### Not in this sprint, and why
+
+| | |
+|---|---|
+| **alerts** (sprint 4) | spec already written, genuinely ready — but neither item uses today's work, and it will still be ready next sprint |
+| **acceptance never exercises `office usage` or `office status`** | a real gap and a third build; it needs a verifier and we have two |
+| **the other failure shapes** | reachable now, and **each costs a live tenant.** 9a reaches one because it answers a question — do not chase the set |
+| **`gateway` vs cross-tenant** | ⚠ **one decision, and it is the operator's.** Two rows sit still until it is made |
+
+---
+
 ## Sprint 4 — alerts you can act on
 
 **Rows:** *an alert you can clear* · *credential alerts never clear* · *console
