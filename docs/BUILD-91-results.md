@@ -65,7 +65,7 @@ in the sign-off.
                      docs/evidence/build-91-702b884-pytest.log sha256 2a25f7bb4f2e0105be0318d7b56751f4104bc3108a010204a3c0b25764030ff1
 
     verdict          PASS
-    VERIFIED BY      PENDING — author of the change? NO
+    VERIFIED BY      api — author of the change? NO
 
 ## Citation gate
 
