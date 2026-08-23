@@ -78,7 +78,7 @@ All controls ran against source
                      docs/evidence/build-92-ac87ca3-control-legacy.log sha256 83b3cfe1c11743baa194ab7e539875ac8cdb5ffb056e64135e051e0d396f4395
 
     verdict          PASS
-    VERIFIED BY      PENDING — assigned by architect; author of the change? NO
+    VERIFIED BY      tmux — author of the change? NO
 
 ## Citation gate
 
