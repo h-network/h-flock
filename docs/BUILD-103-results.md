@@ -54,36 +54,36 @@ asserting source text.
 ## TEST SIGN-OFF
 
     claims           fresh hire and later window_created share correlation; causes are one-shot; cause-less recovery borrows none
-    source sha       e0c85462ed3bc9598166641ddb19c3a9d2f643d8
+    source sha       a4038175b7ec9b165740508372ea859649ef5c9e
     artefact         COMMIT
-    host             local — deterministic Redis and tmux process doubles, real control and tmuxhost code
+    host             local — deterministic Redis/tmux doubles plus mandatory ephemeral real redis-server
     command          python3 -m pytest -q
     exit status      0, read unpiped
 
     EXCLUDED         live tmux, container build, accept.sh, measured wall-clock reconcile latency
-    population       508 tests and 5 subtests; all repository tests collected
+    population       513 tests and 5 subtests; all repository tests collected
 
-    controls         remove cause publication; replace GETDEL with GET; remove stale-marker discard
-    expected loci    joined event correlation; second event absence; existing-window marker removal
-    observed loci    tests/test_tmuxhost.py:139, :112, :160
-    signatures       KeyError correlation_id; borrowed correlation_id; retained stale-correlation; each exit 1
+    controls         remove cause publication; replace GETDEL with GET; remove stale-marker discard; remove roster HSET from Lua
+    expected loci    joined event correlation; second event absence; existing-window marker removal; cause implies roster
+    observed loci    tests/test_tmuxhost.py:146, :119, :167; tests/test_control.py:159
+    signatures       KeyError correlation_id; borrowed id; retained stale id; real Redis roster None; each exit 1
 
-    evidence         docs/evidence/build-103-e0c8546-controls.log sha256 62cde290e34a8cc7a3c70bc6863d144aea2b31e238c17b41bd8f3b318926c30a
-                     docs/evidence/build-103-e0c8546-pytest.log sha256 b00df529d4080a56d78a6c8473c42e74baa32dee59d01e5367fd97bbf8b5e9d4
+    evidence         docs/evidence/build-103-a403817-controls.log sha256 a175811205ce646446808c4e8f892c4f53a995eb440340cdf5db023622e44dfc
+                     docs/evidence/build-103-a403817-pytest.log sha256 788c1657cf69902c4ebc2553e61485ee975d01e45cca4a4e3723c118f9ce0596
 
     verdict          PASS
     VERIFIED BY      PENDING — assigned by architect; author of the change? NO
 
 ## Merged-tree check
 
-`origin/main` was `ba1d3e656cabdbe325ca1fee09cd5227ccf805d0`, the branch merge base
+`origin/main` was `ff6940dbfd606929057d109c239def2b17637391`, the branch merge base
 and direct parent. The tested branch tree is therefore the merged tree. The
 living `CONTRACTS.md` and `LLD-tmux-host.md` claims compose with current main.
 
 ## Citation gate
 
-    source sha       3701cb4a9937a8b0a9030530fd163f58ed5e099e
+    source sha       a4038175b7ec9b165740508372ea859649ef5c9e
     command          python3 tools/check_citations.py
     exit status      0, read unpiped
-    result           0 hard failures, 83 near misses
-    evidence         docs/evidence/build-103-e0c8546-citations.log sha256 142d6ce8f239d2bfc9c1a5b65fdacf8b50fbb0b1c0bdd5aff960c1fbe438abfd
+    result           0 hard failures, 84 near misses
+    evidence         docs/evidence/build-103-a403817-citations.log sha256 9c8eb21d9d49b92a1a2c876c8626c0f61ba97ea5ef7d444954054d3772ff079c
