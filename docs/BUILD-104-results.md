@@ -25,23 +25,24 @@ assigns/references `"fault-injection"`.
 
 Per `docs/TEST-SIGNOFF.md`, this invariant is persistently controlled by
 `test_shipping_source_has_no_writer_assignments` in
-`tests/test_fault_injection.py:110-147`:
+`tests/test_fault_injection.py:130-174`:
 - **Population anchor**: Asserts `len(py_files) >= 10` in `src/`.
-- **Known-read anchor**: Asserts that the single known environment read `_WRITER = os.environ.get("FLOCK_WRITER")` in `src/flock/bus/logging.py` was parsed and encountered exactly once.
+- **Known-read anchor**: Asserts that the single known environment read `_WRITER = os.environ.get("FLOCK_WRITER")` in `src/flock/bus/logging.py` matches the exact AST node shape (target `_WRITER`, call `os.environ.get`, sole arg `Constant("FLOCK_WRITER")`), marks only that specific argument node as allowed, and verifies it was encountered in AST exactly once.
 - **AST traversal**: Rejects any other `FLOCK_WRITER` identifier/constant, and rejects any literal `"fault-injection"` anywhere in `src/`.
 
 - **Clean run**: `python3 -m pytest tests/test_fault_injection.py -k test_shipping_source_has_no_writer_assignments` passes with exit 0.
-- **Negative mutation 1 (Missing scan root)**: Repointing `src_dir` to `ROOT / "missing-src"` triggers the population assertion at `tests/test_fault_injection.py:115` and exits 1.
-- **Negative mutation 2 (FLOCK_WRITER / fault-injection setter)**: Mutating `src/flock/switch/service.py` with `os.environ.update(
+- **Negative mutation 1 (Missing scan root)**: Repointing `src_dir` to `ROOT / "missing-src"` triggers the population assertion at `tests/test_fault_injection.py:137` and exits 1.
+- **Negative mutation 2 (Invalid read shape in logging.py)**: Replacing `_WRITER = os.environ.get("FLOCK_WRITER")` with `_WRITER = os.environ.get("OTHER", "FLOCK_WRITER")` triggers the known-read assertion at `tests/test_fault_injection.py:172` and exits 1.
+- **Negative mutation 3 (FLOCK_WRITER / fault-injection setter)**: Mutating `src/flock/switch/service.py` with multiline `os.environ.update(
  {"FLOCK_WRITER": "fault-injection"}
-)` inside `step()` triggers the assertion at `tests/test_fault_injection.py:146` identifying `src/flock/switch/service.py:105` and exits 1.
+)` inside `step()` triggers the assertion at `tests/test_fault_injection.py:172` identifying `src/flock/switch/service.py:105` and exits 1.
 
-Both mutations were restored before generating final gate logs.
+All mutations were restored before generating final gate logs.
 
 ## TEST SIGN-OFF
 
     claim            writer: fault-injection documented in CONTRACTS as scenario-only, structural check confirms absent in src/, and --keep console transfer documented in BUILD-CONVENTION
-    source sha       e6f5a87
+    source sha       6a2a925
     artefact         COMMIT
     host             local — structural inspection and documentation audit
     command          python3 -m pytest -q
@@ -50,27 +51,27 @@ Both mutations were restored before generating final gate logs.
     EXCLUDED         live container execution, Docker image build, runtime benchmark
     population       514 tests and 5 subtests; all repository tests collected
 
-    control          structural mutations: (1) repoint scan root to missing-src; (2) assign FLOCK_WRITER / fault-injection in src/flock/switch/service.py
-    expected locus   (1) assertion exit 1 at tests/test_fault_injection.py:115; (2) assertion exit 1 at tests/test_fault_injection.py:146
+    control          structural mutations: (1) repoint scan root to missing-src; (2) invalid read shape in logging.py; (3) assign FLOCK_WRITER / fault-injection in src/flock/switch/service.py
+    expected locus   (1) assertion exit 1 at tests/test_fault_injection.py:137; (2) assertion exit 1 at tests/test_fault_injection.py:172; (3) assertion exit 1 at tests/test_fault_injection.py:172
     observed locus   same
-    signature        (1) AssertionError: Expected at least 10 python files in src/, found 0; (2) AssertionError: Illegal FLOCK_WRITER or fault-injection in shipping source: src/flock/switch/service.py:105; MUTATION_EXIT=1
+    signature        (1) AssertionError: Expected at least 10 python files in src/, found 0; (2) AssertionError: Expected exactly 1 known read of FLOCK_WRITER in src/flock/bus/logging.py, found 0; (3) AssertionError: Illegal FLOCK_WRITER or fault-injection in shipping source: src/flock/switch/service.py:105; MUTATION_EXIT=1
 
-    evidence         docs/evidence/build-104-controls.log sha256 2c5c5363bc542229bfcc844b5c4125c976efa833e305c0f588150ab98c116070
-                     docs/evidence/build-104-pytest.log sha256 c67ba43da7d296b0375f2750347a43a3361d3c63a11eaf5e8be4b86dabcb1031
+    evidence         docs/evidence/build-104-controls.log sha256 c88fe5c4c47937c6060e5076d8567aef06e223f32f693ee6781670777046bcdc
+                     docs/evidence/build-104-pytest.log sha256 f149380882e5a676f7a4ca3144523b73dae3eb31a2665115ace6c159d4c5712d
 
     verdict          PASS (structural claim verified with negative mutation controls)
     VERIFIED BY      PENDING — assigned by architect
 
 ## Citation gate
 
-    source sha       e6f5a87
+    source sha       6a2a925
     artefact         COMMIT
     command          python3 tools/check_citations.py
     exit status      0, read unpiped
-    result           0 hard failures, 85 near misses
-    evidence         docs/evidence/build-104-citations.log sha256 57bffaa13f8708210a2a79debd1d51c1b721b591951f2c03b8b6c2962e808180
+    result           0 hard failures, 84 near misses
+    evidence         docs/evidence/build-104-citations.log sha256 86fe64dedb55daa58b5afdc8396dcb212b3ee7621bfb814064fac3a77489a372
 
 ## Merged-tree verification
 
     merged with      main at 3d7900e
-    result           clean merge; 514 passed + 5 subtests passed, exit 0; citations 0 hard / 85 near, exit 0
+    result           clean merge; 514 passed + 5 subtests passed, exit 0; citations 0 hard / 84 near, exit 0
