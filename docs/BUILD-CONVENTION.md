@@ -136,6 +136,17 @@ tenant and project; one per run, fresh each time.
   held by an unexplained `python3` process, used `--console-port 8199`, and **the
   process is still there.** The workaround was correct; reporting it is what made
   it a finding instead of folklore.
+- ⚠ **`docker system df`'s "reclaimable" over-predicts what the FILESYSTEM gets
+  back.** Measured 2026-08-24 on the lab: `docker builder prune -f` reported
+  **5.548 GB** reclaimed against **5.578 GB** predicted — those agree, and the
+  cache accounting is internally consistent. But `df` moved only **~3.9 GB**
+  (82% → 78%). ⚠ **A ~1.6 GB spread at this scale is real, not rounding.**
+  **Plausible and NOT verified**: `overlay2` cache layers can share blocks with
+  layers still referenced by images left in place, so removing a cache entry's
+  accounting does not free that entry's full size in unique blocks. ⚠ **Do not
+  plan capacity from `reclaimable`** — treat it as an optimistic ceiling and
+  measure `df` before and after. **Docker's number is not wrong about Docker; it
+  is not a statement about the disk.**
 - ⚠ **Record `free -h` and `df -h /` before every run, in the results.** Not as
   ceremony: **four acceptance runs out of four began with this VM already
   swapping** — 1.2–1.9 GiB free of 7.8, and swap already in use — before a single
