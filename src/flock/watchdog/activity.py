@@ -106,7 +106,7 @@ def _codex_events(record: dict) -> list[tuple[str, str | None]]:
     return []
 
 
-def _codex_usage(record: dict) -> dict | None:
+def _codex_usage(record: dict, current_model: str = "") -> dict | None:
     payload = record.get("payload") if isinstance(record.get("payload"), dict) else record
     record_type = str(record.get("type", ""))
     payload_type = str(payload.get("type", ""))
@@ -151,7 +151,7 @@ def _codex_usage(record: dict) -> dict | None:
     ):
         return None
 
-    model = str(payload.get("model") or record.get("model") or "unknown")
+    model = current_model or str(payload.get("model") or record.get("model") or "unknown")
     request_id = str(payload.get("request_id") or payload.get("id") or record.get("id") or "")
 
     input_tokens = int(
@@ -183,7 +183,11 @@ def _codex_usage(record: dict) -> dict | None:
         or 0
     )
 
-    return {
+    rate_limits = payload.get("rate_limits") if isinstance(payload.get("rate_limits"), dict) else (
+        record.get("rate_limits") if isinstance(record.get("rate_limits"), dict) else None
+    )
+
+    usage_dict = {
         "cli": "codex",
         "model": model,
         "request_id": request_id,
@@ -192,6 +196,9 @@ def _codex_usage(record: dict) -> dict | None:
         "cache_write": cache_write,
         "output": output_tokens,
     }
+    if rate_limits:
+        usage_dict["rate_limits"] = rate_limits
+    return usage_dict
 
 
 _EMIT_USAGE_LUA = """
@@ -236,6 +243,7 @@ class ActivityTailer:
         import collections
         self._seen_requests: dict[str, set[str]] = collections.defaultdict(set)
         self._attributed_markers: dict[str, set[str]] = collections.defaultdict(set)
+        self._codex_model: dict[str, str] = collections.defaultdict(str)
 
     def _profile(self, agent: str) -> str | None:
         return _text(self.r.get(prefix(self.pod, self.tenant, agent, "profile")))
@@ -245,7 +253,7 @@ class ActivityTailer:
 
     @staticmethod
     def _codex_session_belongs_to(path: Path, agent: str) -> bool:
-        """Use Codex's own session metadata to assign a shared rollout.
+        """Use Codex's own session metadata or turn context to assign a shared rollout.
 
         CODEX_HOME is an account directory, so agents on the default account or
         the same named profile legitimately share its sessions directory.  A
@@ -254,16 +262,23 @@ class ActivityTailer:
         """
         try:
             with path.open("rb") as session:
-                raw = session.readline()
-            record = json.loads(raw)
-        except (OSError, UnicodeDecodeError, json.JSONDecodeError):
+                for _ in range(10):
+                    raw = session.readline()
+                    if not raw:
+                        break
+                    try:
+                        record = json.loads(raw)
+                    except (OSError, UnicodeDecodeError, json.JSONDecodeError):
+                        continue
+                    if not isinstance(record, dict):
+                        continue
+                    payload = record.get("payload") if isinstance(record.get("payload"), dict) else {}
+                    cwd = payload.get("cwd")
+                    if isinstance(cwd, str) and (cwd == f"/workdir/{agent}" or cwd == f"-workdir-{agent}" or cwd.endswith(f"/{agent}")):
+                        return True
+        except OSError:
             return False
-        payload = record.get("payload") if isinstance(record, dict) else None
-        return (
-            record.get("type") == "session_meta"
-            and isinstance(payload, dict)
-            and payload.get("cwd") == f"/workdir/{agent}"
-        )
+        return False
 
     def _newest(self, agent: str) -> tuple[Path, str] | None:
         profile = self._profile(agent)
@@ -422,6 +437,8 @@ class ActivityTailer:
             record["stream_id"] = stream_id
         if correlation_id:
             record["correlation_id"] = correlation_id
+        if "rate_limits" in usage:
+            record["rate_limits"] = usage["rate_limits"]
 
         raw = json.dumps(record, separators=(",", ":"))
         usage_stream = prefix(self.pod, self.tenant, resource="usage")
@@ -488,7 +505,6 @@ class ActivityTailer:
         if offset > size:
             offset = 0
         parser = _claude_events if flavor == "claude" else _codex_events
-        usage_parser = _claude_usage if flavor == "claude" else _codex_usage
 
         with path.open("rb") as session:
             session.seek(offset)
@@ -504,12 +520,32 @@ class ActivityTailer:
                 if not isinstance(record, dict):
                     committed_offset = session.tell()
                     continue
+
+                if flavor == "codex":
+                    rtype = record.get("type")
+                    payload = record.get("payload") if isinstance(record.get("payload"), dict) else {}
+                    if rtype == "turn_context":
+                        m = payload.get("model")
+                        if isinstance(m, str) and m:
+                            self._codex_model[agent] = m
+                    elif rtype == "session_meta" and not self._codex_model[agent]:
+                        base_inst = payload.get("base_instructions") if isinstance(payload.get("base_instructions"), dict) else {}
+                        prov = base_inst.get("provenance") if isinstance(base_inst.get("provenance"), dict) else {}
+                        m = prov.get("model") or payload.get("model")
+                        if isinstance(m, str) and m:
+                            self._codex_model[agent] = m
+
                 timestamp = record.get("timestamp")
                 if not isinstance(timestamp, str) or not timestamp:
                     timestamp = _now()
                 for kind, tool in parser(record):
                     self._append(agent, timestamp, kind, tool)
-                usage = usage_parser(record)
+
+                if flavor == "codex":
+                    usage = _codex_usage(record, current_model=self._codex_model.get(agent, ""))
+                else:
+                    usage = _claude_usage(record)
+
                 if usage is not None:
                     self._emit_usage(agent, timestamp, usage)
                 committed_offset = session.tell()
