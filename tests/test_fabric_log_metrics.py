@@ -107,6 +107,16 @@ def test_indeterminate_forward_is_its_own_refused_bucket(tmp_path):
     assert _has(result.stdout, "forwarded 0 / 1")
 
 
+def test_legacy_attempt_record_refuses_cross_version_analysis(tmp_path):
+    log = tmp_path / "legacy.jsonl"
+    log.write_text(_line("legacy", "forward_failed", 1) + "\n")
+
+    result = _run(log, 1)
+
+    assert result.returncode == 4
+    assert "REFUSED: 1 legacy *_failed attempt records" in result.stdout
+
+
 def test_source_filter_excludes_control_paths(tmp_path):
     lines = _complete("bench-1", 1) + _complete("bench-2", 2)
     lines.extend(_complete("control", 3, source="api"))

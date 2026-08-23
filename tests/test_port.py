@@ -221,6 +221,33 @@ def test_add_ticket_opener_dead_letters_unknown_board_write(capsys):
     assert record["reason"] == "board write outcome UNKNOWN after board unavailable"
 
 
+def test_add_ticket_opener_rejects_acknowledged_invalid_board_depth(capsys):
+    class InvalidDepthRedis(MockRedis):
+        def rpush(self, key, value):
+            return 0
+
+    env = build_envelope(
+        kind="AddTicket",
+        source="architect",
+        destination="backend",
+        payload={"title": "invalid acknowledgement"},
+    )
+
+    with pytest.raises(DeadLetter, match="board_write_failed"):
+        add_ticket_opener(
+            InvalidDepthRedis(),
+            pod="acme",
+            tenant="hq",
+            agent="backend",
+            envelope=env,
+            session_name="hq",
+        )
+
+    record = json.loads(capsys.readouterr().out)
+    assert record["event"] == "board_write_failed"
+    assert record["reason"] == "RPUSH did not return a positive list length"
+
+
 def test_failed_board_write_is_parked_once_by_receive(capsys):
     class FaultyBoardRedis(MockRedis):
         def rpush(self, key, value):

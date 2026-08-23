@@ -29,6 +29,7 @@ import sys
 # the spawn, `kick_started -> received` is the process actually starting and
 # popping. Without it the two are one 669 ms number and indistinguishable.
 STAGES = ["sent", "popped", "forwarded", "kick_started", "received", "opened"]
+LEGACY_ATTEMPT_EVENTS = {"send_failed", "forward_failed", "kick_failed"}
 
 
 def ts(value: str) -> float:
@@ -56,6 +57,7 @@ def main() -> int:
     parse_failures = 0
     dead = 0
     indeterminate_forwards = set()
+    legacy_attempts = 0
     writers = collections.Counter()
     selected_writers = set(args.writer)
     excluded_writers = set(args.exclude_writer)
@@ -85,6 +87,8 @@ def main() -> int:
             continue
         writers[writer] += 1
         event = rec.get("event")
+        if event in LEGACY_ATTEMPT_EVENTS:
+            legacy_attempts += 1
         if event == "dead_lettered":
             dead += 1
         if event == "forward_unknown":
@@ -107,6 +111,12 @@ def main() -> int:
     # a phantom missing stage. Refuse before interpreting anything.
     if parse_failures:
         print(f"REFUSED: {parse_failures} unparseable JSON lines — the log is not trustworthy")
+        return 4
+    if legacy_attempts:
+        print(
+            f"REFUSED: {legacy_attempts} legacy *_failed attempt records — "
+            "use a version-specific analyser"
+        )
         return 4
 
     n = len(paths)

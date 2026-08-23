@@ -332,6 +332,15 @@ a phantom handover) nor as lost (which could invite a duplicate retry). Later
 evidence can settle it: an `opened` record proves delivery, and a retained
 ingress frame proves the write committed but stranded. With no such evidence,
 the conservation gate refuses rather than choosing a side. There is no retry.
+For broadcast, the one frame-level `forward_unknown` makes every recipient with
+no later `opened` record indeterminate; a recipient that did open is settled as
+delivered. It is never reported as a known broadcast loss.
+
+⚠ **Attempt-record names are a version boundary.** The current analysers refuse
+a log containing legacy `send_failed`, `forward_failed`, or `kick_failed`
+instead of interpreting the same observation differently on either side of the
+rename. Use a version-specific analyser for a historical custody file; do not
+mix old and current attempt semantics in one conservation result.
 
 An `event: usage` record is an observation, not another custody handover. It
 uses `writer: usage` and carries `agent`, `cli`, `model`, `input`, `cache_read`,

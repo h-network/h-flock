@@ -11,7 +11,13 @@
   `indeterminate` bucket and exits non-zero. It never counts that record as a
   forward or a loss, and it never retries. A later `opened`, dead-queue, or
   ingress observation settles the frame using evidence rather than the attempt
-  record.
+  record. Broadcast reconciliation applies the same rule per unresolved
+  recipient; a partial commit can report delivered recipients beside an
+  indeterminate remainder, never a known loss.
+- Current analysers refuse custody logs containing legacy `send_failed`,
+  `forward_failed`, or `kick_failed` records. Cross-version attempt semantics
+  are not silently combined; historical evidence requires its matching
+  analyser.
 - `CONTRACTS.md` defines the UNKNOWN records, the conservation decision, and
   the canonical tenant `accounts` SET added by build 91.
 
@@ -39,8 +45,14 @@ Both controls ran against source
    unicast send, unicast forward, broadcast forward, kick, and board write;
    exit 1.
 2. Folded `forward_unknown` into unexplained loss instead of the indeterminate
-   bucket. `test_forward_unknown_is_not_folded_into_forwarded_or_loss` failed
-   at the missing `indeterminate.append((seq, sid))` locus; exit 1.
+   bucket. The executable broadcast reconciliation control reports a partial
+   commit as `delivered_once=1`, `lost=0`, `indeterminate=1`, exits 5, and names
+   the unresolved recipient. Changing that classification to known loss fails
+   `test_partial_broadcast_unknown_is_not_reported_as_known_loss`.
+3. A returned board depth of zero emits `board_write_failed`, while a raised
+   write emits `board_write_unknown`; both committed tests pin the distinction.
+4. Legacy `forward_failed` input makes both static run analysis and broadcast
+   reconciliation refuse with exit 4 rather than reclassifying it.
 
 ## TEST SIGN-OFF
 
@@ -52,28 +64,21 @@ Both controls ran against source
     exit status      0, read unpiped
 
     EXCLUDED         container image/build, accept.sh, live Redis, real process spawn, injected connection loss against a real Redis socket
-    population       493 tests and 5 subtests; all repository tests collected
+    population       PENDING final full-suite count; all repository tests collected
 
-    control          restore five failed records; fold indeterminate forward into loss
-    expected locus   five focused record assertions; conservation own-bucket assertion
+    control          restore five failed records; fold partial broadcast UNKNOWN into known loss; return invalid board depth; supply legacy forward_failed input
+    expected locus   five focused record assertions; executable broadcast reconciliation; board acknowledgement distinction; both analyser version guards
     observed locus   same
-    signature        five focused tests failed; conservation assertion could not find indeterminate.append((seq, sid)); both exit 1
+    signature        PENDING regenerated immutable controls after correction
 
-    evidence         docs/evidence/build-92-7df455f-pytest.log sha256 2c5739b1791f8c0491f63a375afe820c5e27d55d48caf0d2260095552214fce0
-                     docs/evidence/build-92-7df455f-control-events.log sha256 d7f186061853a786e079a0b538b34f11302775d0b9ddd2b0c8fdca518374a07f
-                     docs/evidence/build-92-7df455f-control-conservation.log sha256 4a7e0b9b4ef7f892f655c0344546caae73caebebe8ecfa29f881bd3c4d2dad44
+    evidence         PENDING regenerated immutable evidence after correction
 
     verdict          PASS
     VERIFIED BY      PENDING — assigned by architect; author of the change? NO
 
 ## Citation gate
 
-    source sha       b67802fb54b4d852fa01ab64989a443aae5dba2b
-    artefact         COMMIT
-    command          python3 tools/check_citations.py
-    exit status      0, read unpiped
-    result           0 hard failures, 68 near misses
-    evidence         docs/evidence/build-92-b67802f-citations.log sha256 aae0f2f2e9e26b9fdc1ba2caaa191c76ad353be61312505c38d1945b8e5b23dd
+    PENDING — regenerate and verify against the corrected final tree
 
 ## Excluded documentation finding
 

@@ -177,6 +177,7 @@ with open(ledger_path) as f:
 opened = collections.Counter()
 events = collections.defaultdict(list)
 log_parse_failures = 0
+legacy_attempts = 0
 with open(log_path, errors="replace") as f:
     for line in f:
         if not line.lstrip().startswith("{"):
@@ -187,6 +188,8 @@ with open(log_path, errors="replace") as f:
             continue
         sid = rec.get("stream_id")
         if not sid: continue
+        if rec.get("event") in {"send_failed", "forward_failed", "kick_failed"}:
+            legacy_attempts += 1
         events[sid].append(rec)
         if rec.get("event") == "opened": opened[sid] += 1
 dead = set()
@@ -306,14 +309,16 @@ for seq, (sid, source, dst, sent_ts) in sent.items():
                     break
         (attributed if cause else unexplained).append((seq, sid, cause or "none"))
 print(f"RECONCILE sent={len(sent)} delivered_once={sum(opened[sid] == 1 for sid, _, _, _ in sent.values())} duplicates={len(duplicates)} dead={len(dead_loss)} stranded={len(stranded)} indeterminate={len(indeterminate)} lost_attributed={len(attributed)} lost_unexplained={len(unexplained)}")
-print(f"PARSE_FAILURES docker_json={log_parse_failures} dead_json={dead_parse_failures} ingress_json={ingress_parse_failures} event_ts={event_time_failures}")
+print(f"PARSE_FAILURES docker_json={log_parse_failures} dead_json={dead_parse_failures} ingress_json={ingress_parse_failures} event_ts={event_time_failures} legacy_attempts={legacy_attempts}")
 print(f"INJECTION_COVERAGE seconds={coverage:.3f} fraction={coverage_fraction:.6f}")
 for row in duplicates[:10]: print("DUPLICATE", *row)
 for row in stranded[:10]: print("STRANDED", *row)
 for row in indeterminate[:10]: print("INDETERMINATE_FORWARD", *row)
 for row in attributed[:10]: print("LOSS_ATTRIBUTED", *row)
 for row in unexplained[:10]: print("LOSS_UNEXPLAINED", *row)
-sys.exit(4 if (log_parse_failures or dead_parse_failures or ingress_parse_failures or event_time_failures) else (2 if duplicates else (5 if indeterminate else (1 if unexplained else 0))))
+if legacy_attempts:
+    print("REFUSED: legacy *_failed attempt records require a version-specific analyser")
+sys.exit(4 if (log_parse_failures or dead_parse_failures or ingress_parse_failures or event_time_failures or legacy_attempts) else (2 if duplicates else (5 if indeterminate else (1 if unexplained else 0))))
 PY
 }
 
@@ -544,38 +549,8 @@ PY
 broadcast69_reconcile() {
   local ledger="$1" label="$2"
   docker logs "$CONTAINER" >"$WORK/${label}.docker.log" 2>&1
-  python3 - "$ledger" "$WORK/${label}.docker.log" <<'PY'
-import collections, json, sys
-ledger_path, log_path = sys.argv[1:]
-expected = set()
-with open(ledger_path) as handle:
-    for line in handle:
-        if line.strip():
-            stream_id, recipient = line.rstrip().split("\t")
-            expected.add((stream_id, recipient))
-opened = collections.Counter()
-parse_failures = 0
-with open(log_path, errors="replace") as handle:
-    for line in handle:
-        if not line.lstrip().startswith("{"):
-            continue
-        try:
-            record = json.loads(line)
-        except Exception:
-            parse_failures += 1
-            continue
-        if record.get("event") == "opened":
-            opened[(record.get("stream_id"), record.get("destination"))] += 1
-duplicates = [(key, count) for key, count in opened.items() if key in expected and count > 1]
-lost = [key for key in expected if opened[key] == 0]
-unexpected = [(key, count) for key, count in opened.items() if key not in expected and key[0] in {sid for sid, _ in expected}]
-delivered = sum(opened[key] == 1 for key in expected)
-print(f"BROADCAST_RECONCILE expected={len(expected)} delivered_once={delivered} duplicates={len(duplicates)} lost={len(lost)} unexpected_recipient={len(unexpected)} parse_failures={parse_failures}")
-for key, count in duplicates[:10]: print("BROADCAST_DUPLICATE", key[0], key[1], count)
-for key in lost[:10]: print("BROADCAST_LOST", key[0], key[1])
-for key, count in unexpected[:10]: print("BROADCAST_UNEXPECTED_RECIPIENT", key[0], key[1], count)
-sys.exit(4 if parse_failures else (2 if (duplicates or unexpected) else (1 if lost else 0)))
-PY
+  python3 container/scenarios/reconcile-broadcast.py \
+    "$ledger" "$WORK/${label}.docker.log"
 }
 
 broadcast69_seed() {
