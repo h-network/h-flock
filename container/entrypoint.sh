@@ -219,6 +219,17 @@ rcli HSET "$roster_key" "${fields[@]}" >/dev/null
 rcli SET "pod:${POD}:tenant:${TENANT}:lead" "${agents[0]}" >/dev/null
 jlog "{\"module\":\"container\",\"writer\":\"container\",\"event\":\"roster_seeded\",\"count\":$(( ${#fields[@]} / 2 ))}"
 
+# setup.sh is the authority for accounts. Persist the complete list rather than
+# inferring it from derivative config directories or only assigned profiles.
+if [ -n "${FLOCK_ACCOUNTS:-}" ]; then
+  accounts_key="pod:${POD}:tenant:${TENANT}:accounts"
+  rcli DEL "$accounts_key" >/dev/null
+  IFS=',' read -ra _accounts <<< "$FLOCK_ACCOUNTS"
+  for _account in "${_accounts[@]}"; do
+    [ -n "$_account" ] && rcli SADD "$accounts_key" "$_account" >/dev/null
+  done
+fi
+
 # Per-agent CLI and account, as exceptions only — "backend=codex", "frontend=work".
 # Both land as agent resources rather than roster values: the roster is the MAC
 # table and holds membership plus port_type, nothing else (LLD-bus-and-switch §3.2).
@@ -271,7 +282,7 @@ done
 
 # Held out of the environment for the same reason as AGENTS: the tmux server
 # inherits it and every window inherits that.
-unset AGENT_CLIS AGENT_PROFILES AGENT_PROVIDERS
+unset AGENT_CLIS AGENT_PROFILES AGENT_PROVIDERS FLOCK_ACCOUNTS
 
 # Seeding is the only use of AGENTS. Hold it out of the environment from here:
 # the tmux server is started below and every agent window inherits its

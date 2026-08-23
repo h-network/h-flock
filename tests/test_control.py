@@ -10,10 +10,15 @@ from flock.control import runner
 
 
 class RecordingRedis:
-    def __init__(self, events, ingress_depth=0, roster_port_type=None):
+    def __init__(self, events, ingress_depth=0, roster_port_type=None, account_profiles=None):
         self.events = events
         self.ingress_depth = ingress_depth
         self.roster_port_type = roster_port_type
+        self.account_profiles = account_profiles
+
+    def smembers(self, key):
+        self.events.append(("smembers", key))
+        return self.account_profiles or set()
 
     def hset(self, key, field, value):
         self.events.append(("hset", key, field, value))
@@ -73,18 +78,17 @@ def test_start_agent_defaults_cli_to_claude():
     ]
 
 
-def test_start_agent_writes_profile_before_roster_visibility(tmp_path, monkeypatch):
-    (tmp_path / ".codex-client-b").mkdir()
-    monkeypatch.setenv("HOME", str(tmp_path))
+def test_start_agent_writes_profile_before_roster_visibility():
     events = []
     start_agent(
-        RecordingRedis(events),
+        RecordingRedis(events, account_profiles={"default", "client-b"}),
         pod="acme",
         tenant="hq",
         envelope={"payload": {"agent": "dave", "cli": "codex", "profile": "client-b"}},
         replace_window=lambda agent: events.append(("replace_window", agent)),
     )
     assert events == [
+        ("smembers", prefix("acme", "hq", resource="accounts")),
         ("hget", prefix("acme", "hq", resource="roster"), "dave"),
         ("set", prefix("acme", "hq", "dave", "profile"), "client-b"),
         ("set", prefix("acme", "hq", "dave", "launch"), "codex"),
@@ -409,9 +413,7 @@ def test_changed_existing_hire_retires_stale_window_after_desired_state(monkeypa
     ]
 
 
-def test_fresh_hire_with_profile_and_provider_leaves_creation_to_tmuxhost(monkeypatch, tmp_path):
-    (tmp_path / ".claude-work").mkdir()
-    monkeypatch.setenv("HOME", str(tmp_path))
+def test_fresh_hire_with_profile_and_provider_leaves_creation_to_tmuxhost(monkeypatch):
     events = []
     fake_tmux = types.ModuleType("flock.tmux")
     fake_tmux.kill_window = lambda session, agent, socket=None: (
@@ -427,7 +429,7 @@ def test_fresh_hire_with_profile_and_provider_leaves_creation_to_tmuxhost(monkey
 
     monkeypatch.setattr(runner, "receive", fake_receive)
     deliver_one(
-        RecordingRedis(events),
+        RecordingRedis(events, account_profiles={"default", "work"}),
         pod="acme",
         tenant="hq",
         agent="host",
@@ -472,12 +474,51 @@ def test_refused_start_records_failure_before_dead_letter(capsys):
     assert "unknown payload key" in record["reason"]
 
 
-def test_start_agent_refuses_unknown_profile_and_lists_available(tmp_path, monkeypatch):
-    (tmp_path / ".claude-work").mkdir()
-    monkeypatch.setenv("HOME", str(tmp_path))
+def test_start_agent_refuses_unknown_profile_and_lists_available():
     with pytest.raises(ValueError, match="unknown account 'typo'; available accounts: default, work"):
         start_agent(
-            RecordingRedis([]), pod="acme", tenant="hq",
+            RecordingRedis([], account_profiles={"default", "work"}), pod="acme", tenant="hq",
             envelope={"payload": {"agent": "dave", "profile": "typo"}},
             replace_window=lambda agent: None,
         )
+
+
+def test_start_agent_permits_profile_when_legacy_accounts_key_is_absent():
+    events = []
+    start_agent(
+        RecordingRedis(events), pod="acme", tenant="hq",
+        envelope={"payload": {"agent": "dave", "profile": "legacy"}},
+        replace_window=lambda agent: None,
+    )
+    assert ("set", prefix("acme", "hq", "dave", "profile"), "legacy") in events
+
+
+@pytest.mark.parametrize(
+    ("opener", "redis", "callbacks", "committed"),
+    [
+        (start_agent, RecordingRedis([], roster_port_type="tmux"),
+         {"replace_window": lambda agent: (_ for _ in ()).throw(RuntimeError("replace failed"))},
+         "desired launch state committed"),
+        (stop_agent, RecordingRedis([], roster_port_type="tmux"),
+         {"kill_window": lambda agent: (_ for _ in ()).throw(RuntimeError("kill failed"))},
+         "roster removal and agent-state purge committed"),
+        (pause_agent, RecordingRedis([]),
+         {"interrupt_window": lambda agent: (_ for _ in ()).throw(RuntimeError("interrupt failed"))},
+         "paused marker committed"),
+        (resume_agent, RecordingRedis([]),
+         {"resume_window": lambda agent: (_ for _ in ()).throw(RuntimeError("resume failed")),
+          "kick_agent": lambda agent: None},
+         "paused marker removal committed"),
+    ],
+)
+def test_post_commit_side_effect_failure_records_incomplete(
+    opener, redis, callbacks, committed, capsys
+):
+    with pytest.raises(RuntimeError, match="failed"):
+        opener(
+            redis, pod="acme", tenant="hq",
+            envelope={"payload": {"agent": "dave"}}, **callbacks,
+        )
+    record = json.loads(capsys.readouterr().out.splitlines()[-1])
+    assert record["event"] == f"{opener.__name__}_incomplete"
+    assert committed in record["reason"]

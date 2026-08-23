@@ -44,7 +44,7 @@ AGENT_DATA_RESOURCES = DURABLE_DATA_RESOURCES | TRANSPORT_QUEUE_RESOURCES
 
 PER_AGENT_RESOURCES = AGENT_STATE_RESOURCES | AGENT_DATA_RESOURCES
 TENANT_RESOURCES = frozenset(
-    {"roster", "lead", "window.log.offset", "delivering", "alerts", "credential.alerted", "usage"}
+    {"roster", "accounts", "lead", "window.log.offset", "delivering", "alerts", "credential.alerted", "usage"}
 )
 DYNAMIC_RESOURCE_PATTERNS = frozenset({"tasks.*"})
 
@@ -79,4 +79,3 @@ def purge_transport(r, *, pod: str, tenant: str) -> int:
     if keys_to_delete:
         return r.delete(*keys_to_delete)
     return 0
-

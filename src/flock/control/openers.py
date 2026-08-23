@@ -1,9 +1,8 @@
 """Openers for agent lifecycle control envelopes."""
 
 import json
-from functools import wraps
-
 from collections.abc import Callable
+from functools import wraps
 
 from flock.bus import SEGMENT_REGEX, available_profiles, log_record, prefix, purge_agent, port_type, tags_key
 
@@ -15,8 +14,12 @@ _START_AGENT_KEYS = frozenset(
 _TARGET_ONLY_KEYS = frozenset({"agent"})
 
 
+class _IncompleteControl(RuntimeError):
+    """Desired state committed, but actual state did not follow."""
+
+
 def _record_control(kind: str):
-    """Record both the accepted outcome and any refusal before it is dead-lettered."""
+    """Record confirmed, incomplete, or pre-mutation failure outcomes."""
     def decorate(opener):
         @wraps(opener)
         def recorded(r, *, pod, tenant, envelope, **kwargs):
@@ -25,6 +28,13 @@ def _record_control(kind: str):
             correlation_id = envelope.get("correlation_id") if isinstance(envelope, dict) else None
             try:
                 result = opener(r, pod=pod, tenant=tenant, envelope=envelope, **kwargs)
+            except _IncompleteControl as exc:
+                log_record(
+                    "control", f"{kind}_incomplete", correlation_id=correlation_id,
+                    destination=agent if isinstance(agent, str) else None,
+                    reason=str(exc),
+                )
+                raise exc.__cause__ from exc
             except Exception as exc:
                 log_record(
                     "control", f"{kind}_failed", correlation_id=correlation_id,
@@ -99,8 +109,8 @@ def start_agent(
     profile = payload.get("profile")
     if profile:
         prefix("check", "check", agent=profile, resource="profile")
-        profiles = available_profiles()
-        if profile not in profiles:
+        profiles = available_profiles(r, pod=pod, tenant=tenant)
+        if profiles is not None and profile not in profiles:
             raise ValueError(
                 f"unknown account {profile!r}; available accounts: {', '.join(profiles)}"
             )
@@ -150,7 +160,12 @@ def start_agent(
     if config_changed:
         # Remove only stale actual state. tmuxhost observes the roster row and
         # recreates the window through its canonical lead/profile/provider path.
-        replace_window(agent)
+        try:
+            replace_window(agent)
+        except Exception as exc:
+            raise _IncompleteControl(
+                f"desired launch state committed for {agent}; replacing the stale window failed: {exc}"
+            ) from exc
 
 
 @_record_control("stop_agent")
@@ -171,7 +186,12 @@ def stop_agent(
     r.hdel(roster_key, agent)
     purge_agent(r, pod=pod, tenant=tenant, agent=agent)
     if agent_port_type != "api":
-        kill_window(agent)
+        try:
+            kill_window(agent)
+        except Exception as exc:
+            raise _IncompleteControl(
+                f"roster removal and agent-state purge committed for {agent}; killing the window failed: {exc}"
+            ) from exc
 
 
 @_record_control("pause_agent")
@@ -186,7 +206,12 @@ def pause_agent(
     """Mark an agent paused, then interrupt its CLI without changing membership."""
     agent, _ = _target(envelope, _TARGET_ONLY_KEYS)
     r.set(prefix(pod, tenant, agent=agent, resource="paused"), 1)
-    interrupt_window(agent)
+    try:
+        interrupt_window(agent)
+    except Exception as exc:
+        raise _IncompleteControl(
+            f"paused marker committed for {agent}; interrupting the window failed: {exc}"
+        ) from exc
 
 
 @_record_control("resume_agent")
@@ -202,7 +227,12 @@ def resume_agent(
     """Clear pause, resume the CLI, then kick once per queued ingress envelope."""
     agent, _ = _target(envelope, _TARGET_ONLY_KEYS)
     r.delete(prefix(pod, tenant, agent=agent, resource="paused"))
-    resume_window(agent)
-    depth = r.llen(prefix(pod, tenant, agent=agent, resource="ingress"))
-    for _ in range(depth):
-        kick_agent(agent)
+    try:
+        resume_window(agent)
+        depth = r.llen(prefix(pod, tenant, agent=agent, resource="ingress"))
+        for _ in range(depth):
+            kick_agent(agent)
+    except Exception as exc:
+        raise _IncompleteControl(
+            f"paused marker removal committed for {agent}; resuming or kicking the window failed: {exc}"
+        ) from exc

@@ -291,9 +291,10 @@ def _control_command(command: str, argv: list[str]) -> None:
                             help="account whose config dir and credential this agent uses "
                                  "(default: the tenant's default account)")
     args = parser.parse_args(argv)
+    r, pod, tenant, source = _context()
     if command == "hire" and args.profile:
-        profiles = available_profiles()
-        if args.profile not in profiles:
+        profiles = available_profiles(r, pod=pod, tenant=tenant)
+        if profiles is not None and args.profile not in profiles:
             parser.error(
                 f"unknown account {args.profile!r}; available accounts: {', '.join(profiles)}"
             )
@@ -303,7 +304,6 @@ def _control_command(command: str, argv: list[str]) -> None:
         if args.profile:
             payload["profile"] = args.profile
 
-    r, pod, tenant, source = _context()
     stream_id = send(
         r,
         pod=pod,

@@ -157,6 +157,7 @@ class Redis:
     def hsetnx(self, key, field, value): return self._command("HSETNX", key, field, value)
     def hkeys(self, key): return self._command("HKEYS", key)
     def hexists(self, key, field): return self._command("HEXISTS", key, field)
+    def smembers(self, key): return self._command("SMEMBERS", key)
     def delete(self, *keys): return self._command("DEL", *keys)
 
     # Control is delivered by the same one-shot port and overwrites desired

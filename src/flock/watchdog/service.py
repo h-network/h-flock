@@ -264,6 +264,8 @@ class Watchdog:
                 if os.environ.get(token_name):
                     # tmux.ops injects this value into the matching window as
                     # CLAUDE_CODE_OAUTH_TOKEN. No credentials file is expected.
+                    # Known limit: presence cannot detect an expired or revoked
+                    # token; that requires a remote authentication probe.
                     continue
                 directory = ".claude" if account == "default" else f".claude-{account}"
                 path = self.home_root / directory / ".credentials.json"

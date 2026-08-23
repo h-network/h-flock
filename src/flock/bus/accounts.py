@@ -1,17 +1,13 @@
-"""Configured account discovery shared by the office client and fabric."""
+"""Canonical configured-account discovery shared by client and fabric."""
 
-import os
-from pathlib import Path
-
-from .keys import SEGMENT_REGEX
+from .keys import prefix
 
 
-def available_profiles(home_root: Path | None = None) -> tuple[str, ...]:
-    """Return account config directories that actually exist in this tenant."""
-    root = home_root or Path(os.environ.get("HOME", "/home/ubuntu"))
-    profiles = {"default"}
-    for cli_dir in (".claude-", ".codex-"):
-        for path in root.glob(f"{cli_dir}*"):
-            if path.is_dir() and SEGMENT_REGEX.fullmatch(path.name[len(cli_dir):]):
-                profiles.add(path.name[len(cli_dir):])
-    return tuple(sorted(profiles))
+def available_profiles(r, *, pod: str, tenant: str) -> tuple[str, ...] | None:
+    """Return configured accounts, or None when an older tenant has no record."""
+    values = r.smembers(prefix(pod, tenant, resource="accounts"))
+    if not values:
+        # Compatibility is deliberately permissive, like absent bus policy:
+        # tenants created before the canonical key existed must keep working.
+        return None
+    return tuple(sorted(value.decode() if isinstance(value, bytes) else str(value) for value in values))
