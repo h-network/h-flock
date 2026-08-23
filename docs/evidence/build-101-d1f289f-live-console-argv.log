@@ -1,0 +1,13 @@
+source: d1f289f (main, includes build 101 at ba76421)
+tenant: accept-verify101-0824-0029 (h-lab, torn down after this run)
+command: ps -p 2911360 -o pid,cmd ; tr '\0' ' ' < /proc/2911360/cmdline
+
+kept: container=h-flock-accept-verify101-0824-0029-tenant-1; console_pid=2911360 (stop console: kill 2911360)
+
+$ ps -p 2911360 -o pid,cmd
+python3 server.py --listen 0.0.0.0 --port 8099 --api http://127.0.0.1:8080 --session http://127.0.0.1:8081
+
+$ tr '\0' ' ' < /proc/2911360/cmdline
+python3 server.py --listen 0.0.0.0 --port 8099 --api http://127.0.0.1:8080 --session http://127.0.0.1:8081
+
+result: no --token, no --secret, no credential value, no match for "token" or "secret" anywhere in the live console process's argv
