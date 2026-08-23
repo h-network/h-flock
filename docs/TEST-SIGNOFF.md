@@ -123,6 +123,23 @@ so reading the text is the direct measurement rather than a substitute for one.
    it is.
 2. **Mutate the structure and show the checker fails.** A structural control that
    cannot go red is not a control.
+3. ⚠ **THE CHECKER MUST PERSIST — committed, and re-runnable by anyone.**
+
+⚠ **Ruled by `tmux` on build 104, the first build to use this carve-out, in its
+words: the carve-out changes the MEASUREMENT TYPE, not reproducibility or
+regression detection.** Inspection is a legitimate way to measure a structural
+property. It is not a licence to measure once.
+
+**Build 104 documented that `writer: fault-injection` never appears in normal
+operation, named it as structural, and mutated `src/` to show a check go red —
+and the check was an ad-hoc command whose OUTPUT was pasted into an evidence
+log.** Nothing in the repository could re-run it, so the claim was true at the
+moment of the build and nothing would notice if it stopped being true.
+
+⚠ **Where it belongs, also ruled:** a **committed test in `tests/`** when the
+invariant is feature-specific, **not** a tool beside `check_citations.py`, which
+is for repository-wide properties. Getting that wrong makes every future
+structural claim a candidate for the repo-wide gate.
 
 ⚠ **Do not manufacture a runtime test for a structural property.** It will assert
 something adjacent to the claim and pass while the claim is false — the failure
