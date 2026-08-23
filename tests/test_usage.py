@@ -1,7 +1,7 @@
 """Tests for token usage extraction, pricing, correlation, and office usage CLI."""
 
 import json
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 import pytest
@@ -698,13 +698,24 @@ def test_unresolved_markers_correlated_within_ceiling(tmp_path):
             correlation_id=f"corr-turn-{i:03d}",
         )
 
+    # ⚠ RELATIVE TO THE MARKERS, NEVER A LITERAL DATE. The markers above are
+    # stamped `datetime.now()` by mark_delivery_pending, and the join asks for
+    # the first usage record AFTER a marker. A hardcoded timestamp is later than
+    # `now` only until `now` overtakes it: this test carried
+    # "2026-08-22T23:59:59.000Z", was written at 23:56, and passed for four
+    # minutes before failing every run thereafter — correctly, because the usage
+    # record had become older than the marker it was supposed to follow.
+    after_markers = (
+        datetime.now(timezone.utc) + timedelta(seconds=1)
+    ).strftime("%Y-%m-%dT%H:%M:%S.%f")[:-3] + "Z"
+
     session = tmp_path / ".claude" / "projects" / "-workdir-bus" / "session.jsonl"
     _write_lines(
         session,
         [
             {
                 "type": "assistant",
-                "timestamp": "2026-08-22T23:59:59.000Z",
+                "timestamp": after_markers,
                 "message": {
                     "id": "msg_marker_preserved",
                     "model": "claude-opus-4-8",
