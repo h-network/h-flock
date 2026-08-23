@@ -1,4 +1,8 @@
-citations checked: 848 (678 unique)
+citations checked: 853 (679 unique)
+HARD docs/BUILD-104-results.md:31: src/flock/switch/service.py:274: line outside file (1-271)
+HARD docs/BUILD-104-results.md:34: src/flock/switch/service.py:274: line outside file (1-271)
+HARD docs/BUILD-104-results.md:52: src/flock/switch/service.py:274: line outside file (1-271)
+HARD docs/BUILD-104-results.md:54: src/flock/switch/service.py:274: line outside file (1-271)
 NEAR docs/AUDIT-2026-08-11-comparison.md:37: ops.py:56: symbol 'set' not within 3 lines
 NEAR docs/AUDIT.md:32: tmuxhost/host.py:201: symbol 'AttributeError' not within 3 lines
 NEAR docs/AUDIT.md:72: tmuxhost/host.py:167-170: symbol 'provider' not within 3 lines
@@ -83,5 +87,5 @@ NEAR docs/VERIFY-2026-08-22-bus.md:71: CONTRACTS.md:693-695: symbol 'blocked' no
 NEAR docs/VERIFY-2026-08-22-bus.md:75: CONTRACTS.md:735-737: symbol 'pending.verify' not within 3 lines
 NEAR docs/VERIFY-2026-08-22-tmux.md:21: src/flock/watchdog/service.py:386: symbol 'VERIFY_AFTER_SECONDS' not within 3 lines
 NEAR docs/VERIFY-2026-08-22.md:55: bus/logging.py:78: symbol 'CONTRACTS' not within 3 lines
-hard failures: 0
+hard failures: 4
 near misses: 84

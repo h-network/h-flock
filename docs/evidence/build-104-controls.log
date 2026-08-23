@@ -1,6 +1,6 @@
 === MUTATION RUN (expected exit 1) ===
 STRUCTURAL_VIOLATION:
-  src/flock/switch/service.py:274:os.environ["FLOCK_WRITER"] = "fault-injection"
+  src/flock/switch/service.py:270:        os.environ["FLOCK_WRITER"] = "fault-injection",
 MUTATION_EXIT=1
 
 === CLEAN RUN (expected exit 0) ===
