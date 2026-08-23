@@ -23,14 +23,15 @@ assigns `"fault-injection"`.
 
 Per `docs/TEST-SIGNOFF.md`, this invariant is persistently controlled by
 `test_shipping_source_has_no_writer_assignments` in
-`tests/test_fault_injection.py`, which statically inspects all python files in
-`src/` for any `FLOCK_WRITER` assignments (excluding the single environment read in
-`src/flock/bus/logging.py:8`).
+`tests/test_fault_injection.py:110-128`, which statically inspects all python files in
+`src/` for any `FLOCK_WRITER` assignments (including bracket assignment, `setdefault`,
+`update`, `putenv`) and literal `"fault-injection"` writer settings without brittle
+line-number exemptions.
 
 - **Clean run**: `python3 -m pytest tests/test_fault_injection.py -k test_shipping_source_has_no_writer_assignments` passes with exit 0.
 - **Negative mutation**: Mutating `src/flock/switch/service.py` with
   `os.environ["FLOCK_WRITER"] = "fault-injection"` triggers the assertion in
-  `test_shipping_source_has_no_writer_assignments` at `tests/test_fault_injection.py:124`
+  `test_shipping_source_has_no_writer_assignments` at `tests/test_fault_injection.py:128`
   identifying `src/flock/switch/service.py:270` and exits 1:
 
       FAILED tests/test_fault_injection.py::test_shipping_source_has_no_writer_assignments
@@ -43,7 +44,7 @@ The mutation was restored before generating final gate logs.
 ## TEST SIGN-OFF
 
     claim            writer: fault-injection documented in CONTRACTS as scenario-only, structural check confirms absent in src/, and --keep console transfer documented in BUILD-CONVENTION
-    source sha       92aedfe
+    source sha       072ffd4
     artefact         COMMIT
     host             local — structural inspection and documentation audit
     command          python3 -m pytest -q
@@ -53,24 +54,24 @@ The mutation was restored before generating final gate logs.
     population       514 tests and 5 subtests; all repository tests collected
 
     control          structural mutation: assign FLOCK_WRITER in src/flock/switch/service.py
-    expected locus   test_shipping_source_has_no_writer_assignments assertion exit 1 at tests/test_fault_injection.py:124
+    expected locus   test_shipping_source_has_no_writer_assignments assertion exit 1 at tests/test_fault_injection.py:128
     observed locus   same
     signature        AssertionError: Illegal FLOCK_WRITER assignments in shipping source: src/flock/switch/service.py:270; MUTATION_EXIT=1
 
-    evidence         docs/evidence/build-104-controls.log sha256 87f0001b0b09fe54224705a305f9bc1a6a13fa8f65a9ba69de043dd0a1c14fea
-                     docs/evidence/build-104-pytest.log sha256 fa2b05cba684af7fbab2453e01965348cdc7cab9517f65de1070855f1bcd8a11
+    evidence         docs/evidence/build-104-controls.log sha256 57f968c6fbee82abd2b51e7cb0dd0c4158e6b58df333635c9877aedb9dc820ad
+                     docs/evidence/build-104-pytest.log sha256 f82178ee4bb8c3cc5a5a81cd588a9113bb7e62d9e68e2e46183f29c03879b420
 
     verdict          PASS (structural claim verified with negative mutation control)
     VERIFIED BY      PENDING — assigned by architect
 
 ## Citation gate
 
-    source sha       92aedfe
+    source sha       072ffd4
     artefact         COMMIT
     command          python3 tools/check_citations.py
     exit status      0, read unpiped
     result           0 hard failures, 84 near misses
-    evidence         docs/evidence/build-104-citations.log sha256 01a8392c85c9ade5ce9abc15e68899f84790ac43afde71cc0a76f205dd001a0a
+    evidence         docs/evidence/build-104-citations.log sha256 75c708bf0d2a557f76c01a0e8ce752d7a94aac0517580296b444463efe08f568
 
 ## Merged-tree verification
 
