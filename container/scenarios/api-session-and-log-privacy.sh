@@ -2,9 +2,17 @@
 # container/scenarios/api-session-and-log-privacy.sh
 # Tests session WebSocket door auth, query parameter token support, close codes, and stdout log privacy.
 
+set -uo pipefail
+
+TENANT="${TENANT:-api-lab}"
+CONTAINER_NAME="${CONTAINER_NAME:-${CONTAINER:-h-flock-${TENANT}-tenant-1}}"
+C="${CONTAINER_NAME}"
 SESSION_HOST="${SESSION_HOST:-localhost:8111}"
-TOKEN="${API_TOKEN:-7af3ad5eb2cac57e9ca97a953908ef09}"
-CONTAINER_NAME="${CONTAINER_NAME:-api-lab-tenant-1}"
+TOKEN="${API_TOKEN:-$(docker exec "$C" printenv API_TOKEN 2>/dev/null || true)}"
+if [ -z "${TOKEN:-}" ]; then
+  echo "Error: API_TOKEN is empty. Set API_TOKEN or ensure container '$C' is running." >&2
+  exit 1
+fi
 
 echo "=== Scenario: Session WebSocket Door & Log Privacy ==="
 echo "Target Session Host: ${SESSION_HOST}"

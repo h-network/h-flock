@@ -2,8 +2,16 @@
 # container/scenarios/api-auth-and-limits.sh
 # Tests REST API token auth, payload size bounds, malformed 'as' validation, and board providers.
 
+set -uo pipefail
+
+TENANT="${TENANT:-api-lab}"
+C="${CONTAINER:-h-flock-${TENANT}-tenant-1}"
 HOST="${API_HOST:-http://localhost:8110}"
-TOKEN="${API_TOKEN:-7af3ad5eb2cac57e9ca97a953908ef09}"
+TOKEN="${API_TOKEN:-$(docker exec "$C" printenv API_TOKEN 2>/dev/null || true)}"
+if [ -z "${TOKEN:-}" ]; then
+  echo "Error: API_TOKEN is empty. Set API_TOKEN or ensure container '$C' is running." >&2
+  exit 1
+fi
 
 echo "=== Scenario: API Auth, Payload Limits & Error Handling ==="
 echo "Target Host: ${HOST}"
