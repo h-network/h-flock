@@ -398,7 +398,7 @@ sprint 2 and belong next to it, not at the bottom of a list:
 | **a `gateway` participant** and **cross-tenant is designed twice** | ⚠ **one decision, not two rows, and it is the operator's.** Gateway-as-participant or switch-branch — only one can be built, and Sprint 6's cross-tenant half is blocked behind it |
 | **no acceptance seat**, **every sign-off signed by its own author** | arrangements, not code. Recorded so they are chosen rather than drifted into, and h-flock sets an office up — it does not direct how agents work |
 
-⚠ **[`AUDIT.md`](AUDIT.md)'s findings are in no sprint, deliberately.** A
+⚠ **The closed audit findings are in no sprint, deliberately.** A
 finding is a claim until it is checked against the tree, and a previous auditor
 on this project cited files that did not exist. **Triage is its own pass**, and
 it should happen between sprints rather than inside one — two findings have

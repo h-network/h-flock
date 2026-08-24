@@ -149,7 +149,7 @@ remote and no ssh key — their output is a document, not a change.
 - **`auditCodex`** (3 codex agents) — running. Briefed directly rather than
   through the claude office, so they cannot inherit its conclusions.
 
-**The consolidated list is [`AUDIT.md`](AUDIT.md)** — 50 findings, ranked by
+**The consolidated audit is closed** — 50 findings, ranked by
 consequence, each with the evidence its auditor cited and a status column. Work
 it top down.
 

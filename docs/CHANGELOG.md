@@ -151,7 +151,7 @@ covers that and my copy had no equivalent. It also always fetched from the
 network, where the original reuses a clone an agent already has.
 
 **Found by** reconciling `TODO.md` against the tree and noticing
-`VERIFIED-2026-08-09.md` recorded a passing `cloneToAll` run twelve days before I
+A dated verification record noted a passing `cloneToAll` run twelve days before I
 "added" it. ⚠ **No gate could have caught this** — both implementations passed,
 every citation resolved, and the suite was green at 395 with the duplicate in it.
 
