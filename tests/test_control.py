@@ -10,6 +10,8 @@ from flock.control import runner
 
 
 class RecordingRedis:
+    __resp_double__ = True
+
     def __init__(self, events, ingress_depth=0, roster_port_type=None, account_profiles=None):
         self.events = events
         self.ingress_depth = ingress_depth

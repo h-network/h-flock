@@ -80,6 +80,9 @@ class Redis:
     def rpush(self, key, *values): return self._command("RPUSH", key, *values)
     def lrange(self, key, start, stop): return self._command("LRANGE", key, start, stop)
     def get(self, key): return self._command("GET", key)
+    def getdel(self, key): return self._command("GETDEL", key)
+    def eval(self, script, numkeys, *keys_and_args):
+        return self._command("EVAL", script, numkeys, *keys_and_args)
 
     def xadd(self, key, fields, *, maxlen=None, approximate=True):
         parts = ["XADD", key]

@@ -8,6 +8,8 @@ from flock.tmuxhost.host import TmuxHost, generate_agents_md, write_agent_guide,
 
 
 class MockRedis:
+    __resp_double__ = True
+
     def __init__(
         self, roster_agents, port_type_map=None, launch_map=None, profile_map=None,
         provider_map=None, cause_map=None,
