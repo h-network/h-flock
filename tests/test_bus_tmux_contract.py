@@ -1,3 +1,4 @@
+from conftest import FakeRedis as MockRedis
 import json
 import pytest
 from flock.bus import (
@@ -13,52 +14,6 @@ from flock.bus import (
     is_member,
 )
 
-
-class MockRedis:
-    def __init__(self):
-        self.lists = {}
-        self.sets = {}
-        self.hashes = {}
-
-    def rpush(self, key, value):
-        if key not in self.lists:
-            self.lists[key] = []
-        self.lists[key].append(value)
-
-    def blpop(self, key, timeout=0):
-        if key in self.lists and self.lists[key]:
-            val = self.lists[key].pop(0)
-            return (key, val)
-        return None
-
-    def hset(self, key, field=None, value=None, **kwargs):
-        if key not in self.hashes:
-            self.hashes[key] = {}
-        if field is not None:
-            self.hashes[key][field] = value
-        for k, v in kwargs.items():
-            self.hashes[key][k] = v
-
-    def hexists(self, key, field):
-        return field in self.hashes.get(key, {})
-
-    def hget(self, key, field):
-        return self.hashes.get(key, {}).get(field)
-
-    def hkeys(self, key):
-        return set(self.hashes.get(key, {}).keys())
-
-    def smembers(self, key):
-        return self.sets.get(key, set())
-
-    def sismember(self, key, member):
-        return member in self.sets.get(key, set())
-
-    def sadd(self, key, *members):
-        if key not in self.sets:
-            self.sets[key] = set()
-        for m in members:
-            self.sets[key].add(m)
 
 
 def test_prefix_valid():

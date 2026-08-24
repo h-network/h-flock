@@ -1,3 +1,4 @@
+from conftest import FakeRedis, FakeRedis as MockRedis
 import json
 import pathlib
 import os
@@ -195,9 +196,6 @@ def test_add_ticket_opener_writes_when_window_is_missing(mock_list_windows, caps
 
 
 def test_add_ticket_opener_dead_letters_unknown_board_write(capsys):
-    class FaultyRedis(MockRedis):
-        def rpush(self, key, value):
-            raise RuntimeError("board unavailable")
 
     env = build_envelope(
         kind="AddTicket",
@@ -208,7 +206,7 @@ def test_add_ticket_opener_dead_letters_unknown_board_write(capsys):
 
     with pytest.raises(DeadLetter, match="board_write_unknown"):
         add_ticket_opener(
-            FaultyRedis(),
+            FakeRedis(fails_on={"rpush": RuntimeError("board unavailable")}),
             pod="acme",
             tenant="hq",
             agent="backend",
@@ -222,9 +220,6 @@ def test_add_ticket_opener_dead_letters_unknown_board_write(capsys):
 
 
 def test_add_ticket_opener_rejects_acknowledged_invalid_board_depth(capsys):
-    class InvalidDepthRedis(MockRedis):
-        def rpush(self, key, value):
-            return 0
 
     env = build_envelope(
         kind="AddTicket",
@@ -235,7 +230,7 @@ def test_add_ticket_opener_rejects_acknowledged_invalid_board_depth(capsys):
 
     with pytest.raises(DeadLetter, match="board_write_failed"):
         add_ticket_opener(
-            InvalidDepthRedis(),
+            FakeRedis(fails_on={"rpush": lambda key, val: 0}),
             pod="acme",
             tenant="hq",
             agent="backend",
@@ -249,13 +244,8 @@ def test_add_ticket_opener_rejects_acknowledged_invalid_board_depth(capsys):
 
 
 def test_failed_board_write_is_parked_once_by_receive(capsys):
-    class FaultyBoardRedis(MockRedis):
-        def rpush(self, key, value):
-            if key.endswith(":tasks.todo"):
-                raise RuntimeError("board unavailable")
-            return super().rpush(key, value)
 
-    r = FaultyBoardRedis()
+    r = FakeRedis(fails_on={"rpush": lambda key, val: (_ for _ in ()).throw(RuntimeError("board unavailable")) if key.endswith(":tasks.todo") else None})
     env = build_envelope(
         kind="AddTicket",
         source="architect",
@@ -518,14 +508,11 @@ def test_mark_delivery_pending_swallows_redis_exceptions(mock_run_tmux, mock_lis
     mock_list_windows.return_value = {"alice", "bob"}
     mock_run_tmux.return_value = (0, "", "")
 
-    class FaultyRedis(MockRedis):
-        def xadd(self, *args, **kwargs):
-            raise RuntimeError("Redis stream error")
 
-    r = FaultyRedis()
     env = build_envelope(kind="Message", source="alice", destination="bob", payload={"text": "hello"})
     env["stream_id"] = "12345-0"
 
+    r = FakeRedis(fails_on={"xadd": RuntimeError("Redis stream error")})
     # Must complete cleanly without raising exception
     message_opener(r, pod="acme", tenant="hq", agent="bob", envelope=env, session_name="hq")
 

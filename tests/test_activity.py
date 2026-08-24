@@ -1,3 +1,4 @@
+from conftest import FakeRedis
 import json
 from pathlib import Path
 
@@ -5,30 +6,10 @@ from flock.bus import prefix
 from flock.watchdog.activity import ActivityTailer
 
 
-class ActivityRedis:
-    def __init__(self, agents=("sme-2",)):
-        self.values = {}
-        self.streams = {}
-        self.agents = agents
-
-    def hkeys(self, key):
-        return self.agents
-
-    def get(self, key):
-        return self.values.get(key)
-
-    def set(self, key, value):
-        self.values[key] = value
-
-    def xadd(self, key, fields, *, maxlen, approximate):
-        assert maxlen == 1000
-        assert approximate is True
-        self.streams.setdefault(key, []).append(fields)
-
 
 def _events(r, agent="sme-2"):
     key = prefix("acme", "hq", agent, "activity")
-    return [json.loads(entry["event"]) for entry in r.streams.get(key, [])]
+    return [json.loads(entry["event"]) for entry in [entry[1] if isinstance(entry, (tuple, list)) else entry for entry in r.streams.get(key, [])]]
 
 
 def _write_lines(path: Path, records: list[dict]) -> None:
@@ -37,7 +18,7 @@ def _write_lines(path: Path, records: list[dict]) -> None:
 
 
 def test_claude_tailer_reads_only_new_bytes_and_never_emits_content(tmp_path):
-    r = ActivityRedis()
+    r = FakeRedis()
     session = tmp_path / ".claude" / "projects" / "-workdir-sme-2" / "one.jsonl"
     _write_lines(
         session,
@@ -94,7 +75,7 @@ def test_claude_tailer_reads_only_new_bytes_and_never_emits_content(tmp_path):
 
 
 def test_newest_session_starts_at_zero_instead_of_reusing_old_offset(tmp_path):
-    r = ActivityRedis()
+    r = FakeRedis()
     directory = tmp_path / ".claude" / "projects" / "-workdir-sme-2"
     old = directory / "old.jsonl"
     new = directory / "new.jsonl"
@@ -118,7 +99,7 @@ def test_newest_session_starts_at_zero_instead_of_reusing_old_offset(tmp_path):
 
 
 def test_switching_back_to_prior_session_resumes_its_saved_offset(tmp_path):
-    r = ActivityRedis()
+    r = FakeRedis()
     directory = tmp_path / ".claude" / "projects" / "-workdir-sme-2"
     old = directory / "old.jsonl"
     new = directory / "new.jsonl"
@@ -138,7 +119,7 @@ def test_switching_back_to_prior_session_resumes_its_saved_offset(tmp_path):
 
 
 def test_activity_offset_migrates_original_single_path_shape(tmp_path):
-    r = ActivityRedis()
+    r = FakeRedis()
     session = tmp_path / ".claude" / "projects" / "-workdir-sme-2" / "one.jsonl"
     first = json.dumps({"type": "user", "timestamp": "already-read"}) + "\n"
     second = json.dumps({"type": "user", "timestamp": "new"}) + "\n"
@@ -156,7 +137,7 @@ def test_activity_offset_migrates_original_single_path_shape(tmp_path):
 
 
 def test_codex_profile_session_reduces_messages_and_tool_calls(tmp_path):
-    r = ActivityRedis()
+    r = FakeRedis()
     r.values[prefix("acme", "hq", "sme-2", "profile")] = "work"
     session = tmp_path / ".codex-work" / "sessions" / "2026" / "08" / "rollout-one.jsonl"
     _write_lines(
@@ -182,7 +163,7 @@ def test_codex_profile_session_reduces_messages_and_tool_calls(tmp_path):
 
 
 def test_codex_shared_account_attributes_each_session_by_workspace(tmp_path):
-    r = ActivityRedis(agents=("frontend", "backend"))
+    r = FakeRedis(agents=("frontend", "backend"))
     shared = tmp_path / ".codex" / "sessions" / "2026" / "08"
     _write_lines(
         shared / "rollout-frontend.jsonl",
@@ -212,7 +193,7 @@ def test_codex_shared_account_attributes_each_session_by_workspace(tmp_path):
 
 
 def test_agy_agent_has_empty_stream_even_when_an_old_claude_session_exists(tmp_path):
-    r = ActivityRedis()
+    r = FakeRedis()
     r.values[prefix("acme", "hq", "sme-2", "launch")] = "agy"
     stale = tmp_path / ".claude" / "projects" / "-workdir-sme-2" / "stale.jsonl"
     _write_lines(stale, [{"type": "user", "message": "must not appear"}])

@@ -1,3 +1,4 @@
+from conftest import FakeRedis, FakeRedis as UsageRedis
 """Tests for token usage extraction, pricing, correlation, and office usage CLI."""
 
 import json
@@ -12,82 +13,6 @@ from flock.office.pricing import calculate_cost, find_model_rates, load_pricing
 from flock.port.openers import mark_delivery_pending
 from flock.watchdog.activity import ActivityTailer
 
-
-class UsageRedis:
-    def __init__(self, agents=("bus",)):
-        self.values = {}
-        self.streams = {}
-        self.sets = {}
-        self.agents = agents
-
-    def hkeys(self, key):
-        return self.agents
-
-    def get(self, key):
-        return self.values.get(key)
-
-    def set(self, key, value):
-        self.values[key] = value
-
-    def xadd(self, key, fields, *, maxlen=None, approximate=False):
-        self.streams.setdefault(key, []).append((f"{len(self.streams.setdefault(key, [])) + 1}-0", fields))
-
-    def xrange(self, key, min="-", max="+", count=None):
-        entries = list(self.streams.get(key, []))
-        if count is not None:
-            entries = entries[:count]
-        return entries
-
-    def xrevrange(self, key, max="+", min="-", count=None):
-        entries = list(reversed(self.streams.get(key, [])))
-        if count is not None:
-            entries = entries[:count]
-        return entries
-
-    def xdel(self, key, *ids):
-        id_set = set(ids)
-        if key in self.streams:
-            self.streams[key] = [e for e in self.streams[key] if e[0] not in id_set]
-        return len(id_set)
-
-    def sadd(self, key, member):
-        s = self.sets.setdefault(key, set())
-        if member in s:
-            return 0
-        s.add(member)
-        return 1
-
-    def sismember(self, key, member):
-        return member in self.sets.get(key, set())
-
-    def incr(self, key):
-        val = int(self.values.get(key, 0) or 0) + 1
-        self.values[key] = val
-        return val
-
-    def eval(self, script, numkeys, *args):
-        stream_key = args[0] if numkeys >= 1 else ""
-        seen_key = args[1] if numkeys >= 2 else ""
-        attributed_key = args[2] if numkeys >= 3 else ""
-
-        request_id = args[numkeys] if len(args) > numkeys else ""
-        raw_usage = args[numkeys + 1] if len(args) > numkeys + 1 else ""
-        stream_id = args[numkeys + 2] if len(args) > numkeys + 2 else ""
-
-        if "SISMEMBER" in script and request_id and seen_key:
-            if self.sismember(seen_key, request_id):
-                return 0
-
-        if "XADD" in script and stream_key and raw_usage:
-            self.xadd(stream_key, {"usage": raw_usage})
-
-        if "SADD" in script:
-            if request_id and seen_key:
-                self.sadd(seen_key, request_id)
-            if stream_id and attributed_key:
-                self.sadd(attributed_key, stream_id)
-
-        return 1
 
 
 def _usage_records(r):
@@ -523,17 +448,8 @@ def test_truly_empty_marker_history_omits_correlation(tmp_path):
 
 def test_emission_failure_does_not_prematurely_commit_seen_request(tmp_path):
     """An emission failure in Redis does not mark request as seen, allowing recovery."""
-    class FailingUsageRedis(UsageRedis):
-        def __init__(self):
-            super().__init__(agents=("bus",))
-            self.fail_xadd = True
 
-        def xadd(self, key, fields, *, maxlen=None, approximate=False):
-            if self.fail_xadd and key == prefix("acme", "hq", resource="usage"):
-                raise RuntimeError("Simulated Redis write failure")
-            super().xadd(key, fields, maxlen=maxlen, approximate=approximate)
-
-    r = FailingUsageRedis()
+    r = FakeRedis(agents=("bus",), fail_xadd=True)
     session = tmp_path / ".claude" / "projects" / "-workdir-bus" / "session.jsonl"
     _write_lines(
         session,

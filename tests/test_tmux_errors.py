@@ -1,3 +1,4 @@
+from conftest import FakeRedis as StubRedis
 from unittest.mock import patch
 
 import pytest
@@ -6,10 +7,6 @@ from flock.port.openers import message_opener
 from flock.bus import build as build_envelope
 from flock.tmux import TmuxCommandError, create_window, list_windows
 
-
-class StubRedis:
-    def get(self, _key):
-        return None
 
 
 @patch("flock.tmux.ops.run_tmux")

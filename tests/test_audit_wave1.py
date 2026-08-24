@@ -1,3 +1,4 @@
+from conftest import FakeRedis
 import asyncio
 import json
 import pytest
@@ -7,35 +8,6 @@ from flock.api.app import Settings, create_app, _stream_response
 from flock.session.app import SessionSettings, create_app as create_session_app
 from flock.session.control import ControlModeClient, Subscriber, _unescape_control
 
-
-class FakeRedis:
-    def __init__(self, data=None):
-        self.data = data or {}
-        self._cmd_count = 0
-
-    def smembers(self, key):
-        return self.data.get(key, set())
-
-    def hkeys(self, key):
-        val = self.data.get(key, {})
-        return set(val.keys()) if isinstance(val, dict) else set(val)
-
-    def hgetall(self, key):
-        val = self.data.get(key, {})
-        return val if isinstance(val, dict) else {}
-
-    def lrange(self, key, start, end):
-        self._cmd_count += 1
-        return self.data.get(key, [])
-
-    def pipeline(self, transaction=False):
-        self._cmd_count = 0
-        return self
-
-    def execute(self):
-        res = [[] for _ in range(self._cmd_count)]
-        self._cmd_count = 0
-        return res
 
 
 def test_row_7_session_control_recovers_after_stream_break(monkeypatch):

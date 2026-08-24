@@ -1,3 +1,4 @@
+from conftest import FakeRedis, FakeRedis as RecordingRedis
 import importlib.util
 import subprocess
 from pathlib import Path
@@ -29,14 +30,6 @@ def _partial_injector_module():
     return module
 
 
-class RecordingRedis:
-    def __init__(self):
-        self.calls = []
-
-    def rpush(self, key, *values):
-        self.calls.append((key, values))
-        return len(self.calls)
-
 
 def test_fault_wrapper_is_one_shot_and_only_matches_target_ingress():
     module = _injector_module()
@@ -46,7 +39,7 @@ def test_fault_wrapper_is_one_shot_and_only_matches_target_ingress():
     assert faulted.rpush("other", b"first") == 1
     with pytest.raises(redis.ConnectionError, match="deliberate missing ingress reply"):
         faulted.rpush(b"target-ingress", b"faulted")
-    assert faulted.rpush("target-ingress", b"after") == 2
+    assert faulted.rpush("target-ingress", b"after") == 1
 
     assert client.calls == [("other", (b"first",)), ("target-ingress", (b"after",))]
     assert faulted.fired is True
@@ -55,19 +48,8 @@ def test_fault_wrapper_is_one_shot_and_only_matches_target_ingress():
 def test_partial_wrapper_allows_roster_removal_then_refuses_resource_purge():
     module = _partial_injector_module()
 
-    class Client:
-        def __init__(self):
-            self.calls = []
 
-        def hdel(self, key, *fields):
-            self.calls.append(("hdel", key, fields))
-            return 1
-
-        def delete(self, *keys):
-            self.calls.append(("delete", keys))
-            return 1
-
-    client = Client()
+    client = FakeRedis()
     faulted = module.RefusePurgeReplyOnce(client, {"state-key"})
     assert faulted.hdel("pod:tenant:roster", "sme-2") == 1
     with pytest.raises(redis.ConnectionError, match="deliberate resource purge reply loss"):

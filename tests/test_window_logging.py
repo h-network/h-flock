@@ -1,3 +1,4 @@
+from conftest import FakeRedis, FakeRedis as LogRedis
 import io
 import json
 from contextlib import redirect_stdout
@@ -7,38 +8,6 @@ from flock.bus import log_record, prefix, receive, send
 from flock.switch.service import Switch
 from flock.switch.windowlog import WindowLogTailer
 
-
-class LogRedis:
-    def __init__(self):
-        self.lists = {}
-        self.values = {}
-        self.hashes = {prefix("acme", "hq", resource="roster"): {"sender": "tmux", "receiver": "tmux"}}
-
-    def rpush(self, key, value):
-        self.lists.setdefault(key, []).append(value)
-        return len(self.lists[key])
-
-    def blpop(self, keys, timeout=0):
-        keys = [keys] if isinstance(keys, str) else keys
-        for key in keys:
-            if self.lists.get(key):
-                return key, self.lists[key].pop(0)
-        return None
-
-    def hkeys(self, key):
-        return self.hashes.get(key, {}).keys()
-
-    def hexists(self, key, field):
-        return field in self.hashes.get(key, {})
-
-    def hget(self, key, field):
-        return self.hashes.get(key, {}).get(field)
-
-    def get(self, key):
-        return self.values.get(key)
-
-    def set(self, key, value):
-        self.values[key] = value
 
 
 class WriteCountingStdout(io.StringIO):
@@ -79,7 +48,7 @@ def test_record_writer_defaults_to_module_and_accepts_process_label(monkeypatch,
 
 
 def test_agent_sent_envelope_is_observed_end_to_end_in_central_log(monkeypatch, tmp_path):
-    r = LogRedis()
+    r = LogRedis(roster={"sender": "tmux", "receiver": "tmux"})
     path = tmp_path / "window.jsonl"
     monkeypatch.setenv("AGENT_NAME", "sender")
     monkeypatch.setenv("FLOCK_LOG_FILE", str(path))
@@ -122,7 +91,7 @@ def test_agent_sent_envelope_is_observed_end_to_end_in_central_log(monkeypatch, 
 
 
 def test_unwritable_window_log_never_breaks_send(monkeypatch, tmp_path, capsys):
-    r = LogRedis()
+    r = LogRedis(roster={"sender": "tmux", "receiver": "tmux"})
     monkeypatch.setenv("FLOCK_LOG_FILE", str(tmp_path))
     stream_id = send(
         r,
@@ -147,7 +116,7 @@ def test_agent_only_file_setting_excludes_central_process_records(monkeypatch, t
 
 
 def test_window_log_tailer_uses_byte_offset_and_waits_for_complete_line(tmp_path, capsys):
-    r = LogRedis()
+    r = LogRedis(roster={"sender": "tmux", "receiver": "tmux"})
     path = tmp_path / "window.jsonl"
     path.write_bytes(b'{"event":"one"}\n{"event":"two')
     tailer = WindowLogTailer(r, pod="acme", tenant="hq", path=path)
@@ -163,7 +132,7 @@ def test_window_log_tailer_uses_byte_offset_and_waits_for_complete_line(tmp_path
 
 
 def test_window_log_truncates_only_at_consumed_end_and_later_record_still_arrives(tmp_path, capsys):
-    r = LogRedis()
+    r = LogRedis(roster={"sender": "tmux", "receiver": "tmux"})
     path = tmp_path / "window.jsonl"
     initial = b'{"event":"first"}\n{"event":"second"}\n'
     path.write_bytes(initial)
@@ -191,7 +160,7 @@ def test_window_log_truncates_only_at_consumed_end_and_later_record_still_arrive
 
 
 def test_window_log_over_cap_is_not_truncated_before_partial_tail_is_consumed(tmp_path, capsys):
-    r = LogRedis()
+    r = LogRedis(roster={"sender": "tmux", "receiver": "tmux"})
     path = tmp_path / "window.jsonl"
     partial = b'{"event":"an-unconsumed-record"}'
     path.write_bytes(partial)
@@ -205,7 +174,7 @@ def test_window_log_over_cap_is_not_truncated_before_partial_tail_is_consumed(tm
 
 
 def test_window_log_skips_complete_invalid_utf8_line_and_keeps_progressing(tmp_path, capsys):
-    r = LogRedis()
+    r = LogRedis(roster={"sender": "tmux", "receiver": "tmux"})
     path = tmp_path / "window.jsonl"
     path.write_bytes(b'{"event":"before"}\ninvalid:\xff\n{"event":"after"}\n')
     tailer = WindowLogTailer(r, pod="acme", tenant="hq", path=path)
@@ -290,9 +259,6 @@ def test_watchdog_alerts_reach_the_durable_mirror(monkeypatch, tmp_path, capsys)
     evidence = tmp_path / "custody.jsonl"
     monkeypatch.setenv("FLOCK_CUSTODY_FILE", str(evidence))
 
-    class FakeRedis:
-        def xadd(self, *a, **k):
-            return b"1-0"
 
     wd = Watchdog.__new__(Watchdog)
     wd.r, wd.pod, wd.tenant = FakeRedis(), "acme", "hq"

@@ -1,3 +1,4 @@
+from conftest import FakeRedis as StatefulRedis
 import ast
 import json
 from datetime import datetime, timezone
@@ -77,57 +78,6 @@ def test_resource_scanner_catches_keyword_positional_and_dynamic_literals():
         if isinstance(node, ast.Call)
     }
     assert found == {"new-state", "new-data", "tasks.*"}
-
-
-class StatefulRedis:
-    def __init__(self):
-        self.values = {}
-        self.hashes = {}
-        self.streams = {}
-
-    def get(self, key):
-        return self.values.get(key)
-
-    def set(self, key, value):
-        self.values[key] = value
-
-    def delete(self, *keys):
-        count = 0
-        for key in keys:
-            if key in self.values or key in self.hashes or key in self.streams:
-                count += 1
-            self.values.pop(key, None)
-            self.hashes.pop(key, None)
-            self.streams.pop(key, None)
-        return count
-
-
-    def hget(self, key, field):
-        return self.hashes.get(key, {}).get(field)
-
-    def hset(self, key, field=None, value=None, mapping=None):
-        target = self.hashes.setdefault(key, {})
-        if mapping is not None:
-            target.update(mapping)
-        else:
-            target[field] = value
-
-    def hdel(self, key, field):
-        self.hashes.get(key, {}).pop(field, None)
-
-    def hgetall(self, key):
-        return self.hashes.get(key, {})
-
-    def xrevrange(self, key, max="+", min="-", count=None):
-        return list(reversed(self.streams.get(key, [])))[:count]
-
-    def keys(self, pattern="*"):
-        import fnmatch
-        all_keys = set(self.values.keys()) | set(self.hashes.keys()) | set(self.streams.keys())
-        return [k for k in all_keys if fnmatch.fnmatch(k, pattern)]
-
-    def scan_iter(self, match="*"):
-        return iter(self.keys(match))
 
 
 

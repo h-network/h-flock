@@ -1,3 +1,4 @@
+from conftest import FakeRedis as MockRedis
 import json
 import os
 import tempfile
@@ -6,74 +7,6 @@ from unittest.mock import patch, MagicMock
 from flock.control import start_agent
 from flock.tmuxhost.host import TmuxHost, generate_agents_md, write_agent_guide, ensure_claude_project_trusted
 
-
-class MockRedis:
-    __resp_double__ = True
-
-    def __init__(
-        self, roster_agents, port_type_map=None, launch_map=None, profile_map=None,
-        provider_map=None, cause_map=None,
-    ):
-        self.roster_agents = set(roster_agents)
-        self.port_type_map = port_type_map or {a: "tmux" for a in roster_agents}
-        self.launch_map = launch_map or {}
-        self.profile_map = profile_map or {}
-        self.provider_map = provider_map or {}
-        self.cause_map = cause_map or {}
-
-    def get(self, key):
-        for agent, cause in self.cause_map.items():
-            if f":agent:{agent}:window.cause" in key:
-                return cause.encode("utf-8") if isinstance(cause, str) else cause
-        for agent, cli in self.launch_map.items():
-            if f":agent:{agent}:launch" in key:
-                return cli.encode("utf-8") if isinstance(cli, str) else cli
-        for agent, prof in self.profile_map.items():
-            if f":agent:{agent}:profile" in key:
-                return prof.encode("utf-8") if isinstance(prof, str) else prof
-        for agent, provider in self.provider_map.items():
-            if f":agent:{agent}:provider" in key:
-                return provider.encode("utf-8") if isinstance(provider, str) else provider
-        return None
-
-    def getdel(self, key):
-        for agent in list(self.cause_map):
-            if f":agent:{agent}:window.cause" in key:
-                value = self.cause_map.pop(agent)
-                return value.encode("utf-8") if isinstance(value, str) else value
-        return None
-
-    def set(self, key, value):
-        if key.endswith(":window.cause"):
-            agent = key.split(":agent:", 1)[1].split(":", 1)[0]
-            self.cause_map[agent] = value
-        elif key.endswith(":launch"):
-            agent = key.split(":agent:", 1)[1].split(":", 1)[0]
-            self.launch_map[agent] = value
-
-    def hset(self, key, field, value):
-        if key.endswith(":roster"):
-            self.roster_agents.add(field)
-            self.port_type_map[field] = value
-
-    def eval(self, script, numkeys, *args):
-        assert numkeys == 2
-        cause_key, roster_key, correlation_id, agent, agent_port_type = args
-        self.set(cause_key, correlation_id)
-        self.hset(roster_key, agent, agent_port_type)
-        return 1
-
-    def hkeys(self, key):
-        return {a.encode("utf-8") for a in self.roster_agents}
-
-    def hget(self, key, field):
-        val = self.port_type_map.get(field)
-        if val is None:
-            return None
-        return val.encode("utf-8") if isinstance(val, str) else val
-
-    def smembers(self, key):
-        return {a.encode("utf-8") for a in self.roster_agents}
 
 
 @patch("flock.tmux.ops.run_tmux")

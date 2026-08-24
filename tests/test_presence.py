@@ -1,29 +1,10 @@
+from conftest import FakeRedis as PresenceRedis
 import json
 from datetime import datetime, timezone
 
 from flock.bus import prefix
 from flock.watchdog.presence import PresenceSampler
 
-
-class PresenceRedis:
-    def __init__(self):
-        self.streams = {}
-        self.hashes = {}
-        self.values = {}
-        self.reverse_counts = []
-
-    def get(self, key):
-        return self.values.get(key)
-
-    def xrevrange(self, key, max="+", min="-", count=None):
-        self.reverse_counts.append(count)
-        return list(reversed(self.streams.get(key, [])))[:count]
-
-    def hgetall(self, key):
-        return self.hashes.get(key, {})
-
-    def hset(self, key, mapping):
-        self.hashes[key] = mapping
 
 
 def _activity(agent, timestamp, entry_id):

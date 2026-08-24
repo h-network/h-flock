@@ -1,3 +1,4 @@
+from conftest import FakeRedis, FakePipeline
 import asyncio
 import json
 
@@ -5,96 +6,6 @@ import pytest
 from flock.api import Settings, create_app
 from flock.api import app as api_module
 
-
-class FakePipeline:
-    def __init__(self, redis):
-        self.redis = redis
-        self.keys = []
-
-    def lrange(self, key, start, end):
-        assert (start, end) == (0, -1)
-        self.keys.append(key)
-        return self
-
-    def execute(self):
-        return [self.redis.lists.get(key, []) for key in self.keys]
-
-
-class FakeRedis:
-    def __init__(self):
-        self.lengths = {}
-        self.lists = {}
-        self.streams = {}
-        self.hashes = {}
-        self.roster = {b"bob": b"tmux", b"alice": b"tmux", b"telegram": b"api", b"host": b"tmux", b"sme-2": b"tmux"}
-
-    def hgetall(self, key):
-        return self.hashes.get(key, {})
-
-    def llen(self, key):
-        return self.lengths.get(key, 0)
-
-    def lrange(self, key, start, end):
-        assert (start, end) == (0, -1)
-        return self.lists.get(key, [])
-
-    def rpush(self, key, value):
-        self.lists.setdefault(key, []).append(value.encode() if isinstance(value, str) else value)
-        return len(self.lists[key])
-
-    def pipeline(self, transaction=False):
-        assert transaction is False
-        return FakePipeline(self)
-
-    def hexists(self, key, field):
-        f = field.encode() if isinstance(field, str) else field
-        return f in self.roster
-
-    def hget(self, key, field):
-        if key in self.hashes:
-            val = self.hashes[key].get(field)
-            if val is None and isinstance(field, str):
-                val = self.hashes[key].get(field.encode())
-            elif val is None and isinstance(field, bytes):
-                val = self.hashes[key].get(field.decode())
-            return val
-        f = field.encode() if isinstance(field, str) else field
-        return self.roster.get(f)
-
-    def hset(self, key, field, value):
-        self.hashes.setdefault(key, {})[field] = value
-
-    def delete(self, *keys):
-        for k in keys:
-            self.hashes.pop(k, None)
-            self.lists.pop(k, None)
-            self.streams.pop(k, None)
-
-    def hkeys(self, key):
-        return list(self.roster.keys())
-
-    def xrange(self, name, min="-", max="+", count=None):
-        entries = self.streams.get(name, [])
-        result = []
-        exclusive = False
-        min_str = min
-        if isinstance(min_str, bytes):
-            min_str = min_str.decode()
-        if isinstance(min_str, str) and min_str.startswith("("):
-            exclusive = True
-            min_str = min_str[1:]
-
-        for entry_id, fields in entries:
-            eid = entry_id.decode() if isinstance(entry_id, bytes) else str(entry_id)
-            if min_str != "-":
-                if exclusive and eid <= min_str:
-                    continue
-                if not exclusive and eid < min_str:
-                    continue
-            result.append((entry_id, fields))
-            if count and len(result) >= count:
-                break
-        return result
 
 
 @pytest.fixture

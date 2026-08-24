@@ -1,25 +1,7 @@
+from conftest import FakeRedis as RetentionRedis
 from flock.bus import prefix
 from flock.switch.retention import RetentionTrimmer
 
-
-class RetentionRedis:
-    def __init__(self):
-        self.lists = {}
-        self.trimmed = []
-
-    def pipeline(self):
-        return self
-
-    def ltrim(self, key, start, end):
-        self.trimmed.append((key, start, end))
-        values = self.lists.get(key, [])
-        start = max(0, len(values) + start) if start < 0 else start
-        end = len(values) + end if end < 0 else end
-        self.lists[key] = values[start : end + 1]
-        return self
-
-    def execute(self):
-        return [True] * len(self.trimmed)
 
 
 def test_switch_retention_keeps_newest_done_tickets_and_dead_letters():
