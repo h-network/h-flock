@@ -1,4 +1,0 @@
-source: e0c85462ed3bc9598166641ddb19c3a9d2f643d8
-command: python3 -m pytest -q
-exit status: 0, read unpiped
-result: 508 passed, 5 subtests passed in 14.94s

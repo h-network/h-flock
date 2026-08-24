@@ -73,12 +73,11 @@ attribution.
 application. **Coalescing and truncation are invisible to it** — it counts
 envelopes, not bytes.
 
-**Spec:** `BUILD-114`. Built by `bus`, verified independently by `acceptance`
-(`BUILD-115`), merged. ⚠ **Not wired to `accept.sh`** — that is its own decision.
+**Built and independently verified**, merged. ⚠ **Not wired to `accept.sh`** — that is its own decision.
 
-⚠⚠ **KNOWN DEFECT, fix specced as `BUILD-119`: it judges traffic that is not its
+⚠⚠ **KNOWN DEFECT, since fixed: it judged traffic that was not its
 own.** `judge()` buckets every line in `docker logs` with no participant filter,
-so `BUILD-118` returned `rc=3` twice on real `accept.sh` plumbing traffic while
+so it returned `rc=3` twice on real `accept.sh` plumbing traffic while
 the harness's own accounting was clean. **It silently requires an idle tenant and
 nothing says so.**
 
@@ -108,7 +107,7 @@ restarts, fresh tenant).
 
 ## ⚠⚠ The answer: the RED was almost certainly OURS, not the fabric's
 
-**`BUILD-117` re-ran the identical recipe three times: 200/200, `drained=1`,
+**Re-running the identical recipe three times gave 200/200, `drained=1`,
 `rc0`.** Four facts explain the original:
 
 | | |
@@ -139,7 +138,7 @@ The diagnosis stopped because **the artifacts needed to finish it no longer
 exist** — only the custody snapshots and ledgers survived project teardown, so
 absence from an alternate log **cannot be proven either way**.
 
-⚠ **This is the second time.** `BUILD-105`'s agy capture took six named paths and
+⚠ **This is the second time.** An earlier agy capture took six named paths and
 never opened `brain/`, and an invented fixture shape hid a total data loss.
 **Twice is a rule, not an incident:**
 
@@ -271,5 +270,5 @@ committed.**
 | control plane | `_incomplete`, `_failed` and `_partially_failed` have **never** run outside a unit test |
 | usage accounting | codex `rate_limits` unproven live; agy not collected |
 | test doubles | fixed for `resp.Redis`; **unchecked for every other double** |
-| the three `api-*` scenarios | `BUILD-118` grepped `accept.sh`, `plumbing-check.sh` and `sim-blocked.sh` for all three: **zero matches.** Build 116 changed how they obtain a token and **an acceptance round never reaches them** — the register's founding failure, still live |
+| the three `api-*` scenarios | grepping `accept.sh`, `plumbing-check.sh` and `sim-blocked.sh` for all three: **zero matches.** A later build changed how they obtain a token and **an acceptance round never reaches them** — the register's founding failure, still live |
 | `log_record` drops `stream_id` silently | ⚠ `logging.py:84` writes `stream_id` **only** for events in the `_ENVELOPE_EVENTS` allowlist. A caller may **pass** one for any other event and it is **discarded with no error**. **No production impact today** — all ten events outside the list are genuinely non-envelope and nothing in `src/` passes an id that is dropped — but build 120 lost 10 of 10 `payload_verified` ids to it and spent a checkpoint finding out. **Script 3 territory: do the records mean what the contract says?** |

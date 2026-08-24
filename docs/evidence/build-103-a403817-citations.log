@@ -1,6 +1,0 @@
-source: a4038175b7ec9b165740508372ea859649ef5c9e
-command: python3 tools/check_citations.py
-exit status: 0, read unpiped
-result: citations checked: 846 (676 unique)
-hard failures: 0
-near misses: 84

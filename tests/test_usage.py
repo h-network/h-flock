@@ -990,7 +990,14 @@ def test_office_usage_names_agy_agent_not_collected(monkeypatch, capsys):
 
 
 def test_agy_uncollected_documentation_bounded_claims():
-    """Build 105 §2: CONTRACTS.md and BUILD-88-results.md state exact bounded claims for agy transcripts."""
+    """CONTRACTS.md states exact bounded claims for agy transcripts.
+
+    agy writes no token counts h-flock can read, and the claim about its
+    transcripts is deliberately bounded — we know where they live, we do not
+    collect them, and we have not verified whether they carry counts. Each
+    assertion below pins one clause of that, so a later edit cannot quietly
+    widen it into a claim we never tested.
+    """
     from pathlib import Path
     root = Path(__file__).resolve().parent.parent
 
@@ -1002,11 +1009,6 @@ def test_agy_uncollected_documentation_bounded_claims():
     assert "h-flock does not collect it" in contracts_norm
     assert "whether those transcripts carry token counts is unverified" in contracts_norm
 
-    build_88_norm = " ".join((root / "docs" / "BUILD-88-results.md").read_text(encoding="utf-8").split())
-    assert "agy Not Collected (§3)" in build_88_norm
-    assert "brain/<id>/.system_generated/logs/" in build_88_norm
-    assert "h-flock does not collect it" in build_88_norm
-    assert "whether those transcripts carry token counts is unverified" in build_88_norm
 
 
 def test_codex_session_rotation_resets_model(tmp_path):

@@ -425,7 +425,7 @@ whole network.
    doc rather than the code.
 
    ✅ **The ENCODING was the genuinely open part, and it is now closed too.**
-   [`BUILD-72`](BUILD-72-fixed-header.md) shipped the v3 wire on 2026-08-15: a
+   `BUILD-72` shipped the v3 wire on 2026-08-15: a
    fixed 191-byte ASCII header then an opaque JSON body, so the switch forwards
    without parsing. §6 has the measurement. ⚠ **`BUILD-73` then froze it at 256
    bytes for v4**, adding `ttl`, `hops` and 59 reserved bytes — the current wire

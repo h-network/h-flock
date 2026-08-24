@@ -1,3 +1,0 @@
-tenant=bus100-1787525055-2919997
-project=h-flock-bus100-1787525055-2919997
-container=h-flock-bus100-1787525055-2919997-tenant-1

@@ -1,6 +1,0 @@
-BASE=5665938
-OLD_RC=5 NEW_RC=5 OUTPUT_DIFF_RC=0
-RECONCILE sent=1 delivered_once=0 duplicates=0 dead=0 stranded=0 indeterminate=1 lost_attributed=0 lost_unexplained=0
-PARSE_FAILURES docker_json=0 dead_json=0 ingress_json=0 event_ts=0 legacy_attempts=0
-INJECTION_COVERAGE seconds=0.000 fraction=0.000000
-INDETERMINATE_FORWARD 1 sid

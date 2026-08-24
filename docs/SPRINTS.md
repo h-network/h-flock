@@ -246,7 +246,7 @@ you build must tolerate it.
 
 **Rows:** *an alert you can clear* · *credential alerts never clear* · *console
 conversation needs `--audit-log`*
-**Spec:** already written — [`BUILD-38-durable.md`](BUILD-38-durable.md) §1, §2, §4.
+**Spec:** already written — `BUILD-38-durable.md` §1, §2, §4.
 
 Clearing is keyed by **cursor**, one instance, so it can never become "mute this
 kind". Credential alerts were only ever tested firing: one was raised at
@@ -255,7 +255,7 @@ the console correctly rendered a fact that had been false for an hour.
 
 ⚠ **The console half skips silently without a playwright venv**, which is how
 acceptance ran green for weeks without ever exercising it. See
-[`BUILD-CONVENTION.md`](BUILD-CONVENTION.md) §3.0b.
+`BUILD-CONVENTION.md` §3.0b.
 ⚠ **`--audit-log` touches `clients/`, which is closed to development.** It is a
 flag rather than a feature, so it is in scope — but say so out loud when it
 lands, or the next reader will think the freeze broke.
@@ -394,7 +394,7 @@ sprint 2 and belong next to it, not at the bottom of a list:
 | **the console cannot reach TLS doors** | real, ~30 lines, and `clients/` is closed to development. Recorded, not scheduled |
 | **not ours: the model and the CLI** | listed so nobody hunts an h-flock bug when they see it |
 | **the permission mode lives only in argv** | probably closed by the base image, and the original trigger was never reproduced, so there is nothing to test a fix against |
-| **a naming review** | ⚠ **must come after sprints 1, 2 and 7**, or it reviews vocabulary that is about to move. See [`BUILD-45-naming-inventory.md`](BUILD-45-naming-inventory.md) and [`BUILD-49-vocabulary.md`](BUILD-49-vocabulary.md) for what has already been inventoried |
+| **a naming review** | ⚠ **must come after sprints 1, 2 and 7**, or it reviews vocabulary that is about to move. See `BUILD-45-naming-inventory.md` and `BUILD-49-vocabulary.md` for what has already been inventoried |
 | **a `gateway` participant** and **cross-tenant is designed twice** | ⚠ **one decision, not two rows, and it is the operator's.** Gateway-as-participant or switch-branch — only one can be built, and Sprint 6's cross-tenant half is blocked behind it |
 | **no acceptance seat**, **every sign-off signed by its own author** | arrangements, not code. Recorded so they are chosen rather than drifted into, and h-flock sets an office up — it does not direct how agents work |
 

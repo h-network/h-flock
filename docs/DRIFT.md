@@ -85,7 +85,6 @@ python3 -c "import sys;sys.path.insert(0,'src');from flock.bus.envelope import V
 | `CONTRACTS.md:101` | "The Redis wire is **hard v2**" | high — it is hard v3 |
 | `LLD-bus-and-switch.md:753` | `"v": 2` in the frame example | high |
 | `DESIGN-layers.md` | v2 throughout §7 | medium |
-| `BUILD-53-frame.md`, `BUILD-53-bus-results.md`, `BUILD-63-persistence.md` | v2 | low — historical build records, **correct as history** |
 
 ⚠ **Only the first three need changing.** A build doc describing what was true at
 build 53 is not drift; it is a dated record. **Do not rewrite history docs** —
@@ -198,9 +197,7 @@ more than 3 lines. **0 hard failures** (no dead paths); 30 near misses:
 | file | count |
 |---|---|
 | `NAMING-tmux.md` | **15** |
-| `BUILD-65-results.md` | 4 |
 | `DESIGN-layers.md` | 2 |
-| `BUILD-44-tmux-report.md` | 2 |
 | `AUDIT.md` | 2 |
 | five others | 1 each |
 

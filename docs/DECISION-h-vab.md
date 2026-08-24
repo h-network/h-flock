@@ -84,8 +84,8 @@ predates builds 47, 48, 50 and 51.
 `natsflock`, now deleted.
 
 **No transport swap.** A successful negative spike, recorded in
-[`BUILD-43-natsflock-result.md`](BUILD-43-natsflock-result.md) with the task in
-[`BUILD-43-natsflock.md`](BUILD-43-natsflock.md). Both were lifted here from the
+`BUILD-43-natsflock-result.md` with the task in
+`BUILD-43-natsflock.md`. Both were lifted here from the
 branch before deletion, for the same reason as h-vab above: **the only trace of
 why we said no would otherwise have been a branch nobody reads.**
 

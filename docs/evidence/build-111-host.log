@@ -1,6 +1,0 @@
-host=h-oracle
-hostname=h-oracle
-memory=93Gi total, 72Gi available
-filesystem=/dev/nvme0n1p3 1.8T total, 977G available
-base_image=ghcr.io/h-network/base@sha256:10406097c8954af16c62cf0088dea147065146bf4f667c361da96384ed02cbdc
-protected_containers=h-flock-office h-flock-demo-tenant-1

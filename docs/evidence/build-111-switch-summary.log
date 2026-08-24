@@ -1,7 +1,0 @@
-tenant=bus111 project=h-flock-bus111
-workload=1000 bench envelopes; analysis filtered source-prefix bench-
-envelopes=1000 expected=1000 dead-lettered=0 indeterminate=0
-sent=1000 popped=1000 forwarded=1000 received=1000 opened=1000
-steady_state=825.77/s over 1.0s
-popped_to_forwarded_p50=0.00ms p95=1.00ms
-reconcile=sent=1000 delivered_once=1000 duplicates=0 dead=0 stranded=0 indeterminate=0 lost_attributed=0 lost_unexplained=0
