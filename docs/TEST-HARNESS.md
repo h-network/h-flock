@@ -55,6 +55,44 @@ envelopes, not bytes.
 
 ---
 
+## 2 — bi-directional · payload verified and ACKED · **DEFINED, NOT SPEC'D**
+
+**Question:** does a payload survive intact, and can the receiver *say so* —
+in both directions?
+
+**Shape:** origin sends a payload with a unique marker; the destination
+**verifies the content it received and acks back over the bus**; the origin
+verifies the ack. **One adapter, two roles, a round trip.**
+
+⚠⚠ **Why the ACK is the point, and not a convenience.** Six custody stages end at
+the port's handoff. Nothing below it is recorded, and **that is deliberate** — a
+switch that forwards by name and never reads content cannot know whether the
+destination consumed anything. Build 113 measured the consequence: four messages
+`opened` and never received.
+
+**A test adapter can close that gap without violating the design, because the
+adapter is an APPLICATION.** The fabric still never inspects content; **the
+receiver testifies for itself.** ⚠ **That is the only honest way to get
+end-to-end receipt in this architecture**, and it is why this script is worth
+more than script 1 plus a payload check.
+
+**What it catches that script 1 cannot:** coalescing · truncation · reordering ·
+corruption · **and receipt itself**, rather than handoff.
+
+**Also yields:** round-trip latency, and both directions under load at once —
+which is what a real conversation between agents actually looks like.
+
+⚠ **Does NOT cover the tmux port or a CLI.** The receiver is `bench-port`-shaped,
+so there is no terminal and no input box. **Script 2 isolates fabric + port +
+application.** The terminal remains uncovered by anything — see the candidates.
+
+⚠ **Build order matters**: script 1 first, because a bi-directional content
+failure is ambiguous until envelope conservation is independently proven. **If
+script 1 is clean and script 2 is not, the defect is in content handling. Without
+script 1, it could be either.**
+
+---
+
 ## Candidates — from findings, NOT scheduled
 
 ⚠ **Listed so they are not re-derived. The operator picks; none of these is
@@ -62,7 +100,6 @@ committed.**
 
 | candidate | the finding that produced it |
 |---|---|
-| content integrity | `bench-port` discards payloads, so coalescing and truncation are invisible |
 | burst / queue-drain | build 113 bursted **tmux**; the fabric itself has never been bursted |
 | delivery verification | `verification.py` is an aliveness check and missed **four real losses** in a burst |
 | terminal layer | six stages end at the port's handoff; nothing records below it |
