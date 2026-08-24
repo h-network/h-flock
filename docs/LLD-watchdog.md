@@ -191,13 +191,17 @@ codex.** Two of three cannot be checked, and saying so is the honest answer.
 ⚠ **`expired` and `expiring` are different words.** A timestamp already in the
 past is not a warning about the future. A missing, unreadable or malformed
 credential file for any CLI is `absent`: regardless of expiry support, that
-account cannot work without a human login. An expiry beyond the warning window
-produces no alert.
+account cannot work without a human login. An expiry beyond the warning window produces no alert on fresh startup.
 
 The tenant `credential.alerted` hash stores the last reported status under an
-`<account>:<cli>` field. A status is emitted once when it changes; a healthy
-Claude account or an account no longer in use clears its field. The existing
-per-agent `alerted` key cannot hold this state: it contains a ticket ID, expires
+`<account>:<cli>` field. A status is emitted once when it changes:
+- When a credential fails or enters a warning state, its non-healthy status (`absent`, `expiring`, `expired`, `unknown`) is emitted and recorded in `credential.alerted`.
+- When a previously alerted credential recovers or is refreshed to healthy (`present`), the watchdog emits a retraction record with `status: "present"` to the alert stream and deletes its field from `credential.alerted`. A steady-state healthy account emits nothing on subsequent passes.
+- If an account is no longer in use, its stale `credential.alerted` field is cleared.
+
+Per `BUILD-38-durable` §2, emitting `status: "present"` was chosen over §1's cursor-based clearable alerts because clearable alerts do not exist in the append-only stream. Emitting `status: "present"` enables stream consumers and console monitors to determine the current state by taking the latest record per `(account, cli)`.
+
+The existing per-agent `alerted` key cannot hold this state: it contains a ticket ID, expires
 with the stall cooldown, and one credential account may be shared by several
 agents.
 

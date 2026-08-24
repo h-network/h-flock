@@ -18,9 +18,9 @@
    - `_codex_usage` extracts `last_token_usage` for turn-level incremental accounting, never cumulative `total_token_usage`.
    - Verified on live fixture `tests/fixtures/codex-session-captured.jsonl` where `last` vs `total` diverge on ordinals 141 (64,831 vs 533,066), 288 (80,177 vs 1,810,189), and 414 (111,751 vs 3,332,258). Summing turns yields 270,891 input tokens rather than an inflated 5.69M tokens.
 
-4. **agy Not Measurable (§3):**
-   - agy stores internal state in SQLite and Protobuf under `~/.gemini/antigravity-cli/` without token count metrics.
-   - `office usage` and `office status` explicitly identify agy agents as `not measurable` (`not measurable (agy)` in status activity feed, `not measurable` under usage model column with `measurable: false` in JSON), preventing misleading zero, absent, or unknown reporting.
+4. **agy Not Collected (§3):**
+   - agy writes a per-conversation transcript under `~/.gemini/antigravity-cli/brain/<id>/.system_generated/logs/`, but h-flock does not collect it; whether those transcripts carry token counts is unverified.
+   - `office usage` and `office status` explicitly identify agy agents as `not collected` (`not collected (agy)` in status activity feed, `not collected` under usage model column with `collected: false` in JSON), preventing misleading zero, absent, or unknown reporting.
 
 5. **Codex Rate Limits (§4):**
    - `_codex_usage` extracts `rate_limits` from `token_count` events (`primary.used_percent`, `primary.resets_at`, `plan_type`).

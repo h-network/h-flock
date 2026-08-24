@@ -523,16 +523,19 @@ right and this is the stale one.
   skipped — they have no `/workdir`. Also on `PATH` under the bare name, which
   delegates here (`office/cli.py:clone_to_all_main`).
 - **`status`** reports agent presence, open work ticket, and last activity feed.
-  An `agy` agent reads `not measurable (agy)` under the activity feed column.
+  An `agy` agent reads `not collected (agy)` under the activity feed column.
 - **`usage`** reports token counts, active model, rate limits, and estimated cost per agent, from the `usage`
   records the watchdog emits. Codex rows price against the model resolved from
   `turn_context` (e.g. `gpt-5.6-sol` matching `gpt-5` pricing) and surface a rate-limit
   column (`used_percent`, `plan_type`). ⚠ **Rate limits are verified against
   the captured rollout fixture `tests/fixtures/codex-session-captured.jsonl` and
   remain unproven against a live codex agent in acceptance.** An `agy` agent
-  reads `model: "not measurable"` with `-` for counts and `unpriced` in table output.
-  `office usage --json` includes `"measurable": false` on unmeasurable rows
-  (`agy`), while claude and codex rows omit the key.
+  reads `model: "not collected"` with `-` for counts and `unpriced` in table output.
+  `office usage --json` includes `"collected": false` on uncollected rows
+  (`agy`), while claude and codex rows omit the key. `agy` writes a
+  per-conversation transcript under `brain/<id>/.system_generated/logs/`, but
+  h-flock does not collect it; whether those transcripts carry token counts is
+  unverified.
   ⚠ **A model absent from `container/config/pricing.json` reads `unpriced`, never `0.00`** —
   a local model and an unpriced cloud model must not become indistinguishable in a total.
 

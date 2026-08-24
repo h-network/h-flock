@@ -231,7 +231,7 @@ def _status_row(r, *, pod: str, tenant: str, agent: str, now: datetime) -> str:
 
     launch_cli = _text(r.get(prefix(pod, tenant, agent=agent, resource="launch")))
     if launch_cli == "agy":
-        activity = "not measurable (agy)"
+        activity = "not collected (agy)"
     elif presence_state == "unknown":
         activity = "no activity feed"
     else:
@@ -744,14 +744,14 @@ def _usage_command(argv: list[str]) -> None:
         rows.append({
             "agent": ag,
             "cli": "agy",
-            "model": "not measurable",
+            "model": "not collected",
             "input": 0,
             "cache_read": 0,
             "cache_write": 0,
             "output": 0,
             "usd": None,
             "unpriced": True,
-            "measurable": False,
+            "collected": False,
         })
 
     if args.json:
@@ -764,11 +764,11 @@ def _usage_command(argv: list[str]) -> None:
         header += f"{'limit':>15}"
     print(header)
     for row in rows:
-        is_unmeasurable = row.get("measurable") is False
-        in_str = "-" if is_unmeasurable else _format_token_count(row["input"])
-        cr_str = "-" if is_unmeasurable else _format_token_count(row["cache_read"])
-        cw_str = "-" if is_unmeasurable else _format_token_count(row["cache_write"])
-        out_str = "-" if is_unmeasurable else _format_token_count(row["output"])
+        is_uncollected = row.get("collected") is False or row.get("measurable") is False
+        in_str = "-" if is_uncollected else _format_token_count(row["input"])
+        cr_str = "-" if is_uncollected else _format_token_count(row["cache_read"])
+        cw_str = "-" if is_uncollected else _format_token_count(row["cache_write"])
+        out_str = "-" if is_uncollected else _format_token_count(row["output"])
         usd_str = "unpriced" if row["unpriced"] else f"{row['usd']:.2f}"
         line = (
             f"{row['agent']:<10}{row['cli']:<8}{row['model']:<23}"

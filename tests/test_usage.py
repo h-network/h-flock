@@ -950,8 +950,8 @@ def test_office_usage_surfaces_codex_rate_limits(monkeypatch, capsys):
     assert json_out["rows"][0]["rate_limits"]["plan_type"] == "prolite"
 
 
-def test_office_usage_names_agy_agent_not_measurable(monkeypatch, capsys):
-    """Build 88 §3: office usage names agy agents as not measurable rather than omitting or zeroing."""
+def test_office_usage_names_agy_agent_not_collected(monkeypatch, capsys):
+    """Build 105 §2: office usage names agy agents as not collected rather than omitting or zeroing."""
     r = UsageRedis(agents=("architect", "backend"))
     r.values[prefix("acme", "hq", "architect", "launch")] = "agy"
     r.values[prefix("acme", "hq", "backend", "launch")] = "claude"
@@ -975,7 +975,7 @@ def test_office_usage_names_agy_agent_not_measurable(monkeypatch, capsys):
     out = capsys.readouterr().out
     assert "architect" in out
     assert "agy" in out
-    assert "not measurable" in out
+    assert "not collected" in out
     assert "backend" in out
 
     cli.main(["usage", "--json"])
@@ -983,8 +983,8 @@ def test_office_usage_names_agy_agent_not_measurable(monkeypatch, capsys):
     architect_rows = [r for r in json_out["rows"] if r["agent"] == "architect"]
     assert len(architect_rows) == 1
     assert architect_rows[0]["cli"] == "agy"
-    assert architect_rows[0]["model"] == "not measurable"
-    assert architect_rows[0]["measurable"] is False
+    assert architect_rows[0]["model"] == "not collected"
+    assert architect_rows[0]["collected"] is False
     assert architect_rows[0]["unpriced"] is True
     assert architect_rows[0]["usd"] is None
 

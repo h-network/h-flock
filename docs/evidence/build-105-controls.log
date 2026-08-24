@@ -1,0 +1,160 @@
+=== MUTATION 1: REVERT CREDENTIAL RETRACTION (expected exit 1) ===
+============================= test session starts ==============================
+platform linux -- Python 3.12.3, pytest-9.1.1, pluggy-1.6.0
+cachedir: /tmp/pytest_cache_1
+rootdir: /workspace/api/h-flock
+configfile: pyproject.toml
+plugins: anyio-4.14.2
+collected 21 items / 20 deselected / 1 selected
+
+tests/test_watchdog.py F                                                 [100%]
+
+=================================== FAILURES ===================================
+___________ test_credential_alert_retracted_when_credential_recovers ___________
+
+tmp_path = PosixPath('/tmp/pytest-of-ubuntu/pytest-1276/test_credential_alert_retracte0')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x7ef2def4ab40>
+capsys = <_pytest.capture.CaptureFixture object at 0x7ef2def4a930>
+
+    def test_credential_alert_retracted_when_credential_recovers(tmp_path, monkeypatch, capsys):
+        """Build 105 §1: when a credential recovers, watchdog emits status=present and clears alerted hash."""
+        r = WatchRedis()
+        r.values[_key("architect", "launch")] = "claude"
+        monkeypatch.delenv("CLAUDE_OAUTH_TOKEN_DEFAULT", raising=False)
+    
+        watchdog = Watchdog(r, pod="acme", tenant="hq", session_name="hq", home_root=tmp_path)
+        alerted_key = prefix("acme", "hq", resource="credential.alerted")
+        alerts_key = prefix("acme", "hq", resource="alerts")
+    
+        # Pass 1: Absent credential -> alerts absent
+        watchdog.check_credentials(now=NOW)
+        alerts = [json.loads(fields["alert"]) for _, fields in r.streams[alerts_key]]
+        assert len(alerts) == 1
+        assert alerts[0]["status"] == "absent"
+        assert alerts[0]["cli"] == "claude"
+        assert alerts[0]["account"] == "default"
+        assert r.hashes[alerted_key] == {"default:claude": "absent"}
+    
+        # Pass 2: Login completes -> valid credentials file created with healthy refresh expiry
+        claude = tmp_path / ".claude"
+        claude.mkdir()
+        (claude / ".credentials.json").write_text(
+            json.dumps({"claudeAiOauth": {"refreshTokenExpiresAt": "2026-09-12T14:00:00Z"}})
+        )
+    
+        watchdog.check_credentials(now=NOW)
+        alerts = [json.loads(fields["alert"]) for _, fields in r.streams[alerts_key]]
+>       assert len(alerts) == 2
+E       AssertionError: assert 1 == 2
+E        +  where 1 = len([{'v': 1, 'ts': '2026-08-09T14:00:00.000Z', 'kind': 'credential', 'account': 'default', ...}])
+
+tests/test_watchdog.py:362: AssertionError
+----------------------------- Captured stdout call -----------------------------
+{"v":1,"ts":"2026-08-09T14:00:00.000Z","kind":"credential","account":"default","cli":"claude","status":"absent","expires_ts":null,"writer":"watchdog"}
+=========================== short test summary info ============================
+FAILED tests/test_watchdog.py::test_credential_alert_retracted_when_credential_recovers
+======================= 1 failed, 20 deselected in 0.05s =======================
+
+MUTATION_1_EXIT=1
+
+=== MUTATION 2: REVERT OFFICE STATUS AGY NOT COLLECTED LABEL (expected exit 1) ===
+============================= test session starts ==============================
+platform linux -- Python 3.12.3, pytest-9.1.1, pluggy-1.6.0
+cachedir: /tmp/pytest_cache_2
+rootdir: /workspace/api/h-flock
+configfile: pyproject.toml
+plugins: anyio-4.14.2
+collected 68 items / 67 deselected / 1 selected
+
+tests/test_office.py F                                                   [100%]
+
+=================================== FAILURES ===================================
+__________________ test_status_names_agy_agent_not_collected ___________________
+
+office_env = <test_office.MockRedis object at 0x70e08d4c3890>
+capsys = <_pytest.capture.CaptureFixture object at 0x70e08d4c3a10>
+
+    def test_status_names_agy_agent_not_collected(office_env, capsys):
+        """Build 105 §2: office status names agy agents as not collected."""
+        office_env.values["pod:acme:tenant:hq:agent:frontend:launch"] = b"agy"
+        cli.main(["status", "frontend"])
+        out = capsys.readouterr().out
+        assert "frontend" in out
+>       assert "not collected (agy)" in out
+E       AssertionError: assert 'not collected (agy)' in '  frontend    unknown   —                                  not measurable (agy)\n'
+
+tests/test_office.py:333: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_office.py::test_status_names_agy_agent_not_collected - Asse...
+======================= 1 failed, 67 deselected in 0.03s =======================
+
+MUTATION_2_EXIT=1
+
+=== MUTATION 3: REVERT OFFICE USAGE AGY NOT COLLECTED LABEL (expected exit 1) ===
+============================= test session starts ==============================
+platform linux -- Python 3.12.3, pytest-9.1.1, pluggy-1.6.0
+cachedir: /tmp/pytest_cache_3
+rootdir: /workspace/api/h-flock
+configfile: pyproject.toml
+plugins: anyio-4.14.2
+collected 23 items / 22 deselected / 1 selected
+
+tests/test_usage.py F                                                    [100%]
+
+=================================== FAILURES ===================================
+_______________ test_office_usage_names_agy_agent_not_collected ________________
+
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x7d8406151640>
+capsys = <_pytest.capture.CaptureFixture object at 0x7d8405a4e120>
+
+    def test_office_usage_names_agy_agent_not_collected(monkeypatch, capsys):
+        """Build 105 §2: office usage names agy agents as not collected rather than omitting or zeroing."""
+        r = UsageRedis(agents=("architect", "backend"))
+        r.values[prefix("acme", "hq", "architect", "launch")] = "agy"
+        r.values[prefix("acme", "hq", "backend", "launch")] = "claude"
+    
+        usage_key = prefix("acme", "hq", resource="usage")
+        backend_usage = json.dumps({
+            "agent": "backend",
+            "cli": "claude",
+            "model": "claude-opus-4",
+            "input": 10000,
+            "cache_read": 0,
+            "cache_write": 0,
+            "output": 1000,
+            "ts": "2026-08-23T14:00:00.000Z",
+        })
+        r.xadd(usage_key, {"usage": backend_usage})
+    
+        monkeypatch.setattr(cli, "_context", lambda: (r, "acme", "hq", "backend"))
+    
+        cli.main(["usage"])
+        out = capsys.readouterr().out
+        assert "architect" in out
+        assert "agy" in out
+>       assert "not collected" in out
+E       AssertionError: assert 'not collected' in 'agent     cli     model                    input   cache_r  cache_w   output       USD\nbackend   claude  claude-opus...                                ------\n                                                                        0.23\n'
+
+tests/test_usage.py:978: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_usage.py::test_office_usage_names_agy_agent_not_collected
+======================= 1 failed, 22 deselected in 0.05s =======================
+
+MUTATION_3_EXIT=1
+
+=== CLEAN RUN (expected exit 0) ===
+============================= test session starts ==============================
+platform linux -- Python 3.12.3, pytest-9.1.1, pluggy-1.6.0
+rootdir: /workspace/api/h-flock
+configfile: pyproject.toml
+plugins: anyio-4.14.2
+collected 112 items
+
+tests/test_watchdog.py .....................                             [ 18%]
+tests/test_office.py ................................................... [ 64%]
+.................                                                        [ 79%]
+tests/test_usage.py .......................                              [100%]
+
+============================= 112 passed in 0.33s ==============================
+
+CLEAN_EXIT=0

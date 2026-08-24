@@ -324,13 +324,13 @@ def test_status_unknown_feed_and_optional_blocked_override(office_env, monkeypat
     assert "backend     blocked" in capsys.readouterr().out
 
 
-def test_status_names_agy_agent_not_measurable(office_env, capsys):
-    """Build 88 §3: office status names agy agents as not measurable."""
+def test_status_names_agy_agent_not_collected(office_env, capsys):
+    """Build 105 §2: office status names agy agents as not collected."""
     office_env.values["pod:acme:tenant:hq:agent:frontend:launch"] = b"agy"
     cli.main(["status", "frontend"])
     out = capsys.readouterr().out
     assert "frontend" in out
-    assert "not measurable (agy)" in out
+    assert "not collected (agy)" in out
 
 
 def test_status_rejects_non_tmux_or_unknown_agent(office_env, capsys):
