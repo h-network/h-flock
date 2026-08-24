@@ -7,7 +7,7 @@
 > ⚠ **Every entry names what the change made FALSE.** That is the point of this
 > file. A change log that lists only what was added leaves the reader to discover
 > which docs, scripts and assumptions just went stale — which is how
-> [`DRIFT.md`](DRIFT.md) reached two blocking rows in nineteen builds.
+> Documentation drift reached two blocking rows in nineteen builds.
 
 ---
 
@@ -48,7 +48,7 @@ traffic.
 | **`--expect-writer NAME=COUNT`** | exact match, so leftover contamination still refuses |
 
 ⚠ **`writer` is a label, not a credential.** It is not signed and is not meant to
-be; h-vab measured that alternative and declined it (`COMPARISON-hvab-fabric` §3.1).
+be; a sibling project measured that alternative and declined it.
 
 ## 2026-08-22 — delivery verification accepts any activity, and waits 120s
 
@@ -116,14 +116,14 @@ for six days.
 correctly: a `kick_started`/`received`/`opened` **triple** per recipient, not a
 pair, because `switch/service.py:173` kicks each accepted recipient in turn.
 
-⚠ **Why it went unnoticed: `DRIFT.md` §8's check was `rg -l '"v": ?2' docs/`** —
+⚠ **Why it went unnoticed: the drift check was `rg -l '"v": ?2' docs/`** —
 hardcoded to the version it was written for. At v3 and then v4 it kept looking
 for v2, found nothing, and reported clean. It is now derived from
 `envelope.py:VERSION` and searches `range(2, VERSION)`, so v5 needs no edit.
 **`"v": 1` is deliberately excluded** — the activity/alert stream is a separate
 schema that is legitimately still v1, and flagging it makes the check noise.
 
-**`DRIFT.md` §1 and §3 are re-labelled from ✅ FIXED to RECURRED.** §1 had listed
+**Two drift rows were re-labelled from ✅ FIXED to RECURRED.** The first had listed
 `API.md:13,21,25,166,249` as the worst case; the recurrence hit lines 13, 22, 26,
 167, 250 of the same file.
 
@@ -309,7 +309,7 @@ never the envelope's L2 destination. `analyse-run.py` joins on
 ### ⚠ What this made false
 
 - **Nothing in the docs** — this was code disagreeing with itself, not with a
-  document. Found while reviewing for [`DRIFT.md`](DRIFT.md) §6.
+  document. Found while reviewing documentation drift.
 - ⚠ **Any broadcast custody analysis run before this date** on a tenant with an
   unroutable `port_type` under-counted that agent's `received`/`dead_lettered`.
   Narrow path; no published figure is known to depend on it.
@@ -326,7 +326,7 @@ read 7–9 ms there and 0 ms here; spawn 622–677 ms against 23 ms.
 ### ⚠ What this made false
 
 - **Every throughput figure in 25 `BUILD-*.md` files** — all 4-vCPU numbers, none
-  naming a host. See `DRIFT.md` §4.
+  naming a host.
 - **Build 71 (kicker)** — cancelled. The 11 ms it existed to remove was four-vCPU
   contention, 0 ms on real hardware.
 - **Build 67/68's CPU magnitudes** (1084%, 1366%) — impossible above 400% on four

@@ -171,7 +171,7 @@ is the whole model: ports do the work, the switch moves frames.
    it; the switch only corrects `l2.source` at `switch/service.py:129`, **after** policy
    has run. Consistent with §2.3 (the port filters mistakes, not adversaries),
    but the port does **not** stamp identity. Making it structural is h-vab's
-   bound-`Port` handle, recorded as *not taken* in `DECISION-h-vab`
+   bound-`Port` handle, recorded as *not taken*
 2. is `destination` local? → address it directly
 3. if not → is there a default route? → address the envelope to the **router**
 4. do my export tags meet its import tags? → fail fast, real error **at the
@@ -477,7 +477,7 @@ bytes is what forwarding is.
 
 ⚠ **This is why the ✅ was safe to publish and still wrong to trust.** The
 measurement was honest and the caveat was written down; nobody ran the test the
-caveat named for nineteen builds. See [`DRIFT.md`](DRIFT.md) for what else is in
+caveat named for nineteen builds. See below for what else is in
 that state.
 
 ⚠ **A consequence discovered by build 53 and resolved by build 63:** the frame
