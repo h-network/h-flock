@@ -1,0 +1,353 @@
+[
+  {
+    "AppArmorProfile": "docker-default",
+    "Args": [
+      "-g",
+      "--",
+      "/usr/local/bin/entrypoint.sh"
+    ],
+    "Config": {
+      "AttachStderr": true,
+      "AttachStdin": false,
+      "AttachStdout": true,
+      "Cmd": null,
+      "Domainname": "",
+      "Entrypoint": [
+        "/usr/bin/tini",
+        "-g",
+        "--",
+        "/usr/local/bin/entrypoint.sh"
+      ],
+      "Env": [
+        "API_HOST=0.0.0.0",
+        "VERIFY_AFTER_SECONDS=5",
+        "ALLOW_PLAINTEXT_PUBLISH=1",
+        "POD=acme",
+        "FLOCK_ACCOUNTS=default",
+        "API_TLS_CERT=",
+        "API_TLS_KEY=REDACTED",
+        "API_PORT=8080",
+        "INGRESS_MAX=300",
+        "BOARD_DONE_MAX=500",
+        "API_ENABLED=1",
+        "AGENT_PROVIDERS=",
+        "SESSION_TLS_CERT=",
+        "AGENT_PROFILES=",
+        "DEAD_MAX=500",
+        "AGENTS=architect:tmux,sme-2:tmux",
+        "SESSION_TLS_KEY=REDACTED",
+        "AGENT_CLIS=",
+        "SESSION_PORT=8081",
+        "TENANT=build118-0824-1647",
+        "API_TOKEN=REDACTED",
+        "ROSTER_POLL_SECONDS=5",
+        "WINDOW_LOG_MAX_BYTES=8388608",
+        "SESSION_HOST=0.0.0.0",
+        "PATH=/opt/flock/bin:/home/ubuntu/.local/bin:/home/ubuntu/.codex/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
+        "DEBIAN_FRONTEND=noninteractive",
+        "LANG=en_US.UTF-8",
+        "LC_ALL=en_US.UTF-8",
+        "TZ=Europe/Amsterdam",
+        "HOME=/home/ubuntu",
+        "VIRTUAL_ENV=/opt/flock",
+        "PYTHONUNBUFFERED=1",
+        "ACTIVITY_POLL_SECONDS=2",
+        "PRESENCE_WORKING_SECONDS=30",
+        "TMUX_TMPDIR=/home/ubuntu/.flock/tmux",
+        "API_BIND=0.0.0.0",
+        "SESSION_BIND=0.0.0.0"
+      ],
+      "ExposedPorts": {
+        "8080/tcp": {},
+        "8081/tcp": {}
+      },
+      "Healthcheck": {
+        "Interval": 10000000000,
+        "Retries": 5,
+        "StartPeriod": 20000000000,
+        "Test": [
+          "CMD-SHELL",
+          "if [ \"${API_ENABLED:-0}\" = \"0\" ]; then pgrep -f 'python3 -m flock.switch' >/dev/null && redis-cli -u \"${REDIS_URL:-redis://127.0.0.1:6379/0}\" ping >/dev/null || exit 1; elif [ -n \"$API_TLS_CERT\" ]; then curl -fsSk -H \"Authorization: Bearer $API_TOKEN\" https://127.0.0.1:8080/health || exit 1; else curl -fsS -H \"Authorization: Bearer $API_TOKEN\" http://127.0.0.1:8080/health || exit 1; fi"
+        ],
+        "Timeout": 3000000000
+      },
+      "Hostname": "2d2a87d45acd",
+      "Image": "h-flock:latest",
+      "Labels": {
+        "com.docker.compose.config-hash": "5bb33b4a0b6a1620f97b03ba8b4ba14bdd13bd085694be080bb32cd694102aac",
+        "com.docker.compose.container-number": "1",
+        "com.docker.compose.depends_on": "",
+        "com.docker.compose.image": "sha256:c076fef9a5f30a464091b4b2146912ec39a3a1a39f6d809b0d63fdc747e8e87d",
+        "com.docker.compose.oneoff": "False",
+        "com.docker.compose.project": "h-flock-build118-0824-1647",
+        "com.docker.compose.project.config_files": "/home/h-lab/acceptance/h-flock/container/compose.yaml",
+        "com.docker.compose.project.environment_file": "/home/h-lab/acceptance/h-flock/container/.env",
+        "com.docker.compose.project.working_dir": "/home/h-lab/acceptance/h-flock/container",
+        "com.docker.compose.service": "tenant",
+        "com.docker.compose.version": "5.4.0",
+        "org.opencontainers.image.created": "2026-08-23T00:18:36.514Z",
+        "org.opencontainers.image.description": "A general-purpose development container \u2014 agent CLIs plus everyday tooling on Ubuntu 24.04, running unprivileged. Built and published to GHCR for amd64 and arm64",
+        "org.opencontainers.image.licenses": "Apache-2.0",
+        "org.opencontainers.image.revision": "b307698c4258e3e6c86f1d5abdd45d19e3d98484",
+        "org.opencontainers.image.source": "https://github.com/h-network/base",
+        "org.opencontainers.image.title": "base",
+        "org.opencontainers.image.url": "https://github.com/h-network/base",
+        "org.opencontainers.image.version": "main"
+      },
+      "OpenStdin": false,
+      "StdinOnce": false,
+      "Tty": false,
+      "User": "ubuntu",
+      "Volumes": null,
+      "WorkingDir": "/app"
+    },
+    "Created": "2026-08-24T14:48:13.301057125Z",
+    "Driver": "overlayfs",
+    "ExecIDs": null,
+    "HostConfig": {
+      "AutoRemove": false,
+      "Binds": [
+        "h-flock-build118-0824-1647-custody:/home/ubuntu/.flock/custody:rw"
+      ],
+      "BlkioDeviceReadBps": null,
+      "BlkioDeviceReadIOps": null,
+      "BlkioDeviceWriteBps": null,
+      "BlkioDeviceWriteIOps": null,
+      "BlkioWeight": 0,
+      "BlkioWeightDevice": null,
+      "CapAdd": null,
+      "CapDrop": null,
+      "Cgroup": "",
+      "CgroupParent": "",
+      "CgroupnsMode": "private",
+      "ConsoleSize": [
+        0,
+        0
+      ],
+      "ContainerIDFile": "",
+      "CpuCount": 0,
+      "CpuPercent": 0,
+      "CpuPeriod": 0,
+      "CpuQuota": 0,
+      "CpuRealtimePeriod": 0,
+      "CpuRealtimeRuntime": 0,
+      "CpuShares": 0,
+      "CpusetCpus": "",
+      "CpusetMems": "",
+      "DeviceCgroupRules": null,
+      "DeviceRequests": null,
+      "Devices": null,
+      "Dns": null,
+      "DnsOptions": null,
+      "DnsSearch": null,
+      "ExtraHosts": [],
+      "GroupAdd": null,
+      "IOMaximumBandwidth": 0,
+      "IOMaximumIOps": 0,
+      "Init": false,
+      "IpcMode": "private",
+      "Isolation": "",
+      "Links": null,
+      "LogConfig": {
+        "Config": {
+          "max-file": "5",
+          "max-size": "50m"
+        },
+        "Type": "json-file"
+      },
+      "MaskedPaths": [
+        "/proc/acpi",
+        "/proc/asound",
+        "/proc/interrupts",
+        "/proc/kcore",
+        "/proc/keys",
+        "/proc/latency_stats",
+        "/proc/sched_debug",
+        "/proc/scsi",
+        "/proc/timer_list",
+        "/proc/timer_stats",
+        "/sys/devices/virtual/powercap",
+        "/sys/firmware"
+      ],
+      "Memory": 0,
+      "MemoryReservation": 0,
+      "MemorySwap": 0,
+      "MemorySwappiness": null,
+      "NanoCpus": 0,
+      "NetworkMode": "h-flock-build118-0824-1647_default",
+      "OomKillDisable": null,
+      "OomScoreAdj": 0,
+      "PidMode": "",
+      "PidsLimit": null,
+      "PortBindings": {
+        "8080/tcp": [
+          {
+            "HostIp": "0.0.0.0",
+            "HostPort": "8080"
+          }
+        ],
+        "8081/tcp": [
+          {
+            "HostIp": "0.0.0.0",
+            "HostPort": "8081"
+          }
+        ]
+      },
+      "Privileged": false,
+      "PublishAllPorts": false,
+      "ReadonlyPaths": [
+        "/proc/bus",
+        "/proc/fs",
+        "/proc/irq",
+        "/proc/sys",
+        "/proc/sysrq-trigger"
+      ],
+      "ReadonlyRootfs": false,
+      "RestartPolicy": {
+        "MaximumRetryCount": 0,
+        "Name": "unless-stopped"
+      },
+      "Runtime": "runc",
+      "SecurityOpt": null,
+      "ShmSize": 67108864,
+      "UTSMode": "",
+      "Ulimits": null,
+      "UsernsMode": "",
+      "VolumeDriver": "",
+      "VolumesFrom": null
+    },
+    "HostnamePath": "/var/lib/docker/containers/2d2a87d45acd2a22250b4357c0712a0196711e5c43a5afb9b4718ccb1ca47cfa/hostname",
+    "HostsPath": "/var/lib/docker/containers/2d2a87d45acd2a22250b4357c0712a0196711e5c43a5afb9b4718ccb1ca47cfa/hosts",
+    "Id": "2d2a87d45acd2a22250b4357c0712a0196711e5c43a5afb9b4718ccb1ca47cfa",
+    "Image": "sha256:6137c2e8f836f03db10f1bef367e58d5b9234916acb517d1126c855836036fa8",
+    "ImageManifestDescriptor": {
+      "digest": "sha256:c076fef9a5f30a464091b4b2146912ec39a3a1a39f6d809b0d63fdc747e8e87d",
+      "mediaType": "application/vnd.oci.image.manifest.v1+json",
+      "platform": {
+        "architecture": "amd64",
+        "os": "linux"
+      },
+      "size": 5978
+    },
+    "LogPath": "/var/lib/docker/containers/2d2a87d45acd2a22250b4357c0712a0196711e5c43a5afb9b4718ccb1ca47cfa/2d2a87d45acd2a22250b4357c0712a0196711e5c43a5afb9b4718ccb1ca47cfa-json.log",
+    "MountLabel": "",
+    "Mounts": [
+      {
+        "Destination": "/home/ubuntu/.flock/custody",
+        "Driver": "local",
+        "Mode": "rw",
+        "Name": "h-flock-build118-0824-1647-custody",
+        "Propagation": "",
+        "RW": true,
+        "Source": "/var/lib/docker/volumes/h-flock-build118-0824-1647-custody/_data",
+        "Type": "volume"
+      }
+    ],
+    "Name": "/h-flock-build118-0824-1647-tenant-1",
+    "NetworkSettings": {
+      "Networks": {
+        "h-flock-build118-0824-1647_default": {
+          "Aliases": [
+            "h-flock-build118-0824-1647-tenant-1",
+            "tenant"
+          ],
+          "DNSNames": [
+            "h-flock-build118-0824-1647-tenant-1",
+            "tenant",
+            "2d2a87d45acd"
+          ],
+          "DriverOpts": null,
+          "EndpointID": "b68463c8b8d011484befb8ef21521db9f5514ee55ddfb604530aa5d4d76535ff",
+          "Gateway": "172.20.0.1",
+          "GlobalIPv6Address": "",
+          "GlobalIPv6PrefixLen": 0,
+          "GwPriority": 0,
+          "IPAMConfig": null,
+          "IPAddress": "172.20.0.2",
+          "IPPrefixLen": 16,
+          "IPv6Gateway": "",
+          "Links": null,
+          "MacAddress": "46:c3:2a:a3:aa:a4",
+          "NetworkID": "db7f9947265ec5b458a12741ca4d0f1b450e6a03e7f77d261035020f624fa3ac"
+        }
+      },
+      "Ports": {
+        "8080/tcp": [
+          {
+            "HostIp": "0.0.0.0",
+            "HostPort": "8080"
+          }
+        ],
+        "8081/tcp": [
+          {
+            "HostIp": "0.0.0.0",
+            "HostPort": "8081"
+          }
+        ]
+      },
+      "SandboxID": "2b4b43089b4a9eaf5ee757500f491efab6c5c5cb229d8100ca01e18e3eb2ed95",
+      "SandboxKey": "/var/run/docker/netns/2b4b43089b4a"
+    },
+    "Path": "/usr/bin/tini",
+    "Platform": "linux",
+    "ProcessLabel": "",
+    "ResolvConfPath": "/var/lib/docker/containers/2d2a87d45acd2a22250b4357c0712a0196711e5c43a5afb9b4718ccb1ca47cfa/resolv.conf",
+    "RestartCount": 0,
+    "State": {
+      "Dead": false,
+      "Error": "",
+      "ExitCode": 0,
+      "FinishedAt": "2026-08-24T14:48:25.111835119Z",
+      "Health": {
+        "FailingStreak": 0,
+        "Log": [
+          {
+            "End": "2026-08-24T14:51:47.45502455Z",
+            "ExitCode": 0,
+            "Output": "{\"status\":\"ok\"}",
+            "Start": "2026-08-24T14:51:47.087240219Z"
+          },
+          {
+            "End": "2026-08-24T14:51:57.966980999Z",
+            "ExitCode": 0,
+            "Output": "{\"status\":\"ok\"}",
+            "Start": "2026-08-24T14:51:57.457116299Z"
+          },
+          {
+            "End": "2026-08-24T14:52:08.443345104Z",
+            "ExitCode": 0,
+            "Output": "{\"status\":\"ok\"}",
+            "Start": "2026-08-24T14:52:07.9686593Z"
+          },
+          {
+            "End": "2026-08-24T14:52:18.920185858Z",
+            "ExitCode": 0,
+            "Output": "{\"status\":\"ok\"}",
+            "Start": "2026-08-24T14:52:18.454305063Z"
+          },
+          {
+            "End": "2026-08-24T14:52:29.379051755Z",
+            "ExitCode": 0,
+            "Output": "{\"status\":\"ok\"}",
+            "Start": "2026-08-24T14:52:28.923411193Z"
+          }
+        ],
+        "Status": "healthy"
+      },
+      "OOMKilled": false,
+      "Paused": false,
+      "Pid": 3060202,
+      "Restarting": false,
+      "Running": true,
+      "StartedAt": "2026-08-24T14:48:25.869674635Z",
+      "Status": "running"
+    },
+    "Storage": {
+      "RootFS": {
+        "Snapshot": {
+          "Name": "overlayfs"
+        }
+      }
+    }
+  }
+]
