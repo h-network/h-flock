@@ -1,0 +1,36 @@
+source: e432158 (branch tmux/build-110-eval-and-the-double)
+tenant: accept-build110-0824-0326 (h-lab, torn down after this run)
+
+Direct rebuttal of BUILD-109's finding, same method: hired three agents by
+hand with different --cli values after the automated run's own probes
+(dave/envprobe/sim-*) all succeeded too (workdir/window present for all,
+unlike build 109).
+
+  office hire testclaude --cli claude
+  office hire testcodex  --cli codex
+  office hire testagy    --cli agy
+
+Custody log — all three now read _accepted, not _incomplete:
+{"event":"start_agent_accepted","destination":"testclaude","correlation_id":"33dd3b6b09234ac1ba6f17a91d0d29ac"}
+{"event":"window_created","destination":"testclaude","correlation_id":"33dd3b6b09234ac1ba6f17a91d0d29ac"}
+{"event":"start_agent_accepted","destination":"testcodex","correlation_id":"a82021b0995f42278fcd11f1b2ca5aa2"}
+{"event":"start_agent_accepted","destination":"testagy","correlation_id":"a98e1ae95a2b4518ac933aed80913fca"}
+{"event":"window_created","destination":"testagy","correlation_id":"a98e1ae95a2b4518ac933aed80913fca"}
+{"event":"window_created","destination":"testcodex","correlation_id":"a82021b0995f42278fcd11f1b2ca5aa2"}
+
+tmux list-windows -a confirms real panes exist for all three:
+accept-build110-0824-0326:3: testclaude# (1 panes)
+accept-build110-0824-0326:4: testagy#- (1 panes)
+accept-build110-0824-0326:5: testcodex* (1 panes)
+
+office peers (plain): sme-2, testagy, testclaude, testcodex   [telegram absent, comma-separated, unchanged]
+
+office peers -v:
+sme-2: framework=claude
+testagy: framework=agy
+testclaude: framework=claude
+testcodex: framework=codex
+
+office status: testagy row reads "not collected (agy)" in the activity column
+office usage: testagy row: cli=agy, model="not collected", unpriced
+office usage --json: testagy row carries "collected": false; no "measurable" key anywhere in this payload (grepped, zero matches)
