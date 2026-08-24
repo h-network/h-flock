@@ -72,6 +72,19 @@ receiver="python3 /tmp/build114-bench-port.py --pod '${POD:-acme}' --tenant '$TE
 [ "$MODE" = steady ] && docker exec "$CONTAINER" sh -c "$receiver"
 docker exec "$CONTAINER" sh -c "python3 /tmp/bench-send.py --pod '${POD:-acme}' --tenant '$TENANT' --count '$COUNT' --rounds '$ROUNDS' --names '$names' >>/proc/1/fd/1 2>&1" || { echo "INCOMPLETE: sender" >&2; exit 100; }
 [ "$MODE" = burst ] && docker exec "$CONTAINER" sh -c "$receiver"
-sleep 10; docker logs "$CONTAINER" >"$WORK/custody.log" 2>&1 || { echo "INCOMPLETE: capture" >&2; exit 100; }
+drained=0; depth=1
+for _ in $(seq 1 120); do
+  depth=$(docker exec "$CONTAINER" python3 -c "
+import os, redis
+r = redis.Redis.from_url(os.environ.get('REDIS_URL', 'redis://127.0.0.1:6379/0'))
+print(sum(r.llen(k) for k in r.scan_iter(match='pod:${POD:-acme}:tenant:${TENANT}:agent:*:ingress')) +
+      sum(r.llen(k) for k in r.scan_iter(match='pod:${POD:-acme}:tenant:${TENANT}:agent:*:egress')))
+" 2>/dev/null | tr -d '\r' || echo 1)
+  [ "${depth:-1}" = "0" ] && { drained=1; break; }
+  sleep 1
+done
+echo "PACKET_QUEUE_DEPTH ingress_plus_egress=${depth:-unknown} drained=${drained}"
+docker logs "$CONTAINER" >"$WORK/custody.log" 2>&1 || { echo "INCOMPLETE: capture" >&2; exit 100; }
 [ -s "$WORK/custody.log" ] || { echo "INCOMPLETE: empty capture" >&2; exit 100; }
+[ "$drained" = "1" ] || { echo "INCOMPLETE: queues did not drain before capture" >&2; exit 100; }
 judge "$WORK"; exit $?
