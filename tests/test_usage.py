@@ -1,3 +1,4 @@
+from conftest import FakeRedis, FakeRespRedis
 """Tests for token usage extraction, pricing, correlation, and office usage CLI."""
 
 import json
@@ -13,82 +14,6 @@ from flock.port.openers import mark_delivery_pending
 from flock.watchdog.activity import ActivityTailer
 
 
-class UsageRedis:
-    def __init__(self, agents=("bus",)):
-        self.values = {}
-        self.streams = {}
-        self.sets = {}
-        self.agents = agents
-
-    def hkeys(self, key):
-        return self.agents
-
-    def get(self, key):
-        return self.values.get(key)
-
-    def set(self, key, value):
-        self.values[key] = value
-
-    def xadd(self, key, fields, *, maxlen=None, approximate=False):
-        self.streams.setdefault(key, []).append((f"{len(self.streams.setdefault(key, [])) + 1}-0", fields))
-
-    def xrange(self, key, min="-", max="+", count=None):
-        entries = list(self.streams.get(key, []))
-        if count is not None:
-            entries = entries[:count]
-        return entries
-
-    def xrevrange(self, key, max="+", min="-", count=None):
-        entries = list(reversed(self.streams.get(key, [])))
-        if count is not None:
-            entries = entries[:count]
-        return entries
-
-    def xdel(self, key, *ids):
-        id_set = set(ids)
-        if key in self.streams:
-            self.streams[key] = [e for e in self.streams[key] if e[0] not in id_set]
-        return len(id_set)
-
-    def sadd(self, key, member):
-        s = self.sets.setdefault(key, set())
-        if member in s:
-            return 0
-        s.add(member)
-        return 1
-
-    def sismember(self, key, member):
-        return member in self.sets.get(key, set())
-
-    def incr(self, key):
-        val = int(self.values.get(key, 0) or 0) + 1
-        self.values[key] = val
-        return val
-
-    def eval(self, script, numkeys, *args):
-        stream_key = args[0] if numkeys >= 1 else ""
-        seen_key = args[1] if numkeys >= 2 else ""
-        attributed_key = args[2] if numkeys >= 3 else ""
-
-        request_id = args[numkeys] if len(args) > numkeys else ""
-        raw_usage = args[numkeys + 1] if len(args) > numkeys + 1 else ""
-        stream_id = args[numkeys + 2] if len(args) > numkeys + 2 else ""
-
-        if "SISMEMBER" in script and request_id and seen_key:
-            if self.sismember(seen_key, request_id):
-                return 0
-
-        if "XADD" in script and stream_key and raw_usage:
-            self.xadd(stream_key, {"usage": raw_usage})
-
-        if "SADD" in script:
-            if request_id and seen_key:
-                self.sadd(seen_key, request_id)
-            if stream_id and attributed_key:
-                self.sadd(attributed_key, stream_id)
-
-        return 1
-
 
 def _usage_records(r):
     key = prefix("acme", "hq", resource="usage")
@@ -102,7 +27,7 @@ def _write_lines(path: Path, records: list[dict]) -> None:
 
 def test_claude_fixture_extracts_four_buckets_and_exact_usd(tmp_path):
     """Verification case 1: claude fixture with known usage -> exact 4 buckets, exact USD."""
-    r = UsageRedis(agents=("bus",))
+    r = FakeRedis(agents=("bus",))
     session = tmp_path / ".claude" / "projects" / "-workdir-bus" / "one.jsonl"
     _write_lines(
         session,
@@ -158,7 +83,7 @@ def test_claude_fixture_extracts_four_buckets_and_exact_usd(tmp_path):
 
 def test_duplicate_request_in_one_file_is_counted_once(tmp_path):
     """Verification case 2: the same request twice in one file is counted once (dedupe control)."""
-    r = UsageRedis(agents=("bus",))
+    r = FakeRedis(agents=("bus",))
     session = tmp_path / ".claude" / "projects" / "-workdir-bus" / "one.jsonl"
     record_obj = {
         "type": "assistant",
@@ -186,7 +111,7 @@ def test_duplicate_request_in_one_file_is_counted_once(tmp_path):
 
 def test_unpriced_model_is_flagged_unpriced_not_zero(tmp_path):
     """Verification case 3: a model absent from pricing.json -> unpriced, not 0.00."""
-    r = UsageRedis(agents=("architect",))
+    r = FakeRedis(agents=("architect",))
     session = tmp_path / ".claude" / "projects" / "-workdir-architect" / "local.jsonl"
     _write_lines(
         session,
@@ -248,7 +173,7 @@ def test_cache_buckets_are_not_decorative(tmp_path):
 
 def test_correlation_joins_marker_and_omits_unattributable_usage(tmp_path):
     """Verification case 5: marker then usage -> stream_id attached; usage with no marker -> omitted."""
-    r = UsageRedis(agents=("bus",))
+    r = FakeRedis(agents=("bus",))
     r.values[prefix("acme", "hq", "bus", "launch")] = "claude"
 
     # Delivery marker 1 at 10:00:00Z
@@ -314,7 +239,7 @@ def test_codex_token_count_event_parsing(tmp_path):
     14,373 then 14,535, so summing total gives 43,281 for a session that used
     28,908.
     """
-    r = UsageRedis(agents=("tmux",))
+    r = FakeRedis(agents=("tmux",))
     r.values[prefix("acme", "hq", "tmux", "launch")] = "codex"
     session = tmp_path / ".codex" / "sessions" / "2026" / "08" / "rollout-tmux.jsonl"
     _write_lines(
@@ -359,7 +284,7 @@ def test_a_codex_token_count_with_no_tokens_is_not_a_usage_record(tmp_path):
     every one all-zero under model `unknown` — which reads in a cost table
     exactly like an agent that ran and cost nothing.
     """
-    r = UsageRedis(agents=("tmux",))
+    r = FakeRedis(agents=("tmux",))
     r.values[prefix("acme", "hq", "tmux", "launch")] = "codex"
     session = tmp_path / ".codex" / "sessions" / "2026" / "08" / "rollout-tmux.jsonl"
     _write_lines(
@@ -381,7 +306,7 @@ def test_a_codex_token_count_with_no_tokens_is_not_a_usage_record(tmp_path):
 
 def test_office_usage_cli_table_and_json(monkeypatch, capsys):
     """office usage CLI formats table with totals, unpriced flags, and JSON."""
-    r = UsageRedis()
+    r = FakeRespRedis()
     usage_key = prefix("acme", "hq", resource="usage")
     r.streams[usage_key] = [
         (
@@ -469,7 +394,7 @@ def test_office_usage_cli_table_and_json(monkeypatch, capsys):
 
 def test_same_request_id_across_different_agents_is_not_suppressed(tmp_path):
     """Different agents with identical request IDs must both emit records independently."""
-    r = UsageRedis(agents=("bus", "tmux"))
+    r = FakeRedis(agents=("bus", "tmux"))
     bus_session = tmp_path / ".claude" / "projects" / "-workdir-bus" / "session.jsonl"
     tmux_session = tmp_path / ".claude" / "projects" / "-workdir-tmux" / "session.jsonl"
 
@@ -496,7 +421,7 @@ def test_same_request_id_across_different_agents_is_not_suppressed(tmp_path):
 
 def test_truly_empty_marker_history_omits_correlation(tmp_path):
     """An agent with zero delivery markers omits stream_id and correlation_id cleanly."""
-    r = UsageRedis(agents=("bus",))
+    r = FakeRedis(agents=("bus",))
     session = tmp_path / ".claude" / "projects" / "-workdir-bus" / "session.jsonl"
     _write_lines(
         session,
@@ -523,17 +448,8 @@ def test_truly_empty_marker_history_omits_correlation(tmp_path):
 
 def test_emission_failure_does_not_prematurely_commit_seen_request(tmp_path):
     """An emission failure in Redis does not mark request as seen, allowing recovery."""
-    class FailingUsageRedis(UsageRedis):
-        def __init__(self):
-            super().__init__(agents=("bus",))
-            self.fail_xadd = True
 
-        def xadd(self, key, fields, *, maxlen=None, approximate=False):
-            if self.fail_xadd and key == prefix("acme", "hq", resource="usage"):
-                raise RuntimeError("Simulated Redis write failure")
-            super().xadd(key, fields, maxlen=maxlen, approximate=approximate)
-
-    r = FailingUsageRedis()
+    r = FakeRedis(agents=("bus",), fail_xadd=True)
     session = tmp_path / ".claude" / "projects" / "-workdir-bus" / "session.jsonl"
     _write_lines(
         session,
@@ -714,7 +630,7 @@ def test_lua_script_atomic_claim_and_replay_dedupe_on_real_redis(tmp_path):
 
 def test_unresolved_markers_correlated_within_ceiling(tmp_path):
     """Pending markers are correlated with usage within the documented ceiling."""
-    r = UsageRedis(agents=("bus",))
+    r = FakeRedis(agents=("bus",))
     r.values[prefix("acme", "hq", "bus", "launch")] = "claude"
 
     # Add markers within ceiling
@@ -780,7 +696,7 @@ def test_codex_captured_session_fixture_model_and_tokens(tmp_path):
     session_file.parent.mkdir(parents=True, exist_ok=True)
     session_file.write_bytes(fixture_path.read_bytes())
 
-    r = UsageRedis(agents=("sme-2",))
+    r = FakeRedis(agents=("sme-2",))
     r.values[prefix("acme", "hq", "sme-2", "launch")] = "codex"
 
     tailer = ActivityTailer(r, pod="acme", tenant="hq", home_root=tmp_path)
@@ -858,7 +774,7 @@ def test_codex_mid_session_model_change(tmp_path):
     ]
     _write_lines(session_file, records_data)
 
-    r = UsageRedis(agents=("sme-1",))
+    r = FakeRedis(agents=("sme-1",))
     r.values[prefix("acme", "hq", "sme-1", "launch")] = "codex"
 
     tailer = ActivityTailer(r, pod="acme", tenant="hq", home_root=tmp_path)
@@ -899,7 +815,7 @@ def test_codex_session_meta_fallback_model(tmp_path):
     ]
     _write_lines(session_file, records_data)
 
-    r = UsageRedis(agents=("sme-1",))
+    r = FakeRedis(agents=("sme-1",))
     r.values[prefix("acme", "hq", "sme-1", "launch")] = "codex"
 
     tailer = ActivityTailer(r, pod="acme", tenant="hq", home_root=tmp_path)
@@ -913,7 +829,7 @@ def test_codex_session_meta_fallback_model(tmp_path):
 
 def test_office_usage_surfaces_codex_rate_limits(monkeypatch, capsys):
     """Build 88 §4: office usage surfaces rate limits (used_percent and plan_type)."""
-    r = UsageRedis(agents=("sme-2",))
+    r = FakeRespRedis(agents=("sme-2",))
     r.values[prefix("acme", "hq", "sme-2", "launch")] = "codex"
 
     usage_key = prefix("acme", "hq", resource="usage")
@@ -952,7 +868,7 @@ def test_office_usage_surfaces_codex_rate_limits(monkeypatch, capsys):
 
 def test_office_usage_names_agy_agent_not_collected(monkeypatch, capsys):
     """Build 105 §2: office usage names agy agents as not collected rather than omitting or zeroing."""
-    r = UsageRedis(agents=("architect", "backend"))
+    r = FakeRespRedis(agents=("architect", "backend"))
     r.values[prefix("acme", "hq", "architect", "launch")] = "agy"
     r.values[prefix("acme", "hq", "backend", "launch")] = "claude"
 
@@ -1036,7 +952,7 @@ def test_codex_session_rotation_resets_model(tmp_path):
         ],
     )
 
-    r = UsageRedis(agents=("sme-1",))
+    r = FakeRedis(agents=("sme-1",))
     r.values[prefix("acme", "hq", "sme-1", "launch")] = "codex"
 
     tailer = ActivityTailer(r, pod="acme", tenant="hq", home_root=tmp_path)
@@ -1104,7 +1020,7 @@ def test_codex_restart_at_mid_session_offset_recovers_model(tmp_path):
         ],
     )
 
-    r = UsageRedis(agents=("sme-1",))
+    r = FakeRedis(agents=("sme-1",))
     r.values[prefix("acme", "hq", "sme-1", "launch")] = "codex"
 
     # First tailer pass processes records and commits offset

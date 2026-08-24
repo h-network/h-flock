@@ -1,3 +1,4 @@
+from conftest import FakeRedis as WatchRedis
 import json
 from datetime import datetime, timezone
 
@@ -10,71 +11,6 @@ from flock.watchdog.service import Watchdog
 
 NOW = datetime(2026, 8, 9, 14, 0, tzinfo=timezone.utc)
 
-
-class WatchRedis:
-    def __init__(self):
-        self.roster = {"architect": "tmux", "sme-2": "tmux", "api": "api", "host": "control"}
-        self.values = {}
-        self.hashes = {}
-        self.lists = {}
-        self.streams = {}
-        self.writes = []
-
-    def hkeys(self, key):
-        if key in self.hashes:
-            return list(self.hashes[key])
-        return list(self.roster)
-
-    def hget(self, key, field):
-        if key in self.hashes:
-            return self.hashes[key].get(field)
-        return self.roster.get(field)
-
-    def hexists(self, key, field):
-        if key in self.hashes:
-            return field in self.hashes[key]
-        return field in self.roster
-
-    def hgetall(self, key):
-        return self.hashes.get(key, {})
-
-    def hset(self, key, field=None, value=None, mapping=None):
-        if mapping is not None:
-            self.hashes.setdefault(key, {}).update(mapping)
-            written = mapping
-        else:
-            self.hashes.setdefault(key, {})[field] = value
-            written = {field: value}
-        self.writes.append(("hset", key, written))
-
-    def hdel(self, key, *fields):
-        for field in fields:
-            self.hashes.get(key, {}).pop(field, None)
-        self.writes.append(("hdel", key, fields))
-
-    def get(self, key):
-        return self.values.get(key)
-
-    def set(self, key, value, ex=None):
-        self.values[key] = value
-        self.writes.append(("set", key, value, ex))
-
-    def delete(self, key):
-        self.hashes.pop(key, None)
-        self.writes.append(("delete", key))
-
-    def lindex(self, key, index):
-        values = self.lists.get(key, [])
-        return values[index] if values else None
-
-    def xrange(self, key, min="-", max="+"):
-        return self.streams.get(key, [])
-
-    def xadd(self, key, fields, maxlen=None, approximate=None):
-        cursor = f"{len(self.streams.get(key, [])) + 1}-0"
-        self.streams.setdefault(key, []).append((cursor, dict(fields)))
-        self.writes.append(("xadd", key, fields))
-        return cursor
 
 
 def _key(agent, resource):

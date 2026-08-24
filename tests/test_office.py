@@ -1,3 +1,4 @@
+from conftest import FakeRespRedis
 import ast
 import io
 import json
@@ -12,82 +13,13 @@ from flock.bus import prefix
 from flock.office import cli
 
 
-class MockRedis:
-    def __init__(self):
-        self.roster = {"frontend": "tmux", "backend": "tmux", "api": "api", "host": "control"}
-        self.lists = {}
-        self.moves = []
-        self.sets = {}
-        self.kv = {}
-        # Two lanes wrote this mock independently, one calling it kv and one
-        # values. Same dict under both names rather than rewriting either
-        # lane's tests to match the other's spelling.
-        self.values = self.kv
-
-    def get(self, key):
-        val = self.kv.get(key)
-        return val.encode() if isinstance(val, str) else val
-
-    def set(self, key, value):
-        self.kv[key] = value
-
-    def hkeys(self, key):
-        return {name.encode() for name in self.roster}
-
-    def smembers(self, key):
-        return self.sets.get(key, set())
-
-    def hget(self, key, field):
-        value = self.roster.get(field)
-        return value.encode() if value else None
-
-    def hgetall(self, key):
-        return self.values.get(key, {})
-
-    def hexists(self, key, field):
-        return field in self.roster
-
-    def get(self, key):
-        return self.values.get(key)
-
-    def lrange(self, key, start, end):
-        return self.lists.get(key, [])
-
-    def llen(self, key):
-        return len(self.lists.get(key, []))
-
-    def lmove(self, source, destination, wherefrom, whereto):
-        self.moves.append((source, destination, wherefrom, whereto))
-        values = self.lists.get(source, [])
-        if not values:
-            return None
-        value = values.pop(0)
-        self.lists.setdefault(destination, []).append(value)
-        return value
-
-    def lpop(self, key):
-        values = self.lists.get(key, [])
-        return values.pop(0) if values else None
-
-    def rpush(self, key, value):
-        self.lists.setdefault(key, []).append(value)
-        return len(self.lists[key])
-
-    def lrem(self, key, count, value):
-        values = self.lists.get(key, [])
-        try:
-            values.remove(value)
-        except ValueError:
-            return 0
-        return 1
-
 
 @pytest.fixture
 def office_env(monkeypatch):
     monkeypatch.setenv("AGENT_NAME", "frontend")
     monkeypatch.setenv("POD", "acme")
     monkeypatch.setenv("TENANT", "hq")
-    r = MockRedis()
+    r = FakeRespRedis(roster={"frontend": "tmux", "backend": "tmux", "api": "api", "host": "control"})
     monkeypatch.setattr(cli.redis.Redis, "from_url", lambda url: r)
     return r
 

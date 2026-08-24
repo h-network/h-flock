@@ -1,3 +1,4 @@
+from conftest import FakeRedis, FakePipeline
 import json
 import io
 import unittest
@@ -8,60 +9,6 @@ from flock.bus import EnvelopeError, build, emit, encode, is_member, members, pa
 from flock.bus.envelope import HEADER_WIDTH, RESERVED_START, parse_for_switch
 from flock.switch.service import Switch
 
-
-class FakeRedis:
-    def __init__(self):
-        self.lists = {}
-        self.hashes = {}
-
-    def rpush(self, key, value):
-        self.lists.setdefault(key, []).append(value)
-        return len(self.lists[key])
-
-    def rpop(self, key):
-        values = self.lists.get(key, [])
-        return values.pop() if values else None
-
-    def blpop(self, keys, timeout=0):
-        if isinstance(keys, str):
-            keys = [keys]
-        for key in keys:
-            values = self.lists.get(key, [])
-            if values:
-                return key, values.pop(0)
-        return None
-
-    def lpop(self, key):
-        values = self.lists.get(key, [])
-        return values.pop(0) if values else None
-
-    def hkeys(self, key):
-        return self.hashes.get(key, {}).keys()
-
-    def hexists(self, key, field):
-        return field in self.hashes.get(key, {})
-
-    def hget(self, key, field):
-        return self.hashes.get(key, {}).get(field)
-
-    def pipeline(self):
-        return FakePipeline(self)
-
-
-class FakePipeline:
-    def __init__(self, r):
-        self.r = r
-        self.commands = []
-
-    def rpush(self, key, value):
-        self.commands.append((key, value))
-        return self
-
-    def execute(self):
-        results = []
-        for key, value in self.commands:
-            results.append(self.r.rpush(key, value))
-        return results
 
 
 class KeysTest(unittest.TestCase):
@@ -398,12 +345,9 @@ class DoorsAndRouterTest(unittest.TestCase):
         self.assertEqual(observed[0], observed[1])
 
     def test_kicked_receive_returns_immediately_when_ingress_is_empty(self):
-        class EmptyIngressRedis(FakeRedis):
-            def blpop(self, keys, timeout=0):
-                raise AssertionError("kicked receive must not wait in BLPOP")
 
         receive(
-            EmptyIngressRedis(),
+            FakeRedis(fails_on={"blpop": AssertionError("kicked receive must not wait in BLPOP")}),
             pod="acme",
             tenant="hq",
             agent="bob",

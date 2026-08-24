@@ -1,3 +1,4 @@
+from conftest import FakeRedis, FakeRedis as RecordingRedis
 import json
 import sys
 import types
@@ -8,46 +9,6 @@ from flock.bus import AGENT_STATE_RESOURCES, prefix
 from flock.control import deliver_one, pause_agent, resume_agent, start_agent, stop_agent
 from flock.control import runner
 
-
-class RecordingRedis:
-    __resp_double__ = True
-
-    def __init__(self, events, ingress_depth=0, roster_port_type=None, account_profiles=None):
-        self.events = events
-        self.ingress_depth = ingress_depth
-        self.roster_port_type = roster_port_type
-        self.account_profiles = account_profiles
-
-    def smembers(self, key):
-        self.events.append(("smembers", key))
-        return self.account_profiles or set()
-
-    def hset(self, key, field, value):
-        self.events.append(("hset", key, field, value))
-
-    def set(self, key, value):
-        self.events.append(("set", key, value))
-
-    def eval(self, script, numkeys, *args):
-        self.events.append(("eval", numkeys, *args))
-
-    def hdel(self, key, field):
-        self.events.append(("hdel", key, field))
-
-    def hget(self, key, field):
-        self.events.append(("hget", key, field))
-        return self.roster_port_type
-
-    def get(self, key):
-        self.events.append(("get", key))
-        return None
-
-    def delete(self, *keys):
-        self.events.append(("delete", *keys))
-
-    def llen(self, key):
-        self.events.append(("llen", key))
-        return self.ingress_depth
 
 
 def test_start_agent_publishes_desired_state_without_creating_window():
@@ -525,21 +486,12 @@ def test_changed_existing_hire_retires_stale_window_after_desired_state(monkeypa
     fake_tmux.run_tmux = lambda *args, **kwargs: (0, "", "")
     monkeypatch.setitem(sys.modules, "flock.tmux", fake_tmux)
 
-    class ExistingRedis(RecordingRedis):
-        def __init__(self):
-            super().__init__(events, roster_port_type="tmux")
-
-        def get(self, key):
-            self.events.append(("get", key))
-            if key.endswith(":launch"):
-                return b"claude"
-            return None
-
+    r = FakeRedis(events, roster_port_type="tmux", data={prefix("acme", "hq", "dave", "launch"): b"claude"})
     def fake_receive(r, **kwargs):
         kwargs["openers"]["StartAgent"]({"payload": {"agent": "dave", "cli": "codex"}})
 
     monkeypatch.setattr(runner, "receive", fake_receive)
-    deliver_one(ExistingRedis(), pod="acme", tenant="hq", agent="host", session_name="hq")
+    deliver_one(r, pod="acme", tenant="hq", agent="host", session_name="hq")
 
     assert events[-3:] == [
         ("set", prefix("acme", "hq", "dave", "launch"), "codex"),
@@ -747,15 +699,11 @@ def test_resume_provable_kick_failure_records_partially_failed_without_acknowled
 
 
 def test_stop_partial_desired_write_names_committed_subset(capsys):
-    class PurgeFails(RecordingRedis):
-        def delete(self, *keys):
-            self.events.append(("delete-attempt", *keys))
-            raise RuntimeError("purge write failed")
 
     events = []
     with pytest.raises(RuntimeError, match="purge write failed"):
         stop_agent(
-            PurgeFails(events, roster_port_type="tmux"), pod="acme", tenant="hq",
+            FakeRedis(events, roster_port_type="tmux", fails_on={"delete": RuntimeError("purge write failed")}), pod="acme", tenant="hq",
             envelope={"payload": {"agent": "dave"}}, kill_window=lambda agent: None,
         )
     record = json.loads(capsys.readouterr().out.splitlines()[-1])
@@ -767,15 +715,10 @@ def test_stop_partial_desired_write_names_committed_subset(capsys):
 
 
 def test_start_partial_desired_write_names_committed_subset(capsys):
-    class RosterPublishFails(RecordingRedis):
-        def hset(self, key, field, value):
-            if key == prefix("acme", "hq", resource="roster"):
-                raise RuntimeError("roster publish failed")
-            super().hset(key, field, value)
 
     with pytest.raises(RuntimeError, match="roster publish failed"):
         start_agent(
-            RosterPublishFails([]), pod="acme", tenant="hq",
+            FakeRedis([], fails_on={"hset": lambda key, *a: (_ for _ in ()).throw(RuntimeError("roster publish failed")) if key == prefix("acme", "hq", resource="roster") else None}), pod="acme", tenant="hq",
             envelope={"payload": {"agent": "dave"}}, replace_window=lambda agent: None,
         )
     record = json.loads(capsys.readouterr().out.splitlines()[-1])
@@ -786,13 +729,10 @@ def test_start_partial_desired_write_names_committed_subset(capsys):
 
 
 def test_first_desired_write_exception_records_unknown_incomplete(capsys):
-    class FirstWriteFails(RecordingRedis):
-        def set(self, key, value):
-            raise RuntimeError("first write failed")
 
     with pytest.raises(RuntimeError, match="first write failed"):
         start_agent(
-            FirstWriteFails([]), pod="acme", tenant="hq",
+            FakeRedis([], fails_on={"set": RuntimeError("first write failed")}), pod="acme", tenant="hq",
             envelope={"payload": {"agent": "dave"}}, replace_window=lambda agent: None,
         )
     record = json.loads(capsys.readouterr().out.splitlines()[-1])
@@ -803,15 +743,11 @@ def test_first_desired_write_exception_records_unknown_incomplete(capsys):
 
 
 def test_reply_loss_after_first_write_records_unknown_not_failed(capsys):
-    class ReplyLostAfterCommit(RecordingRedis):
-        def hdel(self, key, field):
-            self.events.append(("hdel-committed", key, field))
-            raise ConnectionError("reply lost after commit")
 
     events = []
     with pytest.raises(ConnectionError, match="reply lost after commit"):
         stop_agent(
-            ReplyLostAfterCommit(events, roster_port_type="tmux"),
+            FakeRedis(events, roster_port_type="tmux", fails_on={"hdel": lambda key, field: events.append(("hdel-committed", key, field)) or (_ for _ in ()).throw(ConnectionError("reply lost after commit"))}),
             pod="acme", tenant="hq", envelope={"payload": {"agent": "dave"}},
             kill_window=lambda agent: None,
         )

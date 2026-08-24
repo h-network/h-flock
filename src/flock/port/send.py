@@ -3,6 +3,7 @@ import sys
 import json
 import argparse
 from flock.bus import send
+# Minimal hand-rolled RESP client (flock.bus.resp.Redis), not redis-py, for fast transient process startup
 from flock.bus import resp as redis
 
 

@@ -1,3 +1,4 @@
+from conftest import FakeRedis
 import asyncio
 import json
 import pytest
@@ -9,13 +10,6 @@ from flock.session.app import SessionSettings, create_app as create_session_app
 from flock.session.control import ControlModeClient
 from fastapi import HTTPException, status
 
-
-class FakeRedis:
-    def __init__(self, data=None):
-        self.data = data or {}
-
-    def xrange(self, key, min="-", max="+", count=None):
-        raise redis.exceptions.RedisError("Redis connection refused")
 
 
 def test_row_19_websocket_malformed_json_returns_error_frame():
@@ -65,7 +59,7 @@ def test_row_19_websocket_malformed_json_returns_error_frame():
 
 
 def test_row_21_redis_stream_read_failure_returns_500():
-    r = FakeRedis()
+    r = FakeRedis(fails_on={"xrange": redis.exceptions.RedisError("Redis connection refused")})
     with pytest.raises(HTTPException) as exc_info:
         _read_stream_entries(r, "key", None, 100)
     assert exc_info.value.status_code == status.HTTP_500_INTERNAL_SERVER_ERROR

@@ -1,3 +1,4 @@
+from conftest import FakeRedis
 import json
 import os
 import tempfile
@@ -6,74 +7,6 @@ from unittest.mock import patch, MagicMock
 from flock.control import start_agent
 from flock.tmuxhost.host import TmuxHost, generate_agents_md, write_agent_guide, ensure_claude_project_trusted
 
-
-class MockRedis:
-    __resp_double__ = True
-
-    def __init__(
-        self, roster_agents, port_type_map=None, launch_map=None, profile_map=None,
-        provider_map=None, cause_map=None,
-    ):
-        self.roster_agents = set(roster_agents)
-        self.port_type_map = port_type_map or {a: "tmux" for a in roster_agents}
-        self.launch_map = launch_map or {}
-        self.profile_map = profile_map or {}
-        self.provider_map = provider_map or {}
-        self.cause_map = cause_map or {}
-
-    def get(self, key):
-        for agent, cause in self.cause_map.items():
-            if f":agent:{agent}:window.cause" in key:
-                return cause.encode("utf-8") if isinstance(cause, str) else cause
-        for agent, cli in self.launch_map.items():
-            if f":agent:{agent}:launch" in key:
-                return cli.encode("utf-8") if isinstance(cli, str) else cli
-        for agent, prof in self.profile_map.items():
-            if f":agent:{agent}:profile" in key:
-                return prof.encode("utf-8") if isinstance(prof, str) else prof
-        for agent, provider in self.provider_map.items():
-            if f":agent:{agent}:provider" in key:
-                return provider.encode("utf-8") if isinstance(provider, str) else provider
-        return None
-
-    def getdel(self, key):
-        for agent in list(self.cause_map):
-            if f":agent:{agent}:window.cause" in key:
-                value = self.cause_map.pop(agent)
-                return value.encode("utf-8") if isinstance(value, str) else value
-        return None
-
-    def set(self, key, value):
-        if key.endswith(":window.cause"):
-            agent = key.split(":agent:", 1)[1].split(":", 1)[0]
-            self.cause_map[agent] = value
-        elif key.endswith(":launch"):
-            agent = key.split(":agent:", 1)[1].split(":", 1)[0]
-            self.launch_map[agent] = value
-
-    def hset(self, key, field, value):
-        if key.endswith(":roster"):
-            self.roster_agents.add(field)
-            self.port_type_map[field] = value
-
-    def eval(self, script, numkeys, *args):
-        assert numkeys == 2
-        cause_key, roster_key, correlation_id, agent, agent_port_type = args
-        self.set(cause_key, correlation_id)
-        self.hset(roster_key, agent, agent_port_type)
-        return 1
-
-    def hkeys(self, key):
-        return {a.encode("utf-8") for a in self.roster_agents}
-
-    def hget(self, key, field):
-        val = self.port_type_map.get(field)
-        if val is None:
-            return None
-        return val.encode("utf-8") if isinstance(val, str) else val
-
-    def smembers(self, key):
-        return {a.encode("utf-8") for a in self.roster_agents}
 
 
 @patch("flock.tmux.ops.run_tmux")
@@ -90,7 +23,7 @@ def test_tmuxhost_reconciliation(mock_run_tmux):
         (0, "", ""),  # kill-window __init__
     ]
 
-    r = MockRedis(["alice"])
+    r = FakeRedis(["alice"])
     host = TmuxHost(pod="acme", tenant="hq", redis_url="redis://127.0.0.1:6379/0", session_name="hq")
     host.reconcile_once(r)
 
@@ -107,7 +40,7 @@ def test_window_created_consumes_hire_cause_and_recovery_borrows_none(mock_run_t
         (0, "", ""),
         (0, "", ""),
     ]
-    r = MockRedis([], cause_map={"dave": "hire-correlation"})
+    r = FakeRedis([], cause_map={"dave": "hire-correlation"})
     host = TmuxHost(
         pod="acme", tenant="hq", redis_url="redis://127.0.0.1:6379/0", session_name="hq"
     )
@@ -125,7 +58,7 @@ def test_window_created_consumes_hire_cause_and_recovery_borrows_none(mock_run_t
 @patch("flock.tmux.ops.run_tmux")
 def test_start_acceptance_and_later_window_creation_share_correlation(mock_run_tmux, capsys):
     mock_run_tmux.side_effect = [(0, "", ""), (0, "", "")]
-    r = MockRedis([])
+    r = FakeRedis([])
     host = TmuxHost(
         pod="acme", tenant="hq", redis_url="redis://127.0.0.1:6379/0", session_name="hq"
     )
@@ -159,7 +92,7 @@ def test_existing_window_discards_unconsumed_cause_without_emitting_join(mock_ru
         (0, "alice", ""),
         (0, "alice", ""),
     ]
-    r = MockRedis(["alice"], cause_map={"alice": "stale-correlation"})
+    r = FakeRedis(["alice"], cause_map={"alice": "stale-correlation"})
     host = TmuxHost(
         pod="acme", tenant="hq", redis_url="redis://127.0.0.1:6379/0", session_name="hq"
     )
@@ -174,7 +107,7 @@ def test_existing_window_discards_unconsumed_cause_without_emitting_join(mock_ru
 @patch("flock.tmux.ops.run_tmux")
 def test_failed_window_creation_retains_cause_for_retry(mock_run_tmux, capsys):
     mock_run_tmux.side_effect = [(0, "", ""), (1, "", "tmux rejected window")]
-    r = MockRedis([], cause_map={"dave": "hire-correlation"})
+    r = FakeRedis([], cause_map={"dave": "hire-correlation"})
     host = TmuxHost(
         pod="acme", tenant="hq", redis_url="redis://127.0.0.1:6379/0", session_name="hq"
     )
@@ -198,7 +131,7 @@ def test_tmuxhost_ensure_session_with_roster_agent(mock_run_tmux):
         (0, "alice", ""),  # list-windows 2 -> alice
     ]
 
-    r = MockRedis(["alice"])
+    r = FakeRedis(["alice"])
     host = TmuxHost(pod="acme", tenant="hq", redis_url="redis://127.0.0.1:6379/0", session_name="hq")
     host.reconcile_once(r)
 
@@ -219,7 +152,7 @@ def test_tmuxhost_initial_session_resolves_agent_provider(mock_run_tmux, monkeyp
     ]
     monkeypatch.setenv("PROVIDER_GPU_URL", "http://model.test:8000")
     monkeypatch.setenv("PROVIDER_GPU_MODEL", "served-model")
-    r = MockRedis(
+    r = FakeRedis(
         ["alice"],
         launch_map={"alice": "claude"},
         provider_map={"alice": "gpu"},
@@ -247,7 +180,7 @@ def test_tmuxhost_filters_non_tmux_port_type(mock_run_tmux):
         (0, "alice", ""),  # list-windows 2
     ]
 
-    r = MockRedis(["alice", "api"], port_type_map={"alice": "tmux", "api": "api"})
+    r = FakeRedis(["alice", "api"], port_type_map={"alice": "tmux", "api": "api"})
     host = TmuxHost(pod="acme", tenant="hq", redis_url="redis://127.0.0.1:6379/0", session_name="hq")
     host.reconcile_once(r)
 
@@ -271,7 +204,7 @@ def test_tmuxhost_replaces_last_stale_window_with_placeholder(mock_run_tmux):
     ]
 
     host = TmuxHost(pod="acme", tenant="hq", redis_url="redis://127.0.0.1:6379/0", session_name="hq")
-    host.reconcile_once(MockRedis([]))
+    host.reconcile_once(FakeRedis([]))
 
     calls = [" ".join(call.args) for call in mock_run_tmux.call_args_list]
     assert any("new-window" in call and "__init__" in call for call in calls)
@@ -293,7 +226,7 @@ def test_tmuxhost_reconciles_office_tools_and_agent_guide_env(mock_run_tmux):
     ]
 
     with tempfile.TemporaryDirectory() as tmpdir:
-        r = MockRedis(["alice"])
+        r = FakeRedis(["alice"])
         host = TmuxHost(pod="acme", tenant="hq", redis_url="redis://127.0.0.1:6379/0", session_name="hq")
         host.reconcile_once(r)
 
@@ -391,7 +324,7 @@ def test_tmuxhost_launches_cli_via_startagent(mock_run_tmux):
         (0, "", ""),  # kill-window __init__
     ]
 
-    r = MockRedis(["dave"], launch_map={"dave": "claude"})
+    r = FakeRedis(["dave"], launch_map={"dave": "claude"})
     host = TmuxHost(pod="acme", tenant="hq", redis_url="redis://127.0.0.1:6379/0", session_name="hq")
     host.reconcile_once(r)
 
@@ -506,7 +439,7 @@ def test_tmuxhost_reconciles_profile_env_vars_when_set(mock_run_tmux):
         (0, "", ""),  # kill-window __init__
     ]
 
-    r = MockRedis(["alice"], profile_map={"alice": "work"})
+    r = FakeRedis(["alice"], profile_map={"alice": "work"})
     host = TmuxHost(pod="acme", tenant="hq", redis_url="redis://127.0.0.1:6379/0", session_name="hq")
     host.reconcile_once(r)
 
@@ -531,7 +464,7 @@ def test_tmuxhost_omits_profile_env_vars_when_not_set(mock_run_tmux):
         (0, "", ""),  # kill-window __init__
     ]
 
-    r = MockRedis(["alice"])
+    r = FakeRedis(["alice"])
     host = TmuxHost(pod="acme", tenant="hq", redis_url="redis://127.0.0.1:6379/0", session_name="hq")
     host.reconcile_once(r)
 
@@ -555,7 +488,7 @@ def test_tmuxhost_reconciles_hyphenated_digit_agent_name(mock_run_tmux):
         (0, "", ""),  # kill-window __init__
     ]
 
-    r = MockRedis(["sme-2"], launch_map={"sme-2": "codex"}, profile_map={"sme-2": "work-2"})
+    r = FakeRedis(["sme-2"], launch_map={"sme-2": "codex"}, profile_map={"sme-2": "work-2"})
     host = TmuxHost(pod="acme", tenant="hq", redis_url="redis://127.0.0.1:6379/0", session_name="hq")
     host.reconcile_once(r)
 

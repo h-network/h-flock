@@ -4,7 +4,9 @@ from pathlib import Path
 from unittest.mock import patch
 
 import pytest
+import redis
 
+from conftest import FakeRespRedis
 from flock.bus.resp import Redis, ResponseError
 
 
@@ -60,38 +62,30 @@ def test_eval_is_one_resp_request_with_keys_before_arguments():
 
 
 def test_resp_doubles_do_not_expose_commands_missing_from_production_client():
-    """Structural invariant: marked RESP doubles cannot outrun the real client."""
-    production = {
+    """Structural invariant: FakeRespRedis matches flock.bus.resp.Redis method surface exactly,
+    and flock.bus.resp.Redis is a strict subset of redis-py (no invented commands)."""
+    resp_production = {
         name for name, value in vars(Redis).items()
         if callable(value) and not name.startswith("_")
     }
-    doubles = []
-    violations = []
-    for path in sorted((Path(__file__).parent).glob("test_*.py")):
-        tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
-        for node in tree.body:
-            if not isinstance(node, ast.ClassDef):
-                continue
-            marked = any(
-                isinstance(item, ast.Assign)
-                and any(isinstance(target, ast.Name) and target.id == "__resp_double__" for target in item.targets)
-                and isinstance(item.value, ast.Constant)
-                and item.value.value is True
-                for item in node.body
-            )
-            if not marked:
-                continue
-            doubles.append(f"{path.name}:{node.name}")
-            exposed = {
-                item.name for item in node.body
-                if isinstance(item, (ast.FunctionDef, ast.AsyncFunctionDef))
-                and not item.name.startswith("_")
-            }
-            for method in sorted(exposed - production):
-                violations.append(f"{path.name}:{node.name}.{method}")
+    fake_resp_surface = {
+        name for name, value in vars(FakeRespRedis).items()
+        if callable(value) and not name.startswith("_")
+    }
+    redis_py_surface = {
+        name for name in dir(redis.Redis)
+        if callable(getattr(redis.Redis, name, None)) and not name.startswith("_")
+    }
 
-    assert len(doubles) >= 2, f"Expected at least 2 marked RESP doubles, found {doubles}"
-    assert not violations, "RESP test doubles exceed production Redis: " + ", ".join(violations)
+    assert fake_resp_surface == resp_production, (
+        f"FakeRespRedis does not match flock.bus.resp.Redis surface exactly.\n"
+        f"Missing: {sorted(resp_production - fake_resp_surface)}\n"
+        f"Exceeding: {sorted(fake_resp_surface - resp_production)}"
+    )
+    assert resp_production <= redis_py_surface, (
+        f"flock.bus.resp.Redis invents commands missing from redis-py: "
+        f"{sorted(resp_production - redis_py_surface)}"
+    )
 
 
 def test_error_reply_raises():

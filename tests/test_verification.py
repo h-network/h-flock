@@ -7,39 +7,7 @@ from flock.bus import prefix
 from flock.switch.service import Switch
 from flock.watchdog import verification
 from flock.watchdog.verification import DeliveryVerifier
-
-
-class VerifyRedis:
-    def __init__(self):
-        self.streams = {}
-        self.deleted = []
-        self.hashes = {}
-        self.values = {}
-        self.xrange_calls = []
-
-    def xrange(self, key, min="-", max="+"):
-        self.xrange_calls.append((key, min, max))
-        return list(self.streams.get(key, []))
-
-    def xdel(self, key, entry_id):
-        self.deleted.append((key, entry_id))
-        self.streams[key] = [entry for entry in self.streams.get(key, []) if entry[0] != entry_id]
-        return 1
-
-    def hgetall(self, key):
-        return self.hashes.get(key, {})
-
-    def hset(self, key, mapping):
-        self.hashes[key] = dict(mapping)
-
-    def delete(self, key):
-        self.hashes.pop(key, None)
-
-    def exists(self, key):
-        return int(key in self.values or key in self.streams or key in self.hashes)
-
-    def xlen(self, key):
-        return len(self.streams.get(key, []))
+from conftest import FakeRedis as VerifyRedis
 
 
 def _key(resource):

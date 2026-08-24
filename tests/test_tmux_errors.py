@@ -1,3 +1,4 @@
+from conftest import FakeRespRedis
 from unittest.mock import patch
 
 import pytest
@@ -6,10 +7,6 @@ from flock.port.openers import message_opener
 from flock.bus import build as build_envelope
 from flock.tmux import TmuxCommandError, create_window, list_windows
 
-
-class StubRedis:
-    def get(self, _key):
-        return None
 
 
 @patch("flock.tmux.ops.run_tmux")
@@ -42,7 +39,7 @@ def test_message_opener_raises_when_tmux_paste_fails_and_cleans_buffer(mock_run_
     envelope = build_envelope(kind="Message", source="alice", destination="bob", payload={"text": "hello"})
 
     with pytest.raises(TmuxCommandError, match="paste-buffer.*can't find pane"):
-        message_opener(StubRedis(), pod="acme", tenant="hq", agent="bob", envelope=envelope, session_name="hq")
+        message_opener(FakeRespRedis(), pod="acme", tenant="hq", agent="bob", envelope=envelope, session_name="hq")
 
     assert [call.args[0] for call in mock_run_tmux.call_args_list] == [
         "load-buffer", "paste-buffer", "delete-buffer"
