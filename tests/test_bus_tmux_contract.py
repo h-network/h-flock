@@ -1,4 +1,4 @@
-from conftest import FakeRedis as MockRedis
+from conftest import FakeRedis
 import json
 import pytest
 from flock.bus import (
@@ -62,7 +62,7 @@ def test_envelope_parse_invalid():
 
 
 def test_send_and_receive(capsys):
-    r = MockRedis()
+    r = FakeRedis()
     stream_id = send(r, pod="acme", tenant="hq", source="alice", destination="bob", payload={"text": "hi"})
     assert stream_id is not None
     egress_key = prefix("acme", "hq", agent="alice", resource="egress")
@@ -83,7 +83,7 @@ def test_send_and_receive(capsys):
 
 
 def test_opener_dead_letter_is_terminal_and_never_opened(capsys):
-    r = MockRedis()
+    r = FakeRedis()
     envelope = build_envelope(kind="Message", source="alice", destination="bob", payload={"text": "hi"})
     ingress_key = prefix("acme", "hq", agent="bob", resource="ingress")
     from flock.bus import encode
@@ -101,7 +101,7 @@ def test_opener_dead_letter_is_terminal_and_never_opened(capsys):
 
 
 def test_roster():
-    r = MockRedis()
+    r = FakeRedis()
     roster_key = prefix("acme", "hq", resource="roster")
     r.sadd(roster_key, "alice", "bob")
     r.hset(roster_key, "alice", "tmux")

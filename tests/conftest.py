@@ -777,7 +777,6 @@ def fake_resp_redis():
     return FakeRespRedis()
 
 
-MockRedis = FakeRedis
 WatchRedis = FakeRedis
 UsageRedis = FakeRedis
 StatefulRedis = FakeRedis

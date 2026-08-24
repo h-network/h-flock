@@ -11,67 +11,6 @@ from flock.port.deliver import run_port
 from flock.bus import DeadLetter, build as build_envelope, encode, parse, prefix, receive
 
 
-class MockRedis:
-    def __init__(self):
-        self.lists = {}
-        self.hashes = {}
-        self.kv = {}
-        self.streams = {}
-
-    def get(self, key):
-        return self.kv.get(key)
-
-    def set(self, key, value):
-        self.kv[key] = value
-
-    def rpush(self, key, value):
-        if key not in self.lists:
-            self.lists[key] = []
-        self.lists[key].append(value)
-        return len(self.lists[key])
-
-    def blpop(self, key, timeout=0):
-        if key in self.lists and self.lists[key]:
-            val = self.lists[key].pop(0)
-            return (key, val)
-        return None
-
-    def lpop(self, key):
-        values = self.lists.get(key, [])
-        return values.pop(0) if values else None
-
-    def hset(self, key, field, value):
-        if key not in self.hashes:
-            self.hashes[key] = {}
-        self.hashes[key][field] = value
-
-    def hsetnx(self, key, field, value):
-        if key not in self.hashes:
-            self.hashes[key] = {}
-        if field in self.hashes[key]:
-            return 0
-        self.hashes[key][field] = value
-        return 1
-
-    def hexists(self, key, field):
-        return field in self.hashes.get(key, {})
-
-    def hget(self, key, field):
-        return self.hashes.get(key, {}).get(field)
-
-    def hdel(self, key, field):
-        if key in self.hashes and field in self.hashes[key]:
-            del self.hashes[key][field]
-
-    def xadd(self, name, fields, id="*", maxlen=None, approximate=True):
-        if name not in self.streams:
-            self.streams[name] = []
-        stream_id = f"{len(self.streams[name]) + 1}-0"
-        self.streams[name].append((stream_id, fields))
-        if maxlen and len(self.streams[name]) > maxlen:
-            self.streams[name] = self.streams[name][-maxlen:]
-        return stream_id
-
 
 @patch("flock.port.openers.list_windows")
 @patch("flock.tmux.ops.run_tmux")
