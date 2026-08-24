@@ -140,6 +140,9 @@ fi
 [ -n "${CONTAINER:-}" ] && [ -n "${TENANT:-}" ] || { echo "INCOMPLETE: CONTAINER and TENANT are required" >&2; exit 100; }
 [ "$MODE" = steady ] || [ "$MODE" = burst ] || { echo "INCOMPLETE: invalid mode" >&2; exit 100; }
 WORK="${WORK:-/tmp/packet-switching-$TENANT}"; mkdir -p "$WORK"
+restore_kick() { if ! docker exec "$CONTAINER" sh -c 'p=$(cat /tmp/flock.port.path); cp /tmp/flock.port.real "$p"; test "$(wc -c < "$p")" -gt 20' >/dev/null 2>&1; then echo 'ERROR: flock.port restore failed' >&2; exit 125; fi; }
+trap restore_kick EXIT
+docker exec "$CONTAINER" sh -c 'p=$(command -v flock.port); cp "$p" /tmp/flock.port.real; printf "#!/bin/sh\nexit 0\n" > "$p"; chmod +x "$p"; echo "$p" >/tmp/flock.port.path'
 docker cp "$(dirname "$0")/bench-port.py" "$CONTAINER:/tmp/build114-bench-port.py" >/dev/null || { echo "INCOMPLETE: receiver copy" >&2; exit 100; }
 docker cp "$(dirname "$0")/bench-send.py" "$CONTAINER:/tmp/bench-send.py" >/dev/null || { echo "INCOMPLETE: sender copy" >&2; exit 100; }
 docker exec "$CONTAINER" redis-cli HSET "pod:${POD:-acme}:tenant:$TENANT:roster" $(printf 'bench-%s api ' $(seq 1 "$COUNT")) >/dev/null 2>&1 || { echo "INCOMPLETE: roster seed" >&2; exit 100; }
@@ -153,8 +156,8 @@ for _ in $(seq 1 120); do
   depth=$(docker exec "$CONTAINER" python3 -c "
 import os, redis
 r = redis.Redis.from_url(os.environ.get('REDIS_URL', 'redis://127.0.0.1:6379/0'))
-print(sum(r.llen(k) for k in r.scan_iter(match='pod:${POD:-acme}:tenant:${TENANT}:agent:*:ingress')) +
-      sum(r.llen(k) for k in r.scan_iter(match='pod:${POD:-acme}:tenant:${TENANT}:agent:*:egress')))
+print(sum(r.llen(k) for k in r.scan_iter(match='pod:${POD:-acme}:tenant:${TENANT}:agent:bench-*:ingress')) +
+      sum(r.llen(k) for k in r.scan_iter(match='pod:${POD:-acme}:tenant:${TENANT}:agent:bench-*:egress')))
 " 2>/dev/null | tr -d '\r' || echo 1)
   [ "${depth:-1}" = "0" ] && { drained=1; break; }
   sleep 1

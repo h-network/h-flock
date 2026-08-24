@@ -52,8 +52,10 @@ BENCH_PORT_STAGES=2
 echo "switch-bench: $STATIONS x $ROUNDS = $EXPECT envelopes, payload=$PAYLOAD_BYTES -> $OUT"
 
 echo "== kick shim =="
-dx bash -lc 'mkdir -p /tmp/shim && printf "#!/bin/sh\nexit 0\n" > /tmp/shim/flock.port && chmod +x /tmp/shim/flock.port'
-dx bash -lc 'ls -l /tmp/shim/flock.port' >/dev/null && echo "  installed (kick costs fork+exec, not an interpreter)"
+restore_kick() { if ! dx bash -lc 'p=$(cat /tmp/flock.port.path); cp /tmp/flock.port.real "$p"; test "$(wc -c < "$p")" -gt 20'; then echo 'ERROR: flock.port restore failed' >&2; exit 125; fi; }
+trap restore_kick EXIT
+dx bash -lc 'p=$(command -v flock.port); cp "$p" /tmp/flock.port.real; printf "#!/bin/sh\nexit 0\n" > "$p"; chmod +x "$p"; echo "$p" > /tmp/flock.port.path'
+dx bash -lc 'test -s /tmp/flock.port.path' && echo "  installed at switch executable path (kicks intercepted)"
 
 echo "== enrol =="
 for i in $(seq 1 "$STATIONS"); do
