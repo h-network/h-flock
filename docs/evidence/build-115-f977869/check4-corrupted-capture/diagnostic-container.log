@@ -1,0 +1,636 @@
+/usr/local/bin/entrypoint.sh: line 23: /home/ubuntu/.flock/custody/custody.jsonl: Permission denied
+{"module":"container","writer":"container","event":"started","reason":"redis pid=20"}
+20:C 24 Aug 2026 16:02:12.128 # oO0OoO0OoO0Oo Redis is starting oO0OoO0OoO0Oo
+20:C 24 Aug 2026 16:02:12.129 # Redis version=7.0.15, bits=64, commit=00000000, modified=0, pid=20, just started
+20:C 24 Aug 2026 16:02:12.129 # Configuration loaded
+20:M 24 Aug 2026 16:02:12.132 * Increased maximum number of open files to 10032 (it was originally set to 1024).
+20:M 24 Aug 2026 16:02:12.133 * monotonic clock: POSIX clock_gettime
+20:M 24 Aug 2026 16:02:12.136 * Running mode=standalone, port=6379.
+20:M 24 Aug 2026 16:02:12.136 # Server initialized
+20:M 24 Aug 2026 16:02:12.136 # WARNING Memory overcommit must be enabled! Without it, a background save or replication may fail under low memory condition. Being disabled, it can can also cause failures without low memory condition, see https://github.com/jemalloc/jemalloc/issues/1328. To fix this issue add 'vm.overcommit_memory = 1' to /etc/sysctl.conf and then reboot or run the command 'sysctl vm.overcommit_memory=1' for this to take effect.
+20:M 24 Aug 2026 16:02:12.151 * Creating AOF base file appendonly.aof.1.base.rdb on server start
+20:M 24 Aug 2026 16:02:12.170 * Creating AOF incr file appendonly.aof.1.incr.aof on server start
+20:M 24 Aug 2026 16:02:12.171 * Ready to accept connections
+{"module":"container","writer":"container","event":"transport_purged","count":0}
+{"module":"container","writer":"container","event":"roster_seeded","count":4}
+{"module":"container","writer":"container","event":"started","reason":"tmuxhost pid=42"}
+{"ts":"2026-08-24T14:02:13.694Z","module":"tmuxhost","event":"started","writer":"tmuxhost","reason":"session=build115v-0824-1420"}
+{"ts":"2026-08-24T14:02:13.821Z","module":"tmuxhost","event":"window_created","writer":"tmuxhost","destination":"architect"}
+{"ts":"2026-08-24T14:02:14.026Z","module":"tmuxhost","event":"window_created","writer":"tmuxhost","destination":"sme-2"}
+{"module":"container","writer":"container","event":"windows_ready","count":2}
+{"module":"container","writer":"container","event":"started","reason":"switch pid=80"}
+{"module":"container","writer":"container","event":"started","reason":"watchdog pid=81"}
+{"module":"container","writer":"container","event":"started","reason":"api pid=82"}
+{"module":"container","writer":"container","event":"started","reason":"session pid=83"}
+{"v":1,"ts":"2026-08-24T14:02:15.243Z","kind":"credential","account":"default","cli":"claude","status":"absent","expires_ts":null,"writer":"watchdog"}
+INFO:     Started server process [83]
+INFO:     Waiting for application startup.
+INFO:     Application startup complete.
+INFO:     Uvicorn running on http://0.0.0.0:8081 (Press CTRL+C to quit)
+INFO:     Started server process [82]
+INFO:     Waiting for application startup.
+INFO:     Application startup complete.
+INFO:     Uvicorn running on http://0.0.0.0:8080 (Press CTRL+C to quit)
+INFO:     127.0.0.1:38004 - "GET /health HTTP/1.1" 200 OK
+20:signal-handler (1787580143) Received SIGTERM scheduling shutdown...
+{"module":"container","writer":"container","event":"stopped","reason":"exit=143"}
+{"module":"container","writer":"container","event":"stopped","reason":"exit=143"}
+20:signal-handler (1787580143) Received SIGTERM scheduling shutdown...
+20:M 24 Aug 2026 16:02:23.398 # User requested shutdown...
+20:M 24 Aug 2026 16:02:23.398 * Calling fsync() on the AOF file.
+20:M 24 Aug 2026 16:02:23.406 # Redis is now ready to exit, bye bye...
+{"module":"container","writer":"container","event":"started","reason":"redis pid=16"}
+16:C 24 Aug 2026 16:02:25.767 # oO0OoO0OoO0Oo Redis is starting oO0OoO0OoO0Oo
+16:C 24 Aug 2026 16:02:25.767 # Redis version=7.0.15, bits=64, commit=00000000, modified=0, pid=16, just started
+16:C 24 Aug 2026 16:02:25.767 # Configuration loaded
+16:M 24 Aug 2026 16:02:25.768 * Increased maximum number of open files to 10032 (it was originally set to 1024).
+16:M 24 Aug 2026 16:02:25.768 * monotonic clock: POSIX clock_gettime
+16:M 24 Aug 2026 16:02:25.778 * Running mode=standalone, port=6379.
+16:M 24 Aug 2026 16:02:25.778 # Server initialized
+16:M 24 Aug 2026 16:02:25.778 # WARNING Memory overcommit must be enabled! Without it, a background save or replication may fail under low memory condition. Being disabled, it can can also cause failures without low memory condition, see https://github.com/jemalloc/jemalloc/issues/1328. To fix this issue add 'vm.overcommit_memory = 1' to /etc/sysctl.conf and then reboot or run the command 'sysctl vm.overcommit_memory=1' for this to take effect.
+16:M 24 Aug 2026 16:02:25.779 * Reading RDB base file on AOF loading...
+16:M 24 Aug 2026 16:02:25.779 * Loading RDB produced by version 7.0.15
+16:M 24 Aug 2026 16:02:25.779 * RDB age 13 seconds
+16:M 24 Aug 2026 16:02:25.779 * RDB memory usage when created 0.84 Mb
+16:M 24 Aug 2026 16:02:25.779 * RDB is base AOF
+16:M 24 Aug 2026 16:02:25.779 * Done loading RDB, keys loaded: 0, keys expired: 0.
+16:M 24 Aug 2026 16:02:25.779 * DB loaded from base file appendonly.aof.1.base.rdb: 0.000 seconds
+16:M 24 Aug 2026 16:02:25.779 * DB loaded from incr file appendonly.aof.1.incr.aof: 0.000 seconds
+16:M 24 Aug 2026 16:02:25.779 * DB loaded from append only file: 0.000 seconds
+16:M 24 Aug 2026 16:02:25.780 * Opening AOF incr file appendonly.aof.1.incr.aof on server start
+16:M 24 Aug 2026 16:02:25.780 * Ready to accept connections
+{"module":"container","writer":"container","event":"transport_purged","count":0}
+{"module":"container","writer":"container","event":"roster_seeded","count":4}
+{"module":"container","writer":"container","event":"started","reason":"tmuxhost pid=38"}
+{"ts":"2026-08-24T14:02:27.305Z","module":"tmuxhost","event":"started","writer":"tmuxhost","reason":"session=build115v-0824-1420"}
+{"ts":"2026-08-24T14:02:27.580Z","module":"tmuxhost","event":"window_created","writer":"tmuxhost","destination":"architect"}
+{"ts":"2026-08-24T14:02:27.851Z","module":"tmuxhost","event":"window_created","writer":"tmuxhost","destination":"sme-2"}
+{"module":"container","writer":"container","event":"windows_ready","count":2}
+{"module":"container","writer":"container","event":"started","reason":"switch pid=76"}
+{"module":"container","writer":"container","event":"started","reason":"watchdog pid=77"}
+{"module":"container","writer":"container","event":"started","reason":"api pid=78"}
+{"module":"container","writer":"container","event":"started","reason":"session pid=79"}
+INFO:     Started server process [79]
+INFO:     Waiting for application startup.
+INFO:     Application startup complete.
+INFO:     Uvicorn running on http://0.0.0.0:8081 (Press CTRL+C to quit)
+INFO:     Started server process [78]
+INFO:     Waiting for application startup.
+INFO:     Application startup complete.
+INFO:     Uvicorn running on http://0.0.0.0:8080 (Press CTRL+C to quit)
+INFO:     127.0.0.1:44046 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:51068 - "GET /health HTTP/1.1" 200 OK
+{"ts":"2026-08-24T14:02:54.346Z","module":"bus","event":"sent","writer":"bench-send","stream_id":"c4055445958e4297a7597bad46a9513f","correlation_id":"b7703b1b7d1e4794bc427457261bba0f","source":"bench-1","destination":"bench-2"}
+{"ts":"2026-08-24T14:02:54.348Z","module":"bus","event":"sent","writer":"bench-send","stream_id":"b55c8f463529462d9d5adf51d98e88c4","correlation_id":"362c66bae1734003863411da23e2fd36","source":"bench-2","destination":"bench-3"}
+{"ts":"2026-08-24T14:02:54.350Z","module":"switch","event":"popped","writer":"switch","stream_id":"c4055445958e4297a7597bad46a9513f","correlation_id":"b7703b1b7d1e4794bc427457261bba0f","source":"bench-1","destination":"bench-2"}
+{"ts":"2026-08-24T14:02:54.352Z","module":"bus","event":"sent","writer":"bench-send","stream_id":"63b7789db464444092f30fac5853547e","correlation_id":"5841d7cc11e641819cfb2ac78cd23e10","source":"bench-3","destination":"bench-4"}
+{"ts":"2026-08-24T14:02:54.353Z","module":"bus","event":"sent","writer":"bench-send","stream_id":"8ff0797a6ca54863b521e479547b4f84","correlation_id":"646572f63aa44ad9955a9f54031cfdee","source":"bench-4","destination":"bench-5"}
+{"ts":"2026-08-24T14:02:54.354Z","module":"bus","event":"sent","writer":"bench-send","stream_id":"91d9b1021f7545679cad3010c8e30420","correlation_id":"ef103a8d768e4975b0319dc861bdafe0","source":"bench-5","destination":"bench-6"}
+{"ts":"2026-08-24T14:02:54.355Z","module":"bus","event":"sent","writer":"bench-send","stream_id":"63ea99210cec4ad99bfc84735a659732","correlation_id":"d34786f7b3e745538c2dcda1e5ff08c2","source":"bench-6","destination":"bench-7"}
+{"ts":"2026-08-24T14:02:54.355Z","module":"bus","event":"sent","writer":"bench-send","stream_id":"d413905f125e4fb8ac0c95fd14677606","correlation_id":"ada9aad354d843ad8d33f815ae9507e6","source":"bench-7","destination":"bench-8"}
+{"ts":"2026-08-24T14:02:54.356Z","module":"bus","event":"sent","writer":"bench-send","stream_id":"de12253961a04051b1896ddb8779c4cb","correlation_id":"790a97b87fa240e486646a5a41a056dd","source":"bench-8","destination":"bench-9"}
+{"ts":"2026-08-24T14:02:54.360Z","module":"switch","event":"forwarded","writer":"switch","stream_id":"c4055445958e4297a7597bad46a9513f","correlation_id":"b7703b1b7d1e4794bc427457261bba0f","source":"bench-1","destination":"bench-2"}
+{"ts":"2026-08-24T14:02:54.361Z","module":"bus","event":"sent","writer":"bench-send","stream_id":"ad9e4d9b059b46929bbaf659618ce468","correlation_id":"a9da38911a5f473089216197fae1e5d0","source":"bench-9","destination":"bench-10"}
+{"ts":"2026-08-24T14:02:54.362Z","module":"port","event":"received","writer":"bench-port","stream_id":"c4055445958e4297a7597bad46a9513f","correlation_id":"b7703b1b7d1e4794bc427457261bba0f","source":"bench-1","destination":"bench-2"}
+{"ts":"2026-08-24T14:02:54.362Z","module":"port","event":"opened","writer":"bench-port","stream_id":"c4055445958e4297a7597bad46a9513f","correlation_id":"b7703b1b7d1e4794bc427457261bba0f","source":"bench-1","destination":"bench-2"}
+{"ts":"2026-08-24T14:02:54.362Z","module":"bus","event":"sent","writer":"bench-send","stream_id":"eb4eba34dc4048ba89ec57e5a8de3e80","correlation_id":"ac5fbdfa966047748d4eb1c45ca8fbf3","source":"bench-10","destination":"bench-1"}
+{"ts":"2026-08-24T14:02:54.363Z","module":"bus","event":"sent","writer":"bench-send","stream_id":"9286660efc4c4f21bf1993175566b050","correlation_id":"e22b01add7cf4dd68516ab2e87ec819b","source":"bench-1","destination":"bench-2"}
+{"ts":"2026-08-24T14:02:54.364Z","module":"bus","event":"sent","writer":"bench-send","stream_id":"455f2ae1b3bf442fb597fe1b863b1bb7","correlation_id":"43c328d89c4f4c6eb7f1761740724489","source":"bench-2","destination":"bench-3"}
+{"ts":"2026-08-24T14:02:54.366Z","module":"bus","event":"sent","writer":"bench-send","stream_id":"1416a46923f04a1d9fdae4a0ece412f2","correlation_id":"5f50e446b66e42e4a61eee2143be75a6","source":"bench-3","destination":"bench-4"}
+{"ts":"2026-08-24T14:02:54.369Z","module":"bus","event":"sent","writer":"bench-send","stream_id":"0113a524491c4d94b8c9156d49c7b101","correlation_id":"2d4fc393ebb04e08910bc181f0f18f78","source":"bench-4","destination":"bench-5"}
+{"ts":"2026-08-24T14:02:54.372Z","module":"bus","event":"sent","writer":"bench-send","stream_id":"93e9a09e99fa481b9a0633ce1afa36f5","correlation_id":"21ab373b031b43cc91a70618271c9980","source":"bench-5","destination":"bench-6"}
+{"ts":"2026-08-24T14:02:54.375Z","module":"bus","event":"sent","writer":"bench-send","stream_id":"1f52becd9fb94550944e6ec37e2427d2","correlation_id":"32a26f5e9e144d0995c5b5e7527226a7","source":"bench-6","destination":"bench-7"}
+{"ts":"2026-08-24T14:02:54.378Z","module":"switch","event":"kick_started","writer":"switch","stream_id":"c4055445958e4297a7597bad46a9513f","correlation_id":"b7703b1b7d1e4794bc427457261bba0f","source":"bench-1","destination":"bench-2"}
+{"ts":"2026-08-24T14:02:54.383Z","module":"bus","event":"sent","writer":"bench-send","stream_id":"2c24dea4e2654f6e99bb430f3234bf0d","correlation_id":"d035740565bc4397bf92b1c4d7ef94c4","source":"bench-7","destination":"bench-8"}
+{"ts":"2026-08-24T14:02:54.386Z","module":"bus","event":"sent","writer":"bench-send","stream_id":"cd72143e1d8e4c06b5776afba350797f","correlation_id":"4ef50b5da1f946fb8d2c4b98f7f1fab1","source":"bench-8","destination":"bench-9"}
+{"ts":"2026-08-24T14:02:54.387Z","module":"bus","event":"sent","writer":"bench-send","stream_id":"65cbec9a6a2e47d9819c100c29d7da39","correlation_id":"7bc4fdc84bf641bc9b18b05e8ca559dc","source":"bench-9","destination":"bench-10"}
+{"ts":"2026-08-24T14:02:54.391Z","module":"switch","event":"popped","writer":"switch","stream_id":"b55c8f463529462d9d5adf51d98e88c4","correlation_id":"362c66bae1734003863411da23e2fd36","source":"bench-2","destination":"bench-3"}
+{"ts":"2026-08-24T14:02:54.396Z","module":"bus","event":"sent","writer":"bench-send","stream_id":"5058af0556c54dc9ac12d17d96c7dae5","correlation_id":"db8c529cf887450287c7a2f052a8df3d","source":"bench-10","destination":"bench-1"}
+  submitted 20 in 0.1s
+{"ts":"2026-08-24T14:02:54.410Z","module":"switch","event":"forwarded","writer":"switch","stream_id":"b55c8f463529462d9d5adf51d98e88c4","correlation_id":"362c66bae1734003863411da23e2fd36","source":"bench-2","destination":"bench-3"}
+{"ts":"2026-08-24T14:02:54.424Z","module":"switch","event":"kick_started","writer":"switch","stream_id":"b55c8f463529462d9d5adf51d98e88c4","correlation_id":"362c66bae1734003863411da23e2fd36","source":"bench-2","destination":"bench-3"}
+{"ts":"2026-08-24T14:02:54.426Z","module":"port","event":"received","writer":"bench-port","stream_id":"b55c8f463529462d9d5adf51d98e88c4","correlation_id":"362c66bae1734003863411da23e2fd36","source":"bench-2","destination":"bench-3"}
+{"ts":"2026-08-24T14:02:54.428Z","module":"switch","event":"popped","writer":"switch","stream_id":"63b7789db464444092f30fac5853547e","correlation_id":"5841d7cc11e641819cfb2ac78cd23e10","source":"bench-3","destination":"bench-4"}
+{"ts":"2026-08-24T14:02:54.430Z","module":"switch","event":"forwarded","writer":"switch","stream_id":"63b7789db464444092f30fac5853547e","correlation_id":"5841d7cc11e641819cfb2ac78cd23e10","source":"bench-3","destination":"bench-4"}
+{"ts":"2026-08-24T14:02:54.436Z","module":"switch","event":"kick_started","writer":"switch","stream_id":"63b7789db464444092f30fac5853547e","correlation_id":"5841d7cc11e641819cfb2ac78cd23e10","source":"bench-3","destination":"bench-4"}
+{"ts":"2026-08-24T14:02:54.435Z","module":"port","event":"opened","writer":"bench-port","stream_id":"b55c8f463529462d9d5adf51d98e88c4","correlation_id":"362c66bae1734003863411da23e2fd36","source":"bench-2","destination":"bench-3"}
+{"ts":"2026-08-24T14:02:54.444Z","module":"port","event":"received","writer":"bench-port","stream_id":"63b7789db464444092f30fac5853547e","correlation_id":"5841d7cc11e641819cfb2ac78cd23e10","source":"bench-3","destination":"bench-4"}
+{"ts":"2026-08-24T14:02:54.445Z","module":"port","event":"opened","writer":"bench-port","stream_id":"63b7789db464444092f30fac5853547e","correlation_id":"5841d7cc11e641819cfb2ac78cd23e10","source":"bench-3","destination":"bench-4"}
+{"ts":"2026-08-24T14:02:54.466Z","module":"switch","event":"popped","writer":"switch","stream_id":"8ff0797a6ca54863b521e479547b4f84","correlation_id":"646572f63aa44ad9955a9f54031cfdee","source":"bench-4","destination":"bench-5"}
+{"ts":"2026-08-24T14:02:54.473Z","module":"port","event":"received","writer":"bench-port","stream_id":"8ff0797a6ca54863b521e479547b4f84","correlation_id":"646572f63aa44ad9955a9f54031cfdee","source":"bench-4","destination":"bench-5"}
+{"ts":"2026-08-24T14:02:54.474Z","module":"port","event":"opened","writer":"bench-port","stream_id":"8ff0797a6ca54863b521e479547b4f84","correlation_id":"646572f63aa44ad9955a9f54031cfdee","source":"bench-4","destination":"bench-5"}
+{"ts":"2026-08-24T14:02:54.479Z","module":"switch","event":"forwarded","writer":"switch","stream_id":"8ff0797a6ca54863b521e479547b4f84","correlation_id":"646572f63aa44ad9955a9f54031cfdee","source":"bench-4","destination":"bench-5"}
+{"ts":"2026-08-24T14:02:54.482Z","module":"switch","event":"kick_started","writer":"switch","stream_id":"8ff0797a6ca54863b521e479547b4f84","correlation_id":"646572f63aa44ad9955a9f54031cfdee","source":"bench-4","destination":"bench-5"}
+{"ts":"2026-08-24T14:02:54.486Z","module":"switch","event":"popped","writer":"switch","stream_id":"91d9b1021f7545679cad3010c8e30420","correlation_id":"ef103a8d768e4975b0319dc861bdafe0","source":"bench-5","destination":"bench-6"}
+{"ts":"2026-08-24T14:02:54.487Z","module":"switch","event":"forwarded","writer":"switch","stream_id":"91d9b1021f7545679cad3010c8e30420","correlation_id":"ef103a8d768e4975b0319dc861bdafe0","source":"bench-5","destination":"bench-6"}
+{"ts":"2026-08-24T14:02:54.492Z","module":"port","event":"received","writer":"bench-port","stream_id":"91d9b1021f7545679cad3010c8e30420","correlation_id":"ef103a8d768e4975b0319dc861bdafe0","source":"bench-5","destination":"bench-6"}
+{"ts":"2026-08-24T14:02:54.492Z","module":"port","event":"opened","writer":"bench-port","stream_id":"91d9b1021f7545679cad3010c8e30420","correlation_id":"ef103a8d768e4975b0319dc861bdafe0","source":"bench-5","destination":"bench-6"}
+{"ts":"2026-08-24T14:02:54.493Z","module":"switch","event":"kick_started","writer":"switch","stream_id":"91d9b1021f7545679cad3010c8e30420","correlation_id":"ef103a8d768e4975b0319dc861bdafe0","source":"bench-5","destination":"bench-6"}
+{"ts":"2026-08-24T14:02:54.504Z","module":"switch","event":"popped","writer":"switch","stream_id":"63ea99210cec4ad99bfc84735a659732","correlation_id":"d34786f7b3e745538c2dcda1e5ff08c2","source":"bench-6","destination":"bench-7"}
+{"ts":"2026-08-24T14:02:54.506Z","module":"switch","event":"forwarded","writer":"switch","stream_id":"63ea99210cec4ad99bfc84735a659732","correlation_id":"d34786f7b3e745538c2dcda1e5ff08c2","source":"bench-6","destination":"bench-7"}
+{"ts":"2026-08-24T14:02:54.512Z","module":"switch","event":"kick_started","writer":"switch","stream_id":"63ea99210cec4ad99bfc84735a659732","correlation_id":"d34786f7b3e745538c2dcda1e5ff08c2","source":"bench-6","destination":"bench-7"}
+{"ts":"2026-08-24T14:02:54.513Z","module":"switch","event":"popped","writer":"switch","stream_id":"d413905f125e4fb8ac0c95fd14677606","correlation_id":"ada9aad354d843ad8d33f815ae9507e6","source":"bench-7","destination":"bench-8"}
+{"ts":"2026-08-24T14:02:54.518Z","module":"port","event":"received","writer":"bench-port","stream_id":"63ea99210cec4ad99bfc84735a659732","correlation_id":"d34786f7b3e745538c2dcda1e5ff08c2","source":"bench-6","destination":"bench-7"}
+{"ts":"2026-08-24T14:02:54.518Z","module":"port","event":"opened","writer":"bench-port","stream_id":"63ea99210cec4ad99bfc84735a659732","correlation_id":"d34786f7b3e745538c2dcda1e5ff08c2","source":"bench-6","destination":"bench-7"}
+{"ts":"2026-08-24T14:02:54.519Z","module":"switch","event":"forwarded","writer":"switch","stream_id":"d413905f125e4fb8ac0c95fd14677606","correlation_id":"ada9aad354d843ad8d33f815ae9507e6","source":"bench-7","destination":"bench-8"}
+{"ts":"2026-08-24T14:02:54.524Z","module":"switch","event":"kick_started","writer":"switch","stream_id":"d413905f125e4fb8ac0c95fd14677606","correlation_id":"ada9aad354d843ad8d33f815ae9507e6","source":"bench-7","destination":"bench-8"}
+{"ts":"2026-08-24T14:02:54.531Z","module":"switch","event":"popped","writer":"switch","stream_id":"de12253961a04051b1896ddb8779c4cb","correlation_id":"790a97b87fa240e486646a5a41a056dd","source":"bench-8","destination":"bench-9"}
+{"ts":"2026-08-24T14:02:54.535Z","module":"switch","event":"forwarded","writer":"switch","stream_id":"de12253961a04051b1896ddb8779c4cb","correlation_id":"790a97b87fa240e486646a5a41a056dd","source":"bench-8","destination":"bench-9"}
+{"ts":"2026-08-24T14:02:54.542Z","module":"switch","event":"kick_started","writer":"switch","stream_id":"de12253961a04051b1896ddb8779c4cb","correlation_id":"790a97b87fa240e486646a5a41a056dd","source":"bench-8","destination":"bench-9"}
+{"ts":"2026-08-24T14:02:54.545Z","module":"port","event":"received","writer":"bench-port","stream_id":"d413905f125e4fb8ac0c95fd14677606","correlation_id":"ada9aad354d843ad8d33f815ae9507e6","source":"bench-7","destination":"bench-8"}
+{"ts":"2026-08-24T14:02:54.545Z","module":"port","event":"opened","writer":"bench-port","stream_id":"d413905f125e4fb8ac0c95fd14677606","correlation_id":"ada9aad354d843ad8d33f815ae9507e6","source":"bench-7","destination":"bench-8"}
+{"ts":"2026-08-24T14:02:54.547Z","module":"switch","event":"popped","writer":"switch","stream_id":"ad9e4d9b059b46929bbaf659618ce468","correlation_id":"a9da38911a5f473089216197fae1e5d0","source":"bench-9","destination":"bench-10"}
+{"ts":"2026-08-24T14:02:54.548Z","module":"port","event":"received","writer":"bench-port","stream_id":"de12253961a04051b1896ddb8779c4cb","correlation_id":"790a97b87fa240e486646a5a41a056dd","source":"bench-8","destination":"bench-9"}
+{"ts":"2026-08-24T14:02:54.548Z","module":"port","event":"opened","writer":"bench-port","stream_id":"de12253961a04051b1896ddb8779c4cb","correlation_id":"790a97b87fa240e486646a5a41a056dd","source":"bench-8","destination":"bench-9"}
+{"ts":"2026-08-24T14:02:54.591Z","module":"port","event":"received","writer":"bench-port","stream_id":"ad9e4d9b059b46929bbaf659618ce468","correlation_id":"a9da38911a5f473089216197fae1e5d0","source":"bench-9","destination":"bench-10"}
+{"ts":"2026-08-24T14:02:54.591Z","module":"port","event":"opened","writer":"bench-port","stream_id":"ad9e4d9b059b46929bbaf659618ce468","correlation_id":"a9da38911a5f473089216197fae1e5d0","source":"bench-9","destination":"bench-10"}
+{"ts":"2026-08-24T14:02:54.693Z","module":"switch","event":"forwarded","writer":"switch","stream_id":"ad9e4d9b059b46929bbaf659618ce468","correlation_id":"a9da38911a5f473089216197fae1e5d0","source":"bench-9","destination":"bench-10"}
+{"ts":"2026-08-24T14:02:54.712Z","module":"switch","event":"kick_started","writer":"switch","stream_id":"ad9e4d9b059b46929bbaf659618ce468","correlation_id":"a9da38911a5f473089216197fae1e5d0","source":"bench-9","destination":"bench-10"}
+{"ts":"2026-08-24T14:02:54.817Z","module":"switch","event":"popped","writer":"switch","stream_id":"9286660efc4c4f21bf1993175566b050","correlation_id":"e22b01add7cf4dd68516ab2e87ec819b","source":"bench-1","destination":"bench-2"}
+{"ts":"2026-08-24T14:02:54.883Z","module":"switch","event":"forwarded","writer":"switch","stream_id":"9286660efc4c4f21bf1993175566b050","correlation_id":"e22b01add7cf4dd68516ab2e87ec819b","source":"bench-1","destination":"bench-2"}
+{"ts":"2026-08-24T14:02:54.890Z","module":"port","event":"received","writer":"bench-port","stream_id":"9286660efc4c4f21bf1993175566b050","correlation_id":"e22b01add7cf4dd68516ab2e87ec819b","source":"bench-1","destination":"bench-2"}
+{"ts":"2026-08-24T14:02:54.913Z","module":"port","event":"opened","writer":"bench-port","stream_id":"9286660efc4c4f21bf1993175566b050","correlation_id":"e22b01add7cf4dd68516ab2e87ec819b","source":"bench-1","destination":"bench-2"}
+{"ts":"2026-08-24T14:02:54.944Z","module":"switch","event":"kick_started","writer":"switch","stream_id":"9286660efc4c4f21bf1993175566b050","correlation_id":"e22b01add7cf4dd68516ab2e87ec819b","source":"bench-1","destination":"bench-2"}
+{"ts":"2026-08-24T14:02:55.050Z","module":"switch","event":"popped","writer":"switch","stream_id":"eb4eba34dc4048ba89ec57e5a8de3e80","correlation_id":"ac5fbdfa966047748d4eb1c45ca8fbf3","source":"bench-10","destination":"bench-1"}
+{"ts":"2026-08-24T14:02:55.129Z","module":"switch","event":"forwarded","writer":"switch","stream_id":"eb4eba34dc4048ba89ec57e5a8de3e80","correlation_id":"ac5fbdfa966047748d4eb1c45ca8fbf3","source":"bench-10","destination":"bench-1"}
+{"ts":"2026-08-24T14:02:55.155Z","module":"switch","event":"kick_started","writer":"switch","stream_id":"eb4eba34dc4048ba89ec57e5a8de3e80","correlation_id":"ac5fbdfa966047748d4eb1c45ca8fbf3","source":"bench-10","destination":"bench-1"}
+{"ts":"2026-08-24T14:02:55.186Z","module":"switch","event":"popped","writer":"switch","stream_id":"5058af0556c54dc9ac12d17d96c7dae5","correlation_id":"db8c529cf887450287c7a2f052a8df3d","source":"bench-10","destination":"bench-1"}
+{"ts":"2026-08-24T14:02:55.200Z","module":"port","event":"received","writer":"bench-port","stream_id":"eb4eba34dc4048ba89ec57e5a8de3e80","correlation_id":"ac5fbdfa966047748d4eb1c45ca8fbf3","source":"bench-10","destination":"bench-1"}
+{"ts":"2026-08-24T14:02:55.200Z","module":"port","event":"opened","writer":"bench-port","stream_id":"eb4eba34dc4048ba89ec57e5a8de3e80","correlation_id":"ac5fbdfa966047748d4eb1c45ca8fbf3","source":"bench-10","destination":"bench-1"}
+{"ts":"2026-08-24T14:02:55.269Z","module":"port","event":"received","writer":"bench-port","stream_id":"5058af0556c54dc9ac12d17d96c7dae5","correlation_id":"db8c529cf887450287c7a2f052a8df3d","source":"bench-10","destination":"bench-1"}
+{"ts":"2026-08-24T14:02:55.269Z","module":"port","event":"opened","writer":"bench-port","stream_id":"5058af0556c54dc9ac12d17d96c7dae5","correlation_id":"db8c529cf887450287c7a2f052a8df3d","source":"bench-10","destination":"bench-1"}
+{"ts":"2026-08-24T14:02:55.279Z","module":"switch","event":"forwarded","writer":"switch","stream_id":"5058af0556c54dc9ac12d17d96c7dae5","correlation_id":"db8c529cf887450287c7a2f052a8df3d","source":"bench-10","destination":"bench-1"}
+{"ts":"2026-08-24T14:02:55.292Z","module":"switch","event":"kick_started","writer":"switch","stream_id":"5058af0556c54dc9ac12d17d96c7dae5","correlation_id":"db8c529cf887450287c7a2f052a8df3d","source":"bench-10","destination":"bench-1"}
+{"ts":"2026-08-24T14:02:55.300Z","module":"switch","event":"popped","writer":"switch","stream_id":"455f2ae1b3bf442fb597fe1b863b1bb7","correlation_id":"43c328d89c4f4c6eb7f1761740724489","source":"bench-2","destination":"bench-3"}
+{"ts":"2026-08-24T14:02:55.321Z","module":"switch","event":"forwarded","writer":"switch","stream_id":"455f2ae1b3bf442fb597fe1b863b1bb7","correlation_id":"43c328d89c4f4c6eb7f1761740724489","source":"bench-2","destination":"bench-3"}
+{"ts":"2026-08-24T14:02:55.334Z","module":"switch","event":"kick_started","writer":"switch","stream_id":"455f2ae1b3bf442fb597fe1b863b1bb7","correlation_id":"43c328d89c4f4c6eb7f1761740724489","source":"bench-2","destination":"bench-3"}
+{"ts":"2026-08-24T14:02:55.349Z","module":"port","event":"received","writer":"bench-port","stream_id":"455f2ae1b3bf442fb597fe1b863b1bb7","correlation_id":"43c328d89c4f4c6eb7f1761740724489","source":"bench-2","destination":"bench-3"}
+{"ts":"2026-08-24T14:02:55.349Z","module":"port","event":"opened","writer":"bench-port","stream_id":"455f2ae1b3bf442fb597fe1b863b1bb7","correlation_id":"43c328d89c4f4c6eb7f1761740724489","source":"bench-2","destination":"bench-3"}
+{"ts":"2026-08-24T14:02:55.370Z","module":"switch","event":"popped","writer":"switch","stream_id":"1416a46923f04a1d9fdae4a0ece412f2","correlation_id":"5f50e446b66e42e4a61eee2143be75a6","source":"bench-3","destination":"bench-4"}
+{"ts":"2026-08-24T14:02:55.430Z","module":"switch","event":"forwarded","writer":"switch","stream_id":"1416a46923f04a1d9fdae4a0ece412f2","correlation_id":"5f50e446b66e42e4a61eee2143be75a6","source":"bench-3","destination":"bench-4"}
+{"ts":"2026-08-24T14:02:55.436Z","module":"port","event":"received","writer":"bench-port","stream_id":"1416a46923f04a1d9fdae4a0ece412f2","correlation_id":"5f50e446b66e42e4a61eee2143be75a6","source":"bench-3","destination":"bench-4"}
+{"ts":"2026-08-24T14:02:55.436Z","module":"port","event":"opened","writer":"bench-port","stream_id":"1416a46923f04a1d9fdae4a0ece412f2","correlation_id":"5f50e446b66e42e4a61eee2143be75a6","source":"bench-3","destination":"bench-4"}
+{"ts":"2026-08-24T14:02:55.457Z","module":"switch","event":"kick_started","writer":"switch","stream_id":"1416a46923f04a1d9fdae4a0ece412f2","correlation_id":"5f50e446b66e42e4a61eee2143be75a6","source":"bench-3","destination":"bench-4"}
+{"ts":"2026-08-24T14:02:55.462Z","module":"switch","event":"popped","writer":"switch","stream_id":"0113a524491c4d94b8c9156d49c7b101","correlation_id":"2d4fc393ebb04e08910bc181f0f18f78","source":"bench-4","destination":"bench-5"}
+{"ts":"2026-08-24T14:02:55.481Z","module":"switch","event":"forwarded","writer":"switch","stream_id":"0113a524491c4d94b8c9156d49c7b101","correlation_id":"2d4fc393ebb04e08910bc181f0f18f78","source":"bench-4","destination":"bench-5"}
+{"ts":"2026-08-24T14:02:55.485Z","module":"switch","event":"kick_started","writer":"switch","stream_id":"0113a524491c4d94b8c9156d49c7b101","correlation_id":"2d4fc393ebb04e08910bc181f0f18f78","source":"bench-4","destination":"bench-5"}
+{"ts":"2026-08-24T14:02:55.490Z","module":"switch","event":"popped","writer":"switch","stream_id":"93e9a09e99fa481b9a0633ce1afa36f5","correlation_id":"21ab373b031b43cc91a70618271c9980","source":"bench-5","destination":"bench-6"}
+{"ts":"2026-08-24T14:02:55.500Z","module":"switch","event":"forwarded","writer":"switch","stream_id":"93e9a09e99fa481b9a0633ce1afa36f5","correlation_id":"21ab373b031b43cc91a70618271c9980","source":"bench-5","destination":"bench-6"}
+{"ts":"2026-08-24T14:02:55.514Z","module":"switch","event":"kick_started","writer":"switch","stream_id":"93e9a09e99fa481b9a0633ce1afa36f5","correlation_id":"21ab373b031b43cc91a70618271c9980","source":"bench-5","destination":"bench-6"}
+{"ts":"2026-08-24T14:02:55.506Z","module":"port","event":"received","writer":"bench-port","stream_id":"0113a524491c4d94b8c9156d49c7b101","correlation_id":"2d4fc393ebb04e08910bc181f0f18f78","source":"bench-4","destination":"bench-5"}
+{"ts":"2026-08-24T14:02:55.518Z","module":"port","event":"opened","writer":"bench-port","stream_id":"0113a524491c4d94b8c9156d49c7b101","correlation_id":"2d4fc393ebb04e08910bc181f0f18f78","source":"bench-4","destination":"bench-5"}
+{"ts":"2026-08-24T14:02:55.562Z","module":"port","event":"received","writer":"bench-port","stream_id":"93e9a09e99fa481b9a0633ce1afa36f5","correlation_id":"21ab373b031b43cc91a70618271c9980","source":"bench-5","destination":"bench-6"}
+{"ts":"2026-08-24T14:02:55.563Z","module":"port","event":"opened","writer":"bench-port","stream_id":"93e9a09e99fa481b9a0633ce1afa36f5","correlation_id":"21ab373b031b43cc91a70618271c9980","source":"bench-5","destination":"bench-6"}
+{"ts":"2026-08-24T14:02:55.581Z","module":"switch","event":"popped","writer":"switch","stream_id":"1f52becd9fb94550944e6ec37e2427d2","correlation_id":"32a26f5e9e144d0995c5b5e7527226a7","source":"bench-6","destination":"bench-7"}
+{"ts":"2026-08-24T14:02:55.614Z","module":"port","event":"received","writer":"bench-port","stream_id":"1f52becd9fb94550944e6ec37e2427d2","correlation_id":"32a26f5e9e144d0995c5b5e7527226a7","source":"bench-6","destination":"bench-7"}
+{"ts":"2026-08-24T14:02:55.614Z","module":"port","event":"opened","writer":"bench-port","stream_id":"1f52becd9fb94550944e6ec37e2427d2","correlation_id":"32a26f5e9e144d0995c5b5e7527226a7","source":"bench-6","destination":"bench-7"}
+{"ts":"2026-08-24T14:02:55.615Z","module":"switch","event":"forwarded","writer":"switch","stream_id":"1f52becd9fb94550944e6ec37e2427d2","correlation_id":"32a26f5e9e144d0995c5b5e7527226a7","source":"bench-6","destination":"bench-7"}
+{"ts":"2026-08-24T14:02:55.632Z","module":"switch","event":"kick_started","writer":"switch","stream_id":"1f52becd9fb94550944e6ec37e2427d2","correlation_id":"32a26f5e9e144d0995c5b5e7527226a7","source":"bench-6","destination":"bench-7"}
+{"ts":"2026-08-24T14:02:55.654Z","module":"switch","event":"popped","writer":"switch","stream_id":"2c24dea4e2654f6e99bb430f3234bf0d","correlation_id":"d035740565bc4397bf92b1c4d7ef94c4","source":"bench-7","destination":"bench-8"}
+{"ts":"2026-08-24T14:02:55.741Z","module":"switch","event":"forwarded","writer":"switch","stream_id":"2c24dea4e2654f6e99bb430f3234bf0d","correlation_id":"d035740565bc4397bf92b1c4d7ef94c4","source":"bench-7","destination":"bench-8"}
+{"ts":"2026-08-24T14:02:55.760Z","module":"port","event":"received","writer":"bench-port","stream_id":"2c24dea4e2654f6e99bb430f3234bf0d","correlation_id":"d035740565bc4397bf92b1c4d7ef94c4","source":"bench-7","destination":"bench-8"}
+{"ts":"2026-08-24T14:02:55.787Z","module":"switch","event":"kick_started","writer":"switch","stream_id":"2c24dea4e2654f6e99bb430f3234bf0d","correlation_id":"d035740565bc4397bf92b1c4d7ef94c4","source":"bench-7","destination":"bench-8"}
+{"ts":"2026-08-24T14:02:55.793Z","module":"port","event":"opened","writer":"bench-port","stream_id":"2c24dea4e2654f6e99bb430f3234bf0d","correlation_id":"d035740565bc4397bf92b1c4d7ef94c4","source":"bench-7","destination":"bench-8"}
+{"ts":"2026-08-24T14:02:55.837Z","module":"switch","event":"popped","writer":"switch","stream_id":"cd72143e1d8e4c06b5776afba350797f","correlation_id":"4ef50b5da1f946fb8d2c4b98f7f1fab1","source":"bench-8","destination":"bench-9"}
+{"ts":"2026-08-24T14:02:55.853Z","module":"port","event":"received","writer":"bench-port","stream_id":"cd72143e1d8e4c06b5776afba350797f","correlation_id":"4ef50b5da1f946fb8d2c4b98f7f1fab1","source":"bench-8","destination":"bench-9"}
+{"ts":"2026-08-24T14:02:55.853Z","module":"port","event":"opened","writer":"bench-port","stream_id":"cd72143e1d8e4c06b5776afba350797f","correlation_id":"4ef50b5da1f946fb8d2c4b98f7f1fab1","source":"bench-8","destination":"bench-9"}
+{"ts":"2026-08-24T14:02:55.872Z","module":"switch","event":"forwarded","writer":"switch","stream_id":"cd72143e1d8e4c06b5776afba350797f","correlation_id":"4ef50b5da1f946fb8d2c4b98f7f1fab1","source":"bench-8","destination":"bench-9"}
+{"ts":"2026-08-24T14:02:55.885Z","module":"switch","event":"kick_started","writer":"switch","stream_id":"cd72143e1d8e4c06b5776afba350797f","correlation_id":"4ef50b5da1f946fb8d2c4b98f7f1fab1","source":"bench-8","destination":"bench-9"}
+{"ts":"2026-08-24T14:02:56.020Z","module":"switch","event":"popped","writer":"switch","stream_id":"65cbec9a6a2e47d9819c100c29d7da39","correlation_id":"7bc4fdc84bf641bc9b18b05e8ca559dc","source":"bench-9","destination":"bench-10"}
+{"ts":"2026-08-24T14:02:56.052Z","module":"switch","event":"forwarded","writer":"switch","stream_id":"65cbec9a6a2e47d9819c100c29d7da39","correlation_id":"7bc4fdc84bf641bc9b18b05e8ca559dc","source":"bench-9","destination":"bench-10"}
+{"ts":"2026-08-24T14:02:56.053Z","module":"port","event":"received","writer":"bench-port","stream_id":"65cbec9a6a2e47d9819c100c29d7da39","correlation_id":"7bc4fdc84bf641bc9b18b05e8ca559dc","source":"bench-9","destination":"bench-10"}
+{"ts":"2026-08-24T14:02:56.053Z","module":"port","event":"opened","writer":"bench-port","stream_id":"65cbec9a6a2e47d9819c100c29d7da39","correlation_id":"7bc4fdc84bf641bc9b18b05e8ca559dc","source":"bench-9","destination":"bench-10"}
+{"ts":"2026-08-24T14:02:56.054Z","module":"switch","event":"kick_started","writer":"switch","stream_id":"65cbec9a6a2e47d9819c100c29d7da39","correlation_id":"7bc4fdc84bf641bc9b18b05e8ca559dc","source":"bench-9","destination":"bench-10"}
+INFO:     127.0.0.1:40560 - "GET /health HTTP/1.1" 200 OK
+bench-port: handled 20
+INFO:     127.0.0.1:33706 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:37052 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:44316 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:51654 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:42918 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:50792 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:51250 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:34566 - "GET /health HTTP/1.1" 200 OK
+{"ts":"2026-08-24T14:04:26.794Z","module":"switch","event":"popped","writer":"switch","stream_id":"0b2b72de32ac46dbaa50478070589b07","correlation_id":"899f6db048a14055897eff2bb946a9fe","source":"bench-1","destination":"bench-2"}
+{"ts":"2026-08-24T14:04:26.799Z","module":"bus","event":"sent","writer":"bench-send","stream_id":"0b2b72de32ac46dbaa50478070589b07","correlation_id":"899f6db048a14055897eff2bb946a9fe","source":"bench-1","destination":"bench-2"}
+{"ts":"2026-08-24T14:04:26.800Z","module":"switch","event":"forwarded","writer":"switch","stream_id":"0b2b72de32ac46dbaa50478070589b07","correlation_id":"899f6db048a14055897eff2bb946a9fe","source":"bench-1","destination":"bench-2"}
+{"ts":"2026-08-24T14:04:26.801Z","module":"port","event":"received","writer":"bench-port","stream_id":"0b2b72de32ac46dbaa50478070589b07","correlation_id":"899f6db048a14055897eff2bb946a9fe","source":"bench-1","destination":"bench-2"}
+{"ts":"2026-08-24T14:04:26.801Z","module":"port","event":"opened","writer":"bench-port","stream_id":"0b2b72de32ac46dbaa50478070589b07","correlation_id":"899f6db048a14055897eff2bb946a9fe","source":"bench-1","destination":"bench-2"}
+{"ts":"2026-08-24T14:04:26.810Z","module":"switch","event":"kick_started","writer":"switch","stream_id":"0b2b72de32ac46dbaa50478070589b07","correlation_id":"899f6db048a14055897eff2bb946a9fe","source":"bench-1","destination":"bench-2"}
+{"ts":"2026-08-24T14:04:26.822Z","module":"bus","event":"sent","writer":"bench-send","stream_id":"ee4c99ac373d426f8227ca2c44423efa","correlation_id":"b006d43fe8ee4498ad9d9aa8e31c048e","source":"bench-2","destination":"bench-3"}
+{"ts":"2026-08-24T14:04:26.823Z","module":"switch","event":"popped","writer":"switch","stream_id":"ee4c99ac373d426f8227ca2c44423efa","correlation_id":"b006d43fe8ee4498ad9d9aa8e31c048e","source":"bench-2","destination":"bench-3"}
+{"ts":"2026-08-24T14:04:26.832Z","module":"bus","event":"sent","writer":"bench-send","stream_id":"8f9f47487486493a87669fcec059e8cc","correlation_id":"f6ab2ba62870430b9f80824eedebcd42","source":"bench-3","destination":"bench-4"}
+{"ts":"2026-08-24T14:04:26.837Z","module":"bus","event":"sent","writer":"bench-send","stream_id":"d6e65ef5ef544e22b75d1f46cccb902b","correlation_id":"42caeeda7e9e4b26b7a734ce1e78b707","source":"bench-4","destination":"bench-5"}
+{"ts":"2026-08-24T14:04:26.844Z","module":"switch","event":"forwarded","writer":"switch","stream_id":"ee4c99ac373d426f8227ca2c44423efa","correlation_id":"b006d43fe8ee4498ad9d9aa8e31c048e","source":"bench-2","destination":"bench-3"}
+{"ts":"2026-08-24T14:04:26.847Z","module":"switch","event":"kick_started","writer":"switch","stream_id":"ee4c99ac373d426f8227ca2c44423efa","correlation_id":"b006d43fe8ee4498ad9d9aa8e31c048e","source":"bench-2","destination":"bench-3"}
+{"ts":"2026-08-24T14:04:26.848Z","module":"switch","event":"popped","writer":"switch","stream_id":"8f9f47487486493a87669fcec059e8cc","correlation_id":"f6ab2ba62870430b9f80824eedebcd42","source":"bench-3","destination":"bench-4"}
+{"ts":"2026-08-24T14:04:26.872Z","module":"port","event":"received","writer":"bench-port","stream_id":"ee4c99ac373d426f8227ca2c44423efa","correlation_id":"b006d43fe8ee4498ad9d9aa8e31c048e","source":"bench-2","destination":"bench-3"}
+{"ts":"2026-08-24T14:04:26.873Z","module":"port","event":"opened","writer":"bench-port","stream_id":"ee4c99ac373d426f8227ca2c44423efa","correlation_id":"b006d43fe8ee4498ad9d9aa8e31c048e","source":"bench-2","destination":"bench-3"}
+{"ts":"2026-08-24T14:04:26.886Z","module":"bus","event":"sent","writer":"bench-send","stream_id":"7e48f0940daf4f39b6cdd40d3d3f4715","correlation_id":"76570fd52cf3407ba589581e6dd3cafa","source":"bench-5","destination":"bench-6"}
+{"ts":"2026-08-24T14:04:26.887Z","module":"bus","event":"sent","writer":"bench-send","stream_id":"74ef6c3d4dff49489b287ae161e96888","correlation_id":"c8fc5411133b40f9ae4b588b9feb33ea","source":"bench-6","destination":"bench-7"}
+{"ts":"2026-08-24T14:04:26.887Z","module":"bus","event":"sent","writer":"bench-send","stream_id":"2f54c57bd906424a8c298e9d7a31fb41","correlation_id":"4de24333c84241f3b89ab1824506cb47","source":"bench-7","destination":"bench-8"}
+{"ts":"2026-08-24T14:04:26.888Z","module":"bus","event":"sent","writer":"bench-send","stream_id":"c18e8b4ab60e4501b8f923a51b28de9e","correlation_id":"66085dcbd0b443d2bea7b9ed3ab3bf70","source":"bench-8","destination":"bench-9"}
+{"ts":"2026-08-24T14:04:26.928Z","module":"switch","event":"forwarded","writer":"switch","stream_id":"8f9f47487486493a87669fcec059e8cc","correlation_id":"f6ab2ba62870430b9f80824eedebcd42","source":"bench-3","destination":"bench-4"}
+{"ts":"2026-08-24T14:04:26.940Z","module":"bus","event":"sent","writer":"bench-send","stream_id":"53dd462f0f1e48adb2d5765e0fba0fde","correlation_id":"4d87ae3f4cd646edba04e98eecf1bb69","source":"bench-9","destination":"bench-10"}
+{"ts":"2026-08-24T14:04:26.943Z","module":"port","event":"received","writer":"bench-port","stream_id":"8f9f47487486493a87669fcec059e8cc","correlation_id":"f6ab2ba62870430b9f80824eedebcd42","source":"bench-3","destination":"bench-4"}
+{"ts":"2026-08-24T14:04:26.943Z","module":"port","event":"opened","writer":"bench-port","stream_id":"8f9f47487486493a87669fcec059e8cc","correlation_id":"f6ab2ba62870430b9f80824eedebcd42","source":"bench-3","destination":"bench-4"}
+{"ts":"2026-08-24T14:04:26.955Z","module":"bus","event":"sent","writer":"bench-send","stream_id":"4eacaa7c63d0481089e81b4986d1d3e7","correlation_id":"9498d5b880ae45ac901bd1575a778dd9","source":"bench-10","destination":"bench-1"}
+{"ts":"2026-08-24T14:04:26.956Z","module":"switch","event":"kick_started","writer":"switch","stream_id":"8f9f47487486493a87669fcec059e8cc","correlation_id":"f6ab2ba62870430b9f80824eedebcd42","source":"bench-3","destination":"bench-4"}
+{"ts":"2026-08-24T14:04:26.956Z","module":"bus","event":"sent","writer":"bench-send","stream_id":"9b82c027e65549e092162938244ad60a","correlation_id":"de92dc97a36f4a398c5a9b29a26be5bd","source":"bench-1","destination":"bench-2"}
+{"ts":"2026-08-24T14:04:26.965Z","module":"bus","event":"sent","writer":"bench-send","stream_id":"fbf2f8e853e441a1af1d867ac05b2d7c","correlation_id":"893f9c9a89b142ca825d9ac53b187d1f","source":"bench-2","destination":"bench-3"}
+{"ts":"2026-08-24T14:04:26.966Z","module":"bus","event":"sent","writer":"bench-send","stream_id":"9a1da58854b34679a2f031002606293a","correlation_id":"43434e2969634ec2816e7ec71c8ea285","source":"bench-3","destination":"bench-4"}
+{"ts":"2026-08-24T14:04:26.966Z","module":"bus","event":"sent","writer":"bench-send","stream_id":"61db1867becb4850a9b02857e089107e","correlation_id":"2bdb1be8054346b9b24af961ddef8465","source":"bench-4","destination":"bench-5"}
+{"ts":"2026-08-24T14:04:26.967Z","module":"bus","event":"sent","writer":"bench-send","stream_id":"02042de2ecae48b689086d1caa1a5961","correlation_id":"3c581631a92244ccae6206a2ee86898d","source":"bench-5","destination":"bench-6"}
+{"ts":"2026-08-24T14:04:26.968Z","module":"bus","event":"sent","writer":"bench-send","stream_id":"fb1b87acedce40fb8e155f13e37ced38","correlation_id":"24dd1101aecf4468b3d403c70b6a2e87","source":"bench-6","destination":"bench-7"}
+{"ts":"2026-08-24T14:04:26.990Z","module":"bus","event":"sent","writer":"bench-send","stream_id":"9dd366a94bcd4b4b887aa0d23c7c39a3","correlation_id":"efd2fb886f1e4d59b70668b8dac3765c","source":"bench-7","destination":"bench-8"}
+{"ts":"2026-08-24T14:04:26.991Z","module":"bus","event":"sent","writer":"bench-send","stream_id":"1f692559a4904af79fd5a00be0c66fe2","correlation_id":"eedfb2ded6cc4665ada7f56cfc71567b","source":"bench-8","destination":"bench-9"}
+{"ts":"2026-08-24T14:04:26.992Z","module":"bus","event":"sent","writer":"bench-send","stream_id":"56b72bcf99bd44efb98dea2e9c3f253c","correlation_id":"9a1c012a51f64462875065b7d11f682d","source":"bench-9","destination":"bench-10"}
+{"ts":"2026-08-24T14:04:26.997Z","module":"switch","event":"popped","writer":"switch","stream_id":"9b82c027e65549e092162938244ad60a","correlation_id":"de92dc97a36f4a398c5a9b29a26be5bd","source":"bench-1","destination":"bench-2"}
+{"ts":"2026-08-24T14:04:27.039Z","module":"bus","event":"sent","writer":"bench-send","stream_id":"8edfcfcc7a454f6aad8151439da96fde","correlation_id":"83575872a71e47bdad44e56d2b6a37c3","source":"bench-10","destination":"bench-1"}
+  submitted 20 in 0.3s
+{"ts":"2026-08-24T14:04:27.083Z","module":"port","event":"received","writer":"bench-port","stream_id":"9b82c027e65549e092162938244ad60a","correlation_id":"de92dc97a36f4a398c5a9b29a26be5bd","source":"bench-1","destination":"bench-2"}
+{"ts":"2026-08-24T14:04:27.083Z","module":"port","event":"opened","writer":"bench-port","stream_id":"9b82c027e65549e092162938244ad60a","correlation_id":"de92dc97a36f4a398c5a9b29a26be5bd","source":"bench-1","destination":"bench-2"}
+{"ts":"2026-08-24T14:04:27.084Z","module":"switch","event":"forwarded","writer":"switch","stream_id":"9b82c027e65549e092162938244ad60a","correlation_id":"de92dc97a36f4a398c5a9b29a26be5bd","source":"bench-1","destination":"bench-2"}
+{"ts":"2026-08-24T14:04:27.166Z","module":"switch","event":"kick_started","writer":"switch","stream_id":"9b82c027e65549e092162938244ad60a","correlation_id":"de92dc97a36f4a398c5a9b29a26be5bd","source":"bench-1","destination":"bench-2"}
+{"ts":"2026-08-24T14:04:27.172Z","module":"switch","event":"popped","writer":"switch","stream_id":"4eacaa7c63d0481089e81b4986d1d3e7","correlation_id":"9498d5b880ae45ac901bd1575a778dd9","source":"bench-10","destination":"bench-1"}
+{"ts":"2026-08-24T14:04:27.207Z","module":"port","event":"received","writer":"bench-port","stream_id":"4eacaa7c63d0481089e81b4986d1d3e7","correlation_id":"9498d5b880ae45ac901bd1575a778dd9","source":"bench-10","destination":"bench-1"}
+{"ts":"2026-08-24T14:04:27.207Z","module":"port","event":"opened","writer":"bench-port","stream_id":"4eacaa7c63d0481089e81b4986d1d3e7","correlation_id":"9498d5b880ae45ac901bd1575a778dd9","source":"bench-10","destination":"bench-1"}
+{"ts":"2026-08-24T14:04:27.207Z","module":"switch","event":"forwarded","writer":"switch","stream_id":"4eacaa7c63d0481089e81b4986d1d3e7","correlation_id":"9498d5b880ae45ac901bd1575a778dd9","source":"bench-10","destination":"bench-1"}
+{"ts":"2026-08-24T14:04:27.224Z","module":"switch","event":"kick_started","writer":"switch","stream_id":"4eacaa7c63d0481089e81b4986d1d3e7","correlation_id":"9498d5b880ae45ac901bd1575a778dd9","source":"bench-10","destination":"bench-1"}
+{"ts":"2026-08-24T14:04:27.246Z","module":"switch","event":"popped","writer":"switch","stream_id":"8edfcfcc7a454f6aad8151439da96fde","correlation_id":"83575872a71e47bdad44e56d2b6a37c3","source":"bench-10","destination":"bench-1"}
+{"ts":"2026-08-24T14:04:27.247Z","module":"switch","event":"forwarded","writer":"switch","stream_id":"8edfcfcc7a454f6aad8151439da96fde","correlation_id":"83575872a71e47bdad44e56d2b6a37c3","source":"bench-10","destination":"bench-1"}
+{"ts":"2026-08-24T14:04:27.249Z","module":"port","event":"received","writer":"bench-port","stream_id":"8edfcfcc7a454f6aad8151439da96fde","correlation_id":"83575872a71e47bdad44e56d2b6a37c3","source":"bench-10","destination":"bench-1"}
+{"ts":"2026-08-24T14:04:27.249Z","module":"port","event":"opened","writer":"bench-port","stream_id":"8edfcfcc7a454f6aad8151439da96fde","correlation_id":"83575872a71e47bdad44e56d2b6a37c3","source":"bench-10","destination":"bench-1"}
+{"ts":"2026-08-24T14:04:27.279Z","module":"switch","event":"kick_started","writer":"switch","stream_id":"8edfcfcc7a454f6aad8151439da96fde","correlation_id":"83575872a71e47bdad44e56d2b6a37c3","source":"bench-10","destination":"bench-1"}
+{"ts":"2026-08-24T14:04:27.307Z","module":"switch","event":"popped","writer":"switch","stream_id":"fbf2f8e853e441a1af1d867ac05b2d7c","correlation_id":"893f9c9a89b142ca825d9ac53b187d1f","source":"bench-2","destination":"bench-3"}
+{"ts":"2026-08-24T14:04:27.327Z","module":"port","event":"received","writer":"bench-port","stream_id":"fbf2f8e853e441a1af1d867ac05b2d7c","correlation_id":"893f9c9a89b142ca825d9ac53b187d1f","source":"bench-2","destination":"bench-3"}
+{"ts":"2026-08-24T14:04:27.327Z","module":"port","event":"opened","writer":"bench-port","stream_id":"fbf2f8e853e441a1af1d867ac05b2d7c","correlation_id":"893f9c9a89b142ca825d9ac53b187d1f","source":"bench-2","destination":"bench-3"}
+{"ts":"2026-08-24T14:04:27.329Z","module":"switch","event":"forwarded","writer":"switch","stream_id":"fbf2f8e853e441a1af1d867ac05b2d7c","correlation_id":"893f9c9a89b142ca825d9ac53b187d1f","source":"bench-2","destination":"bench-3"}
+{"ts":"2026-08-24T14:04:27.353Z","module":"switch","event":"kick_started","writer":"switch","stream_id":"fbf2f8e853e441a1af1d867ac05b2d7c","correlation_id":"893f9c9a89b142ca825d9ac53b187d1f","source":"bench-2","destination":"bench-3"}
+{"ts":"2026-08-24T14:04:27.375Z","module":"switch","event":"popped","writer":"switch","stream_id":"9a1da58854b34679a2f031002606293a","correlation_id":"43434e2969634ec2816e7ec71c8ea285","source":"bench-3","destination":"bench-4"}
+{"ts":"2026-08-24T14:04:27.380Z","module":"switch","event":"forwarded","writer":"switch","stream_id":"9a1da58854b34679a2f031002606293a","correlation_id":"43434e2969634ec2816e7ec71c8ea285","source":"bench-3","destination":"bench-4"}
+{"ts":"2026-08-24T14:04:27.380Z","module":"port","event":"received","writer":"bench-port","stream_id":"9a1da58854b34679a2f031002606293a","correlation_id":"43434e2969634ec2816e7ec71c8ea285","source":"bench-3","destination":"bench-4"}
+{"ts":"2026-08-24T14:04:27.382Z","module":"port","event":"opened","writer":"bench-port","stream_id":"9a1da58854b34679a2f031002606293a","correlation_id":"43434e2969634ec2816e7ec71c8ea285","source":"bench-3","destination":"bench-4"}
+{"ts":"2026-08-24T14:04:27.413Z","module":"switch","event":"kick_started","writer":"switch","stream_id":"9a1da58854b34679a2f031002606293a","correlation_id":"43434e2969634ec2816e7ec71c8ea285","source":"bench-3","destination":"bench-4"}
+{"ts":"2026-08-24T14:04:27.524Z","module":"switch","event":"popped","writer":"switch","stream_id":"d6e65ef5ef544e22b75d1f46cccb902b","correlation_id":"42caeeda7e9e4b26b7a734ce1e78b707","source":"bench-4","destination":"bench-5"}
+{"ts":"2026-08-24T14:04:27.540Z","module":"switch","event":"forwarded","writer":"switch","stream_id":"d6e65ef5ef544e22b75d1f46cccb902b","correlation_id":"42caeeda7e9e4b26b7a734ce1e78b707","source":"bench-4","destination":"bench-5"}
+{"ts":"2026-08-24T14:04:27.546Z","module":"port","event":"received","writer":"bench-port","stream_id":"d6e65ef5ef544e22b75d1f46cccb902b","correlation_id":"42caeeda7e9e4b26b7a734ce1e78b707","source":"bench-4","destination":"bench-5"}
+{"ts":"2026-08-24T14:04:27.546Z","module":"port","event":"opened","writer":"bench-port","stream_id":"d6e65ef5ef544e22b75d1f46cccb902b","correlation_id":"42caeeda7e9e4b26b7a734ce1e78b707","source":"bench-4","destination":"bench-5"}
+{"ts":"2026-08-24T14:04:27.669Z","module":"switch","event":"kick_started","writer":"switch","stream_id":"d6e65ef5ef544e22b75d1f46cccb902b","correlation_id":"42caeeda7e9e4b26b7a734ce1e78b707","source":"bench-4","destination":"bench-5"}
+{"ts":"2026-08-24T14:04:27.682Z","module":"switch","event":"popped","writer":"switch","stream_id":"7e48f0940daf4f39b6cdd40d3d3f4715","correlation_id":"76570fd52cf3407ba589581e6dd3cafa","source":"bench-5","destination":"bench-6"}
+{"ts":"2026-08-24T14:04:27.692Z","module":"switch","event":"forwarded","writer":"switch","stream_id":"7e48f0940daf4f39b6cdd40d3d3f4715","correlation_id":"76570fd52cf3407ba589581e6dd3cafa","source":"bench-5","destination":"bench-6"}
+{"ts":"2026-08-24T14:04:27.692Z","module":"port","event":"received","writer":"bench-port","stream_id":"7e48f0940daf4f39b6cdd40d3d3f4715","correlation_id":"76570fd52cf3407ba589581e6dd3cafa","source":"bench-5","destination":"bench-6"}
+{"ts":"2026-08-24T14:04:27.692Z","module":"port","event":"opened","writer":"bench-port","stream_id":"7e48f0940daf4f39b6cdd40d3d3f4715","correlation_id":"76570fd52cf3407ba589581e6dd3cafa","source":"bench-5","destination":"bench-6"}
+{"ts":"2026-08-24T14:04:27.693Z","module":"switch","event":"kick_started","writer":"switch","stream_id":"7e48f0940daf4f39b6cdd40d3d3f4715","correlation_id":"76570fd52cf3407ba589581e6dd3cafa","source":"bench-5","destination":"bench-6"}
+{"ts":"2026-08-24T14:04:27.774Z","module":"switch","event":"popped","writer":"switch","stream_id":"74ef6c3d4dff49489b287ae161e96888","correlation_id":"c8fc5411133b40f9ae4b588b9feb33ea","source":"bench-6","destination":"bench-7"}
+{"ts":"2026-08-24T14:04:27.803Z","module":"switch","event":"forwarded","writer":"switch","stream_id":"74ef6c3d4dff49489b287ae161e96888","correlation_id":"c8fc5411133b40f9ae4b588b9feb33ea","source":"bench-6","destination":"bench-7"}
+{"ts":"2026-08-24T14:04:27.810Z","module":"port","event":"received","writer":"bench-port","stream_id":"74ef6c3d4dff49489b287ae161e96888","correlation_id":"c8fc5411133b40f9ae4b588b9feb33ea","source":"bench-6","destination":"bench-7"}
+{"ts":"2026-08-24T14:04:27.810Z","module":"port","event":"opened","writer":"bench-port","stream_id":"74ef6c3d4dff49489b287ae161e96888","correlation_id":"c8fc5411133b40f9ae4b588b9feb33ea","source":"bench-6","destination":"bench-7"}
+{"ts":"2026-08-24T14:04:27.823Z","module":"switch","event":"kick_started","writer":"switch","stream_id":"74ef6c3d4dff49489b287ae161e96888","correlation_id":"c8fc5411133b40f9ae4b588b9feb33ea","source":"bench-6","destination":"bench-7"}
+{"ts":"2026-08-24T14:04:27.908Z","module":"switch","event":"popped","writer":"switch","stream_id":"2f54c57bd906424a8c298e9d7a31fb41","correlation_id":"4de24333c84241f3b89ab1824506cb47","source":"bench-7","destination":"bench-8"}
+{"ts":"2026-08-24T14:04:27.999Z","module":"port","event":"received","writer":"bench-port","stream_id":"2f54c57bd906424a8c298e9d7a31fb41","correlation_id":"4de24333c84241f3b89ab1824506cb47","source":"bench-7","destination":"bench-8"}
+{"ts":"2026-08-24T14:04:27.999Z","module":"port","event":"opened","writer":"bench-port","stream_id":"2f54c57bd906424a8c298e9d7a31fb41","correlation_id":"4de24333c84241f3b89ab1824506cb47","source":"bench-7","destination":"bench-8"}
+{"ts":"2026-08-24T14:04:28.001Z","module":"switch","event":"forwarded","writer":"switch","stream_id":"2f54c57bd906424a8c298e9d7a31fb41","correlation_id":"4de24333c84241f3b89ab1824506cb47","source":"bench-7","destination":"bench-8"}
+{"ts":"2026-08-24T14:04:28.092Z","module":"switch","event":"kick_started","writer":"switch","stream_id":"2f54c57bd906424a8c298e9d7a31fb41","correlation_id":"4de24333c84241f3b89ab1824506cb47","source":"bench-7","destination":"bench-8"}
+{"ts":"2026-08-24T14:04:28.141Z","module":"switch","event":"popped","writer":"switch","stream_id":"c18e8b4ab60e4501b8f923a51b28de9e","correlation_id":"66085dcbd0b443d2bea7b9ed3ab3bf70","source":"bench-8","destination":"bench-9"}
+{"ts":"2026-08-24T14:04:28.165Z","module":"port","event":"received","writer":"bench-port","stream_id":"c18e8b4ab60e4501b8f923a51b28de9e","correlation_id":"66085dcbd0b443d2bea7b9ed3ab3bf70","source":"bench-8","destination":"bench-9"}
+{"ts":"2026-08-24T14:04:28.165Z","module":"port","event":"opened","writer":"bench-port","stream_id":"c18e8b4ab60e4501b8f923a51b28de9e","correlation_id":"66085dcbd0b443d2bea7b9ed3ab3bf70","source":"bench-8","destination":"bench-9"}
+{"ts":"2026-08-24T14:04:28.174Z","module":"switch","event":"forwarded","writer":"switch","stream_id":"c18e8b4ab60e4501b8f923a51b28de9e","correlation_id":"66085dcbd0b443d2bea7b9ed3ab3bf70","source":"bench-8","destination":"bench-9"}
+{"ts":"2026-08-24T14:04:28.197Z","module":"switch","event":"kick_started","writer":"switch","stream_id":"c18e8b4ab60e4501b8f923a51b28de9e","correlation_id":"66085dcbd0b443d2bea7b9ed3ab3bf70","source":"bench-8","destination":"bench-9"}
+{"ts":"2026-08-24T14:04:28.284Z","module":"switch","event":"popped","writer":"switch","stream_id":"53dd462f0f1e48adb2d5765e0fba0fde","correlation_id":"4d87ae3f4cd646edba04e98eecf1bb69","source":"bench-9","destination":"bench-10"}
+{"ts":"2026-08-24T14:04:28.307Z","module":"port","event":"received","writer":"bench-port","stream_id":"53dd462f0f1e48adb2d5765e0fba0fde","correlation_id":"4d87ae3f4cd646edba04e98eecf1bb69","source":"bench-9","destination":"bench-10"}
+{"ts":"2026-08-24T14:04:28.307Z","module":"port","event":"opened","writer":"bench-port","stream_id":"53dd462f0f1e48adb2d5765e0fba0fde","correlation_id":"4d87ae3f4cd646edba04e98eecf1bb69","source":"bench-9","destination":"bench-10"}
+{"ts":"2026-08-24T14:04:28.306Z","module":"switch","event":"forwarded","writer":"switch","stream_id":"53dd462f0f1e48adb2d5765e0fba0fde","correlation_id":"4d87ae3f4cd646edba04e98eecf1bb69","source":"bench-9","destination":"bench-10"}
+{"ts":"2026-08-24T14:04:28.336Z","module":"switch","event":"kick_started","writer":"switch","stream_id":"53dd462f0f1e48adb2d5765e0fba0fde","correlation_id":"4d87ae3f4cd646edba04e98eecf1bb69","source":"bench-9","destination":"bench-10"}
+{"ts":"2026-08-24T14:04:28.447Z","module":"switch","event":"popped","writer":"switch","stream_id":"61db1867becb4850a9b02857e089107e","correlation_id":"2bdb1be8054346b9b24af961ddef8465","source":"bench-4","destination":"bench-5"}
+{"ts":"2026-08-24T14:04:28.458Z","module":"switch","event":"forwarded","writer":"switch","stream_id":"61db1867becb4850a9b02857e089107e","correlation_id":"2bdb1be8054346b9b24af961ddef8465","source":"bench-4","destination":"bench-5"}
+{"ts":"2026-08-24T14:04:28.465Z","module":"port","event":"received","writer":"bench-port","stream_id":"61db1867becb4850a9b02857e089107e","correlation_id":"2bdb1be8054346b9b24af961ddef8465","source":"bench-4","destination":"bench-5"}
+{"ts":"2026-08-24T14:04:28.465Z","module":"port","event":"opened","writer":"bench-port","stream_id":"61db1867becb4850a9b02857e089107e","correlation_id":"2bdb1be8054346b9b24af961ddef8465","source":"bench-4","destination":"bench-5"}
+{"ts":"2026-08-24T14:04:28.535Z","module":"switch","event":"kick_started","writer":"switch","stream_id":"61db1867becb4850a9b02857e089107e","correlation_id":"2bdb1be8054346b9b24af961ddef8465","source":"bench-4","destination":"bench-5"}
+{"ts":"2026-08-24T14:04:28.561Z","module":"switch","event":"popped","writer":"switch","stream_id":"02042de2ecae48b689086d1caa1a5961","correlation_id":"3c581631a92244ccae6206a2ee86898d","source":"bench-5","destination":"bench-6"}
+{"ts":"2026-08-24T14:04:28.562Z","module":"switch","event":"forwarded","writer":"switch","stream_id":"02042de2ecae48b689086d1caa1a5961","correlation_id":"3c581631a92244ccae6206a2ee86898d","source":"bench-5","destination":"bench-6"}
+{"ts":"2026-08-24T14:04:28.576Z","module":"switch","event":"kick_started","writer":"switch","stream_id":"02042de2ecae48b689086d1caa1a5961","correlation_id":"3c581631a92244ccae6206a2ee86898d","source":"bench-5","destination":"bench-6"}
+{"ts":"2026-08-24T14:04:28.589Z","module":"port","event":"received","writer":"bench-port","stream_id":"02042de2ecae48b689086d1caa1a5961","correlation_id":"3c581631a92244ccae6206a2ee86898d","source":"bench-5","destination":"bench-6"}
+{"ts":"2026-08-24T14:04:28.589Z","module":"port","event":"opened","writer":"bench-port","stream_id":"02042de2ecae48b689086d1caa1a5961","correlation_id":"3c581631a92244ccae6206a2ee86898d","source":"bench-5","destination":"bench-6"}
+{"ts":"2026-08-24T14:04:28.663Z","module":"switch","event":"popped","writer":"switch","stream_id":"fb1b87acedce40fb8e155f13e37ced38","correlation_id":"24dd1101aecf4468b3d403c70b6a2e87","source":"bench-6","destination":"bench-7"}
+{"ts":"2026-08-24T14:04:28.676Z","module":"switch","event":"forwarded","writer":"switch","stream_id":"fb1b87acedce40fb8e155f13e37ced38","correlation_id":"24dd1101aecf4468b3d403c70b6a2e87","source":"bench-6","destination":"bench-7"}
+{"ts":"2026-08-24T14:04:28.677Z","module":"port","event":"received","writer":"bench-port","stream_id":"fb1b87acedce40fb8e155f13e37ced38","correlation_id":"24dd1101aecf4468b3d403c70b6a2e87","source":"bench-6","destination":"bench-7"}
+{"ts":"2026-08-24T14:04:28.677Z","module":"port","event":"opened","writer":"bench-port","stream_id":"fb1b87acedce40fb8e155f13e37ced38","correlation_id":"24dd1101aecf4468b3d403c70b6a2e87","source":"bench-6","destination":"bench-7"}
+{"ts":"2026-08-24T14:04:28.716Z","module":"switch","event":"kick_started","writer":"switch","stream_id":"fb1b87acedce40fb8e155f13e37ced38","correlation_id":"24dd1101aecf4468b3d403c70b6a2e87","source":"bench-6","destination":"bench-7"}
+{"ts":"2026-08-24T14:04:28.758Z","module":"switch","event":"popped","writer":"switch","stream_id":"9dd366a94bcd4b4b887aa0d23c7c39a3","correlation_id":"efd2fb886f1e4d59b70668b8dac3765c","source":"bench-7","destination":"bench-8"}
+{"ts":"2026-08-24T14:04:28.759Z","module":"switch","event":"forwarded","writer":"switch","stream_id":"9dd366a94bcd4b4b887aa0d23c7c39a3","correlation_id":"efd2fb886f1e4d59b70668b8dac3765c","source":"bench-7","destination":"bench-8"}
+{"ts":"2026-08-24T14:04:28.759Z","module":"port","event":"received","writer":"bench-port","stream_id":"9dd366a94bcd4b4b887aa0d23c7c39a3","correlation_id":"efd2fb886f1e4d59b70668b8dac3765c","source":"bench-7","destination":"bench-8"}
+{"ts":"2026-08-24T14:04:28.759Z","module":"port","event":"opened","writer":"bench-port","stream_id":"9dd366a94bcd4b4b887aa0d23c7c39a3","correlation_id":"efd2fb886f1e4d59b70668b8dac3765c","source":"bench-7","destination":"bench-8"}
+{"ts":"2026-08-24T14:04:28.800Z","module":"switch","event":"kick_started","writer":"switch","stream_id":"9dd366a94bcd4b4b887aa0d23c7c39a3","correlation_id":"efd2fb886f1e4d59b70668b8dac3765c","source":"bench-7","destination":"bench-8"}
+{"ts":"2026-08-24T14:04:28.821Z","module":"switch","event":"popped","writer":"switch","stream_id":"1f692559a4904af79fd5a00be0c66fe2","correlation_id":"eedfb2ded6cc4665ada7f56cfc71567b","source":"bench-8","destination":"bench-9"}
+{"ts":"2026-08-24T14:04:28.823Z","module":"switch","event":"forwarded","writer":"switch","stream_id":"1f692559a4904af79fd5a00be0c66fe2","correlation_id":"eedfb2ded6cc4665ada7f56cfc71567b","source":"bench-8","destination":"bench-9"}
+{"ts":"2026-08-24T14:04:28.832Z","module":"port","event":"received","writer":"bench-port","stream_id":"1f692559a4904af79fd5a00be0c66fe2","correlation_id":"eedfb2ded6cc4665ada7f56cfc71567b","source":"bench-8","destination":"bench-9"}
+{"ts":"2026-08-24T14:04:28.832Z","module":"port","event":"opened","writer":"bench-port","stream_id":"1f692559a4904af79fd5a00be0c66fe2","correlation_id":"eedfb2ded6cc4665ada7f56cfc71567b","source":"bench-8","destination":"bench-9"}
+{"ts":"2026-08-24T14:04:28.855Z","module":"switch","event":"kick_started","writer":"switch","stream_id":"1f692559a4904af79fd5a00be0c66fe2","correlation_id":"eedfb2ded6cc4665ada7f56cfc71567b","source":"bench-8","destination":"bench-9"}
+{"ts":"2026-08-24T14:04:28.890Z","module":"switch","event":"popped","writer":"switch","stream_id":"56b72bcf99bd44efb98dea2e9c3f253c","correlation_id":"9a1c012a51f64462875065b7d11f682d","source":"bench-9","destination":"bench-10"}
+{"ts":"2026-08-24T14:04:28.926Z","module":"port","event":"received","writer":"bench-port","stream_id":"56b72bcf99bd44efb98dea2e9c3f253c","correlation_id":"9a1c012a51f64462875065b7d11f682d","source":"bench-9","destination":"bench-10"}
+{"ts":"2026-08-24T14:04:28.926Z","module":"port","event":"opened","writer":"bench-port","stream_id":"56b72bcf99bd44efb98dea2e9c3f253c","correlation_id":"9a1c012a51f64462875065b7d11f682d","source":"bench-9","destination":"bench-10"}
+{"ts":"2026-08-24T14:04:28.926Z","module":"switch","event":"forwarded","writer":"switch","stream_id":"56b72bcf99bd44efb98dea2e9c3f253c","correlation_id":"9a1c012a51f64462875065b7d11f682d","source":"bench-9","destination":"bench-10"}
+{"ts":"2026-08-24T14:04:28.950Z","module":"switch","event":"kick_started","writer":"switch","stream_id":"56b72bcf99bd44efb98dea2e9c3f253c","correlation_id":"9a1c012a51f64462875065b7d11f682d","source":"bench-9","destination":"bench-10"}
+INFO:     127.0.0.1:52856 - "GET /health HTTP/1.1" 200 OK
+bench-port: handled 20
+INFO:     127.0.0.1:52744 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:36020 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:59838 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52826 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54542 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:45016 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:50988 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:44816 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:60510 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:47858 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:41466 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:48774 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:44182 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:59872 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:43912 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:33206 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:39918 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55190 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53660 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:48618 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:47076 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:37488 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57318 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54642 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:43390 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57862 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:36352 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55940 - "GET /health HTTP/1.1" 200 OK
+{"ts":"2026-08-24T14:09:26.736Z","module":"switch","event":"popped","writer":"switch","stream_id":"6672a488b73c4088a1035cd59f7fcbe6","correlation_id":"23f4f5c403d24641b5101fc21d758a01","source":"architect","destination":"bench-1"}
+{"ts":"2026-08-24T14:09:26.738Z","module":"switch","event":"forwarded","writer":"switch","stream_id":"6672a488b73c4088a1035cd59f7fcbe6","correlation_id":"23f4f5c403d24641b5101fc21d758a01","source":"architect","destination":"bench-1"}
+{"ts":"2026-08-24T14:09:26.744Z","module":"switch","event":"kick_started","writer":"switch","stream_id":"6672a488b73c4088a1035cd59f7fcbe6","correlation_id":"23f4f5c403d24641b5101fc21d758a01","source":"architect","destination":"bench-1"}
+{"ts":"2026-08-24T14:09:27.017Z","module":"port","event":"received","writer":"port","stream_id":"6672a488b73c4088a1035cd59f7fcbe6","correlation_id":"23f4f5c403d24641b5101fc21d758a01","source":"architect","destination":"bench-1"}
+{"ts":"2026-08-24T14:09:27.019Z","module":"port","event":"opened","writer":"port","stream_id":"6672a488b73c4088a1035cd59f7fcbe6","correlation_id":"23f4f5c403d24641b5101fc21d758a01","source":"architect","destination":"bench-1"}
+INFO:     127.0.0.1:51272 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:47682 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:48748 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57512 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52796 - "GET /health HTTP/1.1" 200 OK
+{"ts":"2026-08-24T14:10:22.593Z","module":"switch","event":"popped","writer":"switch","stream_id":"afcc2315296141489af2a5f426346c9c","correlation_id":"a0ff2760651543c9bfcde849648e6e07","source":"bench-1","destination":"bench-2"}
+{"ts":"2026-08-24T14:10:22.594Z","module":"bus","event":"sent","writer":"bench-send","stream_id":"afcc2315296141489af2a5f426346c9c","correlation_id":"a0ff2760651543c9bfcde849648e6e07","source":"bench-1","destination":"bench-2"}
+{"ts":"2026-08-24T14:10:22.597Z","module":"port","event":"received","writer":"bench-port","stream_id":"afcc2315296141489af2a5f426346c9c","correlation_id":"a0ff2760651543c9bfcde849648e6e07","source":"bench-1","destination":"bench-2"}
+{"ts":"2026-08-24T14:10:22.597Z","module":"port","event":"opened","writer":"bench-port","stream_id":"afcc2315296141489af2a5f426346c9c","correlation_id":"a0ff2760651543c9bfcde849648e6e07","source":"bench-1","destination":"bench-2"}
+{"ts":"2026-08-24T14:10:22.598Z","module":"switch","event":"forwarded","writer":"switch","stream_id":"afcc2315296141489af2a5f426346c9c","correlation_id":"a0ff2760651543c9bfcde849648e6e07","source":"bench-1","destination":"bench-2"}
+{"ts":"2026-08-24T14:10:22.601Z","module":"bus","event":"sent","writer":"bench-send","stream_id":"ec38fc0fae8548849bed258968681a21","correlation_id":"3abf0579a3e7465bab8f04a787611c7e","source":"bench-2","destination":"bench-3"}
+{"ts":"2026-08-24T14:10:22.602Z","module":"switch","event":"kick_started","writer":"switch","stream_id":"afcc2315296141489af2a5f426346c9c","correlation_id":"a0ff2760651543c9bfcde849648e6e07","source":"bench-1","destination":"bench-2"}
+{"ts":"2026-08-24T14:10:22.604Z","module":"switch","event":"popped","writer":"switch","stream_id":"ec38fc0fae8548849bed258968681a21","correlation_id":"3abf0579a3e7465bab8f04a787611c7e","source":"bench-2","destination":"bench-3"}
+{"ts":"2026-08-24T14:10:22.611Z","module":"switch","event":"forwarded","writer":"switch","stream_id":"ec38fc0fae8548849bed258968681a21","correlation_id":"3abf0579a3e7465bab8f04a787611c7e","source":"bench-2","destination":"bench-3"}
+{"ts":"2026-08-24T14:10:22.619Z","module":"switch","event":"kick_started","writer":"switch","stream_id":"ec38fc0fae8548849bed258968681a21","correlation_id":"3abf0579a3e7465bab8f04a787611c7e","source":"bench-2","destination":"bench-3"}
+{"ts":"2026-08-24T14:10:22.622Z","module":"port","event":"received","writer":"bench-port","stream_id":"ec38fc0fae8548849bed258968681a21","correlation_id":"3abf0579a3e7465bab8f04a787611c7e","source":"bench-2","destination":"bench-3"}
+{"ts":"2026-08-24T14:10:22.622Z","module":"port","event":"opened","writer":"bench-port","stream_id":"ec38fc0fae8548849bed258968681a21","correlation_id":"3abf0579a3e7465bab8f04a787611c7e","source":"bench-2","destination":"bench-3"}
+{"ts":"2026-08-24T14:10:22.625Z","module":"bus","event":"sent","writer":"bench-send","stream_id":"bfe7ade263a446ecbf8a8439dcc2e349","correlation_id":"821206f945f74ccfbb4d758d934aa27d","source":"bench-3","destination":"bench-4"}
+{"ts":"2026-08-24T14:10:22.627Z","module":"switch","event":"popped","writer":"switch","stream_id":"bfe7ade263a446ecbf8a8439dcc2e349","correlation_id":"821206f945f74ccfbb4d758d934aa27d","source":"bench-3","destination":"bench-4"}
+{"ts":"2026-08-24T14:10:22.640Z","module":"switch","event":"forwarded","writer":"switch","stream_id":"bfe7ade263a446ecbf8a8439dcc2e349","correlation_id":"821206f945f74ccfbb4d758d934aa27d","source":"bench-3","destination":"bench-4"}
+{"ts":"2026-08-24T14:10:22.645Z","module":"port","event":"received","writer":"bench-port","stream_id":"bfe7ade263a446ecbf8a8439dcc2e349","correlation_id":"821206f945f74ccfbb4d758d934aa27d","source":"bench-3","destination":"bench-4"}
+{"ts":"2026-08-24T14:10:22.645Z","module":"port","event":"opened","writer":"bench-port","stream_id":"bfe7ade263a446ecbf8a8439dcc2e349","correlation_id":"821206f945f74ccfbb4d758d934aa27d","source":"bench-3","destination":"bench-4"}
+{"ts":"2026-08-24T14:10:22.646Z","module":"bus","event":"sent","writer":"bench-send","stream_id":"a7af4af3a89c4e2fb2fb865bb43bf09d","correlation_id":"2b0989523c6144e8bcc60b0b3d7e487a","source":"bench-4","destination":"bench-5"}
+{"ts":"2026-08-24T14:10:22.658Z","module":"switch","event":"kick_started","writer":"switch","stream_id":"bfe7ade263a446ecbf8a8439dcc2e349","correlation_id":"821206f945f74ccfbb4d758d934aa27d","source":"bench-3","destination":"bench-4"}
+{"ts":"2026-08-24T14:10:22.668Z","module":"bus","event":"sent","writer":"bench-send","stream_id":"e68942d0cf2b4a04ab84a354e8f9cf55","correlation_id":"f8abb6eb245e4213864708148cd1ff01","source":"bench-5","destination":"bench-6"}
+{"ts":"2026-08-24T14:10:22.670Z","module":"bus","event":"sent","writer":"bench-send","stream_id":"61038bad4766468d8039bfc7c5635e79","correlation_id":"bceb279071a74f0096ccc8e463a89722","source":"bench-6","destination":"bench-7"}
+{"ts":"2026-08-24T14:10:22.670Z","module":"bus","event":"sent","writer":"bench-send","stream_id":"af9ff2bc24f940478e313ef33cb87020","correlation_id":"20d95a30168c4f208c015df28f2155ca","source":"bench-7","destination":"bench-8"}
+{"ts":"2026-08-24T14:10:22.671Z","module":"bus","event":"sent","writer":"bench-send","stream_id":"28966a33f6ee44ffb05c18ff7b522aae","correlation_id":"a36b5ad99b9e4c4181a65a0e1bfa0cc9","source":"bench-8","destination":"bench-9"}
+{"ts":"2026-08-24T14:10:22.672Z","module":"bus","event":"sent","writer":"bench-send","stream_id":"d8ea5db78fa94ffea78114b2ab4c510d","correlation_id":"b44c4d78194a48b0a6176df0d1d8398f","source":"bench-9","destination":"bench-10"}
+{"ts":"2026-08-24T14:10:22.682Z","module":"switch","event":"popped","writer":"switch","stream_id":"a7af4af3a89c4e2fb2fb865bb43bf09d","correlation_id":"2b0989523c6144e8bcc60b0b3d7e487a","source":"bench-4","destination":"bench-5"}
+{"ts":"2026-08-24T14:10:22.683Z","module":"switch","event":"forwarded","writer":"switch","stream_id":"a7af4af3a89c4e2fb2fb865bb43bf09d","correlation_id":"2b0989523c6144e8bcc60b0b3d7e487a","source":"bench-4","destination":"bench-5"}
+{"ts":"2026-08-24T14:10:22.684Z","module":"bus","event":"sent","writer":"bench-send","stream_id":"9dc47355a1454d81b13d983dc79e02a3","correlation_id":"68f3e40af6af490a936b2f9007cc81d6","source":"bench-10","destination":"bench-1"}
+{"ts":"2026-08-24T14:10:22.685Z","module":"bus","event":"sent","writer":"bench-send","stream_id":"594f4ccb32944349b3a9370954796889","correlation_id":"270a9be281c547f0b4ea704500baf298","source":"bench-1","destination":"bench-2"}
+{"ts":"2026-08-24T14:10:22.685Z","module":"bus","event":"sent","writer":"bench-send","stream_id":"d104f7577c2148358f40e263ae95c502","correlation_id":"de8541631cc945ef8e0809efb7158dd7","source":"bench-2","destination":"bench-3"}
+{"ts":"2026-08-24T14:10:22.686Z","module":"bus","event":"sent","writer":"bench-send","stream_id":"887253ec6e924ce2a1d1333bdff01048","correlation_id":"9c38feba3f33412b83a5691b36b6cc6f","source":"bench-3","destination":"bench-4"}
+{"ts":"2026-08-24T14:10:22.702Z","module":"port","event":"received","writer":"bench-port","stream_id":"a7af4af3a89c4e2fb2fb865bb43bf09d","correlation_id":"2b0989523c6144e8bcc60b0b3d7e487a","source":"bench-4","destination":"bench-5"}
+{"ts":"2026-08-24T14:10:22.702Z","module":"port","event":"opened","writer":"bench-port","stream_id":"a7af4af3a89c4e2fb2fb865bb43bf09d","correlation_id":"2b0989523c6144e8bcc60b0b3d7e487a","source":"bench-4","destination":"bench-5"}
+{"ts":"2026-08-24T14:10:22.718Z","module":"switch","event":"kick_started","writer":"switch","stream_id":"a7af4af3a89c4e2fb2fb865bb43bf09d","correlation_id":"2b0989523c6144e8bcc60b0b3d7e487a","source":"bench-4","destination":"bench-5"}
+{"ts":"2026-08-24T14:10:22.741Z","module":"switch","event":"popped","writer":"switch","stream_id":"594f4ccb32944349b3a9370954796889","correlation_id":"270a9be281c547f0b4ea704500baf298","source":"bench-1","destination":"bench-2"}
+{"ts":"2026-08-24T14:10:22.740Z","module":"bus","event":"sent","writer":"bench-send","stream_id":"f21b4cf71cd44bea817643e3e1e90aea","correlation_id":"f4f86ba739184af9b4eccae8c45374a6","source":"bench-4","destination":"bench-5"}
+{"ts":"2026-08-24T14:10:22.753Z","module":"port","event":"received","writer":"bench-port","stream_id":"594f4ccb32944349b3a9370954796889","correlation_id":"270a9be281c547f0b4ea704500baf298","source":"bench-1","destination":"bench-2"}
+{"ts":"2026-08-24T14:10:22.753Z","module":"port","event":"opened","writer":"bench-port","stream_id":"594f4ccb32944349b3a9370954796889","correlation_id":"270a9be281c547f0b4ea704500baf298","source":"bench-1","destination":"bench-2"}
+{"ts":"2026-08-24T14:10:22.751Z","module":"switch","event":"forwarded","writer":"switch","stream_id":"594f4ccb32944349b3a9370954796889","correlation_id":"270a9be281c547f0b4ea704500baf298","source":"bench-1","destination":"bench-2"}
+{"ts":"2026-08-24T14:10:22.781Z","module":"bus","event":"sent","writer":"bench-send","stream_id":"b0c85317cb7a4e3b96b6aa6dc800d5a1","correlation_id":"dcfa6d436a554831adbb80a67bbf719a","source":"bench-5","destination":"bench-6"}
+{"ts":"2026-08-24T14:10:22.787Z","module":"bus","event":"sent","writer":"bench-send","stream_id":"70816403291441e6b98e942807206270","correlation_id":"1e3f5d1ad93f4b24897802aef12fd6a5","source":"bench-6","destination":"bench-7"}
+{"ts":"2026-08-24T14:10:22.788Z","module":"bus","event":"sent","writer":"bench-send","stream_id":"73e0c382e00a460bb3fa2fa884ec0e99","correlation_id":"a630ea7cdc3b4c6098eb6625bb83cfd9","source":"bench-7","destination":"bench-8"}
+{"ts":"2026-08-24T14:10:22.793Z","module":"switch","event":"kick_started","writer":"switch","stream_id":"594f4ccb32944349b3a9370954796889","correlation_id":"270a9be281c547f0b4ea704500baf298","source":"bench-1","destination":"bench-2"}
+{"ts":"2026-08-24T14:10:22.836Z","module":"bus","event":"sent","writer":"bench-send","stream_id":"625a6fbbb33d42d0b25c4f48db34c5b8","correlation_id":"ab8367728e1b4e8ead14369ebcfcbf03","source":"bench-8","destination":"bench-9"}
+{"ts":"2026-08-24T14:10:22.847Z","module":"switch","event":"popped","writer":"switch","stream_id":"9dc47355a1454d81b13d983dc79e02a3","correlation_id":"68f3e40af6af490a936b2f9007cc81d6","source":"bench-10","destination":"bench-1"}
+{"ts":"2026-08-24T14:10:22.868Z","module":"switch","event":"forwarded","writer":"switch","stream_id":"9dc47355a1454d81b13d983dc79e02a3","correlation_id":"68f3e40af6af490a936b2f9007cc81d6","source":"bench-10","destination":"bench-1"}
+{"ts":"2026-08-24T14:10:22.869Z","module":"bus","event":"sent","writer":"bench-send","stream_id":"922bd7678dda444f8f808f7cca6136ae","correlation_id":"d418f92848b14fc8a9fe943e1adf6792","source":"bench-9","destination":"bench-10"}
+{"ts":"2026-08-24T14:10:22.876Z","module":"switch","event":"kick_started","writer":"switch","stream_id":"9dc47355a1454d81b13d983dc79e02a3","correlation_id":"68f3e40af6af490a936b2f9007cc81d6","source":"bench-10","destination":"bench-1"}
+{"ts":"2026-08-24T14:10:22.882Z","module":"switch","event":"popped","writer":"switch","stream_id":"d104f7577c2148358f40e263ae95c502","correlation_id":"de8541631cc945ef8e0809efb7158dd7","source":"bench-2","destination":"bench-3"}
+{"ts":"2026-08-24T14:10:22.882Z","module":"switch","event":"forwarded","writer":"switch","stream_id":"d104f7577c2148358f40e263ae95c502","correlation_id":"de8541631cc945ef8e0809efb7158dd7","source":"bench-2","destination":"bench-3"}
+{"ts":"2026-08-24T14:10:22.909Z","module":"port","event":"received","writer":"bench-port","stream_id":"9dc47355a1454d81b13d983dc79e02a3","correlation_id":"68f3e40af6af490a936b2f9007cc81d6","source":"bench-10","destination":"bench-1"}
+{"ts":"2026-08-24T14:10:22.909Z","module":"port","event":"opened","writer":"bench-port","stream_id":"9dc47355a1454d81b13d983dc79e02a3","correlation_id":"68f3e40af6af490a936b2f9007cc81d6","source":"bench-10","destination":"bench-1"}
+{"ts":"2026-08-24T14:10:22.913Z","module":"bus","event":"sent","writer":"bench-send","stream_id":"be0c6b6c29dd4802adbfa7ceb20bef64","correlation_id":"beaa84437c2f4110abccf11d304a6c82","source":"bench-10","destination":"bench-1"}
+  submitted 20 in 0.3s{"ts":"2026-08-24T14:10:22.919Z","module":"switch","event":"kick_started","writer":"switch","stream_id":"d104f7577c2148358f40e263ae95c502","correlation_id":"de8541631cc945ef8e0809efb7158dd7","source":"bench-2","destination":"bench-3"}
+
+{"ts":"2026-08-24T14:10:22.938Z","module":"switch","event":"popped","writer":"switch","stream_id":"be0c6b6c29dd4802adbfa7ceb20bef64","correlation_id":"beaa84437c2f4110abccf11d304a6c82","source":"bench-10","destination":"bench-1"}
+{"ts":"2026-08-24T14:10:22.939Z","module":"switch","event":"forwarded","writer":"switch","stream_id":"be0c6b6c29dd4802adbfa7ceb20bef64","correlation_id":"beaa84437c2f4110abccf11d304a6c82","source":"bench-10","destination":"bench-1"}
+{"ts":"2026-08-24T14:10:22.968Z","module":"port","event":"received","writer":"bench-port","stream_id":"d104f7577c2148358f40e263ae95c502","correlation_id":"de8541631cc945ef8e0809efb7158dd7","source":"bench-2","destination":"bench-3"}
+{"ts":"2026-08-24T14:10:22.968Z","module":"port","event":"opened","writer":"bench-port","stream_id":"d104f7577c2148358f40e263ae95c502","correlation_id":"de8541631cc945ef8e0809efb7158dd7","source":"bench-2","destination":"bench-3"}
+{"ts":"2026-08-24T14:10:22.978Z","module":"switch","event":"kick_started","writer":"switch","stream_id":"be0c6b6c29dd4802adbfa7ceb20bef64","correlation_id":"beaa84437c2f4110abccf11d304a6c82","source":"bench-10","destination":"bench-1"}
+{"ts":"2026-08-24T14:10:22.984Z","module":"port","event":"received","writer":"bench-port","stream_id":"be0c6b6c29dd4802adbfa7ceb20bef64","correlation_id":"beaa84437c2f4110abccf11d304a6c82","source":"bench-10","destination":"bench-1"}
+{"ts":"2026-08-24T14:10:22.984Z","module":"port","event":"opened","writer":"bench-port","stream_id":"be0c6b6c29dd4802adbfa7ceb20bef64","correlation_id":"beaa84437c2f4110abccf11d304a6c82","source":"bench-10","destination":"bench-1"}
+{"ts":"2026-08-24T14:10:23.031Z","module":"switch","event":"popped","writer":"switch","stream_id":"887253ec6e924ce2a1d1333bdff01048","correlation_id":"9c38feba3f33412b83a5691b36b6cc6f","source":"bench-3","destination":"bench-4"}
+{"ts":"2026-08-24T14:10:23.084Z","module":"switch","event":"forwarded","writer":"switch","stream_id":"887253ec6e924ce2a1d1333bdff01048","correlation_id":"9c38feba3f33412b83a5691b36b6cc6f","source":"bench-3","destination":"bench-4"}
+{"ts":"2026-08-24T14:10:23.099Z","module":"port","event":"received","writer":"bench-port","stream_id":"887253ec6e924ce2a1d1333bdff01048","correlation_id":"9c38feba3f33412b83a5691b36b6cc6f","source":"bench-3","destination":"bench-4"}
+{"ts":"2026-08-24T14:10:23.099Z","module":"port","event":"opened","writer":"bench-port","stream_id":"887253ec6e924ce2a1d1333bdff01048","correlation_id":"9c38feba3f33412b83a5691b36b6cc6f","source":"bench-3","destination":"bench-4"}
+{"ts":"2026-08-24T14:10:23.170Z","module":"switch","event":"kick_started","writer":"switch","stream_id":"887253ec6e924ce2a1d1333bdff01048","correlation_id":"9c38feba3f33412b83a5691b36b6cc6f","source":"bench-3","destination":"bench-4"}
+{"ts":"2026-08-24T14:10:23.194Z","module":"switch","event":"popped","writer":"switch","stream_id":"f21b4cf71cd44bea817643e3e1e90aea","correlation_id":"f4f86ba739184af9b4eccae8c45374a6","source":"bench-4","destination":"bench-5"}
+{"ts":"2026-08-24T14:10:23.200Z","module":"port","event":"received","writer":"bench-port","stream_id":"f21b4cf71cd44bea817643e3e1e90aea","correlation_id":"f4f86ba739184af9b4eccae8c45374a6","source":"bench-4","destination":"bench-5"}
+{"ts":"2026-08-24T14:10:23.200Z","module":"port","event":"opened","writer":"bench-port","stream_id":"f21b4cf71cd44bea817643e3e1e90aea","correlation_id":"f4f86ba739184af9b4eccae8c45374a6","source":"bench-4","destination":"bench-5"}
+{"ts":"2026-08-24T14:10:23.201Z","module":"switch","event":"forwarded","writer":"switch","stream_id":"f21b4cf71cd44bea817643e3e1e90aea","correlation_id":"f4f86ba739184af9b4eccae8c45374a6","source":"bench-4","destination":"bench-5"}
+{"ts":"2026-08-24T14:10:23.204Z","module":"switch","event":"kick_started","writer":"switch","stream_id":"f21b4cf71cd44bea817643e3e1e90aea","correlation_id":"f4f86ba739184af9b4eccae8c45374a6","source":"bench-4","destination":"bench-5"}
+{"ts":"2026-08-24T14:10:23.232Z","module":"switch","event":"popped","writer":"switch","stream_id":"e68942d0cf2b4a04ab84a354e8f9cf55","correlation_id":"f8abb6eb245e4213864708148cd1ff01","source":"bench-5","destination":"bench-6"}
+{"ts":"2026-08-24T14:10:23.234Z","module":"switch","event":"forwarded","writer":"switch","stream_id":"e68942d0cf2b4a04ab84a354e8f9cf55","correlation_id":"f8abb6eb245e4213864708148cd1ff01","source":"bench-5","destination":"bench-6"}
+{"ts":"2026-08-24T14:10:23.237Z","module":"port","event":"received","writer":"bench-port","stream_id":"e68942d0cf2b4a04ab84a354e8f9cf55","correlation_id":"f8abb6eb245e4213864708148cd1ff01","source":"bench-5","destination":"bench-6"}
+{"ts":"2026-08-24T14:10:23.237Z","module":"port","event":"opened","writer":"bench-port","stream_id":"e68942d0cf2b4a04ab84a354e8f9cf55","correlation_id":"f8abb6eb245e4213864708148cd1ff01","source":"bench-5","destination":"bench-6"}
+{"ts":"2026-08-24T14:10:23.250Z","module":"switch","event":"kick_started","writer":"switch","stream_id":"e68942d0cf2b4a04ab84a354e8f9cf55","correlation_id":"f8abb6eb245e4213864708148cd1ff01","source":"bench-5","destination":"bench-6"}
+{"ts":"2026-08-24T14:10:23.254Z","module":"switch","event":"popped","writer":"switch","stream_id":"b0c85317cb7a4e3b96b6aa6dc800d5a1","correlation_id":"dcfa6d436a554831adbb80a67bbf719a","source":"bench-5","destination":"bench-6"}
+{"ts":"2026-08-24T14:10:23.260Z","module":"switch","event":"forwarded","writer":"switch","stream_id":"b0c85317cb7a4e3b96b6aa6dc800d5a1","correlation_id":"dcfa6d436a554831adbb80a67bbf719a","source":"bench-5","destination":"bench-6"}
+{"ts":"2026-08-24T14:10:23.260Z","module":"port","event":"received","writer":"bench-port","stream_id":"b0c85317cb7a4e3b96b6aa6dc800d5a1","correlation_id":"dcfa6d436a554831adbb80a67bbf719a","source":"bench-5","destination":"bench-6"}
+{"ts":"2026-08-24T14:10:23.261Z","module":"port","event":"opened","writer":"bench-port","stream_id":"b0c85317cb7a4e3b96b6aa6dc800d5a1","correlation_id":"dcfa6d436a554831adbb80a67bbf719a","source":"bench-5","destination":"bench-6"}
+{"ts":"2026-08-24T14:10:23.264Z","module":"switch","event":"kick_started","writer":"switch","stream_id":"b0c85317cb7a4e3b96b6aa6dc800d5a1","correlation_id":"dcfa6d436a554831adbb80a67bbf719a","source":"bench-5","destination":"bench-6"}
+{"ts":"2026-08-24T14:10:23.317Z","module":"switch","event":"popped","writer":"switch","stream_id":"61038bad4766468d8039bfc7c5635e79","correlation_id":"bceb279071a74f0096ccc8e463a89722","source":"bench-6","destination":"bench-7"}
+{"ts":"2026-08-24T14:10:23.318Z","module":"port","event":"received","writer":"bench-port","stream_id":"61038bad4766468d8039bfc7c5635e79","correlation_id":"bceb279071a74f0096ccc8e463a89722","source":"bench-6","destination":"bench-7"}
+{"ts":"2026-08-24T14:10:23.318Z","module":"port","event":"opened","writer":"bench-port","stream_id":"61038bad4766468d8039bfc7c5635e79","correlation_id":"bceb279071a74f0096ccc8e463a89722","source":"bench-6","destination":"bench-7"}
+{"ts":"2026-08-24T14:10:23.318Z","module":"switch","event":"forwarded","writer":"switch","stream_id":"61038bad4766468d8039bfc7c5635e79","correlation_id":"bceb279071a74f0096ccc8e463a89722","source":"bench-6","destination":"bench-7"}
+{"ts":"2026-08-24T14:10:23.319Z","module":"switch","event":"kick_started","writer":"switch","stream_id":"61038bad4766468d8039bfc7c5635e79","correlation_id":"bceb279071a74f0096ccc8e463a89722","source":"bench-6","destination":"bench-7"}
+{"ts":"2026-08-24T14:10:23.391Z","module":"switch","event":"popped","writer":"switch","stream_id":"af9ff2bc24f940478e313ef33cb87020","correlation_id":"20d95a30168c4f208c015df28f2155ca","source":"bench-7","destination":"bench-8"}
+{"ts":"2026-08-24T14:10:23.409Z","module":"port","event":"received","writer":"bench-port","stream_id":"af9ff2bc24f940478e313ef33cb87020","correlation_id":"20d95a30168c4f208c015df28f2155ca","source":"bench-7","destination":"bench-8"}
+{"ts":"2026-08-24T14:10:23.409Z","module":"port","event":"opened","writer":"bench-port","stream_id":"af9ff2bc24f940478e313ef33cb87020","correlation_id":"20d95a30168c4f208c015df28f2155ca","source":"bench-7","destination":"bench-8"}
+{"ts":"2026-08-24T14:10:23.412Z","module":"switch","event":"forwarded","writer":"switch","stream_id":"af9ff2bc24f940478e313ef33cb87020","correlation_id":"20d95a30168c4f208c015df28f2155ca","source":"bench-7","destination":"bench-8"}
+{"ts":"2026-08-24T14:10:23.425Z","module":"switch","event":"kick_started","writer":"switch","stream_id":"af9ff2bc24f940478e313ef33cb87020","correlation_id":"20d95a30168c4f208c015df28f2155ca","source":"bench-7","destination":"bench-8"}
+{"ts":"2026-08-24T14:10:23.425Z","module":"switch","event":"popped","writer":"switch","stream_id":"28966a33f6ee44ffb05c18ff7b522aae","correlation_id":"a36b5ad99b9e4c4181a65a0e1bfa0cc9","source":"bench-8","destination":"bench-9"}
+{"ts":"2026-08-24T14:10:23.426Z","module":"port","event":"received","writer":"bench-port","stream_id":"28966a33f6ee44ffb05c18ff7b522aae","correlation_id":"a36b5ad99b9e4c4181a65a0e1bfa0cc9","source":"bench-8","destination":"bench-9"}
+{"ts":"2026-08-24T14:10:23.426Z","module":"port","event":"opened","writer":"bench-port","stream_id":"28966a33f6ee44ffb05c18ff7b522aae","correlation_id":"a36b5ad99b9e4c4181a65a0e1bfa0cc9","source":"bench-8","destination":"bench-9"}
+{"ts":"2026-08-24T14:10:23.426Z","module":"switch","event":"forwarded","writer":"switch","stream_id":"28966a33f6ee44ffb05c18ff7b522aae","correlation_id":"a36b5ad99b9e4c4181a65a0e1bfa0cc9","source":"bench-8","destination":"bench-9"}
+{"ts":"2026-08-24T14:10:23.443Z","module":"switch","event":"kick_started","writer":"switch","stream_id":"28966a33f6ee44ffb05c18ff7b522aae","correlation_id":"a36b5ad99b9e4c4181a65a0e1bfa0cc9","source":"bench-8","destination":"bench-9"}
+{"ts":"2026-08-24T14:10:23.459Z","module":"switch","event":"popped","writer":"switch","stream_id":"d8ea5db78fa94ffea78114b2ab4c510d","correlation_id":"b44c4d78194a48b0a6176df0d1d8398f","source":"bench-9","destination":"bench-10"}
+{"ts":"2026-08-24T14:10:23.464Z","module":"port","event":"received","writer":"bench-port","stream_id":"d8ea5db78fa94ffea78114b2ab4c510d","correlation_id":"b44c4d78194a48b0a6176df0d1d8398f","source":"bench-9","destination":"bench-10"}
+{"ts":"2026-08-24T14:10:23.464Z","module":"port","event":"opened","writer":"bench-port","stream_id":"d8ea5db78fa94ffea78114b2ab4c510d","correlation_id":"b44c4d78194a48b0a6176df0d1d8398f","source":"bench-9","destination":"bench-10"}
+{"ts":"2026-08-24T14:10:23.505Z","module":"switch","event":"forwarded","writer":"switch","stream_id":"d8ea5db78fa94ffea78114b2ab4c510d","correlation_id":"b44c4d78194a48b0a6176df0d1d8398f","source":"bench-9","destination":"bench-10"}
+{"ts":"2026-08-24T14:10:23.531Z","module":"switch","event":"kick_started","writer":"switch","stream_id":"d8ea5db78fa94ffea78114b2ab4c510d","correlation_id":"b44c4d78194a48b0a6176df0d1d8398f","source":"bench-9","destination":"bench-10"}
+{"ts":"2026-08-24T14:10:23.571Z","module":"switch","event":"popped","writer":"switch","stream_id":"70816403291441e6b98e942807206270","correlation_id":"1e3f5d1ad93f4b24897802aef12fd6a5","source":"bench-6","destination":"bench-7"}
+{"ts":"2026-08-24T14:10:23.585Z","module":"switch","event":"forwarded","writer":"switch","stream_id":"70816403291441e6b98e942807206270","correlation_id":"1e3f5d1ad93f4b24897802aef12fd6a5","source":"bench-6","destination":"bench-7"}
+{"ts":"2026-08-24T14:10:23.591Z","module":"switch","event":"kick_started","writer":"switch","stream_id":"70816403291441e6b98e942807206270","correlation_id":"1e3f5d1ad93f4b24897802aef12fd6a5","source":"bench-6","destination":"bench-7"}
+{"ts":"2026-08-24T14:10:23.594Z","module":"port","event":"received","writer":"bench-port","stream_id":"70816403291441e6b98e942807206270","correlation_id":"1e3f5d1ad93f4b24897802aef12fd6a5","source":"bench-6","destination":"bench-7"}
+{"ts":"2026-08-24T14:10:23.594Z","module":"port","event":"opened","writer":"bench-port","stream_id":"70816403291441e6b98e942807206270","correlation_id":"1e3f5d1ad93f4b24897802aef12fd6a5","source":"bench-6","destination":"bench-7"}
+{"ts":"2026-08-24T14:10:23.607Z","module":"switch","event":"popped","writer":"switch","stream_id":"73e0c382e00a460bb3fa2fa884ec0e99","correlation_id":"a630ea7cdc3b4c6098eb6625bb83cfd9","source":"bench-7","destination":"bench-8"}
+{"ts":"2026-08-24T14:10:23.614Z","module":"switch","event":"forwarded","writer":"switch","stream_id":"73e0c382e00a460bb3fa2fa884ec0e99","correlation_id":"a630ea7cdc3b4c6098eb6625bb83cfd9","source":"bench-7","destination":"bench-8"}
+{"ts":"2026-08-24T14:10:23.617Z","module":"port","event":"received","writer":"bench-port","stream_id":"73e0c382e00a460bb3fa2fa884ec0e99","correlation_id":"a630ea7cdc3b4c6098eb6625bb83cfd9","source":"bench-7","destination":"bench-8"}
+{"ts":"2026-08-24T14:10:23.617Z","module":"port","event":"opened","writer":"bench-port","stream_id":"73e0c382e00a460bb3fa2fa884ec0e99","correlation_id":"a630ea7cdc3b4c6098eb6625bb83cfd9","source":"bench-7","destination":"bench-8"}
+{"ts":"2026-08-24T14:10:23.620Z","module":"switch","event":"kick_started","writer":"switch","stream_id":"73e0c382e00a460bb3fa2fa884ec0e99","correlation_id":"a630ea7cdc3b4c6098eb6625bb83cfd9","source":"bench-7","destination":"bench-8"}
+{"ts":"2026-08-24T14:10:23.739Z","module":"switch","event":"popped","writer":"switch","stream_id":"625a6fbbb33d42d0b25c4f48db34c5b8","correlation_id":"ab8367728e1b4e8ead14369ebcfcbf03","source":"bench-8","destination":"bench-9"}
+{"ts":"2026-08-24T14:10:23.741Z","module":"port","event":"received","writer":"bench-port","stream_id":"625a6fbbb33d42d0b25c4f48db34c5b8","correlation_id":"ab8367728e1b4e8ead14369ebcfcbf03","source":"bench-8","destination":"bench-9"}
+{"ts":"2026-08-24T14:10:23.741Z","module":"port","event":"opened","writer":"bench-port","stream_id":"625a6fbbb33d42d0b25c4f48db34c5b8","correlation_id":"ab8367728e1b4e8ead14369ebcfcbf03","source":"bench-8","destination":"bench-9"}
+{"ts":"2026-08-24T14:10:23.753Z","module":"switch","event":"forwarded","writer":"switch","stream_id":"625a6fbbb33d42d0b25c4f48db34c5b8","correlation_id":"ab8367728e1b4e8ead14369ebcfcbf03","source":"bench-8","destination":"bench-9"}
+{"ts":"2026-08-24T14:10:23.759Z","module":"switch","event":"kick_started","writer":"switch","stream_id":"625a6fbbb33d42d0b25c4f48db34c5b8","correlation_id":"ab8367728e1b4e8ead14369ebcfcbf03","source":"bench-8","destination":"bench-9"}
+{"ts":"2026-08-24T14:10:23.765Z","module":"switch","event":"popped","writer":"switch","stream_id":"922bd7678dda444f8f808f7cca6136ae","correlation_id":"d418f92848b14fc8a9fe943e1adf6792","source":"bench-9","destination":"bench-10"}
+{"ts":"2026-08-24T14:10:23.778Z","module":"switch","event":"forwarded","writer":"switch","stream_id":"922bd7678dda444f8f808f7cca6136ae","correlation_id":"d418f92848b14fc8a9fe943e1adf6792","source":"bench-9","destination":"bench-10"}
+{"ts":"2026-08-24T14:10:23.782Z","module":"switch","event":"kick_started","writer":"switch","stream_id":"922bd7678dda444f8f808f7cca6136ae","correlation_id":"d418f92848b14fc8a9fe943e1adf6792","source":"bench-9","destination":"bench-10"}
+{"ts":"2026-08-24T14:10:23.783Z","module":"port","event":"received","writer":"bench-port","stream_id":"922bd7678dda444f8f808f7cca6136ae","correlation_id":"d418f92848b14fc8a9fe943e1adf6792","source":"bench-9","destination":"bench-10"}
+{"ts":"2026-08-24T14:10:23.783Z","module":"port","event":"opened","writer":"bench-port","stream_id":"922bd7678dda444f8f808f7cca6136ae","correlation_id":"d418f92848b14fc8a9fe943e1adf6792","source":"bench-9","destination":"bench-10"}
+INFO:     127.0.0.1:49844 - "GET /health HTTP/1.1" 200 OK
+bench-port: handled 20
+INFO:     127.0.0.1:34040 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54658 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:60508 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55598 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58352 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:40300 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:42494 - "GET /health HTTP/1.1" 200 OK
+{"ts":"2026-08-24T14:11:46.585Z","module":"switch","event":"popped","writer":"switch","stream_id":"bd61c3bda7e3482ab7f354af956e0345","correlation_id":"0b16f31d0a094d66bd47c7a0e8931b9f","source":"architect","destination":"bench-1"}
+{"ts":"2026-08-24T14:11:46.586Z","module":"switch","event":"forwarded","writer":"switch","stream_id":"bd61c3bda7e3482ab7f354af956e0345","correlation_id":"0b16f31d0a094d66bd47c7a0e8931b9f","source":"architect","destination":"bench-1"}
+{"ts":"2026-08-24T14:11:46.602Z","module":"switch","event":"kick_started","writer":"switch","stream_id":"bd61c3bda7e3482ab7f354af956e0345","correlation_id":"0b16f31d0a094d66bd47c7a0e8931b9f","source":"architect","destination":"bench-1"}
+{"ts":"2026-08-24T14:11:47.040Z","module":"port","event":"received","writer":"port","stream_id":"bd61c3bda7e3482ab7f354af956e0345","correlation_id":"0b16f31d0a094d66bd47c7a0e8931b9f","source":"architect","destination":"bench-1"}
+{"ts":"2026-08-24T14:11:47.053Z","module":"port","event":"opened","writer":"port","stream_id":"bd61c3bda7e3482ab7f354af956e0345","correlation_id":"0b16f31d0a094d66bd47c7a0e8931b9f","source":"architect","destination":"bench-1"}
+INFO:     127.0.0.1:45644 - "GET /health HTTP/1.1" 200 OK
+{"ts":"2026-08-24T14:11:58.105Z","module":"switch","event":"popped","writer":"switch","stream_id":"3d3e4ca9764a42bda1e3b3b7eca248ce","correlation_id":"bb699b8a0d39413799f7f62bc2721c73","source":"bench-1","destination":"bench-2"}
+{"ts":"2026-08-24T14:11:58.113Z","module":"bus","event":"sent","writer":"bench-send","stream_id":"3d3e4ca9764a42bda1e3b3b7eca248ce","correlation_id":"bb699b8a0d39413799f7f62bc2721c73","source":"bench-1","destination":"bench-2"}
+{"ts":"2026-08-24T14:11:58.127Z","module":"switch","event":"forwarded","writer":"switch","stream_id":"3d3e4ca9764a42bda1e3b3b7eca248ce","correlation_id":"bb699b8a0d39413799f7f62bc2721c73","source":"bench-1","destination":"bench-2"}
+{"ts":"2026-08-24T14:11:58.130Z","module":"port","event":"received","writer":"bench-port","stream_id":"3d3e4ca9764a42bda1e3b3b7eca248ce","correlation_id":"bb699b8a0d39413799f7f62bc2721c73","source":"bench-1","destination":"bench-2"}
+{"ts":"2026-08-24T14:11:58.134Z","module":"port","event":"opened","writer":"bench-port","stream_id":"3d3e4ca9764a42bda1e3b3b7eca248ce","correlation_id":"bb699b8a0d39413799f7f62bc2721c73","source":"bench-1","destination":"bench-2"}
+{"ts":"2026-08-24T14:11:58.135Z","module":"switch","event":"kick_started","writer":"switch","stream_id":"3d3e4ca9764a42bda1e3b3b7eca248ce","correlation_id":"bb699b8a0d39413799f7f62bc2721c73","source":"bench-1","destination":"bench-2"}
+{"ts":"2026-08-24T14:11:58.144Z","module":"switch","event":"popped","writer":"switch","stream_id":"f33a35168d67414b952578330ed62a8b","correlation_id":"22090ec600d34331b354271e4200084a","source":"bench-2","destination":"bench-3"}
+{"ts":"2026-08-24T14:11:58.145Z","module":"bus","event":"sent","writer":"bench-send","stream_id":"f33a35168d67414b952578330ed62a8b","correlation_id":"22090ec600d34331b354271e4200084a","source":"bench-2","destination":"bench-3"}
+{"ts":"2026-08-24T14:11:58.176Z","module":"port","event":"received","writer":"bench-port","stream_id":"f33a35168d67414b952578330ed62a8b","correlation_id":"22090ec600d34331b354271e4200084a","source":"bench-2","destination":"bench-3"}
+{"ts":"2026-08-24T14:11:58.176Z","module":"port","event":"opened","writer":"bench-port","stream_id":"f33a35168d67414b952578330ed62a8b","correlation_id":"22090ec600d34331b354271e4200084a","source":"bench-2","destination":"bench-3"}
+{"ts":"2026-08-24T14:11:58.176Z","module":"switch","event":"forwarded","writer":"switch","stream_id":"f33a35168d67414b952578330ed62a8b","correlation_id":"22090ec600d34331b354271e4200084a","source":"bench-2","destination":"bench-3"}
+{"ts":"2026-08-24T14:11:58.184Z","module":"bus","event":"sent","writer":"bench-send","stream_id":"0e8f16009bb9419b9cb60f05db6b2361","correlation_id":"7f7b719694544c18928826e1fd10c749","source":"bench-3","destination":"bench-4"}
+{"ts":"2026-08-24T14:11:58.206Z","module":"switch","event":"kick_started","writer":"switch","stream_id":"f33a35168d67414b952578330ed62a8b","correlation_id":"22090ec600d34331b354271e4200084a","source":"bench-2","destination":"bench-3"}
+{"ts":"2026-08-24T14:11:58.230Z","module":"switch","event":"popped","writer":"switch","stream_id":"0e8f16009bb9419b9cb60f05db6b2361","correlation_id":"7f7b719694544c18928826e1fd10c749","source":"bench-3","destination":"bench-4"}
+{"ts":"2026-08-24T14:11:58.245Z","module":"port","event":"received","writer":"bench-port","stream_id":"0e8f16009bb9419b9cb60f05db6b2361","correlation_id":"7f7b719694544c18928826e1fd10c749","source":"bench-3","destination":"bench-4"}
+{"ts":"2026-08-24T14:11:58.245Z","module":"port","event":"opened","writer":"bench-port","stream_id":"0e8f16009bb9419b9cb60f05db6b2361","correlation_id":"7f7b719694544c18928826e1fd10c749","source":"bench-3","destination":"bench-4"}
+{"ts":"2026-08-24T14:11:58.246Z","module":"switch","event":"forwarded","writer":"switch","stream_id":"0e8f16009bb9419b9cb60f05db6b2361","correlation_id":"7f7b719694544c18928826e1fd10c749","source":"bench-3","destination":"bench-4"}
+{"ts":"2026-08-24T14:11:58.279Z","module":"switch","event":"kick_started","writer":"switch","stream_id":"0e8f16009bb9419b9cb60f05db6b2361","correlation_id":"7f7b719694544c18928826e1fd10c749","source":"bench-3","destination":"bench-4"}
+{"ts":"2026-08-24T14:11:58.293Z","module":"switch","event":"popped","writer":"switch","stream_id":"405f12eed1d247c28c7eeab56431d9e3","correlation_id":"851540f0f2044a7c86ff7e595e91dd0e","source":"bench-4","destination":"bench-5"}
+{"ts":"2026-08-24T14:11:58.294Z","module":"bus","event":"sent","writer":"bench-send","stream_id":"405f12eed1d247c28c7eeab56431d9e3","correlation_id":"851540f0f2044a7c86ff7e595e91dd0e","source":"bench-4","destination":"bench-5"}
+{"ts":"2026-08-24T14:11:58.319Z","module":"switch","event":"forwarded","writer":"switch","stream_id":"405f12eed1d247c28c7eeab56431d9e3","correlation_id":"851540f0f2044a7c86ff7e595e91dd0e","source":"bench-4","destination":"bench-5"}
+{"ts":"2026-08-24T14:11:58.325Z","module":"port","event":"received","writer":"bench-port","stream_id":"405f12eed1d247c28c7eeab56431d9e3","correlation_id":"851540f0f2044a7c86ff7e595e91dd0e","source":"bench-4","destination":"bench-5"}
+{"ts":"2026-08-24T14:11:58.329Z","module":"port","event":"opened","writer":"bench-port","stream_id":"405f12eed1d247c28c7eeab56431d9e3","correlation_id":"851540f0f2044a7c86ff7e595e91dd0e","source":"bench-4","destination":"bench-5"}
+{"ts":"2026-08-24T14:11:58.362Z","module":"switch","event":"kick_started","writer":"switch","stream_id":"405f12eed1d247c28c7eeab56431d9e3","correlation_id":"851540f0f2044a7c86ff7e595e91dd0e","source":"bench-4","destination":"bench-5"}
+{"ts":"2026-08-24T14:11:58.376Z","module":"switch","event":"popped","writer":"switch","stream_id":"455806e30c4c4511bdcc72d603aaeb51","correlation_id":"41a766d445b24e2996836b8ce719477f","source":"bench-5","destination":"bench-6"}
+{"ts":"2026-08-24T14:11:58.388Z","module":"bus","event":"sent","writer":"bench-send","stream_id":"455806e30c4c4511bdcc72d603aaeb51","correlation_id":"41a766d445b24e2996836b8ce719477f","source":"bench-5","destination":"bench-6"}
+{"ts":"2026-08-24T14:11:58.423Z","module":"port","event":"received","writer":"bench-port","stream_id":"455806e30c4c4511bdcc72d603aaeb51","correlation_id":"41a766d445b24e2996836b8ce719477f","source":"bench-5","destination":"bench-6"}
+{"ts":"2026-08-24T14:11:58.424Z","module":"switch","event":"forwarded","writer":"switch","stream_id":"455806e30c4c4511bdcc72d603aaeb51","correlation_id":"41a766d445b24e2996836b8ce719477f","source":"bench-5","destination":"bench-6"}
+{"ts":"2026-08-24T14:11:58.424Z","module":"port","event":"opened","writer":"bench-port","stream_id":"455806e30c4c4511bdcc72d603aaeb51","correlation_id":"41a766d445b24e2996836b8ce719477f","source":"bench-5","destination":"bench-6"}
+{"ts":"2026-08-24T14:11:58.439Z","module":"switch","event":"kick_started","writer":"switch","stream_id":"455806e30c4c4511bdcc72d603aaeb51","correlation_id":"41a766d445b24e2996836b8ce719477f","source":"bench-5","destination":"bench-6"}
+{"ts":"2026-08-24T14:11:58.448Z","module":"switch","event":"popped","writer":"switch","stream_id":"4cb9da4822e444b3a26bbdd9da3b1172","correlation_id":"56ee66317b3d4e95a7f64b866492400b","source":"bench-6","destination":"bench-7"}
+{"ts":"2026-08-24T14:11:58.452Z","module":"port","event":"received","writer":"bench-port","stream_id":"4cb9da4822e444b3a26bbdd9da3b1172","correlation_id":"56ee66317b3d4e95a7f64b866492400b","source":"bench-6","destination":"bench-7"}
+{"ts":"2026-08-24T14:11:58.454Z","module":"switch","event":"forwarded","writer":"switch","stream_id":"4cb9da4822e444b3a26bbdd9da3b1172","correlation_id":"56ee66317b3d4e95a7f64b866492400b","source":"bench-6","destination":"bench-7"}
+{"ts":"2026-08-24T14:11:58.455Z","module":"port","event":"opened","writer":"bench-port","stream_id":"4cb9da4822e444b3a26bbdd9da3b1172","correlation_id":"56ee66317b3d4e95a7f64b866492400b","source":"bench-6","destination":"bench-7"}
+{"ts":"2026-08-24T14:11:58.464Z","module":"bus","event":"sent","writer":"bench-send","stream_id":"4cb9da4822e444b3a26bbdd9da3b1172","correlation_id":"56ee66317b3d4e95a7f64b866492400b","source":"bench-6","destination":"bench-7"}
+{"ts":"2026-08-24T14:11:58.501Z","module":"bus","event":"sent","writer":"bench-send","stream_id":"e89ae32bad2b48c599ea39a4b7d8d547","correlation_id":"f48a208846af45e8ad5a03471c8997e2","source":"bench-7","destination":"bench-8"}
+{"ts":"2026-08-24T14:11:58.513Z","module":"switch","event":"kick_started","writer":"switch","stream_id":"4cb9da4822e444b3a26bbdd9da3b1172","correlation_id":"56ee66317b3d4e95a7f64b866492400b","source":"bench-6","destination":"bench-7"}
+{"ts":"2026-08-24T14:11:58.514Z","module":"bus","event":"sent","writer":"bench-send","stream_id":"d9b23fa8d3634191898fd92ec2ef3b54","correlation_id":"f3e667ef0e924e38a4c9c973e01cd313","source":"bench-8","destination":"bench-9"}
+{"ts":"2026-08-24T14:11:58.515Z","module":"switch","event":"popped","writer":"switch","stream_id":"e89ae32bad2b48c599ea39a4b7d8d547","correlation_id":"f48a208846af45e8ad5a03471c8997e2","source":"bench-7","destination":"bench-8"}
+{"ts":"2026-08-24T14:11:58.517Z","module":"switch","event":"forwarded","writer":"switch","stream_id":"e89ae32bad2b48c599ea39a4b7d8d547","correlation_id":"f48a208846af45e8ad5a03471c8997e2","source":"bench-7","destination":"bench-8"}
+{"ts":"2026-08-24T14:11:58.517Z","module":"bus","event":"sent","writer":"bench-send","stream_id":"47b3289e1e424a71b422312b03d52066","correlation_id":"87971d59e58c44baa5a77fc5b307a479","source":"bench-9","destination":"bench-10"}
+{"ts":"2026-08-24T14:11:58.529Z","module":"port","event":"received","writer":"bench-port","stream_id":"e89ae32bad2b48c599ea39a4b7d8d547","correlation_id":"f48a208846af45e8ad5a03471c8997e2","source":"bench-7","destination":"bench-8"}
+{"ts":"2026-08-24T14:11:58.530Z","module":"port","event":"opened","writer":"bench-port","stream_id":"e89ae32bad2b48c599ea39a4b7d8d547","correlation_id":"f48a208846af45e8ad5a03471c8997e2","source":"bench-7","destination":"bench-8"}
+{"ts":"2026-08-24T14:11:58.533Z","module":"switch","event":"kick_started","writer":"switch","stream_id":"e89ae32bad2b48c599ea39a4b7d8d547","correlation_id":"f48a208846af45e8ad5a03471c8997e2","source":"bench-7","destination":"bench-8"}
+{"ts":"2026-08-24T14:11:58.544Z","module":"switch","event":"popped","writer":"switch","stream_id":"d9b23fa8d3634191898fd92ec2ef3b54","correlation_id":"f3e667ef0e924e38a4c9c973e01cd313","source":"bench-8","destination":"bench-9"}
+{"ts":"2026-08-24T14:11:58.548Z","module":"port","event":"received","writer":"bench-port","stream_id":"d9b23fa8d3634191898fd92ec2ef3b54","correlation_id":"f3e667ef0e924e38a4c9c973e01cd313","source":"bench-8","destination":"bench-9"}
+{"ts":"2026-08-24T14:11:58.549Z","module":"port","event":"opened","writer":"bench-port","stream_id":"d9b23fa8d3634191898fd92ec2ef3b54","correlation_id":"f3e667ef0e924e38a4c9c973e01cd313","source":"bench-8","destination":"bench-9"}
+{"ts":"2026-08-24T14:11:58.550Z","module":"switch","event":"forwarded","writer":"switch","stream_id":"d9b23fa8d3634191898fd92ec2ef3b54","correlation_id":"f3e667ef0e924e38a4c9c973e01cd313","source":"bench-8","destination":"bench-9"}
+{"ts":"2026-08-24T14:11:58.553Z","module":"bus","event":"sent","writer":"bench-send","stream_id":"b383c6e6e78a4b28ba4a278c154f9bb2","correlation_id":"39cffba1a941424d8138e45dd717e23a","source":"bench-10","destination":"bench-1"}
+{"ts":"2026-08-24T14:11:58.555Z","module":"switch","event":"kick_started","writer":"switch","stream_id":"d9b23fa8d3634191898fd92ec2ef3b54","correlation_id":"f3e667ef0e924e38a4c9c973e01cd313","source":"bench-8","destination":"bench-9"}
+{"ts":"2026-08-24T14:11:58.563Z","module":"bus","event":"sent","writer":"bench-send","stream_id":"647e6c79f68f44f4838b4ab888f1a9e9","correlation_id":"90e842d27fa64c2caf3a6aa162566b0c","source":"bench-1","destination":"bench-2"}
+{"ts":"2026-08-24T14:11:58.564Z","module":"switch","event":"popped","writer":"switch","stream_id":"647e6c79f68f44f4838b4ab888f1a9e9","correlation_id":"90e842d27fa64c2caf3a6aa162566b0c","source":"bench-1","destination":"bench-2"}
+{"ts":"2026-08-24T14:11:58.565Z","module":"switch","event":"forwarded","writer":"switch","stream_id":"647e6c79f68f44f4838b4ab888f1a9e9","correlation_id":"90e842d27fa64c2caf3a6aa162566b0c","source":"bench-1","destination":"bench-2"}
+{"ts":"2026-08-24T14:11:58.566Z","module":"port","event":"received","writer":"bench-port","stream_id":"647e6c79f68f44f4838b4ab888f1a9e9","correlation_id":"90e842d27fa64c2caf3a6aa162566b0c","source":"bench-1","destination":"bench-2"}
+{"ts":"2026-08-24T14:11:58.566Z","module":"port","event":"opened","writer":"bench-port","stream_id":"647e6c79f68f44f4838b4ab888f1a9e9","correlation_id":"90e842d27fa64c2caf3a6aa162566b0c","source":"bench-1","destination":"bench-2"}
+{"ts":"2026-08-24T14:11:58.579Z","module":"switch","event":"kick_started","writer":"switch","stream_id":"647e6c79f68f44f4838b4ab888f1a9e9","correlation_id":"90e842d27fa64c2caf3a6aa162566b0c","source":"bench-1","destination":"bench-2"}
+{"ts":"2026-08-24T14:11:58.579Z","module":"bus","event":"sent","writer":"bench-send","stream_id":"4ea825efa9e944269818a28c27ac3cba","correlation_id":"44f7771ace4646669fe62e29fe3f3d98","source":"bench-2","destination":"bench-3"}
+{"ts":"2026-08-24T14:11:58.616Z","module":"switch","event":"popped","writer":"switch","stream_id":"b383c6e6e78a4b28ba4a278c154f9bb2","correlation_id":"39cffba1a941424d8138e45dd717e23a","source":"bench-10","destination":"bench-1"}
+{"ts":"2026-08-24T14:11:58.637Z","module":"bus","event":"sent","writer":"bench-send","stream_id":"88b04e46ae534bfc80e0956e06d4ead0","correlation_id":"2485b56062fa44d0b4843a74d77170d3","source":"bench-3","destination":"bench-4"}
+{"ts":"2026-08-24T14:11:58.654Z","module":"switch","event":"forwarded","writer":"switch","stream_id":"b383c6e6e78a4b28ba4a278c154f9bb2","correlation_id":"39cffba1a941424d8138e45dd717e23a","source":"bench-10","destination":"bench-1"}
+{"ts":"2026-08-24T14:11:58.660Z","module":"port","event":"received","writer":"bench-port","stream_id":"b383c6e6e78a4b28ba4a278c154f9bb2","correlation_id":"39cffba1a941424d8138e45dd717e23a","source":"bench-10","destination":"bench-1"}
+{"ts":"2026-08-24T14:11:58.660Z","module":"port","event":"opened","writer":"bench-port","stream_id":"b383c6e6e78a4b28ba4a278c154f9bb2","correlation_id":"39cffba1a941424d8138e45dd717e23a","source":"bench-10","destination":"bench-1"}
+{"ts":"2026-08-24T14:11:58.661Z","module":"bus","event":"sent","writer":"bench-send","stream_id":"412e742b2eef4d3797306644b699578d","correlation_id":"ca6c8879394245708ec6db4262e1fba6","source":"bench-4","destination":"bench-5"}
+{"ts":"2026-08-24T14:11:58.682Z","module":"bus","event":"sent","writer":"bench-send","stream_id":"9a54a8921b5d4aada45bfc7c13c12433","correlation_id":"cd643e0988354902845352a92c97cba6","source":"bench-5","destination":"bench-6"}
+{"ts":"2026-08-24T14:11:58.683Z","module":"bus","event":"sent","writer":"bench-send","stream_id":"8b9aaa8b32ae4a2eb16ba4b50f1bfa6d","correlation_id":"f3cb89e9b22740e78744cd0c81e669c8","source":"bench-6","destination":"bench-7"}
+{"ts":"2026-08-24T14:11:58.690Z","module":"switch","event":"kick_started","writer":"switch","stream_id":"b383c6e6e78a4b28ba4a278c154f9bb2","correlation_id":"39cffba1a941424d8138e45dd717e23a","source":"bench-10","destination":"bench-1"}
+{"ts":"2026-08-24T14:11:58.696Z","module":"bus","event":"sent","writer":"bench-send","stream_id":"f1196c2847d742af89c98ba6c9077f70","correlation_id":"23e2e234b71f44e4ae990a901a49e76a","source":"bench-7","destination":"bench-8"}
+{"ts":"2026-08-24T14:11:58.700Z","module":"switch","event":"popped","writer":"switch","stream_id":"4ea825efa9e944269818a28c27ac3cba","correlation_id":"44f7771ace4646669fe62e29fe3f3d98","source":"bench-2","destination":"bench-3"}
+{"ts":"2026-08-24T14:11:58.710Z","module":"switch","event":"forwarded","writer":"switch","stream_id":"4ea825efa9e944269818a28c27ac3cba","correlation_id":"44f7771ace4646669fe62e29fe3f3d98","source":"bench-2","destination":"bench-3"}
+{"ts":"2026-08-24T14:11:58.711Z","module":"port","event":"received","writer":"bench-port","stream_id":"4ea825efa9e944269818a28c27ac3cba","correlation_id":"44f7771ace4646669fe62e29fe3f3d98","source":"bench-2","destination":"bench-3"}
+{"ts":"2026-08-24T14:11:58.711Z","module":"port","event":"opened","writer":"bench-port","stream_id":"4ea825efa9e944269818a28c27ac3cba","correlation_id":"44f7771ace4646669fe62e29fe3f3d98","source":"bench-2","destination":"bench-3"}
+{"ts":"2026-08-24T14:11:58.712Z","module":"bus","event":"sent","writer":"bench-send","stream_id":"11330d5cd56644c486f0f9efea371612","correlation_id":"3be691ba1fc14ecb93f43c4d8ed7e0f3","source":"bench-8","destination":"bench-9"}
+{"ts":"2026-08-24T14:11:58.716Z","module":"switch","event":"kick_started","writer":"switch","stream_id":"4ea825efa9e944269818a28c27ac3cba","correlation_id":"44f7771ace4646669fe62e29fe3f3d98","source":"bench-2","destination":"bench-3"}
+{"ts":"2026-08-24T14:11:58.719Z","module":"switch","event":"popped","writer":"switch","stream_id":"88b04e46ae534bfc80e0956e06d4ead0","correlation_id":"2485b56062fa44d0b4843a74d77170d3","source":"bench-3","destination":"bench-4"}
+{"ts":"2026-08-24T14:11:58.720Z","module":"bus","event":"sent","writer":"bench-send","stream_id":"f6908978126048bfaf3829c05f293fb2","correlation_id":"a6b8ab9135344a09895f8ee44efe47ec","source":"bench-9","destination":"bench-10"}
+{"ts":"2026-08-24T14:11:58.721Z","module":"port","event":"received","writer":"bench-port","stream_id":"88b04e46ae534bfc80e0956e06d4ead0","correlation_id":"2485b56062fa44d0b4843a74d77170d3","source":"bench-3","destination":"bench-4"}
+{"ts":"2026-08-24T14:11:58.722Z","module":"port","event":"opened","writer":"bench-port","stream_id":"88b04e46ae534bfc80e0956e06d4ead0","correlation_id":"2485b56062fa44d0b4843a74d77170d3","source":"bench-3","destination":"bench-4"}
+{"ts":"2026-08-24T14:11:58.724Z","module":"switch","event":"forwarded","writer":"switch","stream_id":"88b04e46ae534bfc80e0956e06d4ead0","correlation_id":"2485b56062fa44d0b4843a74d77170d3","source":"bench-3","destination":"bench-4"}
+{"ts":"2026-08-24T14:11:58.727Z","module":"bus","event":"sent","writer":"bench-send","stream_id":"b0132e01bb7d4fa78cef342bfd0b7c7f","correlation_id":"70f7736a6d374ae69e6265f0c7184d38","source":"bench-10","destination":"bench-1"}
+  submitted 20 in 0.7s
+{"ts":"2026-08-24T14:11:58.738Z","module":"switch","event":"kick_started","writer":"switch","stream_id":"88b04e46ae534bfc80e0956e06d4ead0","correlation_id":"2485b56062fa44d0b4843a74d77170d3","source":"bench-3","destination":"bench-4"}
+{"ts":"2026-08-24T14:11:58.778Z","module":"switch","event":"popped","writer":"switch","stream_id":"412e742b2eef4d3797306644b699578d","correlation_id":"ca6c8879394245708ec6db4262e1fba6","source":"bench-4","destination":"bench-5"}
+{"ts":"2026-08-24T14:11:58.780Z","module":"switch","event":"forwarded","writer":"switch","stream_id":"412e742b2eef4d3797306644b699578d","correlation_id":"ca6c8879394245708ec6db4262e1fba6","source":"bench-4","destination":"bench-5"}
+{"ts":"2026-08-24T14:11:58.784Z","module":"port","event":"received","writer":"bench-port","stream_id":"412e742b2eef4d3797306644b699578d","correlation_id":"ca6c8879394245708ec6db4262e1fba6","source":"bench-4","destination":"bench-5"}
+{"ts":"2026-08-24T14:11:58.784Z","module":"port","event":"opened","writer":"bench-port","stream_id":"412e742b2eef4d3797306644b699578d","correlation_id":"ca6c8879394245708ec6db4262e1fba6","source":"bench-4","destination":"bench-5"}
+{"ts":"2026-08-24T14:11:58.807Z","module":"switch","event":"kick_started","writer":"switch","stream_id":"412e742b2eef4d3797306644b699578d","correlation_id":"ca6c8879394245708ec6db4262e1fba6","source":"bench-4","destination":"bench-5"}
+{"ts":"2026-08-24T14:11:58.812Z","module":"switch","event":"popped","writer":"switch","stream_id":"9a54a8921b5d4aada45bfc7c13c12433","correlation_id":"cd643e0988354902845352a92c97cba6","source":"bench-5","destination":"bench-6"}
+{"ts":"2026-08-24T14:11:58.813Z","module":"switch","event":"forwarded","writer":"switch","stream_id":"9a54a8921b5d4aada45bfc7c13c12433","correlation_id":"cd643e0988354902845352a92c97cba6","source":"bench-5","destination":"bench-6"}
+{"ts":"2026-08-24T14:11:58.815Z","module":"port","event":"received","writer":"bench-port","stream_id":"9a54a8921b5d4aada45bfc7c13c12433","correlation_id":"cd643e0988354902845352a92c97cba6","source":"bench-5","destination":"bench-6"}
+{"ts":"2026-08-24T14:11:58.815Z","module":"port","event":"opened","writer":"bench-port","stream_id":"9a54a8921b5d4aada45bfc7c13c12433","correlation_id":"cd643e0988354902845352a92c97cba6","source":"bench-5","destination":"bench-6"}
+{"ts":"2026-08-24T14:11:58.818Z","module":"switch","event":"kick_started","writer":"switch","stream_id":"9a54a8921b5d4aada45bfc7c13c12433","correlation_id":"cd643e0988354902845352a92c97cba6","source":"bench-5","destination":"bench-6"}
+{"ts":"2026-08-24T14:11:58.827Z","module":"switch","event":"popped","writer":"switch","stream_id":"8b9aaa8b32ae4a2eb16ba4b50f1bfa6d","correlation_id":"f3cb89e9b22740e78744cd0c81e669c8","source":"bench-6","destination":"bench-7"}
+{"ts":"2026-08-24T14:11:58.854Z","module":"switch","event":"forwarded","writer":"switch","stream_id":"8b9aaa8b32ae4a2eb16ba4b50f1bfa6d","correlation_id":"f3cb89e9b22740e78744cd0c81e669c8","source":"bench-6","destination":"bench-7"}
+{"ts":"2026-08-24T14:11:58.857Z","module":"port","event":"received","writer":"bench-port","stream_id":"8b9aaa8b32ae4a2eb16ba4b50f1bfa6d","correlation_id":"f3cb89e9b22740e78744cd0c81e669c8","source":"bench-6","destination":"bench-7"}
+{"ts":"2026-08-24T14:11:58.857Z","module":"port","event":"opened","writer":"bench-port","stream_id":"8b9aaa8b32ae4a2eb16ba4b50f1bfa6d","correlation_id":"f3cb89e9b22740e78744cd0c81e669c8","source":"bench-6","destination":"bench-7"}
+{"ts":"2026-08-24T14:11:58.880Z","module":"switch","event":"kick_started","writer":"switch","stream_id":"8b9aaa8b32ae4a2eb16ba4b50f1bfa6d","correlation_id":"f3cb89e9b22740e78744cd0c81e669c8","source":"bench-6","destination":"bench-7"}
+{"ts":"2026-08-24T14:11:58.884Z","module":"switch","event":"popped","writer":"switch","stream_id":"f1196c2847d742af89c98ba6c9077f70","correlation_id":"23e2e234b71f44e4ae990a901a49e76a","source":"bench-7","destination":"bench-8"}
+{"ts":"2026-08-24T14:11:58.885Z","module":"port","event":"received","writer":"bench-port","stream_id":"f1196c2847d742af89c98ba6c9077f70","correlation_id":"23e2e234b71f44e4ae990a901a49e76a","source":"bench-7","destination":"bench-8"}
+{"ts":"2026-08-24T14:11:58.885Z","module":"switch","event":"forwarded","writer":"switch","stream_id":"f1196c2847d742af89c98ba6c9077f70","correlation_id":"23e2e234b71f44e4ae990a901a49e76a","source":"bench-7","destination":"bench-8"}
+{"ts":"2026-08-24T14:11:58.903Z","module":"port","event":"opened","writer":"bench-port","stream_id":"f1196c2847d742af89c98ba6c9077f70","correlation_id":"23e2e234b71f44e4ae990a901a49e76a","source":"bench-7","destination":"bench-8"}
+{"ts":"2026-08-24T14:11:58.941Z","module":"switch","event":"kick_started","writer":"switch","stream_id":"f1196c2847d742af89c98ba6c9077f70","correlation_id":"23e2e234b71f44e4ae990a901a49e76a","source":"bench-7","destination":"bench-8"}
+{"ts":"2026-08-24T14:11:58.955Z","module":"switch","event":"popped","writer":"switch","stream_id":"11330d5cd56644c486f0f9efea371612","correlation_id":"3be691ba1fc14ecb93f43c4d8ed7e0f3","source":"bench-8","destination":"bench-9"}
+{"ts":"2026-08-24T14:11:58.965Z","module":"switch","event":"forwarded","writer":"switch","stream_id":"11330d5cd56644c486f0f9efea371612","correlation_id":"3be691ba1fc14ecb93f43c4d8ed7e0f3","source":"bench-8","destination":"bench-9"}
+{"ts":"2026-08-24T14:11:58.975Z","module":"switch","event":"kick_started","writer":"switch","stream_id":"11330d5cd56644c486f0f9efea371612","correlation_id":"3be691ba1fc14ecb93f43c4d8ed7e0f3","source":"bench-8","destination":"bench-9"}
+{"ts":"2026-08-24T14:11:58.982Z","module":"port","event":"received","writer":"bench-port","stream_id":"11330d5cd56644c486f0f9efea371612","correlation_id":"3be691ba1fc14ecb93f43c4d8ed7e0f3","source":"bench-8","destination":"bench-9"}
+{"ts":"2026-08-24T14:11:58.983Z","module":"port","event":"opened","writer":"bench-port","stream_id":"11330d5cd56644c486f0f9efea371612","correlation_id":"3be691ba1fc14ecb93f43c4d8ed7e0f3","source":"bench-8","destination":"bench-9"}
+{"ts":"2026-08-24T14:11:58.998Z","module":"switch","event":"popped","writer":"switch","stream_id":"47b3289e1e424a71b422312b03d52066","correlation_id":"87971d59e58c44baa5a77fc5b307a479","source":"bench-9","destination":"bench-10"}
+{"ts":"2026-08-24T14:11:59.005Z","module":"switch","event":"forwarded","writer":"switch","stream_id":"47b3289e1e424a71b422312b03d52066","correlation_id":"87971d59e58c44baa5a77fc5b307a479","source":"bench-9","destination":"bench-10"}
+{"ts":"2026-08-24T14:11:59.012Z","module":"switch","event":"kick_started","writer":"switch","stream_id":"47b3289e1e424a71b422312b03d52066","correlation_id":"87971d59e58c44baa5a77fc5b307a479","source":"bench-9","destination":"bench-10"}
+{"ts":"2026-08-24T14:11:59.024Z","module":"switch","event":"popped","writer":"switch","stream_id":"f6908978126048bfaf3829c05f293fb2","correlation_id":"a6b8ab9135344a09895f8ee44efe47ec","source":"bench-9","destination":"bench-10"}
+{"ts":"2026-08-24T14:11:59.026Z","module":"switch","event":"forwarded","writer":"switch","stream_id":"f6908978126048bfaf3829c05f293fb2","correlation_id":"a6b8ab9135344a09895f8ee44efe47ec","source":"bench-9","destination":"bench-10"}
+{"ts":"2026-08-24T14:11:59.051Z","module":"switch","event":"kick_started","writer":"switch","stream_id":"f6908978126048bfaf3829c05f293fb2","correlation_id":"a6b8ab9135344a09895f8ee44efe47ec","source":"bench-9","destination":"bench-10"}
+{"ts":"2026-08-24T14:11:59.062Z","module":"port","event":"received","writer":"bench-port","stream_id":"47b3289e1e424a71b422312b03d52066","correlation_id":"87971d59e58c44baa5a77fc5b307a479","source":"bench-9","destination":"bench-10"}
+{"ts":"2026-08-24T14:11:59.062Z","module":"port","event":"opened","writer":"bench-port","stream_id":"47b3289e1e424a71b422312b03d52066","correlation_id":"87971d59e58c44baa5a77fc5b307a479","source":"bench-9","destination":"bench-10"}
+{"ts":"2026-08-24T14:11:59.064Z","module":"port","event":"received","writer":"bench-port","stream_id":"f6908978126048bfaf3829c05f293fb2","correlation_id":"a6b8ab9135344a09895f8ee44efe47ec","source":"bench-9","destination":"bench-10"}
+{"ts":"2026-08-24T14:11:59.064Z","module":"port","event":"opened","writer":"bench-port","stream_id":"f6908978126048bfaf3829c05f293fb2","correlation_id":"a6b8ab9135344a09895f8ee44efe47ec","source":"bench-9","destination":"bench-10"}
+{"ts":"2026-08-24T14:11:59.070Z","module":"switch","event":"popped","writer":"switch","stream_id":"b0132e01bb7d4fa78cef342bfd0b7c7f","correlation_id":"70f7736a6d374ae69e6265f0c7184d38","source":"bench-10","destination":"bench-1"}
+{"ts":"2026-08-24T14:11:59.079Z","module":"switch","event":"forwarded","writer":"switch","stream_id":"b0132e01bb7d4fa78cef342bfd0b7c7f","correlation_id":"70f7736a6d374ae69e6265f0c7184d38","source":"bench-10","destination":"bench-1"}
+{"ts":"2026-08-24T14:11:59.080Z","module":"switch","event":"kick_started","writer":"switch","stream_id":"b0132e01bb7d4fa78cef342bfd0b7c7f","correlation_id":"70f7736a6d374ae69e6265f0c7184d38","source":"bench-10","destination":"bench-1"}
+{"ts":"2026-08-24T14:11:59.102Z","module":"port","event":"received","writer":"bench-port","stream_id":"b0132e01bb7d4fa78cef342bfd0b7c7f","correlation_id":"70f7736a6d374ae69e6265f0c7184d38","source":"bench-10","destination":"bench-1"}
+{"ts":"2026-08-24T14:11:59.102Z","module":"port","event":"opened","writer":"bench-port","stream_id":"b0132e01bb7d4fa78cef342bfd0b7c7f","correlation_id":"70f7736a6d374ae69e6265f0c7184d38","source":"bench-10","destination":"bench-1"}
+INFO:     127.0.0.1:33504 - "GET /health HTTP/1.1" 200 OK
+Traceback (most recent call last):
+  File "synthetic.py", line 1, in <module>
+    raise RuntimeError("BUILD-115 check 4: deliberately corrupted capture")
+RuntimeError: BUILD-115 check 4: deliberately corrupted capture
