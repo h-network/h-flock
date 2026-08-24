@@ -1,7 +1,7 @@
 import json
 import os
 import pytest
-from flock.bus.resp import Redis as RespRedis, ResponseError
+from flock.bus.resp import ResponseError
 
 os.environ.setdefault("PASTE_ENTER_DELAY", "0")
 
