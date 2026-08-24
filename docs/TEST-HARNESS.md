@@ -40,6 +40,13 @@ defect.** ⚠ **Scoping the universe is not the same as forgiving what is in it*
 a scoped judge must still go red on a real fault inside its own set, and a build
 that narrows the universe has to prove that half too.
 
+⚠⚠ **AND SCOPING BY PARTICIPANT IS NOT ENOUGH — SCOPE BY LEG.** Build 120 hit the
+same failure **twice more** after build 119 supposedly fixed it: an ack **is** an
+envelope, so it emits its own `sent` record, and **both legs carry the same
+participant prefix.** The script counted its own ack traffic as payload traffic
+and went red on itself. **A round-trip script's own reply is the first thing
+outside its intended universe**, and a prefix cannot see that.
+
 ---
 
 ## 1 — packet switching · conservation only · **BUILT AND MERGED, NOT WIRED**
@@ -265,3 +272,4 @@ committed.**
 | usage accounting | codex `rate_limits` unproven live; agy not collected |
 | test doubles | fixed for `resp.Redis`; **unchecked for every other double** |
 | the three `api-*` scenarios | `BUILD-118` grepped `accept.sh`, `plumbing-check.sh` and `sim-blocked.sh` for all three: **zero matches.** Build 116 changed how they obtain a token and **an acceptance round never reaches them** — the register's founding failure, still live |
+| `log_record` drops `stream_id` silently | ⚠ `logging.py:84` writes `stream_id` **only** for events in the `_ENVELOPE_EVENTS` allowlist. A caller may **pass** one for any other event and it is **discarded with no error**. **No production impact today** — all ten events outside the list are genuinely non-envelope and nothing in `src/` passes an id that is dropped — but build 120 lost 10 of 10 `payload_verified` ids to it and spent a checkpoint finding out. **Script 3 territory: do the records mean what the contract says?** |
