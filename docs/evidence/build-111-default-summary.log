@@ -1,0 +1,8 @@
+tenant=bus111d project=h-flock-bus111d PASTE_ENTER_DELAY=0.5
+workload=100 envelopes; bench-send=100
+envelopes=100 expected=100 dead-lettered=0 indeterminate=0
+sent=100 popped=100 forwarded=100 kick_started=100 received=100 opened=100 arrival=100/100=100%
+kick_started_to_received_p50=2293.00ms p95=4636.00ms
+received_to_opened_p50=507.00ms p95=512.00ms
+steady_state=19.56/s over 4.1s wall_clock=21.03/s
+reconcile=sent=100 delivered_once=100 duplicates=0 dead=0 stranded=0 indeterminate=0 lost_attributed=0 lost_unexplained=0
