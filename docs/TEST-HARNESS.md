@@ -68,6 +68,10 @@ and throughput before composing the reconciler result.  It is **not wired to
 **Failure evidence:** a nonzero live result captures the full container log,
 container/process snapshots, tenant keyspace contents, per-queue LLENs, and
 SHA256s before teardown. A clean result skips this diagnostic set.
+The inspect snapshot redacts values for environment names matching `TOKEN`,
+`KEY`, `SECRET`, `PASSWORD`, `CRED`, or `AUTH`, while retaining the names. This
+is an explicit denylist, not a complete secret detector; a newly named secret
+must extend the pattern before its evidence is committed.
 
 ---
 

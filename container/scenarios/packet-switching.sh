@@ -62,7 +62,19 @@ capture_diagnostics() {
   [ "$rc" -eq 0 ] && return 0
   echo "PACKET_DIAGNOSTICS retaining work=$WORK"
   docker logs "$CONTAINER" >"$WORK/diagnostic-container.log" 2>&1 || true
-  docker inspect "$CONTAINER" >"$WORK/diagnostic-inspect.json" 2>&1 || true
+  docker inspect "$CONTAINER" | python3 -c '
+import json, re, sys
+rows = json.load(sys.stdin)
+secret = re.compile(r"TOKEN|KEY|SECRET|PASSWORD|CRED|AUTH", re.I)
+for row in rows:
+    env = row.get("Config", {}).get("Env") or []
+    row.setdefault("Config", {})["Env"] = [
+        (name + "=REDACTED" if "=" in item and secret.search((name := item.split("=", 1)[0])) else item)
+        for item in env
+    ]
+json.dump(rows, sys.stdout, indent=2, sort_keys=True)
+sys.stdout.write("\n")
+' >"$WORK/diagnostic-inspect.json" 2>&1 || true
   docker exec "$CONTAINER" ps -ef >"$WORK/diagnostic-processes.txt" 2>&1 || true
   docker exec -e POD="$POD" -e TENANT="$TENANT" "$CONTAINER" python3 -c '
 import json, os, redis
