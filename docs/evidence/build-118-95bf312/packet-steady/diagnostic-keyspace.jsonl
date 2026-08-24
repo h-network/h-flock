@@ -1,0 +1,24 @@
+{"key": "pod:acme:tenant:build118-0824-1647:accounts", "type": "set", "value": ["default"]}
+{"key": "pod:acme:tenant:build118-0824-1647:agent:architect:activity", "type": "stream", "value": "<unsupported redis type stream>"}
+{"key": "pod:acme:tenant:build118-0824-1647:agent:architect:activity.offset", "type": "string", "value": "{\"offsets\":{\"/home/ubuntu/.claude/projects/-workdir-architect/383993f9-9503-4d50-8921-7b68cf4744fc.jsonl\":5274}}"}
+{"key": "pod:acme:tenant:build118-0824-1647:agent:architect:delivery.markers", "type": "stream", "value": "<unsupported redis type stream>"}
+{"key": "pod:acme:tenant:build118-0824-1647:agent:architect:launch", "type": "string", "value": "claude"}
+{"key": "pod:acme:tenant:build118-0824-1647:agent:architect:pending.verify", "type": "stream", "value": "<unsupported redis type stream>"}
+{"key": "pod:acme:tenant:build118-0824-1647:agent:architect:presence", "type": "hash", "value": {"last_activity": "2026-08-24T14:51:51.794Z", "since": "2026-08-24T14:52:21.794Z", "state": "idle"}}
+{"key": "pod:acme:tenant:build118-0824-1647:agent:architect:usage.attributed", "type": "set", "value": ["dfacd12b5261413d8036b44217c84b03", "f48d0d0b06784392ae44103991b40412"]}
+{"key": "pod:acme:tenant:build118-0824-1647:agent:architect:usage.requests", "type": "set", "value": ["4c71919f-c018-48ee-92df-8827a0e42d4e", "fd81a24f-3f19-4984-ada7-bc127fc44368"]}
+{"key": "pod:acme:tenant:build118-0824-1647:agent:sme-2:activity", "type": "stream", "value": "<unsupported redis type stream>"}
+{"key": "pod:acme:tenant:build118-0824-1647:agent:sme-2:activity.offset", "type": "string", "value": "{\"offsets\":{\"/home/ubuntu/.claude/projects/-workdir-sme-2/9cf14e41-2a28-4032-a42a-fce80e590e9b.jsonl\":2752}}"}
+{"key": "pod:acme:tenant:build118-0824-1647:agent:sme-2:delivery.markers", "type": "stream", "value": "<unsupported redis type stream>"}
+{"key": "pod:acme:tenant:build118-0824-1647:agent:sme-2:launch", "type": "string", "value": "claude"}
+{"key": "pod:acme:tenant:build118-0824-1647:agent:sme-2:pending.verify", "type": "stream", "value": "<unsupported redis type stream>"}
+{"key": "pod:acme:tenant:build118-0824-1647:agent:sme-2:presence", "type": "hash", "value": {"last_activity": "2026-08-24T14:48:47.986Z", "since": "2026-08-24T14:49:17.986Z", "state": "idle"}}
+{"key": "pod:acme:tenant:build118-0824-1647:agent:sme-2:tasks.done", "type": "list", "value": ["{\"v\":1,\"id\":\"332ed2fa14744a4c9abf4da31db51c3d\",\"title\":\"plumb-ticket-3060704\",\"description\":\"the brief\",\"created_by\":\"architect\",\"status\":\"done\",\"created_ts\":\"2026-08-24T14:48:47.640Z\",\"started_ts\":\"2026-08-24T14:48:50.344Z\",\"done_ts\":\"2026-08-24T14:48:52.859Z\"}"]}
+{"key": "pod:acme:tenant:build118-0824-1647:agent:sme-2:usage.attributed", "type": "set", "value": ["bfe8ad1770424a7eb8934d17e8cd4758"]}
+{"key": "pod:acme:tenant:build118-0824-1647:agent:sme-2:usage.requests", "type": "set", "value": ["c9c212f1-1826-41dd-b140-d2636e9e8a78"]}
+{"key": "pod:acme:tenant:build118-0824-1647:agent:telegram:inbox", "type": "stream", "value": "<unsupported redis type stream>"}
+{"key": "pod:acme:tenant:build118-0824-1647:alerts", "type": "stream", "value": "<unsupported redis type stream>"}
+{"key": "pod:acme:tenant:build118-0824-1647:credential.alerted", "type": "hash", "value": {"default:claude": "absent"}}
+{"key": "pod:acme:tenant:build118-0824-1647:lead", "type": "string", "value": "architect"}
+{"key": "pod:acme:tenant:build118-0824-1647:roster", "type": "hash", "value": {"api": "api", "architect": "tmux", "bench-1": "api", "bench-10": "api", "bench-2": "api", "bench-3": "api", "bench-4": "api", "bench-5": "api", "bench-6": "api", "bench-7": "api", "bench-8": "api", "bench-9": "api", "host": "control", "sme-2": "tmux", "web": "api"}}
+{"key": "pod:acme:tenant:build118-0824-1647:usage", "type": "stream", "value": "<unsupported redis type stream>"}
