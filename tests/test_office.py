@@ -260,6 +260,50 @@ def test_peers_prints_only_other_tmux_agents(office_env, capsys):
     assert capsys.readouterr().out.strip() == "backend"
 
 
+def test_peers_verbose_distinguishes_framework_profile_and_current_task(
+    office_env, capsys
+):
+    office_env.roster = {
+        "frontend": "tmux",
+        "claude-peer": "tmux",
+        "codex-peer": "tmux",
+        "agy-peer": "tmux",
+    }
+    office_env.values.update(
+        {
+            "pod:acme:tenant:hq:agent:claude-peer:launch": "claude",
+            "pod:acme:tenant:hq:agent:claude-peer:profile": "work",
+            "pod:acme:tenant:hq:agent:codex-peer:launch": "codex",
+            "pod:acme:tenant:hq:agent:agy-peer:launch": "agy",
+        }
+    )
+    office_env.lists["pod:acme:tenant:hq:agent:codex-peer:tasks.doing"] = [
+        json.dumps({"id": "task-1", "title": "Review the fabric"}).encode()
+    ]
+
+    cli.main(["peers", "--verbose"])
+
+    assert capsys.readouterr().out.splitlines() == [
+        "agy-peer: framework=agy",
+        "claude-peer: framework=claude, profile=work",
+        'codex-peer: framework=codex, task="Review the fabric"',
+    ]
+
+
+def test_peers_plain_output_contract_is_unchanged_with_enriched_state(
+    office_env, capsys
+):
+    office_env.values["pod:acme:tenant:hq:agent:backend:launch"] = "agy"
+    office_env.values["pod:acme:tenant:hq:agent:backend:profile"] = "work"
+    office_env.lists["pod:acme:tenant:hq:agent:backend:tasks.doing"] = [
+        json.dumps({"id": "task-1", "title": "Busy"}).encode()
+    ]
+
+    cli.main(["peers"])
+
+    assert capsys.readouterr().out.strip() == "backend"
+
+
 def test_peers_marks_lead_agent(office_env, capsys):
     # ⚠ zeus deliberately does NOT sort first — that is the whole point of the
     # lead being the first agent created rather than sorted(...)[0].
