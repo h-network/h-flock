@@ -25,6 +25,21 @@ one demonstrates the failure per `BUILD-CONVENTION` §1.
 value is in the boundary, and a reader who mistakes the boundary draws a false
 conclusion. Build 111 measured a switch and was read as measuring delivery.
 
+⚠⚠ **It must state its UNIVERSE and judge only inside it.** Three separate tools
+have now produced a confident red on a healthy system by judging things that were
+never theirs:
+
+| | what it judged | what it should have judged |
+|---|---|---|
+| `delivery_unverified` | flags **raised** | flags that **should have been** raised |
+| build 114's burst | envelopes **at capture time** | envelopes **after the queues drained** |
+| build 118's stray | **every** envelope on the tenant | **its own** envelopes |
+
+**Each judged everything it could see and called what it did not understand a
+defect.** ⚠ **Scoping the universe is not the same as forgiving what is in it** —
+a scoped judge must still go red on a real fault inside its own set, and a build
+that narrows the universe has to prove that half too.
+
 ---
 
 ## 1 — packet switching · conservation only · **BUILT AND MERGED, NOT WIRED**
@@ -53,6 +68,12 @@ envelopes, not bytes.
 
 **Spec:** `BUILD-114`. Built by `bus`, verified independently by `acceptance`
 (`BUILD-115`), merged. ⚠ **Not wired to `accept.sh`** — that is its own decision.
+
+⚠⚠ **KNOWN DEFECT, fix specced as `BUILD-119`: it judges traffic that is not its
+own.** `judge()` buckets every line in `docker logs` with no participant filter,
+so `BUILD-118` returned `rc=3` twice on real `accept.sh` plumbing traffic while
+the harness's own accounting was clean. **It silently requires an idle tenant and
+nothing says so.**
 
 ### ⚠⚠ Its first run found something, which is the argument for the whole register
 
@@ -243,3 +264,4 @@ committed.**
 | control plane | `_incomplete`, `_failed` and `_partially_failed` have **never** run outside a unit test |
 | usage accounting | codex `rate_limits` unproven live; agy not collected |
 | test doubles | fixed for `resp.Redis`; **unchecked for every other double** |
+| the three `api-*` scenarios | `BUILD-118` grepped `accept.sh`, `plumbing-check.sh` and `sim-blocked.sh` for all three: **zero matches.** Build 116 changed how they obtain a token and **an acceptance round never reaches them** — the register's founding failure, still live |
