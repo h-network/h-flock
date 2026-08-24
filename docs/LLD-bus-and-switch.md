@@ -57,6 +57,15 @@ message, mutate lifecycle state or add a ticket. Which is precisely the line the
 switch cannot cross: it never touches the payload at all, not even to pass it
 through.
 
+### The two Redis clients
+
+The codebase uses two distinct Redis clients, partitioned strictly by process lifecycle:
+
+1. **Short-lived spawned tools (`flock.bus.resp.Redis`)**: CLI commands and edge ports (`port/send.py`, `port/deliver.py`, `office/cli.py`) execute frequently in transient processes where import time directly impacts latency (a port kick costs 659–911 ms). They use the minimal, hand-rolled RESP2 client (`flock.bus.resp.Redis`) implementing exactly 24 one-shot commands without external library dependencies.
+2. **Long-lived daemons (`redis.Redis` via `redis-py`)**: Background services (`switch/service.py`, `watchdog/service.py`, `api/app.py`) import full `redis.Redis` to leverage advanced capabilities like multi-key pipelining (`pipeline()`), list trimming (`ltrim()`), element inspection (`lindex()`), key existence probing (`exists()`), and set mutations (`sadd()`, `sismember()`).
+
+In tests, `FakeRespRedis` in `tests/conftest.py` strictly adheres to the 24-method surface of `flock.bus.resp.Redis`, ensuring short-lived tool tests cannot pass against capabilities production lacks, while `FakeRedis` extends it with daemon methods.
+
 ### The two doors
 
 **Normal envelope traffic enters and leaves an edge through two tools.** The

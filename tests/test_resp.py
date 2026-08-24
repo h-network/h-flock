@@ -4,7 +4,9 @@ from pathlib import Path
 from unittest.mock import patch
 
 import pytest
+import redis
 
+from conftest import FakeRespRedis
 from flock.bus.resp import Redis, ResponseError
 
 
@@ -60,19 +62,59 @@ def test_eval_is_one_resp_request_with_keys_before_arguments():
 
 
 def test_resp_doubles_do_not_expose_commands_missing_from_production_client():
-    """Structural invariant: RESP double matches production Redis method surface exactly."""
-    from conftest import FakeRedis
-    production = {
+    """Structural invariant: FakeRespRedis matches flock.bus.resp.Redis method surface exactly,
+    and flock.bus.resp.Redis is a strict subset of redis-py (no invented commands)."""
+    resp_production = {
         name for name, value in vars(Redis).items()
         if callable(value) and not name.startswith("_")
     }
-    double_surface = {
-        name for name, value in vars(FakeRedis).items()
+    fake_resp_surface = {
+        name for name, value in vars(FakeRespRedis).items()
         if callable(value) and not name.startswith("_")
     }
-    diff_msg = (
-        "FakeRedis method surface does not match production Redis. "
-        f"Missing from double: {sorted(production - double_surface)}, "
-        f"Exceeding production: {sorted(double_surface - production)}"
+    redis_py_surface = {
+        name for name in dir(redis.Redis)
+        if callable(getattr(redis.Redis, name, None)) and not name.startswith("_")
+    }
+
+    assert fake_resp_surface == resp_production, (
+        f"FakeRespRedis does not match flock.bus.resp.Redis surface exactly.\n"
+        f"Missing: {sorted(resp_production - fake_resp_surface)}\n"
+        f"Exceeding: {sorted(fake_resp_surface - resp_production)}"
     )
-    assert double_surface == production, diff_msg
+    assert resp_production <= redis_py_surface, (
+        f"flock.bus.resp.Redis invents commands missing from redis-py: "
+        f"{sorted(resp_production - redis_py_surface)}"
+    )
+
+
+def test_error_reply_raises():
+    r, _ = client(b"-WRONGTYPE bad key\r\n")
+    with pytest.raises(ResponseError, match="WRONGTYPE bad key"):
+        r.get("bad")
+
+
+def test_url_auth_and_database_are_selected():
+    sock = FakeSocket(b"+OK\r\n+OK\r\n")
+    with patch("flock.bus.resp.socket.create_connection", return_value=sock):
+        Redis.from_url("redis://:p%40ss@redis.example:6380/2")
+    assert b"AUTH" in sock.requests[0] and b"p@ss" in sock.requests[0]
+    assert b"SELECT" in sock.requests[1] and b"2" in sock.requests[1]
+
+
+def test_xrange_parses_stream_entries_with_field_dict():
+    payload = b'{"agent":"bus","input":100}'
+    resp_reply = (
+        b"*1\r\n"
+        b"*2\r\n"
+        b"$3\r\n1-0\r\n"
+        b"*2\r\n"
+        b"$5\r\nusage\r\n"
+        + f"${len(payload)}\r\n".encode()
+        + payload
+        + b"\r\n"
+    )
+    r, sock = client(resp_reply)
+    entries = r.xrange("usage", min="-", max="+")
+    assert entries == [(b"1-0", {b"usage": b'{"agent":"bus","input":100}'})]
+    assert sock.requests[0] == b"*4\r\n$6\r\nXRANGE\r\n$5\r\nusage\r\n$1\r\n-\r\n$1\r\n+\r\n"

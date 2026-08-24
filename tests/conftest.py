@@ -1,7 +1,7 @@
 import json
 import os
 import pytest
-from flock.bus.resp import ResponseError
+from flock.bus.resp import Redis as RespRedis, ResponseError
 
 os.environ.setdefault("PASTE_ENTER_DELAY", "0")
 
@@ -47,8 +47,9 @@ class FakePipeline:
         return results
 
 
-class FakeRedis:
-    """Unified in-memory Redis double supporting stateful, recording, and faulty modes."""
+class FakeRespRedis:
+    """In-memory double for flock.bus.resp.Redis (short-lived port/office client).
+    Exposes EXACTLY the 24 methods of flock.bus.resp.Redis — no more, no less."""
 
     def __init__(
         self,
@@ -114,7 +115,7 @@ class FakeRedis:
         self.reverse_counts = []
         self.lengths = {}
 
-        self.agents = agents or (tuple(self.roster_agents) if self.roster_agents is not None else None)
+        self.agents = agents or (tuple(self.roster_agents) if self.roster_agents else None)
         if roster is not None:
             self.roster = dict(roster)
         elif self.roster is None:
@@ -163,17 +164,7 @@ class FakeRedis:
             raise ConnectionError(f"Simulated failure after call {self.fail_after}")
         return None
 
-    def ping(self):
-        return True
-
-    def flushdb(self):
-        self.values.clear()
-        self.hashes.clear()
-        self.lists.clear()
-        self.sets.clear()
-        self.streams.clear()
-
-    # --- RESP Surface ---
+    # --- 24 RESP Methods ---
     def get(self, key):
         if self.events is not None:
             self.events.append(("get", key))
@@ -651,18 +642,32 @@ class FakeRedis:
         stream_id = args[numkeys + 2] if len(args) > numkeys + 2 else ""
 
         if "SISMEMBER" in script and request_id and seen_key:
-            if self.sismember(seen_key, request_id):
+            if request_id in self.sets.get(seen_key, set()):
                 return 0
         if "XADD" in script and stream_key and raw_usage:
             self.xadd(stream_key, {"usage": raw_usage})
         if "SADD" in script:
             if request_id and seen_key:
-                self.sadd(seen_key, request_id)
+                self.sets.setdefault(seen_key, set()).add(request_id)
             if stream_id and attributed_key:
-                self.sadd(attributed_key, stream_id)
+                self.sets.setdefault(attributed_key, set()).add(stream_id)
         return 1
 
-    # --- Daemon / Pipeline Extensions (Full Redis) ---
+
+class FakeRedis(FakeRespRedis):
+    """In-memory double for redis-py (long-lived daemons: switch, watchdog, api).
+    Extends FakeRespRedis with daemon methods: pipeline, exists, lindex, rpop, ltrim, sadd, sismember, keys, scan_iter."""
+
+    def ping(self):
+        return True
+
+    def flushdb(self):
+        self.values.clear()
+        self.hashes.clear()
+        self.lists.clear()
+        self.sets.clear()
+        self.streams.clear()
+
     def pipeline(self, transaction=True):
         fault = self._check_fault("pipeline", transaction)
         if fault is not None:
@@ -765,6 +770,11 @@ class FakeRedis:
 @pytest.fixture
 def fake_redis():
     return FakeRedis()
+
+
+@pytest.fixture
+def fake_resp_redis():
+    return FakeRespRedis()
 
 
 MockRedis = FakeRedis
