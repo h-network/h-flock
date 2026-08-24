@@ -81,6 +81,10 @@ the complete container log and inspect/process snapshots, a logical dump of the
 tenant keyspace, per-agent ingress/egress LLENs, and a checksum manifest. Clean
 results do not retain this extra set. This is deliberately capture-before-
 teardown; a red result must remain diagnosable rather than merely judgeable.
+The capture also checks the daemon window-log path: when present it is copied;
+otherwise an explicit stdout marker is retained. Every expected artifact must
+be non-empty and must not begin with a traceback, and the diagnostic status is
+reported as `complete` or `incomplete` before the original result code exits.
 
 ## Verification status
 
