@@ -1,0 +1,116 @@
+=== MUTATION 1: RE-INTRODUCE HARDCODED TOKEN (expected exit 1) ===
+============================= test session starts ==============================
+platform linux -- Python 3.12.3, pytest-9.1.1, pluggy-1.6.0
+rootdir: /workspace/api/h-flock
+configfile: pyproject.toml
+plugins: anyio-4.14.2
+collected 3 items / 2 deselected / 1 selected
+
+tests/test_scenario_tokens.py F                                          [100%]
+
+=================================== FAILURES ===================================
+_____________________ test_no_hardcoded_token_in_scenarios _____________________
+
+    def test_no_hardcoded_token_in_scenarios():
+        """Build 116: no hardcoded API token constant remains in container/scenarios."""
+        target_token = "7af3ad5eb2cac57e9ca97a953908ef09"
+        for script in SCENARIOS_DIR.glob('*.sh'):
+            content = script.read_text(encoding='utf-8')
+>           assert target_token not in content, f"Hardcoded token found in {script}"
+E           AssertionError: Hardcoded token found in /workspace/api/h-flock/container/scenarios/api-auth-and-limits.sh
+E           assert '7af3ad5eb2c...7a953908ef09' not in '#!/usr/bin/...plete ==="\n'
+E             
+E             '7af3ad5eb2cac57e9ca97a953908ef09' is contained here:
+E               PI_TOKEN:-7af3ad5eb2cac57e9ca97a953908ef09}"
+E               if [ -z "${TOKEN:-}" ]; then
+E                 echo "Error: API_TOKEN is empty. Set API_TOKEN or ensure container '$C' is running." >&2
+E                 exit 1
+E               fi...
+E             
+E             ...Full output truncated (49 lines hidden), use '-vv' to show
+
+tests/test_scenario_tokens.py:40: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_scenario_tokens.py::test_no_hardcoded_token_in_scenarios - ...
+======================= 1 failed, 2 deselected in 0.01s ========================
+
+MUTATION_1_EXIT=1
+
+=== MUTATION 2: REMOVE EMPTY TOKEN GUARD (expected exit 1) ===
+============================= test session starts ==============================
+platform linux -- Python 3.12.3, pytest-9.1.1, pluggy-1.6.0
+rootdir: /workspace/api/h-flock
+configfile: pyproject.toml
+plugins: anyio-4.14.2
+collected 3 items / 2 deselected / 1 selected
+
+tests/test_scenario_tokens.py F                                          [100%]
+
+=================================== FAILURES ===================================
+_______________ test_api_scenarios_fail_loudly_when_token_empty ________________
+
+    def test_api_scenarios_fail_loudly_when_token_empty():
+        """Build 116: scenarios refuse to run with empty token when container is not running."""
+        clean_env = {k: v for k, v in os.environ.items() if k != "API_TOKEN"}
+        for script in API_SCENARIOS:
+            result = subprocess.run(
+                ['bash', str(script)],
+                capture_output=True,
+                text=True,
+                env=clean_env,
+            )
+>           assert result.returncode == 1, f"Expected {script.name} to exit 1, got {result.returncode}"
+E           AssertionError: Expected api-auth-and-limits.sh to exit 1, got 0
+E           assert 0 == 1
+E            +  where 0 = CompletedProcess(args=['bash', '/workspace/api/h-flock/container/scenarios/api-auth-and-limits.sh'], returncode=0, std...: \nHTTP Status: 000\n\n[7] Testing GET /board...\nBody: \nHTTP Status: 000\n\n=== Scenario Complete ===\n", stderr='').returncode
+
+tests/test_scenario_tokens.py:31: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_scenario_tokens.py::test_api_scenarios_fail_loudly_when_token_empty
+======================= 1 failed, 2 deselected in 0.06s ========================
+
+MUTATION_2_EXIT=1
+
+=== MUTATION 3: SYNTAX ERROR IN SCENARIO SCRIPT (expected exit 1) ===
+============================= test session starts ==============================
+platform linux -- Python 3.12.3, pytest-9.1.1, pluggy-1.6.0
+rootdir: /workspace/api/h-flock
+configfile: pyproject.toml
+plugins: anyio-4.14.2
+collected 3 items / 2 deselected / 1 selected
+
+tests/test_scenario_tokens.py F                                          [100%]
+
+=================================== FAILURES ===================================
+_______________________ test_api_scenarios_syntax_valid ________________________
+
+    def test_api_scenarios_syntax_valid():
+        """Build 116: bash -n passes on all three API scenario scripts."""
+        for script in API_SCENARIOS:
+            result = subprocess.run(['bash', '-n', str(script)], capture_output=True, text=True)
+>           assert result.returncode == 0, f"Syntax error in {script}: {result.stderr}"
+E           AssertionError: Syntax error in /workspace/api/h-flock/container/scenarios/api-concurrency-and-time.sh: /workspace/api/h-flock/container/scenarios/api-concurrency-and-time.sh: line 38: syntax error: unexpected end of file
+E             
+E           assert 2 == 0
+E            +  where 2 = CompletedProcess(args=['bash', '-n', '/workspace/api/h-flock/container/scenarios/api-concurrency-and-time.sh'], return...orkspace/api/h-flock/container/scenarios/api-concurrency-and-time.sh: line 38: syntax error: unexpected end of file\n').returncode
+
+tests/test_scenario_tokens.py:18: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_scenario_tokens.py::test_api_scenarios_syntax_valid - Asser...
+======================= 1 failed, 2 deselected in 0.01s ========================
+
+MUTATION_3_EXIT=1
+
+=== CLEAN RUN (expected exit 0) ===
+============================= test session starts ==============================
+platform linux -- Python 3.12.3, pytest-9.1.1, pluggy-1.6.0
+rootdir: /workspace/api/h-flock
+configfile: pyproject.toml
+plugins: anyio-4.14.2
+collected 3 items
+
+tests/test_scenario_tokens.py ...                                        [100%]
+
+============================== 3 passed in 0.01s ===============================
+
+CLEAN_EXIT=0

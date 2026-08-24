@@ -67,14 +67,14 @@ five lost.** All five carry **only a `sent` record**.
 | no `expire`/`setex` in `src`, no `--maxmemory` | keys never vanish on their own |
 | `switch/service.py:113` | the **only** consumer of egress in the tree; `api/app.py:597` merely reads `llen` |
 | `resp.py` `makefile("rb")` | buffered — no framing bug at 100 keys, no `settimeout`, no reconnect |
-| `service.py:185-190`, `:124-128`, `:147-154` | **every in-tree loss path emits a record** — `forward_unknown`, `dead_lettered` |
+| `switch/service.py:185-190`, `:124-128`, `:147-154` | **every in-tree loss path emits a record** — `forward_unknown`, `dead_lettered` |
 
 ⚠ **The five match no failure path in the code.** They were on the list, the only
 in-tree consumer never recorded them, and every way the tree can lose an envelope
 leaves a trace. **So something outside `src/` removed them.**
 
 ⚠ **Five hypotheses have died here** — tail truncation (timing), static watch list
-(`service.py:104-114` rebuilds the roster per step), socket framing, key TTL and
+(`switch/service.py:104-114` rebuilds the roster per step), socket framing, key TTL and
 eviction, and a **second switch instance** (the burst log has exactly one
 `started reason=switch pid=51`, no restarts, and the tenant was freshly
 generated). **The cause is open.**
