@@ -11,6 +11,7 @@
    - Corrected the agy token measurement claim: agy writes per-conversation transcripts under `brain/<id>/.system_generated/logs/`, but h-flock does not collect them; whether those transcripts carry token counts is unverified.
    - `office status` activity column reads `not collected (agy)` (was `not measurable (agy)`).
    - `office usage` model reads `not collected` (was `not measurable`), and `--json` output carries `"collected": false` on uncollected rows.
+   - `tests/test_usage.py::test_agy_uncollected_documentation_bounded_claims` asserts the exact bounded sentences across both `docs/CONTRACTS.md` and `docs/BUILD-88-results.md`.
 
 ## Negative Controls (Falsifiability)
 
@@ -23,42 +24,45 @@
 - **Control 3 (Office usage agy not collected label):**
   - *Mutation:* In `src/flock/office/cli.py`, revert `"model": "not collected"` to `"not measurable"`.
   - *Observed locus:* `tests/test_usage.py::test_office_usage_names_agy_agent_not_collected` FAILED with `AssertionError: assert 'not collected' in ...`; exit 1.
+- **Control 4 (Bounded doc claims assertion):**
+  - *Mutation:* In `docs/CONTRACTS.md`, replace `"h-flock does not collect it"` with `"h-flock collects it automatically"`.
+  - *Observed locus:* `tests/test_usage.py::test_agy_uncollected_documentation_bounded_claims` FAILED with `AssertionError`; exit 1.
 
 All mutations were restored before capturing final gate logs.
 
 ## TEST SIGN-OFF
 
-    claim            Watchdog emits status=present when credential recovers, and office status/usage/CONTRACTS document agy as not collected
-    source sha       1eaecf6
+    claim            Watchdog emits status=present when credential recovers, office status/usage/CONTRACTS document agy as not collected, and doc assertions are tested
+    source sha       75f5529
     artefact         COMMIT
     host             local — pytest and documentation audit
     command          python3 -m pytest -q
     exit status      0, read unpiped
 
     EXCLUDED         live container execution, Docker image build, runtime benchmark
-    population       516 tests and 5 subtests; all repository tests collected
+    population       517 tests and 5 subtests; all repository tests collected
 
-    control          behavioural mutations: (1) silent credential recovery; (2) status agy label revert; (3) usage agy label revert
-    expected locus   (1) tests/test_watchdog.py:362; (2) tests/test_office.py:333; (3) tests/test_usage.py:978
+    control          behavioural and doc mutations: (1) silent credential recovery; (2) status agy label revert; (3) usage agy label revert; (4) doc claim mutation
+    expected locus   (1) tests/test_watchdog.py:362; (2) tests/test_office.py:333; (3) tests/test_usage.py:978; (4) tests/test_usage.py:1000
     observed locus   same
-    signature        (1) AssertionError: assert 1 == 2; (2) AssertionError: assert 'not collected (agy)' in ...; (3) AssertionError: assert 'not collected' in ...; all exit 1
+    signature        (1) AssertionError: assert 1 == 2; (2) AssertionError: assert 'not collected (agy)' in ...; (3) AssertionError: assert 'not collected' in ...; (4) AssertionError; all exit 1
 
-    evidence         docs/evidence/build-105-controls.log sha256 d35809a25611db5de6fc0b4d3e1229ee5b443422a247726731650441478fa17a
-                     docs/evidence/build-105-pytest.log sha256 34deb4022d349619aaf13f071660204af536b3e23486525dc20a3cb123e74dc3
+    evidence         docs/evidence/build-105-controls.log sha256 39e5a7c27c68f980a57eea57efd14043fd53822e9eb8f9daf5435c287a0845ad
+                     docs/evidence/build-105-pytest.log sha256 48e4a7b2524b3199df3c25b94b25f2ef3d694f0ac2c47cc94bc4c4317bdefcd7
 
     verdict          PASS (behavioural retraction verified and doc sentences asserted by tests)
     VERIFIED BY      PENDING — assigned by architect
 
 ## Citation gate
 
-    source sha       1eaecf6
+    source sha       75f5529
     artefact         COMMIT
     command          python3 tools/check_citations.py
     exit status      0, read unpiped
     result           0 hard failures, 86 near misses
-    evidence         docs/evidence/build-105-citations.log sha256 1ccc9a5e112e319a316aa71b6b47e08c410b78798e019ef2582ad63c189860ad
+    evidence         docs/evidence/build-105-citations.log sha256 96bcdc5448b4f0d9b59d17aed391bf65459dead1015b48acbd4538206b4ce750
 
 ## Merged-tree verification
 
     merged with      main at e44688c
-    result           clean merge; 516 passed + 5 subtests passed, exit 0; citations 0 hard / 86 near, exit 0
+    result           clean merge; 517 passed + 5 subtests passed, exit 0; citations 0 hard / 86 near, exit 0
