@@ -51,7 +51,7 @@ All mutations were restored before capturing final gate logs.
                      docs/evidence/build-105-pytest.log sha256 48e4a7b2524b3199df3c25b94b25f2ef3d694f0ac2c47cc94bc4c4317bdefcd7
 
     verdict          PASS (behavioural retraction verified and doc sentences asserted by tests)
-    VERIFIED BY      PENDING — assigned by architect
+    VERIFIED BY      tmux — author of the change? NO
 
 ## Citation gate
 
