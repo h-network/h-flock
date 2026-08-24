@@ -40,7 +40,7 @@ capture_diagnostics() {
   [ "$ok" = 1 ] && echo "PAYLOAD_DIAGNOSTICS status=complete" || echo "PAYLOAD_DIAGNOSTICS status=incomplete" >&2
 }
 drained=0
-for _ in $(seq 1 120); do depth=$(docker exec "$CONTAINER" redis-cli --scan --pattern "pod:${POD:-acme}:tenant:${TENANT}:agent:*:ingress" | wc -l | tr -d ' '); [ "$depth" = 0 ] && { drained=1; break; }; sleep 1; done
+for _ in $(seq 1 120); do depth=$(docker exec "$CONTAINER" redis-cli --scan --pattern "pod:${POD:-acme}:tenant:${TENANT}:agent:payload-*:ingress" | wc -l | tr -d ' '); [ "$depth" = 0 ] && { drained=1; break; }; sleep 1; done
 docker logs "$CONTAINER" >"$WORK/custody.log" 2>&1 || exit 100; [ -s "$WORK/custody.log" ] || exit 100
 [ "$drained" = 1 ] || { echo "PAYLOAD_RESULT rc=100 reason=queues_not_drained"; capture_diagnostics 100; exit 100; }
 # Wait for the expected ACK observations, but keep the bound: a missing ACK is

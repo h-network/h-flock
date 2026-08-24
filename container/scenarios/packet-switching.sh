@@ -156,8 +156,8 @@ for _ in $(seq 1 120); do
   depth=$(docker exec "$CONTAINER" python3 -c "
 import os, redis
 r = redis.Redis.from_url(os.environ.get('REDIS_URL', 'redis://127.0.0.1:6379/0'))
-print(sum(r.llen(k) for k in r.scan_iter(match='pod:${POD:-acme}:tenant:${TENANT}:agent:*:ingress')) +
-      sum(r.llen(k) for k in r.scan_iter(match='pod:${POD:-acme}:tenant:${TENANT}:agent:*:egress')))
+print(sum(r.llen(k) for k in r.scan_iter(match='pod:${POD:-acme}:tenant:${TENANT}:agent:bench-*:ingress')) +
+      sum(r.llen(k) for k in r.scan_iter(match='pod:${POD:-acme}:tenant:${TENANT}:agent:bench-*:egress')))
 " 2>/dev/null | tr -d '\r' || echo 1)
   [ "${depth:-1}" = "0" ] && { drained=1; break; }
   sleep 1
