@@ -140,12 +140,14 @@ fi
 [ -n "${CONTAINER:-}" ] && [ -n "${TENANT:-}" ] || { echo "INCOMPLETE: CONTAINER and TENANT are required" >&2; exit 100; }
 [ "$MODE" = steady ] || [ "$MODE" = burst ] || { echo "INCOMPLETE: invalid mode" >&2; exit 100; }
 WORK="${WORK:-/tmp/packet-switching-$TENANT}"; mkdir -p "$WORK"
-docker exec "$CONTAINER" sh -c 'mkdir -p /tmp/packet-shim && printf "#!/bin/sh\nexit 0\n" > /tmp/packet-shim/flock.port && chmod +x /tmp/packet-shim/flock.port'
+docker exec "$CONTAINER" sh -c 'p=$(command -v flock.port); cp "$p" /tmp/flock.port.real; printf "#!/bin/sh\nexit 0\n" > "$p"; chmod +x "$p"; echo "$p" >/tmp/flock.port.path'
+restore_kick() { docker exec "$CONTAINER" sh -c 'p=$(cat /tmp/flock.port.path); cp /tmp/flock.port.real "$p"' >/dev/null 2>&1 || true; }
+trap restore_kick EXIT
 docker cp "$(dirname "$0")/bench-port.py" "$CONTAINER:/tmp/build114-bench-port.py" >/dev/null || { echo "INCOMPLETE: receiver copy" >&2; exit 100; }
 docker cp "$(dirname "$0")/bench-send.py" "$CONTAINER:/tmp/bench-send.py" >/dev/null || { echo "INCOMPLETE: sender copy" >&2; exit 100; }
 docker exec "$CONTAINER" redis-cli HSET "pod:${POD:-acme}:tenant:$TENANT:roster" $(printf 'bench-%s api ' $(seq 1 "$COUNT")) >/dev/null 2>&1 || { echo "INCOMPLETE: roster seed" >&2; exit 100; }
 names="$(printf 'bench-%s ' $(seq 1 "$COUNT") | sed 's/[[:space:]]*$//')"
-receiver="PATH=/tmp/packet-shim:\$PATH python3 /tmp/build114-bench-port.py --pod '${POD:-acme}' --tenant '$TENANT' --count '$COUNT' --prefix bench- --idle-exit 8 >>/proc/1/fd/1 2>&1 &"
+receiver="python3 /tmp/build114-bench-port.py --pod '${POD:-acme}' --tenant '$TENANT' --count '$COUNT' --prefix bench- --idle-exit 8 >>/proc/1/fd/1 2>&1 &"
 [ "$MODE" = steady ] && docker exec "$CONTAINER" sh -c "$receiver"
 docker exec "$CONTAINER" sh -c "python3 /tmp/bench-send.py --pod '${POD:-acme}' --tenant '$TENANT' --count '$COUNT' --rounds '$ROUNDS' --names '$names' >>/proc/1/fd/1 2>&1" || { echo "INCOMPLETE: sender" >&2; exit 100; }
 [ "$MODE" = burst ] && docker exec "$CONTAINER" sh -c "$receiver"
