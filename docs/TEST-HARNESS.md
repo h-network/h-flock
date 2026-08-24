@@ -27,7 +27,7 @@ conclusion. Build 111 measured a switch and was read as measuring delivery.
 
 ---
 
-## 1 — packet switching · conservation only · **BUILT, ON A BRANCH, NOT MERGED, NOT WIRED**
+## 1 — packet switching · conservation only · **BUILT AND MERGED, NOT WIRED**
 
 **Question:** does the fabric lose, duplicate, strand or reorder an envelope,
 and how fast does it move them — with **no content inspection at all**?
@@ -51,7 +51,8 @@ attribution.
 application. **Coalescing and truncation are invisible to it** — it counts
 envelopes, not bytes.
 
-**Spec:** `BUILD-114`. Built by `bus`, on a branch.
+**Spec:** `BUILD-114`. Built by `bus`, verified independently by `acceptance`
+(`BUILD-115`), merged. ⚠ **Not wired to `accept.sh`** — that is its own decision.
 
 ### ⚠⚠ Its first run found something, which is the argument for the whole register
 
@@ -179,6 +180,26 @@ than a preference.
 ⚠ `analyse-v4-aof.py` also overlaps script 2 from below — byte-exact frame
 comparison at the wire, where the ack proves receipt at the application. **Two
 independent answers to "did the payload survive", at different layers.**
+
+**Runnable:** `container/scenarios/packet-switching.sh` runs `steady` (receiver
+already running) or `burst` (sender queues before the receiver starts).  A
+`--reconcile-only DIR` run judges a retained custody fixture without Docker.
+The measured boundary is **popped → forwarded**; the run covers no port,
+terminal, or application and never inspects payload bytes.
+
+**Outcomes:** `0` is clean; `1` is unexplained loss, `2` is a duplicate, `3`
+is a stray opened envelope, `5` is `forward_unknown`/indeterminate, and `100`
+is incomplete setup or evidence.  The script prints the boundary, stage counts,
+and throughput before composing the reconciler result.  It is **not wired to
+`accept.sh`**; that is deliberately a later build.
+
+**Failure evidence:** a nonzero live result captures the full container log,
+container/process snapshots, tenant keyspace contents, per-queue LLENs, and
+SHA256s before teardown. A clean result skips this diagnostic set.
+The inspect snapshot redacts values for environment names matching `TOKEN`,
+`KEY`, `SECRET`, `PASSWORD`, `CRED`, or `AUTH`, while retaining the names. This
+is an explicit denylist, not a complete secret detector; a newly named secret
+must extend the pattern before its evidence is committed.
 
 ---
 
