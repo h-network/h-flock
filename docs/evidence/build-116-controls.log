@@ -4,7 +4,7 @@ platform linux -- Python 3.12.3, pytest-9.1.1, pluggy-1.6.0
 rootdir: /workspace/api/h-flock
 configfile: pyproject.toml
 plugins: anyio-4.14.2
-collected 3 items / 2 deselected / 1 selected
+collected 4 items / 3 deselected / 1 selected
 
 tests/test_scenario_tokens.py F                                          [100%]
 
@@ -32,7 +32,7 @@ E             ...Full output truncated (49 lines hidden), use '-vv' to show
 tests/test_scenario_tokens.py:40: AssertionError
 =========================== short test summary info ============================
 FAILED tests/test_scenario_tokens.py::test_no_hardcoded_token_in_scenarios - ...
-======================= 1 failed, 2 deselected in 0.01s ========================
+======================= 1 failed, 3 deselected in 0.01s ========================
 
 MUTATION_1_EXIT=1
 
@@ -42,7 +42,7 @@ platform linux -- Python 3.12.3, pytest-9.1.1, pluggy-1.6.0
 rootdir: /workspace/api/h-flock
 configfile: pyproject.toml
 plugins: anyio-4.14.2
-collected 3 items / 2 deselected / 1 selected
+collected 4 items / 3 deselected / 1 selected
 
 tests/test_scenario_tokens.py F                                          [100%]
 
@@ -67,7 +67,7 @@ E            +  where 0 = CompletedProcess(args=['bash', '/workspace/api/h-flock
 tests/test_scenario_tokens.py:31: AssertionError
 =========================== short test summary info ============================
 FAILED tests/test_scenario_tokens.py::test_api_scenarios_fail_loudly_when_token_empty
-======================= 1 failed, 2 deselected in 0.06s ========================
+======================= 1 failed, 3 deselected in 0.06s ========================
 
 MUTATION_2_EXIT=1
 
@@ -77,7 +77,7 @@ platform linux -- Python 3.12.3, pytest-9.1.1, pluggy-1.6.0
 rootdir: /workspace/api/h-flock
 configfile: pyproject.toml
 plugins: anyio-4.14.2
-collected 3 items / 2 deselected / 1 selected
+collected 4 items / 3 deselected / 1 selected
 
 tests/test_scenario_tokens.py F                                          [100%]
 
@@ -97,7 +97,7 @@ E            +  where 2 = CompletedProcess(args=['bash', '-n', '/workspace/api/h
 tests/test_scenario_tokens.py:18: AssertionError
 =========================== short test summary info ============================
 FAILED tests/test_scenario_tokens.py::test_api_scenarios_syntax_valid - Asser...
-======================= 1 failed, 2 deselected in 0.01s ========================
+======================= 1 failed, 3 deselected in 0.01s ========================
 
 MUTATION_3_EXIT=1
 
@@ -107,10 +107,10 @@ platform linux -- Python 3.12.3, pytest-9.1.1, pluggy-1.6.0
 rootdir: /workspace/api/h-flock
 configfile: pyproject.toml
 plugins: anyio-4.14.2
-collected 3 items
+collected 4 items
 
-tests/test_scenario_tokens.py ...                                        [100%]
+tests/test_scenario_tokens.py ....                                       [100%]
 
-============================== 3 passed in 0.01s ===============================
+============================== 4 passed in 0.07s ===============================
 
 CLEAN_EXIT=0

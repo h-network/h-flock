@@ -38,3 +38,32 @@ def test_no_hardcoded_token_in_scenarios():
     for script in SCENARIOS_DIR.glob('*.sh'):
         content = script.read_text(encoding='utf-8')
         assert target_token not in content, f"Hardcoded token found in {script}"
+
+
+def test_api_scenario_executes_with_docker_discovered_token(tmp_path):
+    """Build 116: scenario successfully discovers API_TOKEN via docker exec on container h-flock-api-lab-tenant-1."""
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    docker_bin = bin_dir / "docker"
+    docker_bin.write_text(
+        "#!/usr/bin/env bash\n"
+        "if [ \"$1\" = \"exec\" ] && [ \"$2\" = \"h-flock-api-lab-tenant-1\" ] && [ \"$3\" = \"printenv\" ] && [ \"$4\" = \"API_TOKEN\" ]; then\n"
+        "    echo \"discovered-test-token-7788\"\n"
+        "else\n"
+        "    exit 1\n"
+        "fi\n"
+    )
+    docker_bin.chmod(0o755)
+
+    clean_env = {k: v for k, v in os.environ.items() if k != "API_TOKEN"}
+    clean_env["PATH"] = f"{bin_dir}:{clean_env.get('PATH', '')}"
+
+    result = subprocess.run(
+        ["bash", str(SCENARIOS_DIR / "api-auth-and-limits.sh")],
+        capture_output=True,
+        text=True,
+        env=clean_env,
+    )
+    assert result.returncode == 0
+    assert "=== Scenario Complete ===" in result.stdout
+    assert "Error: API_TOKEN is empty" not in result.stderr
