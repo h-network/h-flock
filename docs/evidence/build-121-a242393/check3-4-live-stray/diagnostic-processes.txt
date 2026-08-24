@@ -1,0 +1,15 @@
+UID          PID    PPID  C STIME TTY          TIME CMD
+ubuntu         1       0  0 18:00 ?        00:00:00 /usr/bin/tini -g -- /usr/local/bin/entrypoint.sh
+ubuntu         7       1  0 18:00 ?        00:00:00 bash /usr/local/bin/entrypoint.sh
+ubuntu        20       7  4 18:00 ?        00:00:07 redis-server 127.0.0.1:6379
+ubuntu        38       7  1 18:00 ?        00:00:03 python3 -m flock.tmuxhost
+ubuntu        46       1  0 18:00 ?        00:00:00 tmux new-session -d -s build121a-0824-1610 -n architect -x 120 -y 32 -c /workdir/architect env AGENT_NAME=architect OFFICE_TOOLS=office AGENT_GUIDE=/workdir/architect/AGENTS.md startAgent claude
+ubuntu        47      46 16 18:00 pts/0    00:00:27 claude --dangerously-skip-permissions --tools Bash Read Write Edit Glob Grep
+ubuntu        66      46 15 18:00 pts/1    00:00:26 claude --dangerously-skip-permissions --tools Bash Read Write Edit Glob Grep
+ubuntu        76       7  3 18:00 ?        00:00:05 python3 -m flock.switch
+ubuntu        77       7  4 18:00 ?        00:00:07 python3 -m flock.watchdog
+ubuntu        78       7  1 18:00 ?        00:00:03 python3 -m flock.api
+ubuntu        79       7  1 18:00 ?        00:00:02 python3 -m flock.session
+ubuntu        98      79  0 18:00 ?        00:00:00 tmux -C attach-session -f ignore-size -t build121a-0824-1610
+ubuntu       818       1 19 18:02 ?        00:00:01 python3 /tmp/build114-bench-port.py --pod acme --tenant build121a-0824-1610 --count 10 --prefix bench- --idle-exit 8
+ubuntu       864       0 96 18:03 ?        00:00:00 ps -ef
