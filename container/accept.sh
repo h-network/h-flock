@@ -28,6 +28,17 @@
 #
 # ⚠ **Everything is printed, including the dull parts.** A harness that reports
 # only its verdict hides the output someone needed.
+#
+# ⚠ **Over SSH, run this detached with stdin closed — not as a blocking
+# foreground call.** It ends up piping into setup.sh's interactive prompts; a
+# backgrounded remote process that still has stdin attached gets stopped on
+# SIGTTIN and hangs silently, which looks exactly like a dead SSH channel with
+# no exit code. Close stdin, detach, and poll the log instead of holding the
+# connection open:
+#
+#   ssh host "cd h-flock && nohup bash -c 'bash container/accept.sh --tenant T --keep \
+#     >run-T.log 2>&1; echo EXIT:\$? >>run-T.log' >/dev/null 2>&1 </dev/null & disown"
+#   ssh host "tail -30 run-T.log"
 set -uo pipefail
 
 TENANT="accept"
@@ -112,6 +123,11 @@ command -v docker >/dev/null || { echo "accept: docker is required" >&2; exit 2;
 # also makes the ownership rule hold for non-office tenants. Query Docker's
 # compose labels directly: loading compose.yaml can fail before setup writes
 # its .env, and an empty result from that failure would be dangerously false.
+#
+# ⚠ A stray VOLUME left by a prior `down` without `-v` is enough on its own to
+# trigger this refusal with no container or network in sight — `docker ps`
+# alone will look clean. Always tear down with `down -v`, and give each run a
+# fresh timestamped --tenant so this can never fire.
 EXISTING_PROJECT_RESOURCE="$({
   docker ps -aq --filter "label=com.docker.compose.project=$PROJECT"
   docker network ls -q --filter "label=com.docker.compose.project=$PROJECT"
