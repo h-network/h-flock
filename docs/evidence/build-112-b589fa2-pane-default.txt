@@ -1,0 +1,31 @@
+
+
+❯ [message from architect] MARKD016
+  ⎿  Not logged in · Please run /login
+
+✻ Worked for 0s
+
+❯ [message from architect] MARKD017
+  ⎿  Not logged in · Please run /login
+
+✻ Crunched for 0s
+
+❯ [message from architect] MARKD018
+  ⎿  Not logged in · Please run /login
+
+✻ Worked for 0s
+
+❯ [message from architect] MARKD019
+  ⎿  Not logged in · Please run /login
+
+✻ Crunched for 0s
+
+❯ [message from architect] MARKD020
+  ⎿  Not logged in · Please run /login
+
+✻ Cogitated for 0s
+                                                                                ✔ Update installed · Restart to update
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+❯ 
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+  ⏵⏵ bypass permissions on (shift+tab to cycle) · ← for agents
