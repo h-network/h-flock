@@ -104,6 +104,11 @@ for raw_key in sorted(r.scan_iter(match=pattern)):
     if key.endswith(":ingress") or key.endswith(":egress"):
         print(f"{key}\t{r.llen(raw_key)}")
 ' >"$WORK/diagnostic-queues.tsv" 2>&1 || true
+  # ⚠ Redis DELETES a list key when it empties, so a fully drained tenant has no
+  # queue keys to report. An empty file here is the CORRECT answer, not a failed
+  # capture — without this marker the validation below calls every non-zero run
+  # `status=incomplete`. Found by `acceptance` in BUILD-115.
+  [ -s "$WORK/diagnostic-queues.tsv" ] || printf '%s\n' 'NO_NONEMPTY_QUEUES: empty lists are deleted after drain' >"$WORK/diagnostic-queues.tsv"
   if docker exec "$CONTAINER" test -f /home/ubuntu/.flock/window.log.jsonl 2>/dev/null; then
     docker cp "$CONTAINER:/home/ubuntu/.flock/window.log.jsonl" "$WORK/diagnostic-window.log.jsonl" >/dev/null 2>&1 || true
   else
