@@ -97,6 +97,28 @@ checked against source implementations"* and claimed `PASS`.
 was used as a control.** Reading is how the claim was formed. A control has to be
 able to contradict it.
 
+### ⚠ Which documents must be current — living contract vs historical record
+
+**Only LIVING documents must match the tree. A results document must not.**
+
+`CONTRACTS.md`, the `LLD-*` files, `API.md`, `README.md` and
+`BUILD-CONVENTION.md` describe how the system works **now**. If the code changes
+under them they become false, and the doc-control rule above applies.
+
+⚠ **`BUILD-NN-results.md` is a different object: it records what a run OBSERVED
+at a dated SHA.** When build 105 renamed a JSON key from `measurable` to
+`collected`, `BUILD-90-results` still said `measurable` — and that is **correct**,
+because on the day of that acceptance run it *was* `measurable`.
+
+⚠ **Rewriting a results document to match today falsifies the record.** `tmux`
+put it exactly: *they truthfully record the surface and the requested claim at
+their dated SHAs.* A build spec is the same — it records what was asked for then.
+
+**So: never sweep results or spec documents to match current code.** If a reader
+could mistake one for current, the fix is a dated header, not an edit. ⚠ **The
+architect and the verifier reached this independently before it was written
+down**, which is the only reason it did not get swept.
+
 **The control for a documentation build is a TEST THAT ASSERTS THE DOCUMENTED
 SENTENCE.** Write the claim as an assertion and run it. If it passes, the
 sentence is true of this tree; if it fails, you have found the defect the prose
