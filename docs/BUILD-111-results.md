@@ -1,4 +1,4 @@
-# BUILD 111 results — the delay is ours, and zero delay did not lose this run
+# BUILD 111 results — the delay is ours; pane submission was not measured
 
 ## Host and boundary
 
@@ -15,18 +15,20 @@ unknown forwards.
 ## End-to-end comparison
 
 The same 100-envelope ring was run through plain-shell tmux ports at each
-setting. Arrival is the custody condition `opened` for every sent stream, not
-the elapsed time alone.
+setting. The reported arrival is the custody condition `opened` for every sent
+stream, not proof that bash processed the subsequent Enter. Pane submission
+was not measured in this run.
 
 | configuration | received→opened p50 | steady state | arrival |
 |---|---:|---:|---:|
-| PASTE_ENTER_DELAY=0.5 | 507 ms | 19.56/s | 100/100 |
-| PASTE_ENTER_DELAY=0 | 15 ms | 363.23/s | 100/100 |
+| PASTE_ENTER_DELAY=0.5 | 507 ms | 19.56/s | custody-opened 100/100 |
+| PASTE_ENTER_DELAY=0 | 15 ms | 363.23/s | custody-opened 100/100 |
 
 The measured delay difference is 492 ms at the median (507 minus 15). In this
-plain-shell run zero delay did not lose submissions: all 100 envelopes reached
-`opened`. That is a result for this workload and image, not evidence that the
-documented Enter-swallow failure is gone; the mitigation remains unchanged.
+plain-shell run all 100 envelopes reached the custody `opened` event at zero
+delay, but that event follows `send-keys` and does not prove shell submission.
+The documented Enter-swallow failure therefore remains untested here; the
+mitigation remains unchanged.
 
 The default run's spawn gap was also visible: kick_started→received was 2293 ms
 median, while the paste/Enter stage was 507 ms. Those are separate layers; the
@@ -49,7 +51,7 @@ run's evidence is 100/100 with a clean reconciliation.
                      docs/evidence/build-111-switch-summary.log sha256 876ef7dc2ff7c384010e6fcb6793206d8b748ee63813b1e6258635c375444e9a
                      docs/evidence/build-111-default-summary.log sha256 11b0624199d4d6db2b3be8c1099dea2ac051f75179df9e53a647f8727f2c9afd
                      docs/evidence/build-111-zero-summary.log sha256 a497ca69ef8332e92f443c3d1f9914ac2c5de3ef5a03d6552b26f197486185fb
-    verdict          PASS — numbers separated; zero-delay arrival verified 100/100
+    verdict          PASS — numbers separated; custody-opened 100/100; pane submission unmeasured
     VERIFIED BY      PENDING — assigned by architect
 
 ## Gates
