@@ -838,23 +838,6 @@ owner's traffic. A changed value emits `source_stamped`; a matching value adds
 no record. This is not agent isolation or writer authentication — all agents are
 colleagues inside one development office, using one reachable Redis.
 
-## 5.1 Forwarding throughput
-
-**825.77/s**, steady state, 1000 of 1000 envelopes forwarded with no duplicates,
-dead letters, strands or unknown forwards.
-
-⚠ **The clock starts when an envelope is popped from egress and stops when the
-switch has written it to the recipient's ingress.** It excludes submission, port
-spawning, paste and Enter — **so this is not a delivery rate and must never be
-quoted as one.** End-to-end delivery through a tmux port is dominated by
-`PASTE_ENTER_DELAY` (§ `LLD-port-tmux`), which is roughly 500 ms of the ~507 ms a
-delivery takes at the default; at zero delay the same path measures 15 ms, and
-that difference is the mitigation's cost, not a speedup available for free.
-
-⚠ Measured on the performance host. **A throughput figure taken on a small
-machine is wrong by two orders of magnitude and looks plausible**, so any
-re-measurement states its host.
-
 ## 6. Invariants
 
 1. **`prefix()` on every Redis key.** No flat Redis keys, anywhere, ever.
