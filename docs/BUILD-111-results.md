@@ -52,7 +52,7 @@ run's evidence is 100/100 with a clean reconciliation.
                      docs/evidence/build-111-default-summary.log sha256 11b0624199d4d6db2b3be8c1099dea2ac051f75179df9e53a647f8727f2c9afd
                      docs/evidence/build-111-zero-summary.log sha256 a497ca69ef8332e92f443c3d1f9914ac2c5de3ef5a03d6552b26f197486185fb
     verdict          PASS — numbers separated; custody-opened 100/100; pane submission unmeasured
-    VERIFIED BY      PENDING — assigned by architect
+    VERIFIED BY      tmux — author of the change? NO
 
 ## Gates
 
