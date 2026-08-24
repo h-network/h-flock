@@ -140,7 +140,7 @@ done
 echo "PACKET_QUEUE_DEPTH ingress_plus_egress=${depth:-unknown} drained=${drained}"
 docker logs "$CONTAINER" >"$WORK/custody.log" 2>&1 || { echo "INCOMPLETE: capture" >&2; exit 100; }
 [ -s "$WORK/custody.log" ] || { echo "INCOMPLETE: empty capture" >&2; exit 100; }
-[ "$drained" = "1" ] || { echo "INCOMPLETE: queues did not drain before capture" >&2; exit 100; }
+[ "$drained" = "1" ] || { echo "INCOMPLETE: queues did not drain before capture" >&2; capture_diagnostics 100; exit 100; }
 judge "$WORK"; rc=$?
 capture_diagnostics "$rc"
 exit "$rc"
