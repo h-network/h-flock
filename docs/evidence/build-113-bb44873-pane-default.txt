@@ -1,0 +1,31 @@
+
+
+❯ [message from architect] BURSTD016
+  ⎿  Not logged in · Please run /login
+
+✻ Sautéed for 0s
+
+❯ [message from architect] BURSTD017
+  ⎿  Not logged in · Please run /login
+
+✻ Sautéed for 0s
+
+❯ [message from architect] BURSTD018
+  ⎿  Not logged in · Please run /login
+
+✻ Cooked for 0s
+
+❯ [message from architect] BURSTD019
+  ⎿  Not logged in · Please run /login
+
+✻ Sautéed for 0s
+
+❯ [message from architect] BURSTD020
+  ⎿  Not logged in · Please run /login
+
+✻ Brewed for 0s
+                                                                                ✔ Update installed · Restart to update
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+❯ 
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+  ⏵⏵ bypass permissions on (shift+tab to cycle) · ← for agents
