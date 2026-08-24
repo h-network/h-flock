@@ -27,7 +27,7 @@ conclusion. Build 111 measured a switch and was read as measuring delivery.
 
 ---
 
-## 1 — packet switching · conservation only · **SPEC'D, NOT BUILT**
+## 1 — packet switching · conservation only · **BUILT, ON A BRANCH, NOT MERGED, NOT WIRED**
 
 **Question:** does the fabric lose, duplicate, strand or reorder an envelope,
 and how fast does it move them — with **no content inspection at all**?
@@ -51,7 +51,55 @@ attribution.
 application. **Coalescing and truncation are invisible to it** — it counts
 envelopes, not bytes.
 
-**Spec:** `BUILD-114`.
+**Spec:** `BUILD-114`. Built by `bus`, on a branch.
+
+### ⚠⚠ Its first run found something, which is the argument for the whole register
+
+**Steady 20/20 clean. Burst 100 destinations × 2: 195 of 200 through every stage,
+five lost.** All five carry **only a `sent` record**.
+
+**What the five eliminate, each established from code rather than argued:**
+
+| | |
+|---|---|
+| `doors.py:80-88` | `rpush` runs **first** and the `except` **raises** — so `sent` is **proof the envelope reached the egress list** |
+| no `expire`/`setex` in `src`, no `--maxmemory` | keys never vanish on their own |
+| `switch/service.py:113` | the **only** consumer of egress in the tree; `api/app.py:597` merely reads `llen` |
+| `resp.py` `makefile("rb")` | buffered — no framing bug at 100 keys, no `settimeout`, no reconnect |
+| `service.py:185-190`, `:124-128`, `:147-154` | **every in-tree loss path emits a record** — `forward_unknown`, `dead_lettered` |
+
+⚠ **The five match no failure path in the code.** They were on the list, the only
+in-tree consumer never recorded them, and every way the tree can lose an envelope
+leaves a trace. **So something outside `src/` removed them.**
+
+⚠ **Five hypotheses have died here** — tail truncation (timing), static watch list
+(`service.py:104-114` rebuilds the roster per step), socket framing, key TTL and
+eviction, and a **second switch instance** (the burst log has exactly one
+`started reason=switch pid=51`, no restarts, and the tenant was freshly
+generated). **The cause is open.**
+
+## ⚠⚠ And the finding that outranks it: THE EVIDENCE WAS TORN DOWN
+
+The diagnosis stopped because **the artifacts needed to finish it no longer
+exist** — only the custody snapshots and ledgers survived project teardown, so
+absence from an alternate log **cannot be proven either way**.
+
+⚠ **This is the second time.** `BUILD-105`'s agy capture took six named paths and
+never opened `brain/`, and an invented fixture shape hid a total data loss.
+**Twice is a rule, not an incident:**
+
+> ⚠⚠ **A harness must capture enough to DIAGNOSE, not merely enough to JUDGE —
+> and it must capture it BEFORE teardown.** A run that goes red and destroys its
+> own evidence has cost more than it returned.
+
+**So the next move on this RED is reproduction with full retention, not more
+archaeology.** The recipe is known (100 × 2 burst), the control is known (20 × 2
+clean), and the drain guard now separates *did not drain* from *lost*.
+
+⚠ **`bus` added a drain guard (`ecd62d3`): poll to zero, print
+`PACKET_QUEUE_DEPTH`, return `rc100` rather than judge.** That is the right shape
+— **a gate that reports a false loss is exactly as bad as one that misses a real
+one**, and `rc100` keeps *ran-but-incomplete* distinct from *failed*.
 
 ---
 
