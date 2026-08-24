@@ -92,18 +92,16 @@ for raw_key in sorted(r.scan_iter(match=pattern)):
   else
     printf '%s\n' 'NO_FLOCK_LOG_FILE: daemon records use stdout' >"$WORK/diagnostic-window.log.jsonl"
   fi
-  local capture_ok=1 f first
+  local capture_ok=1 f
   for f in diagnostic-container.log diagnostic-inspect.json diagnostic-processes.txt \
       diagnostic-keyspace.jsonl diagnostic-queues.tsv diagnostic-window.log.jsonl; do
     if [ ! -s "$WORK/$f" ]; then
       capture_ok=0; echo "PACKET_DIAGNOSTICS missing=$f" >&2
       continue
     fi
-    first=$(head -n 1 "$WORK/$f" 2>/dev/null || true)
-    case "$first" in
-      Traceback\ \(most\ recent\ call\ last\):*|*"No module named"*)
-        capture_ok=0; echo "PACKET_DIAGNOSTICS invalid=$f" >&2;;
-    esac
+    if grep -Eq 'Traceback \(most recent call last\):|No module named' "$WORK/$f"; then
+      capture_ok=0; echo "PACKET_DIAGNOSTICS invalid=$f" >&2
+    fi
   done
   sha256sum "$WORK"/diagnostic-* >"$WORK/diagnostic-sha256.txt" 2>&1 || capture_ok=0
   if [ "$capture_ok" = "1" ]; then
