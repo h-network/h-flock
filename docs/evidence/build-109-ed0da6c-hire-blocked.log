@@ -1,0 +1,24 @@
+source: ed0da6c (main, includes builds 100/101/102/103/104/105/108)
+tenant: accept-presession-0824-0301 (h-lab, torn down after this run)
+
+Every StartAgent issued after initial tenant setup fails identically, for
+every agent name tried (plumbing-check.sh's dave/envprobe/sim-wedged/
+sim-trust/sim-nologin/sim-nologin-claude, AND a manually issued
+`office hire agytest --cli agy` run directly against the live tenant):
+
+{"ts":"2026-08-24T01:15:21.914Z","module":"control","event":"start_agent_incomplete","writer":"control","correlation_id":"7d0bcbe82e4b43c5b7b49fc951a5ec32","destination":"agytest","reason":"acknowledged: launch published; window cause and roster row publish outcome UNKNOWN after 'Redis' object has no attribute 'eval'"}
+
+Confirmed consequence, live: `office hire agytest --cli agy` returned exit 0
+(the CLI only enqueues), but afterward:
+  - no /workdir/agytest directory was created
+  - no tmux window for agytest exists
+  - `office status` does not list agytest at all
+
+Traced to src/flock/control/openers.py:273 (`r.eval(_PUBLISH_WINDOW_CAUSE_LUA, ...)`),
+added by build 103 ("join window to its cause"). The live Redis client object
+in this tenant does not implement `.eval` — read after the live failure, not
+before it, per office convention rule 3.
+
+Only architect and sme-2 (created via setup.sh/entrypoint, not through this
+control-envelope path) exist in this tenant. No agent hired via `office hire`
+or via any control envelope with a correlation_id succeeds.
