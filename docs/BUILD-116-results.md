@@ -12,17 +12,24 @@
      - Fails loudly with exit code 1 if `TOKEN` is empty (`if [ -z "${TOKEN:-}" ]; then echo "Error: API_TOKEN is empty. Set API_TOKEN or ensure container '$C' is running." >&2; exit 1; fi`).
      - Added `set -uo pipefail` to all three scripts.
 
-2. **Structural Secret Scan (`container/`):**
+2. **Live Execution & Container Resolution Verification:**
+   - Stood up live API service on `127.0.0.1:8110` with `API_TOKEN` unset in the scenario execution environment.
+   - Executed `container/scenarios/api-auth-and-limits.sh` and `container/scenarios/api-concurrency-and-time.sh` with `API_TOKEN` unset.
+   - `docker exec "$C" printenv API_TOKEN` successfully resolved the container token dynamically for default container `h-flock-api-lab-tenant-1`.
+   - Reached real live HTTP statuses: `200` for valid token auth, `401` for unauthenticated/unauthorized, `422` for malformed/oversized payloads, `404` for invalid agents, and `200` for board and activity providers (captured in `docs/evidence/build-116-live-exec.log`).
+
+3. **Structural Secret Scan (`container/`):**
    - Executed `git grep -nE '[a-f0-9]{32}' -- container/`.
    - Findings:
      - `container/Dockerfile:22`: `FROM ghcr.io/h-network/base@sha256:10406097c8954af16c62cf0088dea147065146bf4f667c361da96384ed02cbdc` (base image digest sha256).
      - The 3 retired scenario token lines (now removed).
      - No other 32-character hex secret candidates exist in `container/`.
 
-3. **Persistent Regression Test Suite (`tests/test_scenario_tokens.py`):**
+4. **Persistent Regression Test Suite (`tests/test_scenario_tokens.py`):**
    - `test_api_scenarios_syntax_valid`: verifies `bash -n` on all 3 scenarios.
    - `test_api_scenarios_fail_loudly_when_token_empty`: verifies that running each scenario without `API_TOKEN` and without container exits 1 with standard error.
    - `test_no_hardcoded_token_in_scenarios`: structural assertion ensuring `7af3ad5eb2cac57e9ca97a953908ef09` is absent across `container/scenarios/*.sh`.
+   - `test_api_scenario_executes_with_docker_discovered_token`: verifies dynamic container token discovery via `docker exec` against default container `h-flock-api-lab-tenant-1`.
 
 ## Negative Controls (Falsifiability)
 
@@ -40,37 +47,38 @@ All mutations were restored before capturing final gate logs.
 
 ## TEST SIGN-OFF
 
-    claim            Hardcoded API token removed from all scenario scripts, container/env dynamic resolution with empty fail-loud guard enforced, and verified by persistent tests
-    source sha       f979390
+    claim            Hardcoded API token removed from all scenario scripts, container/env dynamic resolution with empty fail-loud guard enforced, and verified by live execution and persistent tests
+    source sha       e66822b
     artefact         COMMIT
-    host             local — pytest and scenario execution audit
+    host             local — pytest, live API server execution, and scenario audit
     command          python3 -m pytest -q
     exit status      0, read unpiped
 
-    EXCLUDED         live container execution, Docker image build, runtime benchmark
-    population       528 tests and 5 subtests; all repository tests collected
+    EXCLUDED         Docker image build, runtime benchmark
+    population       529 tests and 5 subtests; all repository tests collected
 
     control          behavioural and structural mutations: (1) re-introduce hardcoded token; (2) remove empty token guard; (3) scenario syntax error
-    expected locus   (1) tests/test_scenario_tokens.py:35; (2) tests/test_scenario_tokens.py:27; (3) tests/test_scenario_tokens.py:16
+    expected locus   (1) tests/test_scenario_tokens.py:38; (2) tests/test_scenario_tokens.py:30; (3) tests/test_scenario_tokens.py:16
     observed locus   same
     signature        (1) AssertionError: Hardcoded token found; (2) AssertionError: Expected api-auth-and-limits.sh to exit 1, got 0; (3) AssertionError: Syntax error; all exit 1
 
-    evidence         docs/evidence/build-116-controls.log sha256 8f47b034c00c16c202ee8052092211421708260ea0bdf77db95425ad4a11ea1f
-                     docs/evidence/build-116-pytest.log sha256 e88dfd26c79354198d935152307d81fd782d85fbeda6720cb8c80a5fb400a7ff
+    evidence         docs/evidence/build-116-controls.log sha256 90ae8fc93cab77e44c7936b3a1fa4cdeaa55c4c60d44acef3a57d6ba4f58bdf8
+                     docs/evidence/build-116-live-exec.log sha256 d822965e4ff058585203bf51a71dde947f2771c668811216f208c94f9c57dbea
+                     docs/evidence/build-116-pytest.log sha256 9889789d6b58382402c34abbc0956595d8b04553dd5f28255b12968769f094f8
 
-    verdict          PASS (token removed, empty token guard verified, syntax valid)
+    verdict          PASS (token removed, dynamic discovery proven live, empty guard verified)
     VERIFIED BY      PENDING — assigned by architect
 
 ## Citation gate
 
-    source sha       f979390
+    source sha       e66822b
     artefact         COMMIT
     command          python3 tools/check_citations.py
     exit status      0, read unpiped
     result           0 hard failures, 86 near misses
-    evidence         docs/evidence/build-116-citations.log sha256 14ca07057949d05005174a1a8bdc443030f6bd1de404947c17de0044b108f378
+    evidence         docs/evidence/build-116-citations.log sha256 f28c75b8b7e0a251f9770da399b63f443994d27720db1f2bbaa007a235645211
 
 ## Merged-tree verification
 
     merged with      main at 14c86e1
-    result           clean merge; 528 passed + 5 subtests passed, exit 0; citations 0 hard / 86 near, exit 0
+    result           clean merge; 529 passed + 5 subtests passed, exit 0; citations 0 hard / 86 near, exit 0
