@@ -34,6 +34,37 @@ the harness against retained fixtures and demonstrate distinct failures:
 The clean fixture returns rc0. These controls deliberately exercise the
 reconciler rather than merely inspecting source text.
 
+## Live verification
+
+Runs used fresh, namespaced projects on the correctness lab and were torn down
+with project-scoped `docker compose down -v`; the four pre-existing `hvab-*`
+containers were not touched.
+
+Steady mode (`h-flock-bus114steady`, 10 destinations × 2 rounds) was clean:
+20 submitted, 20 popped, 20 forwarded, 20 received, and 20 opened; zero
+duplicates or losses; boundary throughput 17.39 envelopes/s; rc0.
+
+Burst mode (`h-flock-bus114burst`, 100 destinations × 2 rounds) was a genuine
+RED: 200 submitted, 195 popped/forwarded/received/opened, zero duplicates or
+strays, and five unexplained losses; boundary throughput 10.96 envelopes/s;
+rc1. The lost stream IDs were:
+
+    a8c3202917604b48b2d1f0298d804d68
+    6e9e402b158646a0b66d855c15954cec
+    ad1a834c8d2e465b9364d1a70cd1b0c6
+    98692d8eec8f4f0881bd85d39f5c079d
+    7c4d2740ee0744e580f982e0564b6009
+
+Immutable custody snapshots are retained at
+`docs/evidence/build-114-steady-custody.log` (sha256
+`228bc00d85c1e36906b9823e5c505637a63749d042e2fbd52b98effdfa2e9f4a`) and
+`docs/evidence/build-114-burst-custody.log` (sha256
+`ea31ac21e3f048b4c8aee5f74fb0c4fb4bc11294ab930d8bc599fbe18147ddca`).
+
+The burst RED is the result, not a throughput defect in the harness: it shows
+that queued envelopes can be lost when the receiver is absent, and the
+reconciler catches that at the packet boundary.
+
 ## Verification status
 
 Targeted gate: `PYTHONPATH=. pytest -q tests/test_packet_switching.py tests/test_conservation_contract.py` — 7 passed.
