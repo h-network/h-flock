@@ -18,7 +18,26 @@
    - `_codex_usage` extracts `last_token_usage` for turn-level incremental accounting, never cumulative `total_token_usage`.
    - Verified on live fixture `tests/fixtures/codex-session-captured.jsonl` where `last` vs `total` diverge on ordinals 141 (64,831 vs 533,066), 288 (80,177 vs 1,810,189), and 414 (111,751 vs 3,332,258). Summing turns yields 270,891 input tokens rather than an inflated 5.69M tokens.
 
-4. **agy Not Collected (§3):**
+4. **agy Not Collected (§3):** ⚠ **CORRECTED 2026-08-24 — this section originally
+   concluded something false, and the original is preserved below because the
+   record of what we believed and when is how this project catches its own
+   drift.**
+
+   ⚠ **What §3 originally concluded:** *"agy records no token counts anywhere.
+   Its state is SQLite and protobuf, not JSONL; the model is there and the counts
+   are not. So agy is not priceable from local state."*
+
+   ⚠ **Why that was wrong:** it rested on a capture that took six named paths and
+   **never opened `~/.gemini/antigravity-cli/brain/`**, where per-conversation
+   transcripts live. The directory was visible in the listing at the time. **The
+   claim was broader than its evidence** — the capture was the architect's, not
+   this build's, and the build reported faithfully what the capture showed.
+
+   ⚠ **The signed `TEST SIGN-OFF` block below still reads `not measurable`. That
+   is deliberate and must not be edited** — it is what a named verifier signed on
+   its date, and a correction goes beside a signature, never inside one.
+
+   **What is true as of 2026-08-24:**
    - agy writes a per-conversation transcript under `~/.gemini/antigravity-cli/brain/<id>/.system_generated/logs/`, but h-flock does not collect it; whether those transcripts carry token counts is unverified.
    - `office usage` and `office status` explicitly identify agy agents as `not collected` (`not collected (agy)` in status activity feed, `not collected` under usage model column with `collected: false` in JSON), preventing misleading zero, absent, or unknown reporting.
 
