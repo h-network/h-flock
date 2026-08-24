@@ -71,13 +71,39 @@ five lost.** All five carry **only a `sent` record**.
 
 ⚠ **The five match no failure path in the code.** They were on the list, the only
 in-tree consumer never recorded them, and every way the tree can lose an envelope
-leaves a trace. **So something outside `src/` removed them.**
+leaves a trace.
 
-⚠ **Five hypotheses have died here** — tail truncation (timing), static watch list
-(`switch/service.py:104-114` rebuilds the roster per step), socket framing, key TTL and
-eviction, and a **second switch instance** (the burst log has exactly one
-`started reason=switch pid=51`, no restarts, and the tenant was freshly
-generated). **The cause is open.**
+**Five hypotheses died against that** — tail truncation, static watch list
+(`switch/service.py:104-114` rebuilds the roster per step), socket framing, key
+TTL and eviction, and a second switch instance (one `started … pid=51`, no
+restarts, fresh tenant).
+
+## ⚠⚠ The answer: the RED was almost certainly OURS, not the fabric's
+
+**`BUILD-117` re-ran the identical recipe three times: 200/200, `drained=1`,
+`rc0`.** Four facts explain the original:
+
+| | |
+|---|---|
+| the burst evidence has **zero** `PACKET_QUEUE_DEPTH` lines | **that run predates the drain guard entirely** |
+| `1548652` (results) lands **before** `ecd62d3` (drain guard) | confirmed in `git log` on the script |
+| four of five lost were positions **196–199 of 200** | **the last four sent** |
+| three guarded re-runs | clean |
+
+⚠⚠ **An envelope still sitting on egress has exactly one record — `sent`, no
+`popped`. That is not a loss signature. That is what IN-FLIGHT looks like.** The
+harness stopped looking before the queues drained, and we read the difference as
+loss. It also explains why the five hypotheses all failed: they were hunting a
+fabric defect that was never there.
+
+⚠ **Not proven** — the original run never measured its own queue depths, and that
+is unrecoverable. **Most likely, not established.**
+
+⚠⚠ **The point worth keeping: the harness's first RED was the harness's own bug,
+and it surfaced BEFORE the script was wired to a gate.** Wired first, every burst
+would have failed acceptance for a defect that does not exist, and the switch
+would have been debugged for a week. **This is the argument for the NOT-WIRED
+column, not against it.**
 
 ## ⚠⚠ And the finding that outranks it: THE EVIDENCE WAS TORN DOWN
 
@@ -93,9 +119,10 @@ never opened `brain/`, and an invented fixture shape hid a total data loss.
 > and it must capture it BEFORE teardown.** A run that goes red and destroys its
 > own evidence has cost more than it returned.
 
-**So the next move on this RED is reproduction with full retention, not more
-archaeology.** The recipe is known (100 × 2 burst), the control is known (20 × 2
-clean), and the drain guard now separates *did not drain* from *lost*.
+⚠ **The rule stands even though this particular RED turned out to be ours.** We
+could not tell an in-flight envelope from a lost one **for a whole day** — and the
+evidence that would have settled it in minutes was destroyed at teardown. **The
+retention exists so the next red is diagnosed instead of argued.**
 
 ⚠ **`bus` added a drain guard (`ecd62d3`): poll to zero, print
 `PACKET_QUEUE_DEPTH`, return `rc100` rather than judge.** That is the right shape
