@@ -27,7 +27,7 @@ conclusion. Build 111 measured a switch and was read as measuring delivery.
 
 ---
 
-## 1 — packet switching · conservation only · **SPEC'D, NOT BUILT**
+## 1 — packet switching · conservation only · **BUILT, NOT WIRED**
 
 **Question:** does the fabric lose, duplicate, strand or reorder an envelope,
 and how fast does it move them — with **no content inspection at all**?
@@ -52,6 +52,18 @@ application. **Coalescing and truncation are invisible to it** — it counts
 envelopes, not bytes.
 
 **Spec:** `BUILD-114`.
+
+**Runnable:** `container/scenarios/packet-switching.sh` runs `steady` (receiver
+already running) or `burst` (sender queues before the receiver starts).  A
+`--reconcile-only DIR` run judges a retained custody fixture without Docker.
+The measured boundary is **popped → forwarded**; the run covers no port,
+terminal, or application and never inspects payload bytes.
+
+**Outcomes:** `0` is clean; `1` is unexplained loss, `2` is a duplicate, `3`
+is a stray opened envelope, `5` is `forward_unknown`/indeterminate, and `100`
+is incomplete setup or evidence.  The script prints the boundary, stage counts,
+and throughput before composing the reconciler result.  It is **not wired to
+`accept.sh`**; that is deliberately a later build.
 
 ---
 
