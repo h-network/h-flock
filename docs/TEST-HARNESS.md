@@ -93,6 +93,47 @@ script 1, it could be either.**
 
 ---
 
+## 3 — does the LOGGING tell the truth · **PARTLY EXISTS, ALL OF IT UNWIRED**
+
+**Question:** are the records complete, well-formed, and do they mean what the
+contract says?
+
+**What exists**, none of it invoked by anything:
+
+| script | what it answers |
+|---|---|
+| `analyse-run.py` | *"is every step logged"* — stage coverage, not averages |
+| `analyse-verification.py` | how often `delivery_unverified` cried wolf |
+| `analyse-v4-aof.py` | exact v4 frame bytes at egress vs ingress, from the AOF |
+
+⚠⚠ **Run against build 113's custody log — four PROVEN losses — the verification
+analyser reports `delivery_unverified 0`, `0.0% of opened`, and prints "no
+verification flags — nothing to judge".**
+
+⚠ **It is not broken. It measures the wrong direction.** It computes flags raised
+as a share of deliveries, which answers *"how often did the alarm cry wolf"* — the
+92% false-positive problem build 81 fixed. **It has no concept of a false
+negative, because it can only see flags that WERE raised.** A tool that measures
+how often an alarm went off cannot measure how often it should have.
+
+⚠⚠ **So the blind spot is invisible to the tool built to audit it**, and that is
+the same shape as everything else this week, one level further out.
+
+**What closing it requires: GROUND TRUTH.** A false-negative rate is
+*should-have-flagged* minus *did-flag*, and nothing today knows the first term.
+
+⚠ **Script 2's ack supplies it.** A receiver that testifies for itself is a
+record of what actually arrived, which is precisely what `analyse-verification`
+needs to compute the direction it currently cannot. **So script 3 depends on
+script 2 — build order is 1, 2, 3**, and that dependency is a finding rather
+than a preference.
+
+⚠ `analyse-v4-aof.py` also overlaps script 2 from below — byte-exact frame
+comparison at the wire, where the ack proves receipt at the application. **Two
+independent answers to "did the payload survive", at different layers.**
+
+---
+
 ## Candidates — from findings, NOT scheduled
 
 ⚠ **Listed so they are not re-derived. The operator picks; none of these is
