@@ -140,7 +140,7 @@ fi
 [ -n "${CONTAINER:-}" ] && [ -n "${TENANT:-}" ] || { echo "INCOMPLETE: CONTAINER and TENANT are required" >&2; exit 100; }
 [ "$MODE" = steady ] || [ "$MODE" = burst ] || { echo "INCOMPLETE: invalid mode" >&2; exit 100; }
 WORK="${WORK:-/tmp/packet-switching-$TENANT}"; mkdir -p "$WORK"
-restore_kick() { if ! docker exec "$CONTAINER" sh -c 'p=$(cat /tmp/flock.port.path); cp /tmp/flock.port.real "$p"; test "$(wc -c < "$p")" -gt 20' >/dev/null 2>&1; then echo 'ERROR: flock.port restore failed' >&2; return 1; fi; }
+restore_kick() { if ! docker exec "$CONTAINER" sh -c 'p=$(cat /tmp/flock.port.path); cp /tmp/flock.port.real "$p"; test "$(wc -c < "$p")" -gt 20' >/dev/null 2>&1; then echo 'ERROR: flock.port restore failed' >&2; exit 125; fi; }
 trap restore_kick EXIT
 docker exec "$CONTAINER" sh -c 'p=$(command -v flock.port); cp "$p" /tmp/flock.port.real; printf "#!/bin/sh\nexit 0\n" > "$p"; chmod +x "$p"; echo "$p" >/tmp/flock.port.path'
 docker cp "$(dirname "$0")/bench-port.py" "$CONTAINER:/tmp/build114-bench-port.py" >/dev/null || { echo "INCOMPLETE: receiver copy" >&2; exit 100; }
