@@ -10,6 +10,7 @@ from collections.abc import Sequence
 from datetime import datetime, timezone
 from pathlib import Path
 
+# Minimal hand-rolled RESP client (flock.bus.resp.Redis), not redis-py, for fast transient process startup
 from flock.bus import available_profiles, is_member, log_record, members, prefix, record_task_event, resp as redis, send, port_type
 from .pricing import calculate_cost, find_model_rates, load_pricing
 

@@ -1,4 +1,4 @@
-from conftest import FakeRespRedis as MockRedis
+from conftest import FakeRespRedis
 import ast
 import io
 import json
@@ -19,7 +19,7 @@ def office_env(monkeypatch):
     monkeypatch.setenv("AGENT_NAME", "frontend")
     monkeypatch.setenv("POD", "acme")
     monkeypatch.setenv("TENANT", "hq")
-    r = MockRedis(roster={"frontend": "tmux", "backend": "tmux", "api": "api", "host": "control"})
+    r = FakeRespRedis(roster={"frontend": "tmux", "backend": "tmux", "api": "api", "host": "control"})
     monkeypatch.setattr(cli.redis.Redis, "from_url", lambda url: r)
     return r
 

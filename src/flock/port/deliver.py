@@ -4,6 +4,7 @@ import time
 from datetime import datetime, timezone
 from flock.bus import EnvelopeError, log_record, parse, prefix, receive
 from flock.bus.doors import _emit_for_recipient
+# Minimal hand-rolled RESP client (flock.bus.resp.Redis), not redis-py, for fast transient process startup
 from flock.bus import resp as redis
 from .openers import add_ticket_opener, command_opener, message_opener
 
