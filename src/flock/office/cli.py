@@ -162,7 +162,8 @@ def _broadcast_command(argv: list[str]) -> None:
 
 def _peers_command(argv: list[str]) -> None:
     parser = _operation_parser("peers", "List peer agents in this office.")
-    parser.parse_args(argv)
+    parser.add_argument("-v", "--verbose", action="store_true", help="show framework, profile, and current task")
+    args = parser.parse_args(argv)
     r, pod, tenant, source = _context()
     raw_lead = r.get(prefix(pod, tenant, resource="lead"))
     lead = raw_lead.decode() if isinstance(raw_lead, bytes) else str(raw_lead) if raw_lead else None
@@ -173,7 +174,23 @@ def _peers_command(argv: list[str]) -> None:
         if agent != source and port_type(r, pod=pod, tenant=tenant, agent=agent) == "tmux"
     ]
     formatted = [f"{agent} (lead)" if agent == lead else agent for agent in peer_names]
-    print(", ".join(formatted))
+    if not args.verbose:
+        print(", ".join(formatted))
+        return
+
+    for agent, display_name in zip(peer_names, formatted):
+        framework = _text(r.get(prefix(pod, tenant, agent=agent, resource="launch"))) or "unknown"
+        profile = _text(r.get(prefix(pod, tenant, agent=agent, resource="profile")))
+        raw_ticket = next(
+            iter(r.lrange(prefix(pod, tenant, agent=agent, resource="tasks.doing"), 0, 0)),
+            None,
+        )
+        fields = [f"framework={framework}"]
+        if profile:
+            fields.append(f"profile={profile}")
+        if raw_ticket is not None:
+            fields.append(f"task={json.dumps(_ticket(raw_ticket, state='doing')['title'])}")
+        print(f"{display_name}: {', '.join(fields)}")
 
 
 def _timestamp(value) -> datetime | None:

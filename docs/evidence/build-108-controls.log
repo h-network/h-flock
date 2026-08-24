@@ -1,0 +1,82 @@
+=== CONTROL 1: framework lookup no longer reads launch ===
+F                                                                        [100%]
+=================================== FAILURES ===================================
+_____ test_peers_verbose_distinguishes_framework_profile_and_current_task ______
+
+office_env = <test_office.MockRedis object at 0x76003a4cf2f0>
+capsys = <_pytest.capture.CaptureFixture object at 0x76003b4e27b0>
+
+    def test_peers_verbose_distinguishes_framework_profile_and_current_task(
+        office_env, capsys
+    ):
+        office_env.roster = {
+            "frontend": "tmux",
+            "claude-peer": "tmux",
+            "codex-peer": "tmux",
+            "agy-peer": "tmux",
+        }
+        office_env.values.update(
+            {
+                "pod:acme:tenant:hq:agent:claude-peer:launch": "claude",
+                "pod:acme:tenant:hq:agent:claude-peer:profile": "work",
+                "pod:acme:tenant:hq:agent:codex-peer:launch": "codex",
+                "pod:acme:tenant:hq:agent:agy-peer:launch": "agy",
+            }
+        )
+        office_env.lists["pod:acme:tenant:hq:agent:codex-peer:tasks.doing"] = [
+            json.dumps({"id": "task-1", "title": "Review the fabric"}).encode()
+        ]
+    
+        cli.main(["peers", "--verbose"])
+    
+>       assert capsys.readouterr().out.splitlines() == [
+            "agy-peer: framework=agy",
+            "claude-peer: framework=claude, profile=work",
+            'codex-peer: framework=codex, task="Review the fabric"',
+        ]
+E       assert ['agy-peer: f... the fabric"'] == ['agy-peer: f... the fabric"']
+E         
+E         At index 0 diff: 'agy-peer: framework=unknown' != 'agy-peer: framework=agy'
+E         Use -v to get more diff
+
+tests/test_office.py:286: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_office.py::test_peers_verbose_distinguishes_framework_profile_and_current_task
+1 failed, 69 deselected in 0.03s
+CONTROL_1_EXIT=1
+
+=== CONTROL 2: plain peers takes enriched path ===
+F                                                                        [100%]
+=================================== FAILURES ===================================
+______ test_peers_plain_output_contract_is_unchanged_with_enriched_state _______
+
+office_env = <test_office.MockRedis object at 0x7384e94632f0>
+capsys = <_pytest.capture.CaptureFixture object at 0x7384e9e058e0>
+
+    def test_peers_plain_output_contract_is_unchanged_with_enriched_state(
+        office_env, capsys
+    ):
+        office_env.values["pod:acme:tenant:hq:agent:backend:launch"] = "agy"
+        office_env.values["pod:acme:tenant:hq:agent:backend:profile"] = "work"
+        office_env.lists["pod:acme:tenant:hq:agent:backend:tasks.doing"] = [
+            json.dumps({"id": "task-1", "title": "Busy"}).encode()
+        ]
+    
+        cli.main(["peers"])
+    
+>       assert capsys.readouterr().out.strip() == "backend"
+E       assert 'backend: fra..., task="Busy"' == 'backend'
+E         
+E         - backend
+E         + backend: framework=agy, profile=work, task="Busy"
+
+tests/test_office.py:304: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_office.py::test_peers_plain_output_contract_is_unchanged_with_enriched_state
+1 failed, 69 deselected in 0.03s
+CONTROL_2_EXIT=1
+
+=== RESTORED CLEAN FOCUSED RUN ===
+.......                                                                  [100%]
+7 passed, 63 deselected in 0.02s
+CLEAN_FOCUSED_EXIT=0
