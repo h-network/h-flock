@@ -950,8 +950,8 @@ def test_office_usage_surfaces_codex_rate_limits(monkeypatch, capsys):
     assert json_out["rows"][0]["rate_limits"]["plan_type"] == "prolite"
 
 
-def test_office_usage_names_agy_agent_not_measurable(monkeypatch, capsys):
-    """Build 88 §3: office usage names agy agents as not measurable rather than omitting or zeroing."""
+def test_office_usage_names_agy_agent_not_collected(monkeypatch, capsys):
+    """Build 105 §2: office usage names agy agents as not collected rather than omitting or zeroing."""
     r = UsageRedis(agents=("architect", "backend"))
     r.values[prefix("acme", "hq", "architect", "launch")] = "agy"
     r.values[prefix("acme", "hq", "backend", "launch")] = "claude"
@@ -975,7 +975,7 @@ def test_office_usage_names_agy_agent_not_measurable(monkeypatch, capsys):
     out = capsys.readouterr().out
     assert "architect" in out
     assert "agy" in out
-    assert "not measurable" in out
+    assert "not collected" in out
     assert "backend" in out
 
     cli.main(["usage", "--json"])
@@ -983,10 +983,30 @@ def test_office_usage_names_agy_agent_not_measurable(monkeypatch, capsys):
     architect_rows = [r for r in json_out["rows"] if r["agent"] == "architect"]
     assert len(architect_rows) == 1
     assert architect_rows[0]["cli"] == "agy"
-    assert architect_rows[0]["model"] == "not measurable"
-    assert architect_rows[0]["measurable"] is False
+    assert architect_rows[0]["model"] == "not collected"
+    assert architect_rows[0]["collected"] is False
     assert architect_rows[0]["unpriced"] is True
     assert architect_rows[0]["usd"] is None
+
+
+def test_agy_uncollected_documentation_bounded_claims():
+    """Build 105 §2: CONTRACTS.md and BUILD-88-results.md state exact bounded claims for agy transcripts."""
+    from pathlib import Path
+    root = Path(__file__).resolve().parent.parent
+
+    contracts_norm = " ".join((root / "docs" / "CONTRACTS.md").read_text(encoding="utf-8").split())
+    assert "not collected (agy)" in contracts_norm
+    assert 'model: "not collected"' in contracts_norm
+    assert '"collected": false' in contracts_norm
+    assert "brain/<id>/.system_generated/logs/" in contracts_norm
+    assert "h-flock does not collect it" in contracts_norm
+    assert "whether those transcripts carry token counts is unverified" in contracts_norm
+
+    build_88_norm = " ".join((root / "docs" / "BUILD-88-results.md").read_text(encoding="utf-8").split())
+    assert "agy Not Collected (§3)" in build_88_norm
+    assert "brain/<id>/.system_generated/logs/" in build_88_norm
+    assert "h-flock does not collect it" in build_88_norm
+    assert "whether those transcripts carry token counts is unverified" in build_88_norm
 
 
 def test_codex_session_rotation_resets_model(tmp_path):

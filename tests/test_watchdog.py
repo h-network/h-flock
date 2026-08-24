@@ -30,6 +30,11 @@ class WatchRedis:
             return self.hashes[key].get(field)
         return self.roster.get(field)
 
+    def hexists(self, key, field):
+        if key in self.hashes:
+            return field in self.hashes[key]
+        return field in self.roster
+
     def hgetall(self, key):
         return self.hashes.get(key, {})
 
@@ -326,6 +331,85 @@ def test_provider_agent_needs_no_vendor_credential_and_clears_stale_status(tmp_p
     assert r.hashes[alerted_key] == {}
 
 
+def test_credential_alert_retracted_when_credential_recovers(tmp_path, monkeypatch, capsys):
+    """Build 105 §1: when a credential recovers, watchdog emits status=present and clears alerted hash."""
+    r = WatchRedis()
+    r.values[_key("architect", "launch")] = "claude"
+    monkeypatch.delenv("CLAUDE_OAUTH_TOKEN_DEFAULT", raising=False)
+
+    watchdog = Watchdog(r, pod="acme", tenant="hq", session_name="hq", home_root=tmp_path)
+    alerted_key = prefix("acme", "hq", resource="credential.alerted")
+    alerts_key = prefix("acme", "hq", resource="alerts")
+
+    # Pass 1: Absent credential -> alerts absent
+    watchdog.check_credentials(now=NOW)
+    alerts = [json.loads(fields["alert"]) for _, fields in r.streams[alerts_key]]
+    assert len(alerts) == 1
+    assert alerts[0]["status"] == "absent"
+    assert alerts[0]["cli"] == "claude"
+    assert alerts[0]["account"] == "default"
+    assert r.hashes[alerted_key] == {"default:claude": "absent"}
+
+    # Pass 2: Login completes -> valid credentials file created with healthy refresh expiry
+    claude = tmp_path / ".claude"
+    claude.mkdir()
+    (claude / ".credentials.json").write_text(
+        json.dumps({"claudeAiOauth": {"refreshTokenExpiresAt": "2026-09-12T14:00:00Z"}})
+    )
+
+    watchdog.check_credentials(now=NOW)
+    alerts = [json.loads(fields["alert"]) for _, fields in r.streams[alerts_key]]
+    assert len(alerts) == 2
+    assert alerts[1]["status"] == "present"
+    assert alerts[1]["cli"] == "claude"
+    assert alerts[1]["account"] == "default"
+    assert alerts[1]["expires_ts"] == "2026-09-12T14:00:00.000Z"
+    assert r.hashes.get(alerted_key, {}) == {}
+
+    # Pass 3: Steady state -> no further alerts emitted
+    watchdog.check_credentials(now=NOW)
+    alerts = [json.loads(fields["alert"]) for _, fields in r.streams[alerts_key]]
+    assert len(alerts) == 2
+    assert r.hashes.get(alerted_key, {}) == {}
+
+
+def test_credential_alert_retracted_from_expiring_when_token_refreshed(tmp_path, capsys):
+    """Build 105 §1: when an expiring credential is refreshed, watchdog emits status=present."""
+    r = WatchRedis()
+    r.values[_key("architect", "launch")] = "claude"
+    claude = tmp_path / ".claude"
+    claude.mkdir()
+    (claude / ".credentials.json").write_text(
+        json.dumps({"claudeAiOauth": {"refreshTokenExpiresAt": "2026-08-12T14:00:00Z"}})
+    )
+
+    watchdog = Watchdog(r, pod="acme", tenant="hq", session_name="hq", home_root=tmp_path)
+    alerted_key = prefix("acme", "hq", resource="credential.alerted")
+    alerts_key = prefix("acme", "hq", resource="alerts")
+
+    # Pass 1: Expiring (3 days from NOW) -> alerts expiring
+    watchdog.check_credentials(now=NOW)
+    alerts = [json.loads(fields["alert"]) for _, fields in r.streams[alerts_key]]
+    assert len(alerts) == 1
+    assert alerts[0]["status"] == "expiring"
+    assert r.hashes[alerted_key] == {"default:claude": "expiring"}
+
+    # Pass 2: Refreshed -> healthy expiry 30 days away
+    (claude / ".credentials.json").write_text(
+        json.dumps({"claudeAiOauth": {"refreshTokenExpiresAt": "2026-09-09T14:00:00Z"}})
+    )
+    watchdog.check_credentials(now=NOW)
+    alerts = [json.loads(fields["alert"]) for _, fields in r.streams[alerts_key]]
+    assert len(alerts) == 2
+    assert alerts[1]["status"] == "present"
+    assert alerts[1]["expires_ts"] == "2026-09-09T14:00:00.000Z"
+    assert r.hashes.get(alerted_key, {}) == {}
+
+    # Pass 3: Steady state -> no further alerts
+    watchdog.check_credentials(now=NOW)
+    assert len(r.streams[alerts_key]) == 2
+
+
 def test_stall_failure_does_not_disable_blocked_check(monkeypatch, capsys):
     r = WatchRedis()
     r.hashes[_key("sme-2", "blocked")] = {
@@ -464,7 +548,11 @@ def test_missing_credentials_alert_once_per_account_in_use_and_clear_on_reseed(t
     )
     watchdog.check_credentials(now=NOW)
     watchdog.check_credentials(now=NOW)
-    assert len(r.streams[alerts_key]) == 1
+    alerts = [json.loads(fields["alert"]) for _, fields in r.streams[alerts_key]]
+    assert [(alert["account"], alert["cli"], alert["status"]) for alert in alerts] == [
+        ("work", "claude", "absent"),
+        ("work", "claude", "present"),
+    ]
     assert r.hashes[prefix("acme", "hq", resource="credential.alerted")] == {}
 
 

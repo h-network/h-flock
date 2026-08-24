@@ -315,9 +315,11 @@ class Watchdog:
                     elif (expiry - now).total_seconds() <= warn_seconds:
                         status = "expiring"
                     else:
-                        self.r.hdel(alerted_key, field)
-                        continue
-            if _text(self.r.hget(alerted_key, field)) == status:
+                        status = "present"
+            previous = _text(self.r.hget(alerted_key, field))
+            if previous == status:
+                continue
+            if status == "present" and previous is None:
                 continue
             record = {
                 "v": 1,
@@ -329,7 +331,10 @@ class Watchdog:
                 "expires_ts": _iso(expiry) if expiry else None,
             }
             self._alert(record)
-            self.r.hset(alerted_key, field, status)
+            if status == "present":
+                self.r.hdel(alerted_key, field)
+            else:
+                self.r.hset(alerted_key, field, status)
 
         stale_fields = {
             _text(field) for field in self.r.hkeys(alerted_key)
