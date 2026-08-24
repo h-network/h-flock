@@ -1,4 +1,4 @@
-from conftest import FakeRedis as StubRedis
+from conftest import FakeRespRedis as StubRedis
 from unittest.mock import patch
 
 import pytest

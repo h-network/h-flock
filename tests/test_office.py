@@ -1,4 +1,4 @@
-from conftest import FakeRedis as MockRedis
+from conftest import FakeRespRedis as MockRedis
 import ast
 import io
 import json
