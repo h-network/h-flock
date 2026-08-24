@@ -57,6 +57,40 @@ raise SystemExit(rc)
 PY
 }
 
+capture_diagnostics() {
+  local rc="$1"
+  [ "$rc" -eq 0 ] && return 0
+  echo "PACKET_DIAGNOSTICS retaining work=$WORK"
+  docker logs "$CONTAINER" >"$WORK/diagnostic-container.log" 2>&1 || true
+  docker inspect "$CONTAINER" >"$WORK/diagnostic-inspect.json" 2>&1 || true
+  docker exec "$CONTAINER" ps -ef >"$WORK/diagnostic-processes.txt" 2>&1 || true
+  docker exec -e POD="$POD" -e TENANT="$TENANT" "$CONTAINER" python3 -c '
+import json, os, redis
+r = redis.Redis.from_url(os.environ.get("REDIS_URL", "redis://127.0.0.1:6379/0"))
+pattern = "pod:%s:tenant:%s:*" % (os.environ["POD"], os.environ["TENANT"])
+for raw_key in sorted(r.scan_iter(match=pattern)):
+    key = raw_key.decode() if isinstance(raw_key, bytes) else raw_key
+    kind = r.type(raw_key).decode()
+    if kind == "list": value = [x.decode(errors="replace") for x in r.lrange(raw_key, 0, -1)]
+    elif kind == "hash": value = {k.decode(errors="replace"): v.decode(errors="replace") for k, v in r.hgetall(raw_key).items()}
+    elif kind == "set": value = sorted(x.decode(errors="replace") for x in r.smembers(raw_key))
+    elif kind == "string": value = (r.get(raw_key) or b"").decode(errors="replace")
+    else: value = f"<unsupported redis type {kind}>"
+    print(json.dumps({"key": key, "type": kind, "value": value}, sort_keys=True))
+' >"$WORK/diagnostic-keyspace.jsonl" 2>&1 || true
+  docker exec -e POD="$POD" -e TENANT="$TENANT" "$CONTAINER" python3 -c '
+import os, redis
+r = redis.Redis.from_url(os.environ.get("REDIS_URL", "redis://127.0.0.1:6379/0"))
+pattern = "pod:%s:tenant:%s:agent:*" % (os.environ["POD"], os.environ["TENANT"])
+for raw_key in sorted(r.scan_iter(match=pattern)):
+    key = raw_key.decode() if isinstance(raw_key, bytes) else raw_key
+    if key.endswith(":ingress") or key.endswith(":egress"):
+        print(f"{key}\t{r.llen(raw_key)}")
+' >"$WORK/diagnostic-queues.tsv" 2>&1 || true
+  sha256sum "$WORK"/diagnostic-* >"$WORK/diagnostic-sha256.txt" 2>&1 || true
+  echo "PACKET_DIAGNOSTICS files=diagnostic-container.log,diagnostic-inspect.json,diagnostic-processes.txt,diagnostic-keyspace.jsonl,diagnostic-queues.tsv,diagnostic-sha256.txt"
+}
+
 if [ -n "$RECONCILE_ONLY" ]; then
   [ -d "$RECONCILE_ONLY" ] || { echo "INCOMPLETE: fixture directory missing" >&2; exit 100; }
   judge "$RECONCILE_ONLY"; exit $?
@@ -87,4 +121,6 @@ echo "PACKET_QUEUE_DEPTH ingress_plus_egress=${depth:-unknown} drained=${drained
 docker logs "$CONTAINER" >"$WORK/custody.log" 2>&1 || { echo "INCOMPLETE: capture" >&2; exit 100; }
 [ -s "$WORK/custody.log" ] || { echo "INCOMPLETE: empty capture" >&2; exit 100; }
 [ "$drained" = "1" ] || { echo "INCOMPLETE: queues did not drain before capture" >&2; exit 100; }
-judge "$WORK"; exit $?
+judge "$WORK"; rc=$?
+capture_diagnostics "$rc"
+exit "$rc"

@@ -65,6 +65,10 @@ is incomplete setup or evidence.  The script prints the boundary, stage counts,
 and throughput before composing the reconciler result.  It is **not wired to
 `accept.sh`**; that is deliberately a later build.
 
+**Failure evidence:** a nonzero live result captures the full container log,
+container/process snapshots, tenant keyspace contents, per-queue LLENs, and
+SHA256s before teardown. A clean result skips this diagnostic set.
+
 ---
 
 ## Candidates — from findings, NOT scheduled

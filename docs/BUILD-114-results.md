@@ -76,10 +76,15 @@ retrospectively from the immutable artifacts. The smaller 20-destination burst
 reproduced cleanly (40/40, rc0), establishing that the RED is
 cardinality/timing-sensitive rather than universal.
 
+The live path now retains diagnostics before teardown on every nonzero result:
+the complete container log and inspect/process snapshots, a logical dump of the
+tenant keyspace, per-agent ingress/egress LLENs, and a checksum manifest. Clean
+results do not retain this extra set. This is deliberately capture-before-
+teardown; a red result must remain diagnosable rather than merely judgeable.
+
 ## Verification status
 
 Targeted gate: `PYTHONPATH=. pytest -q tests/test_packet_switching.py tests/test_conservation_contract.py` — 7 passed.
 
-No live tenant or burst result is claimed in this implementation checkpoint;
-those runs require a reserved correctness tenant and are separate from the
-fixture controls above.
+The live steady and burst runs above used reserved correctness tenants; the
+fixture controls remain independently runnable without Docker.
