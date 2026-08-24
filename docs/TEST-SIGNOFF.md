@@ -115,7 +115,27 @@ put it exactly: *they truthfully record the surface and the requested claim at
 their dated SHAs.* A build spec is the same — it records what was asked for then.
 
 **So: never sweep results or spec documents to match current code.** If a reader
-could mistake one for current, the fix is a dated header, not an edit. ⚠ **The
+could mistake one for current, the fix is a dated header, not an edit.
+
+⚠ **And a WRONG CONCLUSION is not the same as a STALE MEASUREMENT.** The rule
+above was written for the stale case and is incomplete without this one.
+
+- **A measurement that was true then and is false now** — `BUILD-90` recording
+  `measurable` — **stays untouched.** It was accurate on its date.
+- **A conclusion that was WRONG WHEN WRITTEN** — `BUILD-88` §3 concluding agy
+  *"records no token counts anywhere"* from a capture that never opened
+  `brain/` — **must not be rewritten to state the correct claim as though it
+  always had.** That erases the error instead of recording it.
+
+**Correct it the way `TODO.md` closes a row: keep the original visible, mark it
+superseded, and say what is true now and when that was established.** ⚠ **The
+record of what we believed and when is how this project catches its own drift** —
+build 88's conclusion looked sound for a day and a half precisely because nothing
+preserved the reasoning that produced it.
+
+⚠⚠ **A signed `TEST SIGN-OFF` block is never edited.** It is what a named
+verifier signed on a date. If its `claim` field is now false, that is a fact
+about the past, and the correction goes beside it — never inside it. ⚠ **The
 architect and the verifier reached this independently before it was written
 down**, which is the only reason it did not get swept.
 
