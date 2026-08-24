@@ -14,13 +14,14 @@ done
 judge() {
   python3 - "$1" <<'PY'
 import collections, datetime, json, pathlib, subprocess, sys
-d = pathlib.Path(sys.argv[1]); log = d / "custody.log"; sent = {}; opened = collections.Counter(); popped = {}; forwarded = {}
+d = pathlib.Path(sys.argv[1]); log = d / "custody.log"; sent = {}; opened = collections.Counter(); popped = {}; forwarded = {}; stages = collections.Counter()
 for line in log.read_text(errors="replace").splitlines():
     if not line.lstrip().startswith("{"): continue
     try: rec = json.loads(line)
     except Exception: continue
     sid = rec.get("stream_id")
     if not sid: continue
+    stages[rec.get("event", "unknown")] += 1
     if rec.get("event") == "sent": sent[sid] = rec
     if rec.get("event") == "opened": opened[sid] += 1
     if rec.get("event") == "popped": popped[sid] = rec
@@ -33,6 +34,7 @@ with (d / "ledger.tsv").open("w") as out:
 for name in ("dead.jsonl", "ingress.jsonl", "injections.tsv"): (d / name).touch()
 print(f"PACKET_BOUNDARY start=popped stop=forwarded outside=port,terminal,application")
 print(f"PACKET_COUNTS submitted={len(sent)} opened={sum(opened.values())} stray={len(stray)}")
+print("PACKET_STAGES " + " ".join(f"{event}={stages[event]}" for event in ("sent", "popped", "forwarded", "received", "opened")))
 pairs = []
 for sid in sent:
     if sid in popped and sid in forwarded:

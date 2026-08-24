@@ -29,6 +29,7 @@ def test_packet_harness_clean_is_rc0(tmp_path):
     result = subprocess.run(["bash", str(HARNESS), "--reconcile-only", str(_fixture(tmp_path, 1))], capture_output=True, text=True)
     assert result.returncode == 0
     assert "PACKET_RESULT rc=0 reason=clean" in result.stdout
+    assert "PACKET_STAGES sent=1 popped=0 forwarded=0 received=0 opened=1" in result.stdout
 
 
 def test_packet_harness_duplicate_is_rc2(tmp_path):
