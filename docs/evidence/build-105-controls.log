@@ -12,9 +12,9 @@ tests/test_watchdog.py F                                                 [100%]
 =================================== FAILURES ===================================
 ___________ test_credential_alert_retracted_when_credential_recovers ___________
 
-tmp_path = PosixPath('/tmp/pytest-of-ubuntu/pytest-1276/test_credential_alert_retracte0')
-monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x7ef2def4ab40>
-capsys = <_pytest.capture.CaptureFixture object at 0x7ef2def4a930>
+tmp_path = PosixPath('/tmp/pytest-of-ubuntu/pytest-1283/test_credential_alert_retracte0')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x7496ae5d4dd0>
+capsys = <_pytest.capture.CaptureFixture object at 0x7496ae5d7140>
 
     def test_credential_alert_retracted_when_credential_recovers(tmp_path, monkeypatch, capsys):
         """Build 105 §1: when a credential recovers, watchdog emits status=present and clears alerted hash."""
@@ -71,8 +71,8 @@ tests/test_office.py F                                                   [100%]
 =================================== FAILURES ===================================
 __________________ test_status_names_agy_agent_not_collected ___________________
 
-office_env = <test_office.MockRedis object at 0x70e08d4c3890>
-capsys = <_pytest.capture.CaptureFixture object at 0x70e08d4c3a10>
+office_env = <test_office.MockRedis object at 0x728e69163560>
+capsys = <_pytest.capture.CaptureFixture object at 0x728e69163860>
 
     def test_status_names_agy_agent_not_collected(office_env, capsys):
         """Build 105 §2: office status names agy agents as not collected."""
@@ -97,15 +97,15 @@ cachedir: /tmp/pytest_cache_3
 rootdir: /workspace/api/h-flock
 configfile: pyproject.toml
 plugins: anyio-4.14.2
-collected 23 items / 22 deselected / 1 selected
+collected 24 items / 23 deselected / 1 selected
 
 tests/test_usage.py F                                                    [100%]
 
 =================================== FAILURES ===================================
 _______________ test_office_usage_names_agy_agent_not_collected ________________
 
-monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x7d8406151640>
-capsys = <_pytest.capture.CaptureFixture object at 0x7d8405a4e120>
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x777408fb5f40>
+capsys = <_pytest.capture.CaptureFixture object at 0x777408fb6030>
 
     def test_office_usage_names_agy_agent_not_collected(monkeypatch, capsys):
         """Build 105 §2: office usage names agy agents as not collected rather than omitting or zeroing."""
@@ -138,9 +138,43 @@ E       AssertionError: assert 'not collected' in 'agent     cli     model      
 tests/test_usage.py:978: AssertionError
 =========================== short test summary info ============================
 FAILED tests/test_usage.py::test_office_usage_names_agy_agent_not_collected
-======================= 1 failed, 22 deselected in 0.05s =======================
+======================= 1 failed, 23 deselected in 0.08s =======================
 
 MUTATION_3_EXIT=1
+
+=== MUTATION 4: REVERT BOUNDED DOC SENTENCE IN CONTRACTS.MD (expected exit 1) ===
+============================= test session starts ==============================
+platform linux -- Python 3.12.3, pytest-9.1.1, pluggy-1.6.0
+cachedir: /tmp/pytest_cache_4
+rootdir: /workspace/api/h-flock
+configfile: pyproject.toml
+plugins: anyio-4.14.2
+collected 24 items / 23 deselected / 1 selected
+
+tests/test_usage.py F                                                    [100%]
+
+=================================== FAILURES ===================================
+______________ test_agy_uncollected_documentation_bounded_claims _______________
+
+    def test_agy_uncollected_documentation_bounded_claims():
+        """Build 105 §2: CONTRACTS.md and BUILD-88-results.md state exact bounded claims for agy transcripts."""
+        from pathlib import Path
+        root = Path(__file__).resolve().parent.parent
+    
+        contracts_norm = " ".join((root / "docs" / "CONTRACTS.md").read_text(encoding="utf-8").split())
+        assert "not collected (agy)" in contracts_norm
+        assert 'model: "not collected"' in contracts_norm
+        assert '"collected": false' in contracts_norm
+        assert "brain/<id>/.system_generated/logs/" in contracts_norm
+>       assert "h-flock does not collect it" in contracts_norm
+E       assert 'h-flock does not collect it' in "# Contracts > System-level view is [`HLD.md`](HLD.md) — read that first if you are new. > This file is the narrower t...ND`, `SESSION_BIND` | bind for each door; exposure policy is decided by the container's published-host configuration |"
+
+tests/test_usage.py:1002: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_usage.py::test_agy_uncollected_documentation_bounded_claims
+======================= 1 failed, 23 deselected in 0.08s =======================
+
+MUTATION_4_EXIT=1
 
 === CLEAN RUN (expected exit 0) ===
 ============================= test session starts ==============================
@@ -148,13 +182,13 @@ platform linux -- Python 3.12.3, pytest-9.1.1, pluggy-1.6.0
 rootdir: /workspace/api/h-flock
 configfile: pyproject.toml
 plugins: anyio-4.14.2
-collected 112 items
+collected 113 items
 
 tests/test_watchdog.py .....................                             [ 18%]
-tests/test_office.py ................................................... [ 64%]
-.................                                                        [ 79%]
-tests/test_usage.py .......................                              [100%]
+tests/test_office.py ................................................... [ 63%]
+.................                                                        [ 78%]
+tests/test_usage.py ........................                             [100%]
 
-============================= 112 passed in 0.33s ==============================
+============================= 113 passed in 0.36s ==============================
 
 CLEAN_EXIT=0

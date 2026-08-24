@@ -989,6 +989,26 @@ def test_office_usage_names_agy_agent_not_collected(monkeypatch, capsys):
     assert architect_rows[0]["usd"] is None
 
 
+def test_agy_uncollected_documentation_bounded_claims():
+    """Build 105 §2: CONTRACTS.md and BUILD-88-results.md state exact bounded claims for agy transcripts."""
+    from pathlib import Path
+    root = Path(__file__).resolve().parent.parent
+
+    contracts_norm = " ".join((root / "docs" / "CONTRACTS.md").read_text(encoding="utf-8").split())
+    assert "not collected (agy)" in contracts_norm
+    assert 'model: "not collected"' in contracts_norm
+    assert '"collected": false' in contracts_norm
+    assert "brain/<id>/.system_generated/logs/" in contracts_norm
+    assert "h-flock does not collect it" in contracts_norm
+    assert "whether those transcripts carry token counts is unverified" in contracts_norm
+
+    build_88_norm = " ".join((root / "docs" / "BUILD-88-results.md").read_text(encoding="utf-8").split())
+    assert "agy Not Collected (§3)" in build_88_norm
+    assert "brain/<id>/.system_generated/logs/" in build_88_norm
+    assert "h-flock does not collect it" in build_88_norm
+    assert "whether those transcripts carry token counts is unverified" in build_88_norm
+
+
 def test_codex_session_rotation_resets_model(tmp_path):
     """Rotation control: rotating to a new rollout with session_meta resets model rather than retaining previous rollout's model."""
     import time
