@@ -65,6 +65,17 @@ The burst RED is the result, not a throughput defect in the harness: it shows
 that queued envelopes can be lost when the receiver is absent, and the
 reconciler catches that at the packet boundary.
 
+## Follow-up instrumentation
+
+Before the burst project was torn down, every source ingress and egress queue
+had LLEN zero. The custody log contains one switch-start record and no
+container restart/stop record during the run. The run directory retained only
+the steady, burst, and later 20-destination investigation snapshots; no second
+tenant log was captured, so an alternate-tenant attribution cannot be proved
+retrospectively from the immutable artifacts. The smaller 20-destination burst
+reproduced cleanly (40/40, rc0), establishing that the RED is
+cardinality/timing-sensitive rather than universal.
+
 ## Verification status
 
 Targeted gate: `PYTHONPATH=. pytest -q tests/test_packet_switching.py tests/test_conservation_contract.py` — 7 passed.
