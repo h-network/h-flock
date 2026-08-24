@@ -4,11 +4,18 @@ COUNT=${COUNT:-2}; ROUNDS=${ROUNDS:-10}; PREFIX=payload-; WORK=${WORK:-/tmp/payl
 while [ "$#" -gt 0 ]; do case "$1" in --count) COUNT=$2; shift 2;; --rounds) ROUNDS=$2; shift 2;; --work) WORK=$2; shift 2;; *) echo "INCOMPLETE: unknown option" >&2; exit 100;; esac; done
 [ -n "${CONTAINER:-}" ] && [ -n "${TENANT:-}" ] || { echo "INCOMPLETE: CONTAINER and TENANT required" >&2; exit 100; }
 mkdir -p "$WORK"
-docker exec "$CONTAINER" sh -c 'mkdir -p /tmp/payload-shim && printf "#!/bin/sh\nexit 0\n" > /tmp/payload-shim/flock.port && chmod +x /tmp/payload-shim/flock.port'
+# ⚠ The switch kicks `flock.port` on EVERY forward for ANY roster member
+# (Switch._kick -> subprocess.Popen), so a real port spawns for our payload-*
+# participants and races payload-ack-port.py for the same ingress. Prepending to
+# OUR PATH does nothing: the switch resolves the name with ITS OWN path. The shim
+# must replace the executable the switch actually finds. Restored on exit.
+restore_kick() { if ! docker exec "$CONTAINER" sh -c 'p=$(cat /tmp/flock.port.path); cp /tmp/flock.port.real "$p"; test "$(wc -c < "$p")" -gt 20' >/dev/null 2>&1; then echo 'ERROR: flock.port restore failed' >&2; exit 125; fi; }
+trap restore_kick EXIT
+docker exec "$CONTAINER" sh -c 'p=$(command -v flock.port); cp "$p" /tmp/flock.port.real; printf "#!/bin/sh\nexit 0\n" > "$p"; chmod +x "$p"; echo "$p" >/tmp/flock.port.path'
 docker cp "$(dirname "$0")/payload-ack-port.py" "$CONTAINER:/tmp/payload-ack-port.py" >/dev/null || exit 100
 docker exec "$CONTAINER" redis-cli HSET "pod:${POD:-acme}:tenant:$TENANT:roster" $(printf 'payload-%s api ' $(seq 1 "$COUNT")) >/dev/null || exit 100
 names="$(printf 'payload-%s ' $(seq 1 "$COUNT") | sed 's/[[:space:]]*$//')"
-docker exec "$CONTAINER" sh -c "PATH=/tmp/payload-shim:\$PATH python3 /tmp/payload-ack-port.py --pod '${POD:-acme}' --tenant '$TENANT' --count '$COUNT' --prefix '$PREFIX' --idle-exit 120 >>/proc/1/fd/1 2>&1 &"
+docker exec "$CONTAINER" sh -c "python3 /tmp/payload-ack-port.py --pod '${POD:-acme}' --tenant '$TENANT' --count '$COUNT' --prefix '$PREFIX' --idle-exit 120 >>/proc/1/fd/1 2>&1 &"
 docker cp "$(dirname "$0")/bench-send.py" "$CONTAINER:/tmp/payload-send.py" >/dev/null || exit 100
 docker exec "$CONTAINER" sh -c "python3 - '$names' '$ROUNDS' '${POD:-acme}' '$TENANT' <<'PY' >>/proc/1/fd/1
 import hashlib, os, sys
