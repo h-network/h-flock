@@ -1,0 +1,99 @@
+F                                                                        [100%]
+=================================== FAILURES ===================================
+___ test_resp_doubles_do_not_expose_commands_missing_from_production_client ____
+
+    def test_resp_doubles_do_not_expose_commands_missing_from_production_client():
+        """Structural invariant: marked RESP doubles cannot outrun the real client."""
+        production = {
+            name for name, value in vars(Redis).items()
+            if callable(value) and not name.startswith("_")
+        }
+        doubles = []
+        violations = []
+        for path in sorted((Path(__file__).parent).glob("test_*.py")):
+            tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+            for node in tree.body:
+                if not isinstance(node, ast.ClassDef):
+                    continue
+                marked = any(
+                    isinstance(item, ast.Assign)
+                    and any(isinstance(target, ast.Name) and target.id == "__resp_double__" for target in item.targets)
+                    and isinstance(item.value, ast.Constant)
+                    and item.value.value is True
+                    for item in node.body
+                )
+                if not marked:
+                    continue
+                doubles.append(f"{path.name}:{node.name}")
+                exposed = {
+                    item.name for item in node.body
+                    if isinstance(item, (ast.FunctionDef, ast.AsyncFunctionDef))
+                    and not item.name.startswith("_")
+                }
+                for method in sorted(exposed - production):
+                    violations.append(f"{path.name}:{node.name}.{method}")
+    
+        assert len(doubles) >= 2, f"Expected at least 2 marked RESP doubles, found {doubles}"
+>       assert not violations, "RESP test doubles exceed production Redis: " + ", ".join(violations)
+E       AssertionError: RESP test doubles exceed production Redis: test_control.py:RecordingRedis.only_on_the_double
+E       assert not ['test_control.py:RecordingRedis.only_on_the_double']
+
+tests/test_resp.py:94: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_resp.py::test_resp_doubles_do_not_expose_commands_missing_from_production_client
+1 failed, 7 deselected in 0.05s
+
+STRUCTURAL_MUTATION_EXIT=1
+
+=== CONTROL 2: production EVAL removed ===
+F                                                                        [100%]
+=================================== FAILURES ===================================
+___ test_resp_doubles_do_not_expose_commands_missing_from_production_client ____
+
+    def test_resp_doubles_do_not_expose_commands_missing_from_production_client():
+        """Structural invariant: marked RESP doubles cannot outrun the real client."""
+        production = {
+            name for name, value in vars(Redis).items()
+            if callable(value) and not name.startswith("_")
+        }
+        doubles = []
+        violations = []
+        for path in sorted((Path(__file__).parent).glob("test_*.py")):
+            tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+            for node in tree.body:
+                if not isinstance(node, ast.ClassDef):
+                    continue
+                marked = any(
+                    isinstance(item, ast.Assign)
+                    and any(isinstance(target, ast.Name) and target.id == "__resp_double__" for target in item.targets)
+                    and isinstance(item.value, ast.Constant)
+                    and item.value.value is True
+                    for item in node.body
+                )
+                if not marked:
+                    continue
+                doubles.append(f"{path.name}:{node.name}")
+                exposed = {
+                    item.name for item in node.body
+                    if isinstance(item, (ast.FunctionDef, ast.AsyncFunctionDef))
+                    and not item.name.startswith("_")
+                }
+                for method in sorted(exposed - production):
+                    violations.append(f"{path.name}:{node.name}.{method}")
+    
+        assert len(doubles) >= 2, f"Expected at least 2 marked RESP doubles, found {doubles}"
+>       assert not violations, "RESP test doubles exceed production Redis: " + ", ".join(violations)
+E       AssertionError: RESP test doubles exceed production Redis: test_control.py:RecordingRedis.eval, test_tmuxhost.py:MockRedis.eval
+E       assert not ['test_control.py:RecordingRedis.eval', 'test_tmuxhost.py:MockRedis.eval']
+
+tests/test_resp.py:94: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_resp.py::test_resp_doubles_do_not_expose_commands_missing_from_production_client
+1 failed, 7 deselected in 0.06s
+MISSING_EVAL_MUTATION_EXIT=1
+
+=== RESTORED CLEAN FOCUSED RUN ===
+........................................................................ [ 80%]
+..................                                                       [100%]
+90 passed in 0.25s
+CLEAN_FOCUSED_EXIT=0
