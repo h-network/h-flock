@@ -10,7 +10,7 @@ HARNESS = ROOT / "container/scenarios/packet-switching.sh"
 def _fixture(tmp_path, opened):
     log = tmp_path / "custody.log"
     sent = {
-        "event": "sent", "stream_id": "s1", "source": "a", "destination": "b",
+        "event": "sent", "stream_id": "s1", "source": "bench-1", "destination": "bench-2",
         "ts": "2026-01-01T00:00:00.000Z",
     }
     records = [sent]
@@ -41,7 +41,16 @@ def test_packet_harness_duplicate_is_rc2(tmp_path):
 def test_packet_harness_stray_is_rc3(tmp_path):
     fixture = _fixture(tmp_path, 1)
     with (fixture / "custody.log").open("a") as log:
-        log.write(json.dumps({"event": "opened", "stream_id": "stray", "ts": "2026-01-01T00:00:00.000Z"}) + "\n")
+        log.write(json.dumps({"event": "opened", "stream_id": "stray", "source": "bench-9", "destination": "bench-1", "ts": "2026-01-01T00:00:00.000Z"}) + "\n")
     result = subprocess.run(["bash", str(HARNESS), "--reconcile-only", str(fixture)], capture_output=True, text=True)
     assert result.returncode == 3
     assert "PACKET_RESULT rc=3 reason=stray" in result.stdout
+
+
+def test_packet_harness_ignores_unrelated_traffic(tmp_path):
+    fixture = _fixture(tmp_path, 1)
+    with (fixture / "custody.log").open("a") as log:
+        log.write(json.dumps({"event": "opened", "stream_id": "office", "source": "architect", "destination": "telegram", "ts": "2026-01-01T00:00:00.000Z"}) + "\n")
+    result = subprocess.run(["bash", str(HARNESS), "--reconcile-only", str(fixture)], capture_output=True, text=True)
+    assert result.returncode == 0
+    assert "PACKET_SCOPE source_or_destination_prefix=bench- ignored_out_of_scope=1" in result.stdout
