@@ -28,4 +28,4 @@ cloneToAll = "flock.office.cli:clone_to_all_main"
 where = ["src"]
 
 [tool.pytest.ini_options]
-pythonpath = ["src"]
+pythonpath = ["src", "."]
