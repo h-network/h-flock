@@ -104,3 +104,14 @@ def test_the_shared_scenario_lib_can_actually_fail():
     unrunnable = run('incomplete demo no_token\nfinish demo')
     assert unrunnable.returncode == 100, "could-not-run is neither pass nor fail"
     assert "RESULT demo incomplete reason=no_token" in unrunnable.stderr
+
+
+def test_bus_v4_scenario_heredocs_reach_the_container():
+    """A `python3 -` producer needs docker exec -i or it reads EOF and sends zero frames."""
+    for name, expected_calls in (
+        ("bus-retained-egress.sh", 2),
+        ("bus-broadcast-storm.sh", 1),
+    ):
+        content = (SCENARIOS_DIR / name).read_text(encoding="utf-8")
+        assert 'dxi() { docker exec -i "$C" "$@"; }' in content
+        assert content.count("dxi python3 -") == expected_calls
