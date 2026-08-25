@@ -82,7 +82,16 @@ def log_record(
         "writer": _WRITER or module,
     }
     if event in _ENVELOPE_EVENTS:
+        # An envelope event ALWAYS carries the field, so a missing id reads as
+        # `unknown` rather than as an absent key that analysis silently skips.
         record["stream_id"] = stream_id or "unknown"
+    elif stream_id is not None:
+        # ⚠ Any other event keeps an id the caller actually passed. This used to
+        # be dropped: the allowlist gated the FIELD rather than only its default,
+        # so a new event name lost its identity with no error. Ten records from a
+        # test adapter collapsed into one `None` and cost a day to find. Every
+        # other optional field below is "include if not None"; this now matches.
+        record["stream_id"] = stream_id
     for field, value in (
         ("correlation_id", correlation_id),
         ("source", source),

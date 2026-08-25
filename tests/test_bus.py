@@ -742,3 +742,28 @@ def test_all_digit_agent_names_are_rejected():
     for name in ("2", "12", "007"):
         with pytest.raises(KeyError):
             prefix("acme", "hq", agent=name, resource="ingress")
+
+
+def test_a_stream_id_the_caller_passes_is_never_silently_dropped(capsys):
+    """A record keeps an id it was given, whether or not its event is allowlisted.
+
+    ⚠ `_ENVELOPE_EVENTS` gates the DEFAULT (`unknown`), not the field. It used to
+    gate the field, so any event outside the list lost its identity with no error
+    — a test adapter's ten records collapsed into one `None` and the run read as
+    a delivery failure. Analysis skips records with no id, so the loss is silent
+    at both ends. Each case below is one of the three behaviours that must hold.
+    """
+    from flock.bus.logging import log_record
+
+    log_record("t", "opened", stream_id="s1")            # allowlisted, id given
+    log_record("t", "opened")                            # allowlisted, no id
+    log_record("t", "payload_verified", stream_id="s2")  # not listed, id given
+    log_record("t", "started", reason="boot")            # not listed, no id
+
+    records = [json.loads(line) for line in capsys.readouterr().out.splitlines() if line.startswith("{")]
+    by_event = {(r["event"], r.get("stream_id")) for r in records}
+
+    assert ("opened", "s1") in by_event
+    assert ("opened", "unknown") in by_event, "an allowlisted event always carries the field"
+    assert ("payload_verified", "s2") in by_event, "an id the caller passed must survive"
+    assert ("started", None) in by_event, "no id is invented for an event that has none"
