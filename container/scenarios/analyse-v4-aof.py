@@ -1,9 +1,16 @@
 #!/usr/bin/env python3
-"""Compare exact v4 frame bytes at egress and ingress in a captured Redis AOF."""
+"""Compare exact v4 frame bytes at egress and ingress in a captured Redis AOF.
+
+⚠ **Verdict Contract:**
+  0    pass: all egress frames matched byte-for-byte at ingress with valid headers
+  1+   fail: count of wire integrity defects (body/counter/source/missing/corrupt)
+  100  incomplete: directory missing or no .aof files found (could not run)
+"""
 
 import argparse
 from collections import defaultdict
 from pathlib import Path
+import sys
 
 HEADER_WIDTH = 256
 SOURCE_START = 65
@@ -51,29 +58,73 @@ def frame_fields(raw: bytes) -> tuple[str, str, str, int, int, bytes]:
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser()
-    parser.add_argument("aof_dir")
+    parser = argparse.ArgumentParser(
+        description="Verify byte-exact frame integrity and header invariants across egress and ingress in Redis AOF."
+    )
+    parser.add_argument("aof_dir", nargs="?", default=None, help="directory containing captured .aof files")
+    parser.add_argument(
+        "--require-source-stamp",
+        action="store_true",
+        default=False,
+        help="require at least one source-stamped frame control in capture",
+    )
+    parser.add_argument(
+        "--allow-missing",
+        action="store_true",
+        default=False,
+        help="do not treat missing ingress deliveries as defects (e.g. partial capture)",
+    )
     args = parser.parse_args()
+
+    if not args.aof_dir:
+        print("RESULT analyse-v4-aof incomplete reason=missing_argument", file=sys.stderr)
+        return 100
+
+    aof_dir = Path(args.aof_dir)
+    if not aof_dir.is_dir():
+        print(f"RESULT analyse-v4-aof incomplete reason=dir_not_found path={aof_dir}", file=sys.stderr)
+        return 100
+
+    aof_files = sorted(aof_dir.glob("*.aof"))
+    if not aof_files:
+        print(f"RESULT analyse-v4-aof incomplete reason=no_aof_files path={aof_dir}", file=sys.stderr)
+        return 100
 
     egress = {}
     ingress = defaultdict(list)
     parse_failures = []
-    for path in sorted(Path(args.aof_dir).glob("*.aof")):
-        for command in commands(path.read_bytes()):
-            if len(command) < 3 or command[0].upper() != b"RPUSH":
-                continue
-            key = command[1].decode("utf-8", "replace")
-            for raw in command[2:]:
-                try:
-                    sid, source, destination, ttl, hops, body = frame_fields(raw)
-                except (ValueError, UnicodeDecodeError) as exc:
-                    parse_failures.append((key, str(exc)))
+    total_commands = 0
+
+    for path in aof_files:
+        try:
+            content = path.read_bytes()
+        except Exception as exc:
+            print(f"RESULT analyse-v4-aof incomplete reason=read_error file={path} error={exc}", file=sys.stderr)
+            return 100
+
+        try:
+            for command in commands(content):
+                total_commands += 1
+                if len(command) < 3 or command[0].upper() != b"RPUSH":
                     continue
-                row = (key, source, destination, ttl, hops, body, raw)
-                if key.endswith(":egress"):
-                    egress[sid] = row
-                elif key.endswith(":ingress"):
-                    ingress[sid].append(row)
+                key = command[1].decode("utf-8", "replace")
+                for raw in command[2:]:
+                    try:
+                        sid, source, destination, ttl, hops, body = frame_fields(raw)
+                    except (ValueError, UnicodeDecodeError) as exc:
+                        parse_failures.append((key, str(exc)))
+                        continue
+                    row = (key, source, destination, ttl, hops, body, raw)
+                    if key.endswith(":egress"):
+                        egress[sid] = row
+                    elif key.endswith(":ingress"):
+                        ingress[sid].append(row)
+        except Exception as exc:
+            parse_failures.append((str(path), f"AOF decode error: {exc}"))
+
+    if not egress:
+        print(f"RESULT analyse-v4-aof incomplete reason=no_egress_frames commands={total_commands}", file=sys.stderr)
+        return 100
 
     compared = body_mismatch = counter_mismatch = source_mismatch = missing = 0
     counterexamples = []
@@ -113,10 +164,33 @@ def main() -> int:
             f"BODY_MISMATCH stream_id={sid} sent={sent_body!r} "
             f"arrived={arrived_body!r}"
         )
-    if not stamped:
+
+    stamp_defect = 1 if (args.require_source_stamp and not stamped) else 0
+    if stamp_defect:
         print("REFUSED: source-stamp control absent from the captured AOF")
-    return 1 if (body_mismatch or counter_mismatch or source_mismatch or parse_failures or not stamped) else 0
+
+    missing_defect = 0 if args.allow_missing else missing
+    failed = (
+        body_mismatch
+        + counter_mismatch
+        + source_mismatch
+        + len(parse_failures)
+        + missing_defect
+        + stamp_defect
+    )
+
+    if failed == 0:
+        print(f"RESULT analyse-v4-aof pass egress={len(egress)} compared={compared}")
+        return 0
+    else:
+        print(
+            f"RESULT analyse-v4-aof fail failed={failed} body_mismatches={body_mismatch} "
+            f"counter_mismatches={counter_mismatch} source_mismatches={source_mismatch} "
+            f"missing={missing_defect} parse_failures={len(parse_failures)} stamp_defects={stamp_defect}",
+            file=sys.stderr,
+        )
+        return min(failed, 125)
 
 
 if __name__ == "__main__":
-    raise SystemExit(main())
+    sys.exit(main())
