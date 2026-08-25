@@ -119,18 +119,19 @@ run_scenario() {                 # run_scenario <name> <script> [args...]
   local name="$1"; shift
   local script="$1"; shift
   if [ ! -f "$script" ]; then record "$name" 100 "missing=$script"; return; fi
-  # ⚠ RUN FIRST, CAPTURE THE CODE, FILTER AFTERWARDS. Piping the script straight
-  # into `grep ... || true` loses it: when grep matches nothing the `|| true`
-  # fires and PIPESTATUS[0] becomes 0, so a scenario that exited 6 in silence
-  # was recorded as a PASS. A quiet failure reading as green is the exact defect
-  # this suite exists to catch.
-  local out rc
-  out="$(mktemp)"
-  POD=acme TENANT="$TENANT" CONTAINER="$CONTAINER" bash "$script" "$@" >"$out" 2>&1
-  rc=$?
-  grep -E "^RESULT|_RESULT |^==|FAIL|PASS=" "$out" || true
-  rm -f "$out"
-  record "$name" "$rc"
+  # ⚠ NO `|| true` ON THE FILTER. It used to read PIPESTATUS[0] after
+  # `... | grep ... || true`, and when grep matched nothing the `|| true` fired,
+  # PIPESTATUS became 0, and a scenario that exited 6 in silence recorded as a
+  # PASS. Dropping the `|| true` keeps PIPESTATUS[0] as the SCRIPT's code, which
+  # is the only number that decides the verdict.
+  #
+  # ⚠ And --line-buffered so lines appear AS THEY HAPPEN. Buffering to a file and
+  # printing at the end made a multi-minute step indistinguishable from a hang,
+  # and someone killed a working run because of it. A test bed that goes quiet
+  # for minutes teaches people to interrupt it.
+  POD=acme TENANT="$TENANT" CONTAINER="$CONTAINER" bash "$script" "$@" 2>&1 \
+    | grep --line-buffered -E "^RESULT|_RESULT |^==|FAIL|PASS="
+  record "$name" "${PIPESTATUS[0]}"
 }
 CONSOLE_GATE_DEADLINE_SECONDS="${CONSOLE_GATE_DEADLINE_SECONDS:-15}"
 NEGATIVE_GATE="${NEGATIVE_GATE:-}"
@@ -301,12 +302,17 @@ if [ "$CONSOLE" = "1" ]; then
   if python3 -c "import playwright" 2>/dev/null; then
     python3 clients/web/flow-check.py --console "http://127.0.0.1:${CONSOLE_PORT}" \
       --secret "$SECRET" --container "$CONTAINER" --tenant "$TENANT" 2>&1 | tail -12
-    [ "${PIPESTATUS[0]}" = "0" ] || fail "console flows failed"
+    # ⚠ Reports through record() like every other step. It used to call fail()
+    # and print a banner, so it counted toward the exit code while emitting no
+    # RESULT line — a caller parsing `^RESULT` was blind to a step --help
+    # promises. A verdict nobody can read is not a verdict.
+    record "console" "${PIPESTATUS[0]}"
   else
     # ⚠ Not a pass. Say what was not checked, so nobody reads silence as green.
     echo "  ⚠ playwright is not installed here — console FLOWS WERE NOT CHECKED."
     echo "    The console answering 200 says nothing about whether it works."
     SKIPPED="${SKIPPED} console-flows"
+    record "console" 100 "playwright_absent"
   fi
 fi
 

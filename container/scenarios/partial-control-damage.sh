@@ -38,10 +38,25 @@ status=""
 for _ in $(seq 1 60); do status="$(docker inspect --format '{{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}' "$CONTAINER" 2>/dev/null || true)"; [ "$status" = healthy ] && break; sleep 2; done
 [ "$status" = healthy ] || { echo "REFUSED: tenant unhealthy" >&2; exit 2; }
 TOKEN="$(openssl rand -hex 16)"
+# ⚠ THE SWITCH SPAWNS A REAL PORT FOR EVERY FORWARD, and this injector works by
+# monkeypatching the client INSIDE ITS OWN PROCESS to intercept a StopAgent's
+# purge. Those are two independent consumers of the same ingress queue: the
+# injector's in-process run_port() and a real `flock.port` subprocess the switch
+# kicks ~800ms later with an unpatched client. Whichever wins takes the envelope,
+# so the injection lands or does not at random — and when the real port wins, the
+# fault is never applied and the run fails against correct behaviour.
+#
+# Same race as build 122, third place it has appeared. Same fix: replace the
+# executable the SWITCH resolves, restore it after. Prepending to our own PATH
+# does nothing, because the switch looks it up with its own.
+restore_kick() { if ! docker exec "$CONTAINER" sh -c 'p=$(cat /tmp/flock.port.path 2>/dev/null) && cp /tmp/flock.port.real "$p" && test "$(wc -c < "$p")" -gt 20' >/dev/null 2>&1; then echo 'ERROR: flock.port restore failed' >&2; fi; }
+docker exec "$CONTAINER" sh -c 'p=$(command -v flock.port); cp "$p" /tmp/flock.port.real; printf "#!/bin/sh\nexit 0\n" > "$p"; chmod +x "$p"; echo "$p" >/tmp/flock.port.path'
+
 docker exec "$CONTAINER" redis-cli SET "pod:acme:tenant:${TENANT}:fault.injection" "$TOKEN" >/dev/null
 docker exec -i -e REDIS_URL=redis://127.0.0.1:6379/0 -e FLOCK_WRITER=fault-injection "$CONTAINER" sh -c 'python3 - "$@" 2>&1 | tee /proc/1/fd/1' -- \
   --pod acme --tenant "$TENANT" --agent sme-2 --token "$TOKEN" --snapshot /tmp/build102-snapshot.txt < container/scenarios/inject-partial-control.py >"$WORK/injector.log" 2>&1
 inject_rc=$?
+restore_kick
 docker cp "$CONTAINER:/tmp/build102-snapshot.txt" "$WORK/snapshot.txt" >/dev/null 2>&1 || true
 docker logs "$CONTAINER" >"$WORK/custody.log" 2>&1
 for required in run-identity.txt setup.log injector.log snapshot.txt custody.log; do
