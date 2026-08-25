@@ -55,7 +55,7 @@ layers.**
 
 The standalone model was reproduced **more strongly** on the lab, 600 samples
 per cell, cases interleaved in rotating order so Redis spikes cannot privilege
-a placement — `container/scenarios/policy-system-bench.py`, `interleaved_us()`:
+a placement:
 
 | | measured |
 |---|---|
@@ -122,7 +122,7 @@ run reads **6.47/s steady-state** and **5.36/s wall-clock** — 21% apart, becau
 wall-clock keeps counting through a drain in which nothing arrives. Much of the
 "35% host variance" is this.
 
-### ⚠ Correction — the base-run figures are contaminated, and one is withdrawn
+### ⚠ Correction — those figures are contaminated, and one is withdrawn
 
 `bus` found it while using them: the base run logged **2,100 `opened`, not
 2,000**. The extra 100 are `StartAgent` **enrolment** deliveries, so both

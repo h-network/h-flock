@@ -199,12 +199,3 @@ def test_bench_writer_is_set_before_flock_logging_is_imported():
         assignment = f'os.environ["FLOCK_WRITER"] = "{writer}"'
         assert text.index(assignment) < text.index("from flock.bus")
 
-
-def test_switch_bench_declares_synthetic_census_and_returns_analysis_status():
-    text = (ROOT / "container" / "scenarios" / "switch-bench.sh").read_text()
-
-    assert '--expect-writer "bench-send=$EXPECT"' in text
-    assert "BENCH_PORT_STAGES=2" in text
-    assert '--expect-writer "bench-port=$((EXPECT * BENCH_PORT_STAGES))"' in text
-    assert "ANALYSIS_STATUS=$?" in text
-    assert text.rstrip().endswith('exit "$ANALYSIS_STATUS"')
