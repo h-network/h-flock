@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 set -uo pipefail
-COUNT=${COUNT:-2}; ROUNDS=${ROUNDS:-10}; PREFIX=payload-; WORK=${WORK:-/tmp/payload-ack-${TENANT:-run}}
+. "$(dirname "$0")/_lib.sh"
+COUNT=${COUNT:-2}; ROUNDS=${ROUNDS:-10}; RUN_ID="${RUN_ID:-$(date +%s)-$$}"; PREFIX="payload-${RUN_ID}-"; WORK=${WORK:-/tmp/payload-ack-${TENANT:-run}-${RUN_ID}}
 while [ "$#" -gt 0 ]; do case "$1" in --count) COUNT=$2; shift 2;; --rounds) ROUNDS=$2; shift 2;; --work) WORK=$2; shift 2;; *) echo "INCOMPLETE: unknown option" >&2; exit 100;; esac; done
 [ -n "${CONTAINER:-}" ] && [ -n "${TENANT:-}" ] || { echo "INCOMPLETE: CONTAINER and TENANT required" >&2; exit 100; }
 mkdir -p "$WORK"
@@ -9,12 +10,17 @@ mkdir -p "$WORK"
 # participants and races payload-ack-port.py for the same ingress. Prepending to
 # OUR PATH does nothing: the switch resolves the name with ITS OWN path. The shim
 # must replace the executable the switch actually finds. Restored on exit.
-restore_kick() { if ! docker exec "$CONTAINER" sh -c 'p=$(cat /tmp/flock.port.path); cp /tmp/flock.port.real "$p"; test "$(wc -c < "$p")" -gt 20' >/dev/null 2>&1; then echo 'ERROR: flock.port restore failed' >&2; exit 125; fi; }
+restore_kick() {
+  if [ -n "${names:-}" ]; then
+    docker exec "$CONTAINER" redis-cli HDEL "pod:${POD:-acme}:tenant:$TENANT:roster" $names >/dev/null 2>&1 || true
+  fi
+  if ! docker exec "$CONTAINER" sh -c 'p=$(cat /tmp/flock.port.path); cp /tmp/flock.port.real "$p"; test "$(wc -c < "$p")" -gt 20' >/dev/null 2>&1; then echo 'ERROR: flock.port restore failed' >&2; exit 125; fi
+}
 trap restore_kick EXIT
-docker exec "$CONTAINER" sh -c 'p=$(command -v flock.port); cp "$p" /tmp/flock.port.real; printf "#!/bin/sh\nexit 0\n" > "$p"; chmod +x "$p"; echo "$p" >/tmp/flock.port.path'
+docker exec "$CONTAINER" sh -c 'p=$(command -v flock.port); test -n "$p"; cp "$p" /tmp/flock.port.real; printf "#!/bin/sh\nexit 0\n" > "$p"; chmod +x "$p"; echo "$p" >/tmp/flock.port.path' || incomplete payload-ack shim_install
 docker cp "$(dirname "$0")/payload-ack-port.py" "$CONTAINER:/tmp/payload-ack-port.py" >/dev/null || exit 100
-docker exec "$CONTAINER" redis-cli HSET "pod:${POD:-acme}:tenant:$TENANT:roster" $(printf 'payload-%s api ' $(seq 1 "$COUNT")) >/dev/null || exit 100
-names="$(printf 'payload-%s ' $(seq 1 "$COUNT") | sed 's/[[:space:]]*$//')"
+docker exec "$CONTAINER" redis-cli HSET "pod:${POD:-acme}:tenant:$TENANT:roster" $(printf "${PREFIX}%s api " $(seq 1 "$COUNT")) >/dev/null || incomplete payload-ack roster_seed
+names="$(printf "${PREFIX}%s " $(seq 1 "$COUNT") | sed 's/[[:space:]]*$//')"
 docker exec "$CONTAINER" sh -c "python3 /tmp/payload-ack-port.py --pod '${POD:-acme}' --tenant '$TENANT' --count '$COUNT' --prefix '$PREFIX' --idle-exit 120 >>/proc/1/fd/1 2>&1 &"
 docker cp "$(dirname "$0")/bench-send.py" "$CONTAINER:/tmp/payload-send.py" >/dev/null || exit 100
 docker exec "$CONTAINER" sh -c "python3 - '$names' '$ROUNDS' '${POD:-acme}' '$TENANT' <<'PY' >>/proc/1/fd/1
@@ -47,7 +53,16 @@ capture_diagnostics() {
   [ "$ok" = 1 ] && echo "PAYLOAD_DIAGNOSTICS status=complete" || echo "PAYLOAD_DIAGNOSTICS status=incomplete" >&2
 }
 drained=0
-for _ in $(seq 1 120); do depth=$(docker exec "$CONTAINER" redis-cli --scan --pattern "pod:${POD:-acme}:tenant:${TENANT}:agent:payload-*:ingress" | wc -l | tr -d ' '); [ "$depth" = 0 ] && { drained=1; break; }; sleep 1; done
+zero_polls=0
+for _ in $(seq 1 120); do
+  depth=$(docker exec "$CONTAINER" python3 -c "
+import os, redis
+r = redis.Redis.from_url(os.environ.get('REDIS_URL', 'redis://127.0.0.1:6379/0'))
+print(sum(r.llen(k) for k in r.scan_iter(match='pod:${POD:-acme}:tenant:${TENANT}:agent:${PREFIX}*:ingress')) + sum(r.llen(k) for k in r.scan_iter(match='pod:${POD:-acme}:tenant:${TENANT}:agent:${PREFIX}*:egress')))
+" 2>/dev/null | tr -d '\r' || echo 1)
+  if [ "${depth:-1}" = 0 ]; then zero_polls=$((zero_polls+1)); [ "$zero_polls" -ge 2 ] && { drained=1; break; }; else zero_polls=0; fi
+  sleep 1
+done
 docker logs "$CONTAINER" >"$WORK/custody.log" 2>&1 || exit 100; [ -s "$WORK/custody.log" ] || exit 100
 [ "$drained" = 1 ] || { echo "PAYLOAD_RESULT rc=100 reason=queues_not_drained"; capture_diagnostics 100; exit 100; }
 # Wait for the expected ACK observations, but keep the bound: a missing ACK is
@@ -55,17 +70,19 @@ docker logs "$CONTAINER" >"$WORK/custody.log" 2>&1 || exit 100; [ -s "$WORK/cust
 expected=$((COUNT * ROUNDS)); ack_deadline=120; ack_ready=0
 for _ in $(seq 1 "$ack_deadline"); do
   docker logs "$CONTAINER" >"$WORK/custody.poll.log" 2>/dev/null || true
-  got=$(python3 "$(dirname "$0")/payload-ack-judge.py" "$WORK/custody.poll.log" --ack-count 2>/dev/null || printf 0)
+  got=$(python3 "$(dirname "$0")/payload-ack-judge.py" "$WORK/custody.poll.log" --ack-count "$PREFIX" 2>/dev/null || printf 0)
   [ "$got" -ge "$expected" ] && { ack_ready=1; break; }
   sleep 1
 done
 wait_timed_out=0
 if [ "$ack_ready" -ne 1 ]; then
-  wait_timed_out=1
   echo "PAYLOAD_WAIT reason=ack_leg_unknown_timeout expected=$expected observed=$got" >&2
+  capture_diagnostics 100
+  incomplete payload-ack ack_leg_unknown_timeout
 fi
 docker logs "$CONTAINER" >"$WORK/custody.log" 2>&1 || exit 100
-python3 "$(dirname "$0")/payload-ack-judge.py" "$WORK/custody.log" "$expected"
+python3 "$(dirname "$0")/payload-ack-judge.py" "$WORK/custody.log" "$expected" "$PREFIX"
 rc=$?
 [ "$rc" -eq 0 ] || capture_diagnostics "$rc"
-exit "$rc"
+expect "payload acknowledgement reconciliation" 0 "$rc"
+finish payload-ack

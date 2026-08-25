@@ -23,12 +23,14 @@ _FAILED=0
 
 # Bail out before running anything, when there is nothing to run against.
 incomplete() {                       # incomplete <name> <reason>
+  [ "$#" -eq 2 ] || { echo "RESULT scenario incomplete reason=invalid_incomplete_arguments" >&2; exit 100; }
   echo "RESULT $1 incomplete reason=$2" >&2
   exit 100
 }
 
 # Compare two values that are already in hand.
 expect() {                           # expect <what> <want> <got>
+  [ "$#" -eq 3 ] || incomplete scenario invalid_expect_arguments
   if [ "$2" = "$3" ]; then
     echo "  ✓ $1 → $3"
   else
@@ -42,6 +44,7 @@ expect() {                           # expect <what> <want> <got>
 # once for the body, once for the status — so the two could describe different
 # responses and nobody would know.
 check() {                            # check <what> <want-status> <curl args...>
+  [ "$#" -ge 3 ] || incomplete scenario invalid_check_arguments
   local what="$1" want="$2"; shift 2
   local out status
   out="$(curl -s -w '\n%{http_code}' "$@" 2>/dev/null)" || true
@@ -51,6 +54,7 @@ check() {                            # check <what> <want-status> <curl args...>
 
 # One line a caller can grep, then the count as the exit code.
 finish() {                           # finish <name>
+  [ "$#" -eq 1 ] || incomplete scenario invalid_finish_arguments
   if [ "$_FAILED" = 0 ]; then
     echo "RESULT $1 pass"
   else

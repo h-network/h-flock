@@ -2,10 +2,11 @@
 import json, sys
 records=[]
 ignored=0
+scope = sys.argv[3] if len(sys.argv) > 3 else 'payload-'
 for line in open(sys.argv[1], errors='replace'):
     try:
         r=json.loads(line)
-        if not (str(r.get('source','')).startswith('payload-') or str(r.get('destination','')).startswith('payload-')):
+        if not (str(r.get('source','')).startswith(scope) or str(r.get('destination','')).startswith(scope)):
             ignored += 1; continue
         records.append(r)
     except Exception: continue
