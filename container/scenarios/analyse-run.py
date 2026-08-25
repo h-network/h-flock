@@ -111,12 +111,14 @@ def main() -> int:
     # a phantom missing stage. Refuse before interpreting anything.
     if parse_failures:
         print(f"REFUSED: {parse_failures} unparseable JSON lines — the log is not trustworthy")
-        return 4
+        print(f"RESULT analyse-run fail failed={parse_failures}")
+        return min(parse_failures, 125)
     if legacy_attempts:
         print(
             f"REFUSED: {legacy_attempts} legacy *_failed attempt records — "
             "use a version-specific analyser"
         )
+        print(f"RESULT analyse-run fail failed={legacy_attempts}")
         return 4
 
     n = len(paths)
@@ -146,7 +148,9 @@ def main() -> int:
     print(f"writers: {census}{suffix}")
 
     print("\n== every step logged? ==")
-    incomplete = writer_refused or bool(indeterminate_forwards)
+    incomplete = bool(indeterminate_forwards)
+    missing_expectation = any("not explicitly expected" in error for error in writer_errors)
+    failed = sum("not explicitly expected" not in error for error in writer_errors)
     if indeterminate_forwards:
         print(
             f"  forward_unknown {len(indeterminate_forwards):>7,}  ⚠ REFUSED — "
@@ -186,10 +190,18 @@ def main() -> int:
         print(f"\nsteady-state (middle 80%) {len(mid)/(hi-lo):8.2f}/s over {hi-lo:.1f}s")
         print(f"wall-clock, all opened     {len(opened)/(opened[-1]-opened[0]):8.2f}/s")
 
+    if missing_expectation:
+        print("RESULT analyse-run incomplete reason=writer_expectation_required")
+        return 100
+    if failed:
+        print(f"RESULT analyse-run fail failed={failed}")
+        return min(failed, 125)
     if incomplete:
         print("\n⚠ AT LEAST ONE STEP IS NOT FULLY LOGGED. Latency figures for refused"
               "\n  stages are withheld; the rest describe only the envelopes that have them.")
-        return 1
+        print("RESULT analyse-run incomplete reason=partial_coverage")
+        return 100
+    print("RESULT analyse-run pass")
     return 0
 
 

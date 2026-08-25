@@ -84,7 +84,7 @@ def test_missing_stage_refuses_instead_of_averaging_fixture():
 
     result = _run(fixture, 2)
 
-    assert result.returncode == 1
+    assert result.returncode == 100
     assert _has(result.stdout, "received           1 / 2")
     assert _has(result.stdout, "kick_started -> received   REFUSED (n=1, needs 2)")
     assert _has(result.stdout, "received -> opened     REFUSED")
@@ -98,7 +98,7 @@ def test_indeterminate_forward_is_its_own_refused_bucket(tmp_path):
 
     result = _run(log, 1)
 
-    assert result.returncode == 1
+    assert result.returncode == 100
     assert _has(result.stdout, "indeterminate forwards 1")
     assert _has(
         result.stdout,
@@ -136,7 +136,7 @@ def test_writer_census_refuses_synthetic_and_exact_exclusion_restores_run(tmp_pa
     log.write_text("\n".join(lines) + "\n")
 
     refused = _run(log, 2)
-    assert refused.returncode == 1
+    assert refused.returncode == 100
     assert _has(refused.stdout, "writers: bench-send=6 port=6")
     assert "bench-send was not explicitly expected" in refused.stdout
 
@@ -198,4 +198,3 @@ def test_bench_writer_is_set_before_flock_logging_is_imported():
         text = (ROOT / "container" / "scenarios" / name).read_text()
         assignment = f'os.environ["FLOCK_WRITER"] = "{writer}"'
         assert text.index(assignment) < text.index("from flock.bus")
-
