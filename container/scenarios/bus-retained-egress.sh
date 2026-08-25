@@ -1,17 +1,20 @@
 #!/usr/bin/env bash
-set -euo pipefail
+set -uo pipefail
+. "$(dirname "$0")/_lib.sh"
 
-C="${CONTAINER:-h-flock-bus-lab-tenant-1}"
+C="${CONTAINER:-}"
 POD="${POD:-acme}"
-TENANT="${TENANT:-bus-lab}"
-PREFIX="pod:$POD:tenant:$TENANT"
-ROSTER="$PREFIX:roster"
+TENANT="${TENANT:-}"
 AGENT="retained-probe"
 RUN="retained-$(date +%s)-$$"
-IDENTIFIER=$(printf '%032x' "$$")
+EXPECTED_MATCHES="${RETAINED_EXPECT_MATCHES:-1}"
+[ -n "$C" ] && [ -n "$TENANT" ] || incomplete bus-retained-egress missing_container_or_tenant
+docker inspect "$C" >/dev/null 2>&1 || incomplete bus-retained-egress container_not_found
+
+PREFIX="pod:$POD:tenant:$TENANT"
+ROSTER="$PREFIX:roster"
 EGRESS="$PREFIX:agent:$AGENT:egress"
 INBOX="$PREFIX:agent:api:inbox"
-
 dx() { docker exec "$C" "$@"; }
 cleanup() {
   dx redis-cli HDEL "$ROSTER" "$AGENT" >/dev/null 2>&1 || true
@@ -21,22 +24,33 @@ cleanup() {
 }
 trap cleanup EXIT
 
-echo "container=$C tenant=$TENANT run=$RUN"
-dx redis-cli HSET "$ROSTER" "$AGENT" api >/dev/null
-dx redis-cli HDEL "$ROSTER" "$AGENT" >/dev/null
-echo "after_retire roster_value=[$(dx redis-cli HGET "$ROSTER" "$AGENT")] egress=$(dx redis-cli LLEN "$EGRESS")"
+dx redis-cli HSET "$ROSTER" "$AGENT" api >/dev/null || incomplete bus-retained-egress roster_seed_failed
+dx redis-cli HDEL "$ROSTER" "$AGENT" >/dev/null || incomplete bus-retained-egress retirement_failed
+dx python3 - "$POD" "$TENANT" "$AGENT" "$RUN" <<'PY' >/dev/null || incomplete bus-retained-egress v4_enqueue_failed
+import os, sys
+sys.path.insert(0, "/app/src")
+import redis
+from flock.bus import build, encode, prefix
+pod, tenant, source, marker = sys.argv[1:]
+r = redis.Redis.from_url(os.environ.get("REDIS_URL", "redis://127.0.0.1:6379/0"))
+frame = build("Message", source, "api", {"marker": marker}, pod=pod, tenant=tenant)
+r.rpush(prefix(pod, tenant, source, "egress"), encode(frame))
+PY
 
-envelope="{\"v\":1,\"kind\":\"Message\",\"stream_id\":\"$IDENTIFIER\",\"correlation_id\":\"$IDENTIFIER\",\"ts\":\"2026-08-11T00:00:00.000Z\",\"source\":\"$AGENT\",\"destination\":\"api\",\"payload\":{\"text\":\"$RUN\"}}"
-dx redis-cli RPUSH "$EGRESS" "$envelope" >/dev/null
 sleep 2
-echo "while_absent egress=$(dx redis-cli LLEN "$EGRESS") inbox_matches=$(dx redis-cli XRANGE "$INBOX" - + | grep -c "$RUN" || true)"
+absent_egress="$(dx redis-cli LLEN "$EGRESS" | tr -d '\r')"
+absent_matches="$(dx redis-cli XRANGE "$INBOX" - + | grep -c "$RUN" || true)"
+expect "retired source egress retained" 1 "$absent_egress"
+expect "retired source not delivered" 0 "$absent_matches"
 
-dx redis-cli HSET "$ROSTER" "$AGENT" api >/dev/null
-for _ in $(seq 1 50); do
-  [ "$(dx redis-cli LLEN "$EGRESS")" = 0 ] && break
+dx redis-cli HSET "$ROSTER" "$AGENT" api >/dev/null || incomplete bus-retained-egress reenrol_failed
+for _ in $(seq 1 200); do
+  [ "$(dx redis-cli LLEN "$EGRESS" | tr -d '\r')" = 0 ] && break
   sleep 0.1
 done
 sleep 1
-echo "after_reenrol roster_value=[$(dx redis-cli HGET "$ROSTER" "$AGENT")] egress=$(dx redis-cli LLEN "$EGRESS") inbox_matches=$(dx redis-cli XRANGE "$INBOX" - + | grep -c "$RUN" || true)"
-echo "matching_logs:"
-docker logs "$C" 2>&1 | grep "$IDENTIFIER" || true
+after_egress="$(dx redis-cli LLEN "$EGRESS" | tr -d '\r')"
+after_matches="$(dx redis-cli XRANGE "$INBOX" - + | grep -c "$RUN" || true)"
+expect "re-enrolled source egress drained" 0 "$after_egress"
+expect "retained frame delivered exactly once" "$EXPECTED_MATCHES" "$after_matches"
+finish bus-retained-egress

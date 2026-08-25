@@ -1,15 +1,20 @@
 #!/usr/bin/env bash
-set -euo pipefail
+set -uo pipefail
+. "$(dirname "$0")/_lib.sh"
 
-C="${CONTAINER:-h-flock-bus-lab-tenant-1}"
+C="${CONTAINER:-}"
 POD="${POD:-acme}"
-TENANT="${TENANT:-bus-lab}"
+TENANT="${TENANT:-}"
 N="${COUNT:-50}"
+RUN="broadcast-$(date +%s)-$$"
+EXPECTED_COUNT="${BROADCAST_EXPECT_COUNT:-$N}"
+PROBES=(bus-probe-1 bus-probe-2 bus-probe-3 bus-probe-4 bus-probe-5)
+[ -n "$C" ] && [ -n "$TENANT" ] || incomplete bus-broadcast-storm missing_container_or_tenant
+docker inspect "$C" >/dev/null 2>&1 || incomplete bus-broadcast-storm container_not_found
+
 PREFIX="pod:$POD:tenant:$TENANT"
 ROSTER="$PREFIX:roster"
-PROBES=(bus-probe-1 bus-probe-2 bus-probe-3 bus-probe-4 bus-probe-5)
-RUN="broadcast-$(date +%s)-$$"
-
+SOURCE_EGRESS="$PREFIX:agent:architect:egress"
 dx() { docker exec "$C" "$@"; }
 cleanup() {
   for probe in "${PROBES[@]}"; do
@@ -21,32 +26,38 @@ cleanup() {
 }
 trap cleanup EXIT
 
-echo "container=$C tenant=$TENANT run=$RUN broadcasts=$N"
 for probe in "${PROBES[@]}"; do
-  dx redis-cli HSET "$ROSTER" "$probe" api >/dev/null
+  dx redis-cli HSET "$ROSTER" "$probe" api >/dev/null || incomplete bus-broadcast-storm roster_seed_failed
   dx redis-cli DEL "$PREFIX:agent:$probe:inbox" >/dev/null
 done
-echo "roster=$(dx redis-cli HKEYS "$ROSTER" | sort | tr '\n' ',')"
 
-for sequence in $(seq 1 "$N"); do
-  identifier=$(printf '%016x%016x' "$$" "$sequence")
-  envelope="{\"v\":1,\"kind\":\"Message\",\"stream_id\":\"$identifier\",\"correlation_id\":\"$identifier\",\"ts\":\"2026-08-11T00:00:00.000Z\",\"source\":\"architect\",\"destination\":\"all\",\"payload\":{\"text\":\"$RUN-$sequence\"}}"
-  dx redis-cli RPUSH "$PREFIX:agent:architect:egress" "$envelope" >/dev/null
-done
-echo "queued=$N source_egress=$(dx redis-cli LLEN "$PREFIX:agent:architect:egress")"
+names="${PROBES[*]}"
+dx python3 - "$POD" "$TENANT" "$N" "$RUN" <<'PY' >/dev/null || incomplete bus-broadcast-storm v4_send_failed
+import os, sys
+sys.path.insert(0, "/app/src")
+import redis
+from flock.bus.doors import send
+pod, tenant, count, marker = sys.argv[1], sys.argv[2], int(sys.argv[3]), sys.argv[4]
+r = redis.Redis.from_url(os.environ.get("REDIS_URL", "redis://127.0.0.1:6379/0"))
+for sequence in range(1, count + 1):
+    send(r, pod=pod, tenant=tenant, source="architect", destination="all",
+         kind="Message", payload={"marker": marker, "sequence": sequence}, module="broadcast-storm")
+PY
 
-for _ in $(seq 1 100); do
-  minimum="$N"
+for _ in $(seq 1 300); do
+  ready=1
   for probe in "${PROBES[@]}"; do
-    count=$(dx redis-cli XLEN "$PREFIX:agent:$probe:inbox")
-    [ "$count" -lt "$minimum" ] && minimum="$count"
+    matches="$(dx redis-cli XRANGE "$PREFIX:agent:$probe:inbox" - + | grep -c "$RUN" || true)"
+    [ "$matches" -ge "$N" ] || ready=0
   done
-  [ "$minimum" -ge "$N" ] && break
+  [ "$ready" = 1 ] && break
   sleep 0.1
 done
 
 for probe in "${PROBES[@]}"; do
-  echo "$probe inbox=$(dx redis-cli XLEN "$PREFIX:agent:$probe:inbox") matching=$(dx redis-cli XRANGE "$PREFIX:agent:$probe:inbox" - + | grep -c "$RUN" || true)"
+  matches="$(dx redis-cli XRANGE "$PREFIX:agent:$probe:inbox" - + | grep -c "$RUN" || true)"
+  expect "$probe receives every broadcast exactly once" "$EXPECTED_COUNT" "$matches"
 done
-echo "source_egress_after=$(dx redis-cli LLEN "$PREFIX:agent:architect:egress")"
-echo "payload_log_records=$(docker logs "$C" 2>&1 | grep -c "$RUN" || true)"
+source_depth="$(dx redis-cli LLEN "$SOURCE_EGRESS" | tr -d '\r')"
+expect "broadcast source egress drained" 0 "$source_depth"
+finish bus-broadcast-storm
