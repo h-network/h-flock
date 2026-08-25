@@ -22,8 +22,10 @@ OUT="${1:-}"
   exit 100
 }
 mkdir -p "$OUT/packet"
+RUN_ID="${RUN_ID:-$(date +%s)-$$}"
+PREFIX="bench-${RUN_ID}-"
 
-POD="${POD:-acme}" CONTAINER="$CONTAINER" TENANT="$TENANT" \
+POD="${POD:-acme}" CONTAINER="$CONTAINER" TENANT="$TENANT" RUN_ID="$RUN_ID" \
   bash container/scenarios/packet-switching.sh --mode steady --count 4 --rounds 2 \
     --work "$OUT/packet" >"$OUT/packet-switching.log" 2>&1
 packet_rc=$?
@@ -42,4 +44,5 @@ docker logs "$CONTAINER" >"$OUT/custody.log" 2>&1 || {
   exit 100
 }
 
-python3 container/scenarios/analyse-v4-aof.py "$OUT/appendonlydir"
+python3 container/scenarios/analyse-v4-aof.py "$OUT/appendonlydir" \
+  --participant-prefix "$PREFIX"
