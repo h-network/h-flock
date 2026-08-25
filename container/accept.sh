@@ -67,7 +67,9 @@
 #   ssh host "tail -30 run-T.log"
 set -uo pipefail
 
-TENANT="accept"
+TENANT="${TENANT:-}"
+TENANT_EXPLICIT=0
+[ -n "$TENANT" ] && TENANT_EXPLICIT=1
 API_PORT=8080
 SESSION_PORT=8081
 CONSOLE_PORT=8099
@@ -80,7 +82,7 @@ AOF_DIR=""
 ANALYSER_ARGS=()
 while [ $# -gt 0 ]; do
   case "$1" in
-    --tenant) TENANT="$2"; shift 2 ;;
+    --tenant) TENANT="$2"; TENANT_EXPLICIT=1; shift 2 ;;
     --api-port) API_PORT="$2"; shift 2 ;;
     --session-port) SESSION_PORT="$2"; shift 2 ;;
     --console-port) CONSOLE_PORT="$2"; shift 2 ;;
@@ -98,6 +100,7 @@ while [ $# -gt 0 ]; do
     *) echo "accept: unknown argument '$1'" >&2; exit 2 ;;
   esac
 done
+[ -n "$TENANT" ] || TENANT="accept"
 
 # Bare invocation is the common case: is the framework healthy.
 SUITES="${SUITES:-}"; [ -n "${SUITES// /}" ] || SUITES="core"
@@ -121,6 +124,10 @@ if [ -n "$SCENARIO" ]; then
     analyse-v4-aof)
       [ -n "$AOF_DIR" ] || { echo "RESULT analyse-v4-aof incomplete reason=missing_argument" >&2; exit 100; }
       exec python3 container/scenarios/analyse-v4-aof.py "$AOF_DIR" ;;
+    tmux-boundary|tmux-concurrent-hire)
+      [ "$TENANT_EXPLICIT" = 1 ] || { echo "RESULT $SCENARIO incomplete reason=tenant_required" >&2; exit 100; }
+      export TENANT
+      exec bash "container/scenarios/${SCENARIO}.sh" ;;
     *) echo "accept: unknown scenario '$SCENARIO'" >&2; exit 2 ;;
   esac
 fi
