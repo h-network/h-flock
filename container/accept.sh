@@ -1,12 +1,32 @@
 #!/usr/bin/env bash
 # accept.sh — the operator's whole path, in one command.
 #
-#   bash container/accept.sh [--tenant NAME] [--api-port N] [--session-port N]
-#                            [--console-port N] [--keep] [--no-console]
+#   bash container/accept.sh [SUITE...] [--tenant NAME] [--api-port N]
+#                            [--session-port N] [--console-port N]
+#                            [--keep] [--no-console] [--help]
 #
 # Installs a tenant the way a person would, waits for it to be healthy, runs the
-# plumbing check and the failure simulator against it, optionally drives the
-# console in a browser, and tears it down.
+# selected suites against it, and tears it down.
+#
+# SUITES — bare `accept.sh` is `--core`. They compose: `--core --fault`.
+#
+#   --core    plumbing check · failure simulator · packet switching ·
+#             payload and ack · console            (the framework works)
+#   --fault   conservation under injected death · forward-unknown ·
+#             partial control damage               (it fails honestly)
+#   --api     token auth and limits · concurrency and time ·
+#             session and log privacy              (the door behaves)
+#   --all     every suite above
+#
+# ⚠ EXIT CODES, so a caller never has to read the prose:
+#   0    every selected suite passed
+#   1+   that many steps FAILED
+#   2    bad arguments, or a refusal to touch something this run does not own
+#   100  ran but INCOMPLETE — a step could not reach a verdict, which is
+#        neither a pass nor a failure and must not be collapsed into either
+#
+# ⚠ Each step prints one `RESULT <step> <verdict>` line. Parse those, not the
+# banners.
 #
 # ⚠ **This exists because every verification this week ran as a hand-typed
 # sequence, and twice the thing that mattered was found only because someone got
@@ -47,6 +67,7 @@ SESSION_PORT=8081
 CONSOLE_PORT=8099
 KEEP=0
 CONSOLE=1
+SUITES=""
 while [ $# -gt 0 ]; do
   case "$1" in
     --tenant) TENANT="$2"; shift 2 ;;
@@ -55,9 +76,18 @@ while [ $# -gt 0 ]; do
     --console-port) CONSOLE_PORT="$2"; shift 2 ;;
     --keep) KEEP=1; shift ;;
     --no-console) CONSOLE=0; shift ;;
+    --core) SUITES="$SUITES core"; shift ;;
+    --fault) SUITES="$SUITES fault"; shift ;;
+    --api) SUITES="$SUITES api"; shift ;;
+    --all) SUITES="core fault api"; shift ;;
+    -h|--help) sed -n '2,40p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'; exit 0 ;;
     *) echo "accept: unknown argument '$1'" >&2; exit 2 ;;
   esac
 done
+
+# Bare invocation is the common case: is the framework healthy.
+SUITES="${SUITES:-}"; [ -n "${SUITES// /}" ] || SUITES="core"
+has_suite() { case " $SUITES " in *" $1 "*) return 0;; *) return 1;; esac; }
 
 _here="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$_here" || exit 2
@@ -69,6 +99,30 @@ CREATED_PROJECT=""
 CONSOLE_PID=""
 step() { echo; echo "══ $* ══"; }
 fail() { echo "  ✗ $*" >&2; FAILED=$((FAILED+1)); }
+
+# ⚠ ONE MACHINE-READABLE LINE PER STEP. A caller greps `^RESULT ` and never has
+# to read a banner. `incomplete` is deliberately distinct from `fail`: a step
+# that could not reach a verdict is neither a pass nor a failure, and collapsing
+# it into either is how a gate starts lying.
+INCOMPLETE=0
+record() {                       # record <step> <rc> [note]
+  local name="$1" rc="$2" note="${3:-}"
+  case "$rc" in
+    0)   echo "RESULT $name pass ${note}" ;;
+    100) echo "RESULT $name incomplete ${note}" >&2; INCOMPLETE=$((INCOMPLETE+1)) ;;
+    *)   echo "RESULT $name fail rc=$rc ${note}" >&2; FAILED=$((FAILED+1)) ;;
+  esac
+}
+
+# Run one scenario against THIS tenant and record its verdict by exit code.
+run_scenario() {                 # run_scenario <name> <script> [args...]
+  local name="$1"; shift
+  local script="$1"; shift
+  if [ ! -f "$script" ]; then record "$name" 100 "missing=$script"; return; fi
+  POD=acme TENANT="$TENANT" CONTAINER="$CONTAINER" bash "$script" "$@" 2>&1 \
+    | grep -E "^RESULT|_RESULT |^==|FAIL|PASS=" || true
+  record "$name" "${PIPESTATUS[0]}"
+}
 CONSOLE_GATE_DEADLINE_SECONDS="${CONSOLE_GATE_DEADLINE_SECONDS:-15}"
 NEGATIVE_GATE="${NEGATIVE_GATE:-}"
 poll_console() {
@@ -207,6 +261,7 @@ echo "  container: ${STATUS:-unknown}"
 docker exec "$CONTAINER" bash -lc "TMUX_TMPDIR=/home/ubuntu/.flock/tmux tmux list-windows -t $TENANT -F '#{window_name}'" 2>/dev/null | tr '\n' ' '
 echo
 
+if has_suite core; then
 step "plumbing check and failure simulator"
 # FORCE=1: these agents run CLIs, and the check pastes fixtures into panes. On a
 # disposable tenant that is what we want; the guard exists so it never happens
@@ -214,7 +269,7 @@ step "plumbing check and failure simulator"
 FORCE=1 POD=acme TENANT="$TENANT" CONTAINER="$CONTAINER" bash container/plumbing-check.sh 2>&1 \
   | grep -E "^==|FAIL|PASS=|sim-blocked:"
 PLUMB="${PIPESTATUS[0]}"
-[ "$PLUMB" = "0" ] || fail "plumbing check reported failures"
+record "plumbing" "$PLUMB"
 
 if [ "$CONSOLE" = "1" ]; then
   step "console"
@@ -246,13 +301,51 @@ if [ "$CONSOLE" = "1" ]; then
   fi
 fi
 
+# ⚠ These two are the framework's own plumbing verification: send N envelopes,
+# count N at every custody stage, and hold the log to a number the harness knows
+# without asking the log. They install a no-op `flock.port` for the run, because
+# the switch spawns a real port for every roster member and it would otherwise
+# race the synthetic one for the same queue.
+step "packet switching"
+run_scenario "packet-switching" container/scenarios/packet-switching.sh --mode steady --count 10 --rounds 2
+
+step "payload and ack"
+run_scenario "payload-ack" container/scenarios/payload-ack.sh --count 10 --rounds 1
+fi
+
+if has_suite fault; then
+  # ⚠ Two of these build their OWN disposable tenant, because a script that
+  # damages a tenant must not be pointed at one somebody is using.
+  step "fault — conservation under injected death"
+  run_scenario "conservation" container/scenarios/conservation.sh
+
+  step "fault — forward outcome unknown"
+  run_scenario "forward-unknown" container/scenarios/fault-forward-unknown.sh
+
+  step "fault — partial control damage"
+  run_scenario "partial-control" container/scenarios/partial-control-damage.sh
+fi
+
+if has_suite api; then
+  step "api — auth and limits"
+  run_scenario "api-auth" container/scenarios/api-auth-and-limits.sh
+
+  step "api — concurrency and time"
+  run_scenario "api-concurrency" container/scenarios/api-concurrency-and-time.sh
+
+  step "api — session and log privacy"
+  run_scenario "api-privacy" container/scenarios/api-session-and-log-privacy.sh
+fi
+
+
 step "result"
-if [ "$FAILED" = "0" ]; then
-  RESULT="  passed: install, health, plumbing, simulator"
-  [ "$CONSOLE" = "1" ] && RESULT="$RESULT, console reachable"
-  echo "$RESULT"
-else
+echo "  suites: $SUITES"
+if [ "$FAILED" = "0" ] && [ "$INCOMPLETE" = "0" ]; then
+  echo "  passed: every step in every selected suite"
+elif [ "$FAILED" != "0" ]; then
   echo "  NOT accepted: $FAILED step(s) failed"
+else
+  echo "  INCOMPLETE: $INCOMPLETE step(s) could not reach a verdict"
 fi
 # ⚠ Never let a skip read as a pass. The first version of this script printed
 # "accepted: … console" on a host with no browser, having checked only that the
@@ -277,7 +370,7 @@ echo "    looks right."
 # without parsing prose.
 if [ "$FAILED" != "0" ]; then
   exit "$FAILED"
-elif [ -n "$SKIPPED" ]; then
+elif [ -n "$SKIPPED" ] || [ "$INCOMPLETE" != "0" ]; then
   exit 100
 fi
 exit 0

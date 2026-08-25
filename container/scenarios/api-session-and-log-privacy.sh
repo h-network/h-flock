@@ -1,63 +1,52 @@
 #!/usr/bin/env bash
-# container/scenarios/api-session-and-log-privacy.sh
-# Tests session WebSocket door auth, query parameter token support, close codes, and stdout log privacy.
-
+# api-session-and-log-privacy — does the session door refuse a bad token, and
+# does it keep the token out of anything it writes down?
+#
+#   CONTAINER=<name> bash container/scenarios/api-session-and-log-privacy.sh
+#
+# ⚠ This replaces a script that connected with a wrong token and, on success,
+# printed "Connected unexpectedly!" — which IS the failure, reported as prose and
+# returning 0. Nothing could ever have gone red.
 set -uo pipefail
+. "$(dirname "$0")/_lib.sh"
 
-TENANT="${TENANT:-api-lab}"
-CONTAINER_NAME="${CONTAINER_NAME:-${CONTAINER:-h-flock-${TENANT}-tenant-1}}"
-C="${CONTAINER_NAME}"
-SESSION_HOST="${SESSION_HOST:-localhost:8111}"
+C="${CONTAINER:?set CONTAINER}"
 TOKEN="${API_TOKEN:-$(docker exec "$C" printenv API_TOKEN 2>/dev/null || true)}"
-if [ -z "${TOKEN:-}" ]; then
-  echo "Error: API_TOKEN is empty. Set API_TOKEN or ensure container '$C' is running." >&2
-  exit 1
-fi
+[ -n "${TOKEN:-}" ] || incomplete api-privacy "no_api_token container=$C"
 
-echo "=== Scenario: Session WebSocket Door & Log Privacy ==="
-echo "Target Session Host: ${SESSION_HOST}"
-echo "Target Container: ${CONTAINER_NAME}"
+echo "== api session and log privacy · $C =="
 
-echo "[1] Testing WebSocket connection with invalid token query parameter..."
-docker exec "${CONTAINER_NAME}" /opt/flock/bin/python3 -c "
-import asyncio, websockets
-
+# Ask the door, inside the container, what it does with each token. `refused` and
+# `accepted` are the only two answers that mean anything; anything else is the
+# script failing to ask, which must not read as a pass.
+ask() {                              # ask <token> -> refused|accepted|error:...
+  docker exec "$C" /opt/flock/bin/python3 -c "
+import asyncio, sys, websockets
 async def main():
-    uri = 'ws://127.0.0.1:8081/session?token=wrong_token'
     try:
-        async with websockets.connect(uri) as ws:
-            print('Connected unexpectedly!')
-    except websockets.exceptions.InvalidStatusCode as e:
-        print(f'Handshake status code: {e.status_code}')
-    except websockets.exceptions.ConnectionClosed as e:
-        print(f'Connection closed: code={e.rcvd.code}, reason=\"{e.rcvd.reason}\"')
-    except Exception as e:
-        print(f'Observed exception: {type(e).__name__}: {e}')
-
+        async with websockets.connect('ws://127.0.0.1:8081/session?token=' + sys.argv[1]):
+            print('accepted')
+    except websockets.exceptions.InvalidStatusCode:
+        print('refused')
+    except websockets.exceptions.ConnectionClosed:
+        print('refused')
+    except Exception as exc:
+        print('error:' + type(exc).__name__)
 asyncio.run(main())
-"
+" "$1" 2>/dev/null | tail -1
+}
 
-echo -e "\n[2] Testing WebSocket connection with valid token query parameter..."
-docker exec "${CONTAINER_NAME}" /opt/flock/bin/python3 -c "
-import asyncio, json, websockets
+expect "a wrong token is refused"  refused  "$(ask wrong_token)"
+expect "the real token is accepted" accepted "$(ask "$TOKEN")"
 
-async def main():
-    uri = 'ws://127.0.0.1:8081/session?token=${TOKEN}'
-    try:
-        async with websockets.connect(uri) as ws:
-            print('Successfully connected to session socket!')
-            sub_msg = json.dumps({'subscribe': ['architect']})
-            await ws.send(sub_msg)
-            reply = await asyncio.wait_for(ws.recv(), timeout=2.0)
-            print(f'Received frame: {reply[:100]}...')
-    except Exception as e:
-        print(f'Observed exception: {type(e).__name__}: {e}')
+# ⚠ THE PRIVACY HALF, AND IT IS THE ONE THAT MATTERS. A door that authenticates
+# correctly and then writes the credential into a log has leaked it to everyone
+# who can read the log — which on a container is everyone.
+leaked_log="$(docker logs "$C" 2>&1 | grep -c -- "$TOKEN" || true)"
+expect "the token is absent from container logs" 0 "$leaked_log"
 
-asyncio.run(main())
-"
+# argv is world-readable on the container for the life of the process.
+leaked_argv="$(docker exec "$C" sh -c 'cat /proc/[0-9]*/cmdline 2>/dev/null | tr "\0" " "' 2>/dev/null | grep -c -- "$TOKEN" || true)"
+expect "the token is absent from process argv" 0 "$leaked_argv"
 
-echo -e "\n[3] Verification: Checking container logs for API token leakage..."
-FOUND_TOKEN=$(docker logs "${CONTAINER_NAME}" 2>&1 | grep "${TOKEN}" | wc -l)
-echo "Occurrences of token '${TOKEN}' in docker logs for ${CONTAINER_NAME}: ${FOUND_TOKEN}"
-
-echo -e "\n=== Scenario Complete ==="
+finish api-privacy

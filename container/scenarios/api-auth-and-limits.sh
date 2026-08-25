@@ -1,63 +1,41 @@
 #!/usr/bin/env bash
-# container/scenarios/api-auth-and-limits.sh
-# Tests REST API token auth, payload size bounds, malformed 'as' validation, and board providers.
-
+# api-auth-and-limits — does the REST door refuse what it should?
+#
+#   CONTAINER=<name> bash container/scenarios/api-auth-and-limits.sh
+#
+# ⚠ This script used to make seven calls and `echo "HTTP Status: $STATUS"` for
+# each, comparing none of them. It always exited 0, so it could not fail and was
+# not a test. Every check below now states the status it EXPECTS and the run
+# fails if the door answers differently.
+#
+# Exit: 0 all checks passed · 1+ that many failed · 100 could not run.
 set -uo pipefail
+. "$(dirname "$0")/_lib.sh"
 
-TENANT="${TENANT:-api-lab}"
-C="${CONTAINER:-h-flock-${TENANT}-tenant-1}"
-HOST="${API_HOST:-http://localhost:8110}"
+C="${CONTAINER:?set CONTAINER}"
+HOST="${API_HOST_URL:-http://127.0.0.1:8080}"
 TOKEN="${API_TOKEN:-$(docker exec "$C" printenv API_TOKEN 2>/dev/null || true)}"
-if [ -z "${TOKEN:-}" ]; then
-  echo "Error: API_TOKEN is empty. Set API_TOKEN or ensure container '$C' is running." >&2
-  exit 1
-fi
+[ -n "${TOKEN:-}" ] || incomplete api-auth "no_api_token container=$C"
 
-echo "=== Scenario: API Auth, Payload Limits & Error Handling ==="
-echo "Target Host: ${HOST}"
+echo "== api auth and limits · $HOST =="
 
-echo "[1] Testing GET /health without auth..."
-BODY=$(curl -s "${HOST}/health")
-STATUS=$(curl -s -o /dev/null -w "%{http_code}" "${HOST}/health")
-echo "Body: ${BODY}"
-echo "HTTP Status: ${STATUS}"
+check "health is open"            200 "$HOST/health"
+check "no token is refused"       401 "$HOST/agents"
+check "bad token is refused"      401 -H "Authorization: Bearer wrong_token" "$HOST/agents"
+check "good token is accepted"    200 -H "Authorization: Bearer $TOKEN" "$HOST/agents"
+check "board is readable"         200 -H "Authorization: Bearer $TOKEN" "$HOST/board"
+check "unknown agent is 404"      404 -H "Authorization: Bearer $TOKEN" "$HOST/agents/nobody-here/board"
 
-echo -e "\n[2] Testing GET /agents without token (unauthorized)..."
-BODY=$(curl -s "${HOST}/agents")
-STATUS=$(curl -s -o /dev/null -w "%{http_code}" "${HOST}/agents")
-echo "Body: ${BODY}"
-echo "HTTP Status: ${STATUS}"
+check "malformed 'as' is refused" 422 \
+  -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
+  -d '{"as": {"invalid": "dict"}, "text": "hello"}' "$HOST/agents/architect/envelopes"
 
-echo -e "\n[3] Testing GET /agents with invalid token..."
-BODY=$(curl -s -H "Authorization: Bearer wrong_token" "${HOST}/agents")
-STATUS=$(curl -s -o /dev/null -w "%{http_code}" -H "Authorization: Bearer wrong_token" "${HOST}/agents")
-echo "Body: ${BODY}"
-echo "HTTP Status: ${STATUS}"
+# ⚠ The bound is the point: a door that accepts an unbounded body is a door that
+# can be used to fill a disk.
+big="$(mktemp)"; python3 -c 'import json,sys; sys.stdout.write(json.dumps({"text": "x" * (1024*1024 + 100)}))' > "$big"
+check "oversized body is refused" 422 \
+  -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
+  --data-binary "@$big" "$HOST/agents/architect/envelopes"
+rm -f "$big"
 
-echo -e "\n[4] Testing GET /agents with valid token..."
-BODY=$(curl -s -H "Authorization: Bearer ${TOKEN}" "${HOST}/agents")
-STATUS=$(curl -s -o /dev/null -w "%{http_code}" -H "Authorization: Bearer ${TOKEN}" "${HOST}/agents")
-echo "Body: ${BODY}"
-echo "HTTP Status: ${STATUS}"
-
-echo -e "\n[5] Testing POST /agents/architect/envelopes with malformed 'as' dict payload..."
-BODY=$(curl -s -H "Authorization: Bearer ${TOKEN}" -H "Content-Type: application/json" -d '{"as": {"invalid": "dict"}, "text": "hello"}' "${HOST}/agents/architect/envelopes")
-STATUS=$(curl -s -o /dev/null -w "%{http_code}" -H "Authorization: Bearer ${TOKEN}" -H "Content-Type: application/json" -d '{"as": {"invalid": "dict"}, "text": "hello"}' "${HOST}/agents/architect/envelopes")
-echo "Body: ${BODY}"
-echo "HTTP Status: ${STATUS}"
-
-echo -e "\n[6] Testing POST /agents/architect/envelopes with oversized (>1MB) payload..."
-python3 -c 'import json, sys; sys.stdout.write(json.dumps({"text": "x" * (1024*1024 + 100)}))' > /tmp/large_payload.json
-BODY=$(curl -s -H "Authorization: Bearer ${TOKEN}" -H "Content-Type: application/json" --data-binary @/tmp/large_payload.json "${HOST}/agents/architect/envelopes")
-STATUS=$(curl -s -o /dev/null -w "%{http_code}" -H "Authorization: Bearer ${TOKEN}" -H "Content-Type: application/json" --data-binary @/tmp/large_payload.json "${HOST}/agents/architect/envelopes")
-echo "Body: ${BODY}"
-echo "HTTP Status: ${STATUS}"
-rm -f /tmp/large_payload.json
-
-echo -e "\n[7] Testing GET /board..."
-BODY=$(curl -s -H "Authorization: Bearer ${TOKEN}" "${HOST}/board")
-STATUS=$(curl -s -o /dev/null -w "%{http_code}" -H "Authorization: Bearer ${TOKEN}" "${HOST}/board")
-echo "Body: ${BODY}"
-echo "HTTP Status: ${STATUS}"
-
-echo -e "\n=== Scenario Complete ==="
+finish api-auth
