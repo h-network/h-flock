@@ -74,6 +74,11 @@ def main() -> int:
         default=False,
         help="do not treat missing ingress deliveries as defects (e.g. partial capture)",
     )
+    parser.add_argument(
+        "--participant-prefix",
+        default=None,
+        help="only judge RPUSH keys for agents whose name starts with this prefix",
+    )
     args = parser.parse_args()
 
     if not args.aof_dir:
@@ -94,6 +99,7 @@ def main() -> int:
     ingress = defaultdict(list)
     parse_failures = []
     total_commands = 0
+    ignored_out_of_scope = 0
 
     for path in aof_files:
         try:
@@ -108,6 +114,12 @@ def main() -> int:
                 if len(command) < 3 or command[0].upper() != b"RPUSH":
                     continue
                 key = command[1].decode("utf-8", "replace")
+                if args.participant_prefix:
+                    marker = ":agent:"
+                    agent = key.split(marker, 1)[1].split(":", 1)[0] if marker in key else ""
+                    if not agent.startswith(args.participant_prefix):
+                        ignored_out_of_scope += len(command) - 2
+                        continue
                 for raw in command[2:]:
                     try:
                         sid, source, destination, ttl, hops, body = frame_fields(raw)
@@ -150,7 +162,8 @@ def main() -> int:
         f"V4_AOF egress={len(egress)} compared={compared} missing_ingress={missing} "
         f"body_mismatch={body_mismatch} counter_mismatch={counter_mismatch} "
         f"source_mismatch={source_mismatch} source_stamps={len(stamped)} "
-        f"parse_failures={len(parse_failures)}"
+        f"parse_failures={len(parse_failures)} scope_prefix={args.participant_prefix or 'all'} "
+        f"ignored_out_of_scope={ignored_out_of_scope}"
     )
     for sid, claimed, stamped_source, body_ok in stamped:
         print(

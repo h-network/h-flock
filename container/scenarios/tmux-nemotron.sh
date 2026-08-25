@@ -1,5 +1,11 @@
 #!/usr/bin/env bash
-# Drive real local-model agents, then capture before analysing anything.
+# MANUAL INTEGRATION TOOL — NEVER WIRE INTO accept.sh OR AN AUTOMATED SUITE.
+#
+# This deliberately drives real local-model agents to originate adversarial
+# multiline, Unicode, JSON, quoting, and backslash payloads, then captures AOF
+# byte-opacity and source-stamp evidence. Model agency is the coverage: its
+# nondeterministic 30-minute wait and participant-declared completion make it
+# unsuitable for a gate. It intentionally emits no RESULT verdict.
 set -uo pipefail
 
 CONTAINER="${CONTAINER:?set CONTAINER}"
