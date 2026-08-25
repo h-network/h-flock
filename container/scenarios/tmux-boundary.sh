@@ -10,13 +10,15 @@ TMUX=(docker exec "$C" env TMUX_TMPDIR=/home/ubuntu/.flock/tmux tmux)
 echo "scenario=boundary tenant=$TENANT container=$C writer=$WRITER reader=$READER"
 echo "tmux global credential variable names observed:"
 "${TMUX[@]}" show-environment -g 2>&1 \
-  | grep -E '^(API_TOKEN|REDIS_PASSWORD|REDISCLI_AUTH|REDIS_URL)=' || true
+  | grep -E '^(API_TOKEN|REDIS_PASSWORD|REDISCLI_AUTH|REDIS_URL)=' \
+  | cut -d= -f1 || true
 
 for agent in "$WRITER" "$READER"; do
   pane_pid="$("${TMUX[@]}" list-panes -t "${TENANT}:${agent}" -F '#{pane_pid}' | head -1)"
   echo "agent=$agent pane_pid=$pane_pid credential variable names observed:"
   docker exec "$C" sh -c "tr '\\0' '\\n' </proc/$pane_pid/environ" \
-    | grep -E '^(API_TOKEN|REDIS_PASSWORD|REDISCLI_AUTH|REDIS_URL)=' || true
+    | grep -E '^(API_TOKEN|REDIS_PASSWORD|REDISCLI_AUTH|REDIS_URL)=' \
+    | cut -d= -f1 || true
 done
 
 marker="boundary-$RANDOM-$(date +%s)"
