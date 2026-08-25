@@ -143,7 +143,6 @@ poll_console() {
     [ "$CODE" = "200" ] && return 0
     if [ "$(date +%s)" -ge "$deadline" ]; then
       echo "  ✗ console deadline ${CONSOLE_GATE_DEADLINE_SECONDS}s expected [http 200] got [${CODE:-no response}]" >&2
-      FAILED=$((FAILED+1))
       if [ "$NEGATIVE_GATE" = "console-ready" ]; then
         echo "NEGATIVE_CONTROL gate=console-ready deadline=${CONSOLE_GATE_DEADLINE_SECONDS}s condition=absent"
         exit 97
@@ -253,22 +252,25 @@ rm -f container/.env
 #   y           reach from elsewhere    ""    tls cert path -> more choices
 #   n           generate self-signed?
 printf 'acme\n%s\n2\narchitect\nsme-2\nn\n\n\n\nn\ny\nn\n%s\n%s\ny\n\nn\n' \
-  "$TENANT" "$API_PORT" "$SESSION_PORT" | ./setup.sh 2>&1 \
-  | grep -E "healthy|error|Error|NEEDS LOGIN|logged in|wrote container/.env|not enabled" | head -10
+  "$TENANT" "$API_PORT" "$SESSION_PORT" | ./setup.sh \
+  > >(grep -E "healthy|error|Error|NEEDS LOGIN|logged in|wrote container/.env|not enabled" | head -10) 2>&1
+SETUP_RC="${PIPESTATUS[1]}"
 # setup.sh is the operation that creates the project. Record ownership only
 # after Docker confirms that this run brought its container into existence.
 if [ -n "$(docker ps -aq --filter "label=com.docker.compose.project=$PROJECT" 2>/dev/null | head -1)" ]; then
   CREATED_PROJECT="$PROJECT"
 fi
-[ -f container/.env ] || { fail "setup.sh wrote no container/.env"; exit 1; }
+[ "$SETUP_RC" = "0" ] || { record "install" "$SETUP_RC" "setup_failed"; exit "$FAILED"; }
+[ -f container/.env ] || { record "install" 1 "missing_env"; exit "$FAILED"; }
 
 # ⚠ The post-hoc port rewrite that used to live here is gone. setup.sh now ASKS
 # for the host ports, so they are answered above and the tenant comes up on them
 # first time — no sed, no second `up -d`. It also refuses a port already
 # listening, so a collision fails at the prompt rather than producing the
 # healthy-looking tenant nobody could reach that the old comment described.
-grep -q "^API_ENABLED=1" container/.env || { fail "setup.sh did not enable the api door"; exit 1; }
-grep -q "^API_PORT=${API_PORT}\$" container/.env || { fail "setup.sh wrote the wrong API_PORT"; exit 1; }
+grep -q "^API_ENABLED=1" container/.env || { record "install" 1 "api_disabled"; exit "$FAILED"; }
+grep -q "^API_PORT=${API_PORT}\$" container/.env || { record "install" 1 "wrong_api_port"; exit "$FAILED"; }
+record "install" 0
 
 step "health"
 for _ in $(seq 1 60); do
@@ -277,7 +279,8 @@ for _ in $(seq 1 60); do
   sleep 2
 done
 echo "  container: ${STATUS:-unknown}"
-[ "${STATUS:-}" = "healthy" ] || fail "tenant never became healthy"
+[ "${STATUS:-}" = "healthy" ] || { record "health" 1 "status=${STATUS:-unknown}"; exit "$FAILED"; }
+record "health" 0
 docker exec "$CONTAINER" bash -lc "TMUX_TMPDIR=/home/ubuntu/.flock/tmux tmux list-windows -t $TENANT -F '#{window_name}'" 2>/dev/null | tr '\n' ' '
 echo
 
@@ -306,23 +309,29 @@ if [ "$CONSOLE" = "1" ]; then
         > /tmp/accept-console.log 2>&1 &
     CONSOLE_PID="$!"
   fi
-  poll_console
+  if ! poll_console; then
+    record "console-ready" 1 "http=${CODE:-no_response}"
+    continue_console=0
+  else
+    record "console-ready" 0 "http=$CODE"
+    continue_console=1
+  fi
   echo "  console http=${CODE}"
   [ "$CODE" = "200" ] || tail -3 /tmp/accept-console.log
-  if python3 -c "import playwright" 2>/dev/null; then
+  if [ "$continue_console" = "1" ] && python3 -c "import playwright" 2>/dev/null; then
     python3 clients/web/flow-check.py --console "http://127.0.0.1:${CONSOLE_PORT}" \
       --secret "$SECRET" --container "$CONTAINER" --tenant "$TENANT" 2>&1 | tail -12
     # ⚠ Reports through record() like every other step. It used to call fail()
     # and print a banner, so it counted toward the exit code while emitting no
     # RESULT line — a caller parsing `^RESULT` was blind to a step --help
     # promises. A verdict nobody can read is not a verdict.
-    record "console" "${PIPESTATUS[0]}"
-  else
+    record "console-flow" "${PIPESTATUS[0]}"
+  elif [ "$continue_console" = "1" ]; then
     # ⚠ Not a pass. Say what was not checked, so nobody reads silence as green.
     echo "  ⚠ playwright is not installed here — console FLOWS WERE NOT CHECKED."
     echo "    The console answering 200 says nothing about whether it works."
     SKIPPED="${SKIPPED} console-flows"
-    record "console" 100 "playwright_absent"
+    record "console-flow" 100 "playwright_absent"
   fi
 fi
 
