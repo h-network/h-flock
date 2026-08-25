@@ -119,9 +119,18 @@ run_scenario() {                 # run_scenario <name> <script> [args...]
   local name="$1"; shift
   local script="$1"; shift
   if [ ! -f "$script" ]; then record "$name" 100 "missing=$script"; return; fi
-  POD=acme TENANT="$TENANT" CONTAINER="$CONTAINER" bash "$script" "$@" 2>&1 \
-    | grep -E "^RESULT|_RESULT |^==|FAIL|PASS=" || true
-  record "$name" "${PIPESTATUS[0]}"
+  # ⚠ RUN FIRST, CAPTURE THE CODE, FILTER AFTERWARDS. Piping the script straight
+  # into `grep ... || true` loses it: when grep matches nothing the `|| true`
+  # fires and PIPESTATUS[0] becomes 0, so a scenario that exited 6 in silence
+  # was recorded as a PASS. A quiet failure reading as green is the exact defect
+  # this suite exists to catch.
+  local out rc
+  out="$(mktemp)"
+  POD=acme TENANT="$TENANT" CONTAINER="$CONTAINER" bash "$script" "$@" >"$out" 2>&1
+  rc=$?
+  grep -E "^RESULT|_RESULT |^==|FAIL|PASS=" "$out" || true
+  rm -f "$out"
+  record "$name" "$rc"
 }
 CONSOLE_GATE_DEADLINE_SECONDS="${CONSOLE_GATE_DEADLINE_SECONDS:-15}"
 NEGATIVE_GATE="${NEGATIVE_GATE:-}"
