@@ -18,6 +18,7 @@ ROSTER="$PREFIX:roster"
 EGRESS="$PREFIX:agent:$AGENT:egress"
 INBOX="$PREFIX:agent:api:inbox"
 dx() { docker exec "$C" "$@"; }
+dxi() { docker exec -i "$C" "$@"; }
 cleanup() {
   dx redis-cli HDEL "$ROSTER" "$AGENT" "$CLOCK" >/dev/null 2>&1 || true
   for participant in "$AGENT" "$CLOCK"; do
@@ -35,7 +36,7 @@ dx redis-cli HDEL "$ROSTER" "$AGENT" >/dev/null || incomplete bus-retained-egres
 # retired source.  Make it consume a frame from an enrolled clock source first;
 # observing that egress removal proves the old BLPOP returned.  Its next BLPOP
 # must therefore be built from the new roster before the retained frame exists.
-dx python3 - "$POD" "$TENANT" "$CLOCK" "$SYNC_MARKER" <<'PY' >/dev/null || incomplete bus-retained-egress sync_enqueue_failed
+dxi python3 - "$POD" "$TENANT" "$CLOCK" "$SYNC_MARKER" <<'PY' >/dev/null || incomplete bus-retained-egress sync_enqueue_failed
 import os, sys
 sys.path.insert(0, "/app/src")
 import redis
@@ -52,7 +53,7 @@ for _ in $(seq 1 200); do
 done
 [ "${sync_depth:-1}" = 0 ] || incomplete bus-retained-egress roster_refresh_unobserved
 
-dx python3 - "$POD" "$TENANT" "$AGENT" "$RUN" <<'PY' >/dev/null || incomplete bus-retained-egress v4_enqueue_failed
+dxi python3 - "$POD" "$TENANT" "$AGENT" "$RUN" <<'PY' >/dev/null || incomplete bus-retained-egress v4_enqueue_failed
 import os, sys
 sys.path.insert(0, "/app/src")
 import redis

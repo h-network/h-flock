@@ -16,6 +16,7 @@ PREFIX="pod:$POD:tenant:$TENANT"
 ROSTER="$PREFIX:roster"
 SOURCE_EGRESS="$PREFIX:agent:architect:egress"
 dx() { docker exec "$C" "$@"; }
+dxi() { docker exec -i "$C" "$@"; }
 cleanup() {
   for probe in "${PROBES[@]}"; do
     dx redis-cli HDEL "$ROSTER" "$probe" >/dev/null 2>&1 || true
@@ -32,7 +33,7 @@ for probe in "${PROBES[@]}"; do
 done
 
 names="${PROBES[*]}"
-dx python3 - "$POD" "$TENANT" "$N" "$RUN" <<'PY' >/dev/null || incomplete bus-broadcast-storm v4_send_failed
+dxi python3 - "$POD" "$TENANT" "$N" "$RUN" <<'PY' >/dev/null || incomplete bus-broadcast-storm v4_send_failed
 import os, sys
 sys.path.insert(0, "/app/src")
 import redis
