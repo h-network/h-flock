@@ -62,3 +62,42 @@ def test_a_passing_scenario_is_recorded_as_passing(tmp_path):
     script.write_text("#!/usr/bin/env bash\necho 'RESULT inner pass'\nexit 0\n")
     out = _run(f'run_scenario ok "{script}"; echo "FAILED=$FAILED"')
     assert "RESULT ok pass" in out.stdout and "FAILED=0" in out.stdout
+
+
+def test_the_image_tag_names_the_commit_it_was_built_from():
+    """An image tagged `latest` cannot tell you whether it matches the source, so
+    reusing it would silently test stale code. Tagging by commit makes the
+    image's EXISTENCE the proof, which is what lets a run skip the build safely.
+
+    ⚠ A dirty tree is never cached: an image tagged with a commit it does not
+    contain would be exactly the lie this avoids.
+    """
+    lib = ROOT / "container/flock-image.sh"
+
+    def tag(extra=""):
+        out = subprocess.run(["bash", "-c", f'. "{lib}"\n{extra}\nflock_image_tag'],
+                             capture_output=True, text=True, cwd=ROOT)
+        return out.stdout.strip()
+
+    sha = subprocess.run(["git", "rev-parse", "--short", "HEAD"],
+                         capture_output=True, text=True, cwd=ROOT).stdout.strip()
+    dirty = subprocess.run(["git", "status", "--porcelain"],
+                           capture_output=True, text=True, cwd=ROOT).stdout.strip()
+
+    if dirty:
+        assert tag() == "h-flock:dirty", "an unnameable tree must not be cached"
+    else:
+        assert tag() == f"h-flock:{sha}", "a clean tree is named by its commit"
+
+
+def test_a_dirty_tree_always_rebuilds_and_force_overrides():
+    """The two cases where a present image must not be trusted."""
+    lib = ROOT / "container/flock-image.sh"
+
+    def flag(env):
+        out = subprocess.run(["bash", "-c", f'. "{lib}"\nflock_build_flag'],
+                             capture_output=True, text=True, cwd=ROOT, env={**__import__("os").environ, **env})
+        return out.stdout.strip()
+
+    assert flag({"FLOCK_IMAGE": "h-flock:dirty"}) == "--build", "dirty is never reused"
+    assert flag({"FLOCK_IMAGE": "h-flock:whatever", "FLOCK_FORCE_BUILD": "1"}) == "--build"

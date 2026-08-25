@@ -90,13 +90,19 @@ PY
     # the terminal strand while preserving it in Redis as evidence.
     ports="$(dx sh -c "ps -eo args= | grep -c '[f]lock.port cons-' || true" | tr -d '\r')"
     if [ "$egress" = "0" ] && [ "$ingress" -gt 0 ] && [ "$delivering" = "0" ] && [ "$ports" = "0" ]; then
-      if [ "$candidate_ingress" = "$ingress" ] && [ "$candidate_since" -ge 0 ] \
-          && [ $((SECONDS - candidate_since)) -ge "$stable_seconds" ]; then
+      # ⚠ START THE CLOCK ONLY WHEN THE CANDIDATE CHANGES. This used to reset
+      # candidate_since on EVERY pass that met the strand condition, including
+      # the pass right after setting it — so the age was always ~1s, never
+      # reached stable_seconds, and the shortcut COULD NOT FIRE. Every run ran
+      # its full 2,400s timeout instead of returning after 15s, which is ~25
+      # minutes of waiting for a state that was already final and observable.
+      if [ "$candidate_ingress" != "$ingress" ] || [ "$candidate_since" -lt 0 ]; then
+        candidate_since=$SECONDS
+        candidate_ingress=$ingress
+      elif [ $((SECONDS - candidate_since)) -ge "$stable_seconds" ]; then
         echo "terminal strand candidate stable=${stable_seconds}s ingress=$ingress"
         return 0
       fi
-      candidate_since=$SECONDS
-      candidate_ingress=$ingress
     else
       candidate_since=-1
       candidate_ingress=-1

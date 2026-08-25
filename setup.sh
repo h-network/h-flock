@@ -425,10 +425,21 @@ echo "wrote container/.env"
 
 CONTAINER="h-flock-${TENANT}-tenant-1"
 COMPOSE=(docker compose -p "h-flock-${TENANT}" --env-file container/.env -f container/compose.yaml)
+# ⚠ Build only when there is no image for THIS commit. The tag carries the SHA,
+# so an existing one is proof it matches the source; rebuilding it produces a
+# byte-identical result and used to happen on every tenant, five times in a full
+# test sweep. See container/flock-image.sh.
+. container/flock-image.sh 2>/dev/null || true
+if declare -f flock_image_tag >/dev/null; then
+  export FLOCK_IMAGE="${FLOCK_IMAGE:-$(flock_image_tag)}"
+  BUILD_FLAG="$(flock_build_flag)"
+else
+  BUILD_FLAG="--build"
+fi
 
 if [ -n "$TLS_CERT_CONTAINER" ]; then
     echo "Building and creating tenant '${TENANT}'..."
-    "${COMPOSE[@]}" create --build || exit 1
+    "${COMPOSE[@]}" create ${BUILD_FLAG} || exit 1
     # ⚠ mktemp -d makes the directory 0700, and docker cp preserves both the
     # mode and the host uid. On this lab the operator is uid 1000, which is
     # `ubuntu` inside the container, so the door could traverse it — by luck.
@@ -440,7 +451,7 @@ if [ -n "$TLS_CERT_CONTAINER" ]; then
     "${COMPOSE[@]}" start || exit 1
 else
     echo "Building and starting tenant '${TENANT}'..."
-    "${COMPOSE[@]}" up -d --build || exit 1
+    "${COMPOSE[@]}" up -d ${BUILD_FLAG} || exit 1
 fi
 
 for _ in $(seq 1 60); do

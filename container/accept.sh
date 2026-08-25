@@ -203,7 +203,17 @@ if [ -n "$EXISTING_PROJECT_RESOURCE" ]; then
 fi
 trap cleanup EXIT
 
+# ⚠ Name the image before anything runs. A suite that passes tells you nothing
+# unless you know WHAT it passed against, and an image reused from an earlier
+# commit is exactly the sort of thing that makes a green run meaningless.
+. container/flock-image.sh 2>/dev/null || true
+if declare -f flock_image_tag >/dev/null; then
+  export FLOCK_IMAGE="$(flock_image_tag)"
+  flock_prune_images
+fi
+
 step "install — driving setup.sh as a person would"
+declare -f flock_image_line >/dev/null && flock_image_line
 # ⚠ POSITIONAL. One answer per prompt, in setup.sh's order:
 #   pod · tenant · 2 agents · their names · no extra accounts · no provider
 #   · OPEN THE API DOOR (yes — this harness drives it) · no Telegram

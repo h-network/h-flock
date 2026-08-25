@@ -6,6 +6,16 @@ if [ "$CONFIRM" != "I_UNDERSTAND_THIS_INJECTS_AND_DESTROYS_A_TENANT" ] || [ "$#"
 fi
 command -v docker >/dev/null || { echo "REFUSED: docker is required" >&2; exit 2; }
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"; cd "$ROOT" || exit 2
+# ⚠ Reuse the image for this commit rather than rebuilding it. This script builds
+# its own disposable tenant, and used to do so with --build every time — an image
+# setup.sh had already built minutes earlier in the same run.
+. container/flock-image.sh 2>/dev/null || true
+if declare -f flock_image_tag >/dev/null; then
+  export FLOCK_IMAGE="${FLOCK_IMAGE:-$(flock_image_tag)}"
+  BUILD_FLAG="$(flock_build_flag)"
+else
+  BUILD_FLAG="--build"
+fi
 RUN_ID="$(date +%s)-$$"; TENANT="bus102-${RUN_ID}"; PROJECT="h-flock-${TENANT}"
 CONTAINER="${PROJECT}-tenant-1"; WORK="${BUILD102_WORK:-/tmp/build102-${RUN_ID}}"; CREATED_PROJECT=""
 mkdir -p "$WORK"
@@ -28,7 +38,7 @@ TOKEN="$(openssl rand -hex 16)"
   echo "VERIFY_AFTER_SECONDS=120"; echo "INGRESS_MAX=300"
 } > container/.env
 chmod 600 container/.env
-docker compose -p "$PROJECT" --env-file container/.env -f container/compose.yaml up -d --build >"$WORK/setup.log" 2>&1
+docker compose -p "$PROJECT" --env-file container/.env -f container/compose.yaml up -d ${BUILD_FLAG} >"$WORK/setup.log" 2>&1
 up_rc=$?
 if [ -n "$({ docker ps -aq --filter "label=com.docker.compose.project=$PROJECT"; docker network ls -q --filter "label=com.docker.compose.project=$PROJECT"; docker volume ls -q --filter "label=com.docker.compose.project=$PROJECT"; } 2>/dev/null | head -1)" ]; then CREATED_PROJECT="$PROJECT"; fi
 if [ "$up_rc" -ne 0 ] || [ "$CREATED_PROJECT" != "$PROJECT" ]; then echo "REFUSED: disposable tenant creation failed rc=$up_rc" >&2; exit 2; fi

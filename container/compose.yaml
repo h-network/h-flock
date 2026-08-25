@@ -13,7 +13,10 @@ services:
     build:
       context: ..
       dockerfile: container/Dockerfile
-    image: h-flock:latest
+    # ⚠ Tagged by commit so an existing image proves it matches the source
+    # under test. See container/flock-image.sh. Defaults to latest for a
+    # caller that has not sourced it.
+    image: ${FLOCK_IMAGE:-h-flock:latest}
     # Everything in container/.env reaches the container, so an operator can
     # define any number of providers under any names without editing this file.
     env_file:
