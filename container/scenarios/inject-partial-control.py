@@ -4,6 +4,7 @@
 import argparse
 import os
 import subprocess
+import time
 
 import redis
 
@@ -80,6 +81,15 @@ def main() -> int:
         client.set(key, "BUILD102 residue")
     client.hset(prefix(args.pod, args.tenant, resource="delivering"), args.agent, "held")
 
+    ingress_key = prefix(args.pod, args.tenant, agent="host", resource="ingress")
+    # Make the one-shot pop deterministic: wait for any prior host mail to
+    # clear, then wait for this envelope to reach ingress before popping.
+    for _ in range(120):
+        if client.llen(ingress_key) == 0:
+            break
+        time.sleep(0.1)
+    else:
+        raise SystemExit("REFUSED: host ingress already contains queued mail")
     stream_id = send(
         client,
         pod=args.pod,
@@ -94,6 +104,12 @@ def main() -> int:
         "fault_injection", "active", destination=args.agent,
         reason="BUILD102 deliberate purge reply loss",
     )
+    for _ in range(120):
+        if client.llen(ingress_key) > 0:
+            break
+        time.sleep(0.1)
+    else:
+        raise SystemExit("REFUSED: StopAgent envelope did not reach host ingress")
 
     fault = RefusePurgeReplyOnce(client, state_keys)
     original = port.redis.Redis.from_url
