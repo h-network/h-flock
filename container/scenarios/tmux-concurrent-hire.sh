@@ -27,9 +27,9 @@ expect "concurrent hire claude request" 202 "$status_a"
 expect "concurrent hire codex request" 202 "$status_b"
 
 sleep 8
-desired="$(docker exec "$C" redis-cli --raw HGET "$ROSTER" "$AGENT" 2>/dev/null || true)"
+port_type="$(docker exec "$C" redis-cli --raw HGET "$ROSTER" "$AGENT" 2>/dev/null || true)"
 launch="$(docker exec "$C" redis-cli --raw GET "$LAUNCH" 2>/dev/null || true)"
-[ "$desired" = "$launch" ] || { echo "  ✗ desired CLI and launch differ" >&2; _FAILED=$((_FAILED+1)); }
+expect "roster retains tmux port type" tmux "$port_type"
 [ "$launch" = claude ] || [ "$launch" = codex ] || { echo "  ✗ winning CLI is invalid" >&2; _FAILED=$((_FAILED+1)); }
 windows="$("${TMUX[@]}" list-windows -t "$TENANT" -F '#{window_name}|#{pane_current_command}' 2>/dev/null | awk -F'|' -v a="$AGENT" '$1==a')"
 count="$(printf '%s\n' "$windows" | sed '/^$/d' | wc -l | tr -d ' ')"
