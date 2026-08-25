@@ -121,6 +121,8 @@ if [ -n "$SCENARIO" ]; then
     analyse-v4-aof)
       [ -n "$AOF_DIR" ] || { echo "RESULT analyse-v4-aof incomplete reason=missing_argument" >&2; exit 100; }
       exec python3 container/scenarios/analyse-v4-aof.py "$AOF_DIR" ;;
+    tmux-boundary|tmux-concurrent-hire)
+      exec bash "container/scenarios/${SCENARIO}.sh" ;;
     *) echo "accept: unknown scenario '$SCENARIO'" >&2; exit 2 ;;
   esac
 fi
