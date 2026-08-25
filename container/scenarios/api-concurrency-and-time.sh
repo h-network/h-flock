@@ -20,7 +20,7 @@ echo "== api concurrency and time · $HOST =="
 # it is that none of them is refused, dropped or served an error under parallel
 # load. A door that serves nine of ten is broken in a way an average hides.
 codes="$(for _ in $(seq 1 10); do
-  curl -s -o /dev/null -w '%{http_code}\n' "$HOST/health" &
+  curl -s -o /dev/null -w '%{http_code}\n' -H "Authorization: Bearer $TOKEN" "$HOST/health" &
 done | sort -u | tr '\n' ' ')"
 wait
 expect "10 parallel /health all answer 200" "200 " "$codes"

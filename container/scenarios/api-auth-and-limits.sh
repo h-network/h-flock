@@ -19,7 +19,12 @@ TOKEN="${API_TOKEN:-$(docker exec "$C" printenv API_TOKEN 2>/dev/null || true)}"
 
 echo "== api auth and limits · $HOST =="
 
-check "health is open"            200 "$HOST/health"
+# ⚠ Health is NOT an open probe. API.md §2 requires Bearer auth on every request
+# and app.py applies it globally, so a bare probe is refused like anything else.
+# Asserted in both directions: refused without a token, served with one. This
+# script previously expected 200 bare, which was my assumption, not the contract.
+check "health without a token is refused" 401 "$HOST/health"
+check "health with a token is served"     200 -H "Authorization: Bearer $TOKEN" "$HOST/health"
 check "no token is refused"       401 "$HOST/agents"
 check "bad token is refused"      401 -H "Authorization: Bearer wrong_token" "$HOST/agents"
 check "good token is accepted"    200 -H "Authorization: Bearer $TOKEN" "$HOST/agents"
