@@ -68,6 +68,9 @@ CONSOLE_PORT=8099
 KEEP=0
 CONSOLE=1
 SUITES=""
+SCENARIO=""
+ANALYSER_LOG=""
+AOF_DIR=""
 while [ $# -gt 0 ]; do
   case "$1" in
     --tenant) TENANT="$2"; shift 2 ;;
@@ -80,6 +83,9 @@ while [ $# -gt 0 ]; do
     --fault) SUITES="$SUITES fault"; shift ;;
     --api) SUITES="$SUITES api"; shift ;;
     --all) SUITES="core fault api"; shift ;;
+    --scenario) SCENARIO="$2"; shift 2 ;;
+    --log) ANALYSER_LOG="$2"; shift 2 ;;
+    --aof-dir) AOF_DIR="$2"; shift 2 ;;
     -h|--help) sed -n '2,40p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'; exit 0 ;;
     *) echo "accept: unknown argument '$1'" >&2; exit 2 ;;
   esac
@@ -91,6 +97,22 @@ has_suite() { case " $SUITES " in *" $1 "*) return 0;; *) return 1;; esac; }
 
 _here="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$_here" || exit 2
+
+# Standalone analyser seam: run one log judge without installing a tenant.
+# The analysers own their RESULT contract and return 0, failed-check count, or
+# 100 for an unavailable capture. This path is deliberately before Docker and
+# setup so red controls can be demonstrated in seconds with --scenario.
+if [ -n "$SCENARIO" ]; then
+  case "$SCENARIO" in
+    analyse-verification)
+      [ -n "$ANALYSER_LOG" ] || { echo "RESULT analyse-verification incomplete reason=missing_argument" >&2; exit 100; }
+      exec python3 container/scenarios/analyse-verification.py "$ANALYSER_LOG" ;;
+    analyse-v4-aof)
+      [ -n "$AOF_DIR" ] || { echo "RESULT analyse-v4-aof incomplete reason=missing_argument" >&2; exit 100; }
+      exec python3 container/scenarios/analyse-v4-aof.py "$AOF_DIR" ;;
+    *) echo "accept: unknown scenario '$SCENARIO'" >&2; exit 2 ;;
+  esac
+fi
 PROJECT="h-flock-${TENANT}"
 CONTAINER="${PROJECT}-tenant-1"
 FAILED=0
