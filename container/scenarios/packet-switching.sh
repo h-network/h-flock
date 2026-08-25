@@ -12,9 +12,10 @@ while [ "$#" -gt 0 ]; do
 done
 
 judge() {
-  python3 - "$1" <<'PY'
+  # $2 is what the HARNESS submitted, not what the log says it submitted.
+  python3 - "$1" "${2:-0}" <<'PY'
 import collections, datetime, json, pathlib, subprocess, sys
-d = pathlib.Path(sys.argv[1]); log = d / "custody.log"; sent = {}; opened = collections.Counter(); popped = {}; forwarded = {}; stages = collections.Counter(); ignored = 0
+d = pathlib.Path(sys.argv[1]); expected = int(sys.argv[2]); log = d / "custody.log"; sent = {}; opened = collections.Counter(); popped = {}; forwarded = {}; stages = collections.Counter(); ignored = 0
 for line in log.read_text(errors="replace").splitlines():
     if not line.lstrip().startswith("{"): continue
     try: rec = json.loads(line)
@@ -40,6 +41,18 @@ print(f"PACKET_BOUNDARY start=popped stop=forwarded outside=port,terminal,applic
 print(f"PACKET_SCOPE source_or_destination_prefix=bench- ignored_out_of_scope={ignored}")
 print(f"PACKET_COUNTS submitted={len(sent)} opened={sum(opened.values())} stray={len(stray)}")
 print("PACKET_STAGES " + " ".join(f"{event}={stages[event]}" for event in ("sent", "popped", "forwarded", "received", "opened")))
+# ⚠ THE ONLY CHECK HERE THAT IS NOT CIRCULAR. Every count above is read from the
+# log, so a DROPPED RECORD lowers both sides and the books still balance. The
+# harness knows how many it submitted without asking the log; comparing against
+# that is what makes a missing record visible. 0 means fixture mode, where the
+# fixture defines its own contents and there is no independent number to hold it
+# to. Live callers always pass one.
+if expected:
+    short = [f"{ev}={stages[ev]}" for ev in ("sent", "popped", "forwarded", "received", "opened") if stages[ev] != expected]
+    print(f"PACKET_EXPECTED submitted_by_harness={expected} stages_matching={5 - len(short)}/5")
+    if short:
+        print(f"PACKET_RESULT rc=6 reason=log_disagrees_with_harness expected={expected} short={','.join(short)}")
+        raise SystemExit(6)
 pairs = []
 for sid in sent:
     if sid in popped and sid in forwarded:
@@ -166,6 +179,6 @@ echo "PACKET_QUEUE_DEPTH ingress_plus_egress=${depth:-unknown} drained=${drained
 docker logs "$CONTAINER" >"$WORK/custody.log" 2>&1 || { echo "INCOMPLETE: capture" >&2; exit 100; }
 [ -s "$WORK/custody.log" ] || { echo "INCOMPLETE: empty capture" >&2; exit 100; }
 [ "$drained" = "1" ] || { echo "INCOMPLETE: queues did not drain before capture" >&2; capture_diagnostics 100; exit 100; }
-judge "$WORK"; rc=$?
+judge "$WORK" "$((COUNT * ROUNDS))"; rc=$?
 capture_diagnostics "$rc"
 exit "$rc"

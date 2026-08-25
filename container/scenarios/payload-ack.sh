@@ -65,7 +65,7 @@ if [ "$ack_ready" -ne 1 ]; then
   echo "PAYLOAD_WAIT reason=ack_leg_unknown_timeout expected=$expected observed=$got" >&2
 fi
 docker logs "$CONTAINER" >"$WORK/custody.log" 2>&1 || exit 100
-python3 "$(dirname "$0")/payload-ack-judge.py" "$WORK/custody.log"
+python3 "$(dirname "$0")/payload-ack-judge.py" "$WORK/custody.log" "$expected"
 rc=$?
 [ "$rc" -eq 0 ] || capture_diagnostics "$rc"
 exit "$rc"

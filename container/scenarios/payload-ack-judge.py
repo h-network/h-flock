@@ -20,8 +20,16 @@ malformed={r.get('stream_id') for r in records if r.get('event')=='ack_sent' and
 invalid={r.get('stream_id') for r in records if r.get('event')=='payload_invalid'}
 if len(sys.argv)>2 and sys.argv[2]=='--ack-count':
  print(len(ack_opened)); raise SystemExit(0)
+# ⚠ THE ONLY NON-CIRCULAR CHECK HERE. Every count above is read from the log, so
+# a DROPPED RECORD lowers both sides and the books still balance. The harness
+# knows how many it submitted without asking the log. 0 means no count was given.
+expected=int(sys.argv[2]) if len(sys.argv)>2 and sys.argv[2].isdigit() else 0
 print(f'ACK_OPENED_UNIQUE {len(ack_opened)}')
 print(f'PAYLOAD_SCOPE ignored_out_of_scope={ignored} sent={len(sent)} opened={len(opened)} verified={len(verified)} ack_sent={len(ack_sent)} ack_opened={len(ack_opened)}')
+if expected:
+ short=[f'{n}={len(s)}' for n,s in (('sent',sent),('opened',opened),('verified',verified),('ack_sent',ack_sent),('ack_opened',ack_opened)) if len(s)!=expected]
+ print(f'PAYLOAD_EXPECTED submitted_by_harness={expected} stages_matching={5-len(short)}/5')
+ if short: print(f"PAYLOAD_RESULT rc=6 reason=log_disagrees_with_harness expected={expected} short={','.join(short)}"); raise SystemExit(6)
 if malformed: print(f'PAYLOAD_RESULT rc=3 reason=ack_missing_correlation ids={sorted(malformed)}'); raise SystemExit(3)
 if ack_sent-sent: print(f'PAYLOAD_RESULT rc=3 reason=ack_for_unsent ids={sorted(ack_sent-sent)}'); raise SystemExit(3)
 if ack_sent-ack_opened: print(f'PAYLOAD_RESULT rc=5 reason=ack_leg_unknown ids={sorted(ack_sent-ack_opened)}'); raise SystemExit(5)
