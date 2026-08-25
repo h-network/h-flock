@@ -323,16 +323,22 @@ run_scenario "payload-ack" container/scenarios/payload-ack.sh --count 10 --round
 fi
 
 if has_suite fault; then
-  # ⚠ Two of these build their OWN disposable tenant, because a script that
-  # damages a tenant must not be pointed at one somebody is using.
+  # ⚠ conservation runs against THIS tenant. The other two build their own
+  # disposable one and destroy it, which is why they refuse to start without the
+  # confirmation below — a guard against someone pointing them at a live office
+  # by reflex. Passing it here is deliberate: accept.sh already owns a throwaway
+  # tenant and says so in its own header. It is spelled out rather than put in a
+  # variable so that nobody can wire these up without reading what they do.
+  DESTRUCTIVE=I_UNDERSTAND_THIS_INJECTS_AND_DESTROYS_A_TENANT
+
   step "fault — conservation under injected death"
   run_scenario "conservation" container/scenarios/conservation.sh
 
   step "fault — forward outcome unknown"
-  run_scenario "forward-unknown" container/scenarios/fault-forward-unknown.sh
+  run_scenario "forward-unknown" container/scenarios/fault-forward-unknown.sh "$DESTRUCTIVE"
 
   step "fault — partial control damage"
-  run_scenario "partial-control" container/scenarios/partial-control-damage.sh
+  run_scenario "partial-control" container/scenarios/partial-control-damage.sh "$DESTRUCTIVE"
 fi
 
 if has_suite api; then
