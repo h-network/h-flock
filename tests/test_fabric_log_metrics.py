@@ -136,7 +136,7 @@ def test_writer_census_refuses_synthetic_and_exact_exclusion_restores_run(tmp_pa
     log.write_text("\n".join(lines) + "\n")
 
     refused = _run(log, 2)
-    assert refused.returncode == 1
+    assert refused.returncode == 100
     assert _has(refused.stdout, "writers: bench-send=6 port=6")
     assert "bench-send was not explicitly expected" in refused.stdout
 

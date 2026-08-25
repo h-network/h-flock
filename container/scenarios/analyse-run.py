@@ -149,7 +149,8 @@ def main() -> int:
 
     print("\n== every step logged? ==")
     incomplete = bool(indeterminate_forwards)
-    failed = len(writer_errors)
+    missing_expectation = any("not explicitly expected" in error for error in writer_errors)
+    failed = sum("not explicitly expected" not in error for error in writer_errors)
     if indeterminate_forwards:
         print(
             f"  forward_unknown {len(indeterminate_forwards):>7,}  ⚠ REFUSED — "
@@ -189,6 +190,9 @@ def main() -> int:
         print(f"\nsteady-state (middle 80%) {len(mid)/(hi-lo):8.2f}/s over {hi-lo:.1f}s")
         print(f"wall-clock, all opened     {len(opened)/(opened[-1]-opened[0]):8.2f}/s")
 
+    if missing_expectation:
+        print("RESULT analyse-run incomplete reason=writer_expectation_required")
+        return 100
     if failed:
         print(f"RESULT analyse-run fail failed={failed}")
         return min(failed, 125)

@@ -5,7 +5,8 @@
 #                            [--session-port N] [--console-port N]
 #                            [--keep] [--no-console] [--scenario NAME] [--help]
 #
-# --scenario analyse-verification --log PATH and --scenario analyse-v4-aof
+# --scenario analyse-run --log PATH [--expect-writer NAME=COUNT],
+# --scenario analyse-verification --log PATH, and --scenario analyse-v4-aof
 # --aof-dir DIR run standalone analysers; tmux-boundary and tmux-concurrent-hire
 # run one terminal scenario. Core console emits RESULT console-ready and
 # RESULT console-flow as separate gates.
@@ -76,6 +77,7 @@ SUITES=""
 SCENARIO=""
 ANALYSER_LOG=""
 AOF_DIR=""
+ANALYSER_ARGS=()
 while [ $# -gt 0 ]; do
   case "$1" in
     --tenant) TENANT="$2"; shift 2 ;;
@@ -91,6 +93,7 @@ while [ $# -gt 0 ]; do
     --scenario) SCENARIO="$2"; shift 2 ;;
     --log) ANALYSER_LOG="$2"; shift 2 ;;
     --aof-dir) AOF_DIR="$2"; shift 2 ;;
+    --expect-writer) ANALYSER_ARGS+=(--expect-writer "$2"); shift 2 ;;
     -h|--help) sed -n '2,40p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'; exit 0 ;;
     *) echo "accept: unknown argument '$1'" >&2; exit 2 ;;
   esac
@@ -111,7 +114,7 @@ if [ -n "$SCENARIO" ]; then
   case "$SCENARIO" in
     analyse-run)
       [ -n "$ANALYSER_LOG" ] || { echo "RESULT analyse-run incomplete reason=missing_argument" >&2; exit 100; }
-      exec python3 container/scenarios/analyse-run.py "$ANALYSER_LOG" ;;
+      exec python3 container/scenarios/analyse-run.py "$ANALYSER_LOG" "${ANALYSER_ARGS[@]}" ;;
     analyse-verification)
       [ -n "$ANALYSER_LOG" ] || { echo "RESULT analyse-verification incomplete reason=missing_argument" >&2; exit 100; }
       exec python3 container/scenarios/analyse-verification.py "$ANALYSER_LOG" ;;
