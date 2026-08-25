@@ -26,7 +26,12 @@ async def main():
     try:
         async with websockets.connect('ws://127.0.0.1:8081/session?token=' + sys.argv[1]):
             print('accepted')
-    except websockets.exceptions.InvalidStatusCode:
+    # ⚠ InvalidHandshake is the BASE both variants derive from. Catching
+    # InvalidStatusCode by name silently stopped working at websockets 15, where
+    # it became a deprecated alias that is NOT a superclass of the InvalidStatus
+    # actually raised — so a door that correctly refused a bad token reported
+    # `error:InvalidStatus` and the check failed against working behaviour.
+    except websockets.exceptions.InvalidHandshake:
         print('refused')
     except websockets.exceptions.ConnectionClosed:
         print('refused')
