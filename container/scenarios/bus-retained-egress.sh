@@ -33,7 +33,8 @@ dx redis-cli HDEL "$ROSTER" "$AGENT" >/dev/null || incomplete bus-retained-egres
 
 # A switch may already be blocked on a roster snapshot that still contains the
 # retired source.  Make it consume a frame from an enrolled clock source first;
-# observing that delivery proves its next BLPOP is built from the new roster.
+# observing that egress removal proves the old BLPOP returned.  Its next BLPOP
+# must therefore be built from the new roster before the retained frame exists.
 dx python3 - "$POD" "$TENANT" "$CLOCK" "$SYNC_MARKER" <<'PY' >/dev/null || incomplete bus-retained-egress sync_enqueue_failed
 import os, sys
 sys.path.insert(0, "/app/src")
@@ -45,11 +46,11 @@ frame = build("Message", source, "api", {"marker": marker}, pod=pod, tenant=tena
 r.rpush(prefix(pod, tenant, source, "egress"), encode(frame))
 PY
 for _ in $(seq 1 200); do
-  sync_matches="$(dx redis-cli XRANGE "$INBOX" - + | grep -c "$SYNC_MARKER" || true)"
-  [ "$sync_matches" = 1 ] && break
+  sync_depth="$(dx redis-cli LLEN "$PREFIX:agent:$CLOCK:egress" | tr -d '\r')"
+  [ "$sync_depth" = 0 ] && break
   sleep 0.1
 done
-[ "${sync_matches:-0}" = 1 ] || incomplete bus-retained-egress roster_refresh_unobserved
+[ "${sync_depth:-1}" = 0 ] || incomplete bus-retained-egress roster_refresh_unobserved
 
 dx python3 - "$POD" "$TENANT" "$AGENT" "$RUN" <<'PY' >/dev/null || incomplete bus-retained-egress v4_enqueue_failed
 import os, sys
