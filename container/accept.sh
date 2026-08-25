@@ -3,7 +3,12 @@
 #
 #   bash container/accept.sh [SUITE...] [--tenant NAME] [--api-port N]
 #                            [--session-port N] [--console-port N]
-#                            [--keep] [--no-console] [--help]
+#                            [--keep] [--no-console] [--scenario NAME] [--help]
+#
+# --scenario analyse-verification --log PATH and --scenario analyse-v4-aof
+# --aof-dir DIR run standalone analysers; tmux-boundary and tmux-concurrent-hire
+# run one terminal scenario. Core console emits RESULT console-ready and
+# RESULT console-flow as separate gates.
 #
 # Installs a tenant the way a person would, waits for it to be healthy, runs the
 # selected suites against it, and tears it down.
@@ -104,6 +109,9 @@ cd "$_here" || exit 2
 # setup so red controls can be demonstrated in seconds with --scenario.
 if [ -n "$SCENARIO" ]; then
   case "$SCENARIO" in
+    analyse-run)
+      [ -n "$ANALYSER_LOG" ] || { echo "RESULT analyse-run incomplete reason=missing_argument" >&2; exit 100; }
+      exec python3 container/scenarios/analyse-run.py "$ANALYSER_LOG" ;;
     analyse-verification)
       [ -n "$ANALYSER_LOG" ] || { echo "RESULT analyse-verification incomplete reason=missing_argument" >&2; exit 100; }
       exec python3 container/scenarios/analyse-verification.py "$ANALYSER_LOG" ;;
