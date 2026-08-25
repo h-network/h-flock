@@ -1,0 +1,8 @@
+  ✗ bus-probe-1 receives every broadcast exactly once → 20, expected 21
+  ✗ bus-probe-2 receives every broadcast exactly once → 20, expected 21
+  ✗ bus-probe-3 receives every broadcast exactly once → 20, expected 21
+  ✗ bus-probe-4 receives every broadcast exactly once → 20, expected 21
+  ✗ bus-probe-5 receives every broadcast exactly once → 20, expected 21
+  ✓ broadcast source egress drained → 0
+RESULT bus-broadcast-storm fail failed=5
+EXIT:5

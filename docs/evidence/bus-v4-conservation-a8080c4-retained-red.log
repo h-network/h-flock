@@ -1,0 +1,6 @@
+  ✓ retired source egress retained → 1
+  ✓ retired source not delivered → 0
+  ✓ re-enrolled source egress drained → 0
+  ✗ retained frame delivered exactly once → 1, expected 2
+RESULT bus-retained-egress fail failed=1
+EXIT:1
