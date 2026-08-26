@@ -124,7 +124,7 @@ if [ -n "$SCENARIO" ]; then
     analyse-v4-aof)
       [ -n "$AOF_DIR" ] || { echo "RESULT analyse-v4-aof incomplete reason=missing_argument" >&2; exit 100; }
       exec python3 container/scenarios/analyse-v4-aof.py "$AOF_DIR" ;;
-    tmux-boundary|tmux-concurrent-hire)
+    tmux-boundary|tmux-concurrent-hire|tmux-window-loss)
       [ "$TENANT_EXPLICIT" = 1 ] || { echo "RESULT $SCENARIO incomplete reason=tenant_required" >&2; exit 100; }
       export TENANT
       exec bash "container/scenarios/${SCENARIO}.sh" ;;
