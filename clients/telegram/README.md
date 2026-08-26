@@ -55,6 +55,33 @@ python3 clients/telegram/bot.py \
 
 ---
 
+## 2a. Inline Menu
+
+Sending `/menu` (alongside the existing `/status` and free-text prompts to
+`--agent`) opens an inline-button menu with three actions, scoped to v1 rather
+than full `office` CLI parity:
+
+- **📋 Office overview** — presence and open ticket (`doing[0]`) for every
+  `port_type: "tmux"` agent in the roster. Excludes api clients (like this bot
+  itself) and `host`, the same filter the web console uses for lifecycle
+  controls.
+- **🎫 Add ticket** — pick an agent from inline buttons, then answer two plain
+  text prompts (title, then description — send `-` to skip it). `/cancel`
+  aborts at either prompt. Posts `AddTicket` to `POST /agents/{agent}/envelopes`.
+- **⏯ Pause / resume agent** — pick an agent, then Pause or Resume. Posts
+  `PauseAgent`/`ResumeAgent` to `POST /agents/host/envelopes`.
+
+`StartAgent`/`StopAgent` (hire/retire) are out of scope for v1 as higher-risk,
+destructive-by-default operations — see `clients/web/SPEC.md` §6a's confirm-by-
+typing-the-name requirement for retire, which this menu does not implement.
+
+While a chat has an open Add Ticket flow, its next plain text message is
+consumed as the flow's answer rather than sent to `--agent` as a prompt.
+
+Try it without a bot token: `python3 clients/telegram/bot.py --api-token "$FLOCK_API_TOKEN" --menu`.
+
+---
+
 ## 3. Documentation Gaps in `docs/API.md`
 
 Built strictly against [`docs/API.md`](../../docs/API.md). The following gaps and ambiguities were encountered:
