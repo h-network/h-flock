@@ -53,13 +53,17 @@ Each of these does more than go stale — it routes a reader somewhere specific.
 - **`HLD.md` §7's `api :8080 / session :8081`** — the doors always bind those ports
   *inside* the container whatever host port is published. The table is about the
   internal bind and was never affected by the exposure work.
-- **`accept.sh`'s LIMIT text** — still accurate, and its subject's absence is
-  **deliberate**. `tmux-paste-delivery` joined `main` but **not the `--tmux` suite**,
-  which still runs its original three members. ⚠ The LIMIT wording — *"until a
-  successful-paste scenario joins this suite"* — reads as a roadmap. **It is not one.**
-  Wiring that scenario in is not implied and is not pending; it would be a change to
-  the suite's contract and needs deciding on its own merits, not doing because a
-  sentence appears to promise it.
+- **`accept.sh`'s LIMIT text** — the *facts* in it are still accurate:
+  `tmux-paste-delivery` joined `main` but **not the `--tmux` suite**, which still runs
+  its original three members. Its absence is **deliberate**, not an oversight.
+  ⚠⚠ **But the comment's own wording is now misleading and should be updated.** It
+  reads *"until a successful-paste scenario joins this suite"* — and that scenario now
+  exists on `main`, so the sentence describes a missing piece that is no longer
+  missing. It reads as a roadmap. **It is not one.** Wiring the scenario in would
+  change the suite's contract and needs deciding on its own merits.
+  ⚠⚠⚠ **Recording that here is not enough.** Someone editing `--tmux` opens
+  `accept.sh`, not this file. Until that comment says the exclusion is deliberate,
+  the next reader will re-derive the wiring as an obvious to-do.
 - **`TODO.md` rows marked SHIPPED**, and the retained legacy `send_failed` /
   `forward_failed` / `kick_failed` names — deliberate records of why something changed.
 - **`POST /agents/all/envelopes` bypassing the roster check** — `all` is the
