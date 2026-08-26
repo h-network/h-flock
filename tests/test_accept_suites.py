@@ -84,6 +84,7 @@ def _shimmed_suite_root(tmp_path):
         root / "setup.sh",
         """#!/bin/sh
 answers="$(cat)"
+printf '%s\n' "$answers" >"$MATRIX_STATE/setup.answers"
 api_port="$(printf '%s\n' "$answers" | sed -n '13p')"
 printf 'API_ENABLED=1\nAPI_PORT=%s\nAPI_TOKEN=matrix-token\n' "$api_port" >container/.env
 touch "$MATRIX_STATE/created"
@@ -93,11 +94,13 @@ printf 'healthy\n'
     _executable(
         tools / "docker",
         """#!/bin/sh
+printf '%s\n' "$*" >>"$MATRIX_STATE/docker.calls"
 case "$1 $2" in
   'ps -aq') [ -f "$MATRIX_STATE/created" ] && printf 'container-id\n' ;;
   'inspect --format') printf 'healthy\n' ;;
   'exec h-flock-'*) printf 'architect\n' ;;
 esac
+case " $* " in *' down -v '*) rm -f "$MATRIX_STATE/created" ;; esac
 """,
     )
     _executable(
@@ -112,11 +115,33 @@ esac
     )
     _executable(tools / "curl", "#!/bin/sh\nprintf '200'\n")
     _executable(tools / "openssl", "#!/bin/sh\nprintf 'matrix-secret\n'\n")
-    _executable(tools / "python3", "#!/bin/sh\nexit 0\n")
+    _executable(
+        tools / "python3",
+        "#!/bin/sh\nprintf '%s\\n' \"$*\" >>\"$MATRIX_STATE/python.calls\"\nexit 0\n",
+    )
     return root, _clean_env(
         PATH=f"{tools}:{os.environ['PATH']}",
         MATRIX_STATE=str(tmp_path),
     )
+
+
+def _run_shimmed_suite(root, env, *args):
+    state = Path(env["MATRIX_STATE"])
+    for name in ("created", "setup.answers", "docker.calls", "python.calls"):
+        (state / name).unlink(missing_ok=True)
+    result = subprocess.run(
+        ["/bin/bash", "container/accept.sh", *args],
+        cwd=root,
+        env=env,
+        capture_output=True,
+        text=True,
+        timeout=10,
+    )
+    evidence = {}
+    for name in ("setup.answers", "docker.calls", "python.calls"):
+        path = state / name
+        evidence[name] = path.read_text() if path.exists() else ""
+    return result, evidence
 
 
 def _helpers():
@@ -170,7 +195,8 @@ def test_incompatible_flag_mode_pairs_refuse_before_dispatch(mode, flag, flag_fi
     args = [*flag_args, *mode_args] if flag_first else [*mode_args, *flag_args]
     result = _accept(*args)
     assert result.returncode == 2, result.stdout + result.stderr
-    assert f"accept: {flag} is incompatible" in result.stderr
+    mode_label = f"--scenario {mode}" if "--scenario" in mode_args else "selected suites"
+    assert result.stderr.strip() == f"accept: {flag} is incompatible with {mode_label}"
 
 
 @pytest.mark.parametrize("flag", ["--tenant", "--api-port", "--session-port", "--console-port",
@@ -208,18 +234,40 @@ SUITE_ALLOWED_PAIRS = [
 
 
 @pytest.mark.parametrize("mode,flag", SUITE_ALLOWED_PAIRS)
-def test_compatible_suite_pairs_get_past_parser_validation(tmp_path, mode, flag):
-    fake_docker = tmp_path / "docker"
-    fake_docker.write_text("#!/bin/sh\nprintf 'existing-project-resource\\n'\n")
-    fake_docker.chmod(0o755)
+def test_compatible_suite_pairs_change_their_harness_effect(tmp_path, mode, flag):
+    root, env = _shimmed_suite_root(tmp_path)
     mode_args, _ = MODES[mode]
-    result = _accept(
-        *mode_args, *AUXILIARY_FLAGS[flag],
-        env=_clean_env(PATH=f"{tmp_path}:{os.environ['PATH']}"),
+    baseline, before = _run_shimmed_suite(root, env, *mode_args)
+    changed, after = _run_shimmed_suite(root, env, *mode_args, *AUXILIARY_FLAGS[flag])
+    assert baseline.returncode == changed.returncode == 0, (
+        baseline.stdout + baseline.stderr + changed.stdout + changed.stderr
     )
-    assert result.returncode == 2
-    assert "is incompatible" not in result.stderr
-    assert "refusing existing compose project" in result.stderr
+
+    before_answers = before["setup.answers"].splitlines()
+    after_answers = after["setup.answers"].splitlines()
+    if flag == "--tenant":
+        assert before_answers[1] == "accept"
+        assert after_answers[1] == "matrix-tenant"
+    elif flag == "--api-port":
+        assert before_answers[12] == "8080"
+        assert after_answers[12] == "19456"
+    elif flag == "--session-port":
+        assert before_answers[13] == "8081"
+        assert after_answers[13] == "19457"
+    elif flag == "--console-port":
+        before_server = next(line for line in before["python.calls"].splitlines() if "server.py" in line)
+        after_server = next(line for line in after["python.calls"].splitlines() if "server.py" in line)
+        assert "--port 8099" in before_server
+        assert "--port 19458" in after_server
+    elif flag == "--keep":
+        assert " down -v" in before["docker.calls"]
+        assert " down -v" not in after["docker.calls"]
+        assert "kept: container=" in changed.stdout
+    elif flag == "--no-console":
+        assert "server.py" in before["python.calls"]
+        assert "server.py" not in after["python.calls"]
+    else:
+        raise AssertionError(f"missing suite effect proof for {flag}")
 
 
 @pytest.mark.parametrize(
@@ -236,14 +284,7 @@ def test_compatible_suite_pairs_get_past_parser_validation(tmp_path, mode, flag)
 )
 def test_repository_suite_invocations_still_pass_with_clean_children(tmp_path, args):
     root, env = _shimmed_suite_root(tmp_path)
-    result = subprocess.run(
-        ["/bin/bash", "container/accept.sh", *args],
-        cwd=root,
-        env=env,
-        capture_output=True,
-        text=True,
-        timeout=10,
-    )
+    result, _ = _run_shimmed_suite(root, env, *args)
     assert result.returncode == 0, result.stdout + result.stderr
 
 

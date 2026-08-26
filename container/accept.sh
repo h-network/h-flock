@@ -135,7 +135,9 @@ done
   exit 2
 }
 
-reject_flag() { echo "accept: $1 is incompatible with ${SCENARIO:+--scenario $SCENARIO}${SCENARIO:-selected suites}" >&2; exit 2; }
+MODE_LABEL="selected suites"
+[ -n "$SCENARIO" ] && MODE_LABEL="--scenario $SCENARIO"
+reject_flag() { echo "accept: $1 is incompatible with $MODE_LABEL" >&2; exit 2; }
 if [ -n "$SCENARIO" ]; then
   [ "$SUITE_SELECTED" = 0 ] || reject_flag "suite selector"
   [ "$USED_SESSION_PORT" = 0 ] || reject_flag --session-port
