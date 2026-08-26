@@ -203,8 +203,11 @@ def _profiles_command(argv: list[str]) -> None:
     configured = available_profiles(r, pod=pod, tenant=tenant)
     assignments: dict[str, list[str]] = {}
     implicit_default: list[str] = []
+    excluded: list[str] = []
     for agent in sorted(members(r, pod=pod, tenant=tenant)):
-        if port_type(r, pod=pod, tenant=tenant, agent=agent) != "tmux":
+        agent_port_type = port_type(r, pod=pod, tenant=tenant, agent=agent)
+        if agent_port_type != "tmux":
+            excluded.append(f"{agent} ({agent_port_type or 'unknown'})")
             continue
         profile = _text(r.get(prefix(pod, tenant, agent=agent, resource="profile")))
         account = profile or "default"
@@ -216,6 +219,8 @@ def _profiles_command(argv: list[str]) -> None:
         print("configured accounts: unknown (legacy tenant has no canonical account registry)")
         account_names = sorted(assignments)
     else:
+        # available_profiles maps an absent or empty Redis set to None, so a
+        # present registry is necessarily non-empty here.
         print(f"configured accounts: {', '.join(configured)}")
         account_names = sorted(set(configured) | set(assignments))
 
@@ -228,6 +233,8 @@ def _profiles_command(argv: list[str]) -> None:
         print(f"  {label}: {users}")
     implicit = ", ".join(implicit_default) or "(none)"
     print(f"agents using default because no profile is set: {implicit}")
+    excluded_text = ", ".join(excluded) or "(none)"
+    print(f"members without CLI accounts ({len(excluded)}): {excluded_text}")
 
 
 def _timestamp(value) -> datetime | None:

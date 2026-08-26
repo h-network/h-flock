@@ -269,10 +269,11 @@ def test_profiles_lists_configured_accounts_and_tmux_users(office_env, capsys):
         "  unused: (no agents)",
         "  work: backend",
         "agents using default because no profile is set: frontend",
+        "members without CLI accounts (2): api (api), host (control)",
     ]
 
 
-def test_profiles_preserves_unknown_legacy_registry_and_observed_assignments(
+def test_profiles_preserves_unknown_for_empty_or_legacy_registry_and_lists_exclusions(
     office_env, capsys,
 ):
     office_env.values[prefix("acme", "hq", agent="backend", resource="profile")] = "legacy"
@@ -285,6 +286,7 @@ def test_profiles_preserves_unknown_legacy_registry_and_observed_assignments(
         "  default: frontend",
         "  legacy: backend",
         "agents using default because no profile is set: frontend",
+        "members without CLI accounts (2): api (api), host (control)",
     ]
 
 
