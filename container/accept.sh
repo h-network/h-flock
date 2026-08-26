@@ -70,7 +70,9 @@ set -uo pipefail
 TENANT="${TENANT:-}"
 TENANT_EXPLICIT=0
 [ -n "$TENANT" ] && TENANT_EXPLICIT=1
-API_PORT=8080
+API_PORT="${API_PORT:-}"
+API_PORT_EXPLICIT=0
+[ -n "$API_PORT" ] && API_PORT_EXPLICIT=1
 SESSION_PORT=8081
 CONSOLE_PORT=8099
 KEEP=0
@@ -83,7 +85,7 @@ ANALYSER_ARGS=()
 while [ $# -gt 0 ]; do
   case "$1" in
     --tenant) TENANT="$2"; TENANT_EXPLICIT=1; shift 2 ;;
-    --api-port) API_PORT="$2"; shift 2 ;;
+    --api-port) API_PORT="$2"; API_PORT_EXPLICIT=1; shift 2 ;;
     --session-port) SESSION_PORT="$2"; shift 2 ;;
     --console-port) CONSOLE_PORT="$2"; shift 2 ;;
     --keep) KEEP=1; shift ;;
@@ -101,6 +103,7 @@ while [ $# -gt 0 ]; do
   esac
 done
 [ -n "$TENANT" ] || TENANT="accept"
+[ -n "$API_PORT" ] || API_PORT=8080
 
 # Bare invocation is the common case: is the framework healthy.
 SUITES="${SUITES:-}"; [ -n "${SUITES// /}" ] || SUITES="core"
@@ -124,9 +127,14 @@ if [ -n "$SCENARIO" ]; then
     analyse-v4-aof)
       [ -n "$AOF_DIR" ] || { echo "RESULT analyse-v4-aof incomplete reason=missing_argument" >&2; exit 100; }
       exec python3 container/scenarios/analyse-v4-aof.py "$AOF_DIR" ;;
-    tmux-boundary|tmux-concurrent-hire)
+    tmux-boundary)
       [ "$TENANT_EXPLICIT" = 1 ] || { echo "RESULT $SCENARIO incomplete reason=tenant_required" >&2; exit 100; }
-      export TENANT
+      export TENANT API_PORT
+      exec bash "container/scenarios/${SCENARIO}.sh" ;;
+    tmux-concurrent-hire|tmux-window-loss)
+      [ "$TENANT_EXPLICIT" = 1 ] || { echo "RESULT $SCENARIO incomplete reason=tenant_required" >&2; exit 100; }
+      [ "$API_PORT_EXPLICIT" = 1 ] || { echo "RESULT $SCENARIO incomplete reason=api_port_required" >&2; exit 100; }
+      export TENANT API_PORT
       exec bash "container/scenarios/${SCENARIO}.sh" ;;
     *) echo "accept: unknown scenario '$SCENARIO'" >&2; exit 2 ;;
   esac
