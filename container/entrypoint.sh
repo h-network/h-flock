@@ -370,9 +370,14 @@ fi
 start session env API_TOKEN="$api_token" python3 -m flock.session
 
 # ── bundled clients ───────────────────────────────────────────────────────────
-# Bundled clients (Telegram bot, web console) run inside the tenant reaching the
-# local REST API on 127.0.0.1:8080. They start only when configured, and a client
-# failure does not take down the tenant.
+# The Telegram bot is the one bundled client: unattended, so it belongs in the
+# tenant, reaching the local REST API on 127.0.0.1:8080. It starts only when
+# configured, and a client failure does not take down the tenant.
+#
+# clients/web is deliberately NOT started here — it is an operator tool with
+# its own security boundary (shared secret, TLS, audit log) that a human starts
+# deliberately, not a background process with a safe unattended default
+# (docs/SPEC-bundled-clients-and-exposure.md).
 if [ -n "${TELEGRAM_BOT_TOKEN:-}" ]; then
   if [ "${API_ENABLED:-0}" = "0" ]; then
     jlog '{"module":"container","writer":"container","event":"client_skipped","reason":"telegram configured but API_ENABLED is 0"}'
