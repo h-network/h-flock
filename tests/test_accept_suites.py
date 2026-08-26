@@ -83,6 +83,16 @@ def test_paste_negative_control_reaches_scenario(tmp_path):
     assert result.stdout == "args=container/scenarios/tmux-paste-delivery.sh --break-delivery\n"
 
 
+def test_paste_negative_control_cannot_be_silently_mistargeted():
+    for command in (
+        ["/bin/bash", str(ACCEPT), "--break-delivery"],
+        ["/bin/bash", str(ACCEPT), "--scenario", "analyse-verification", "--log", "/dev/null", "--break-delivery"],
+    ):
+        result = subprocess.run(command, capture_output=True, text=True)
+        assert result.returncode == 2
+        assert "--break-delivery requires --scenario tmux-paste-delivery" in result.stderr
+
+
 def test_a_silent_failure_is_not_recorded_as_a_pass(tmp_path):
     """The regression that matters: a scenario that fails while printing nothing
     the filter matches must still be recorded as a failure."""

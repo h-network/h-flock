@@ -117,6 +117,10 @@ while [ $# -gt 0 ]; do
     *) echo "accept: unknown argument '$1'" >&2; exit 2 ;;
   esac
 done
+[ "${#SCENARIO_ARGS[@]}" -eq 0 ] || [ "$SCENARIO" = tmux-paste-delivery ] || {
+  echo "accept: --break-delivery requires --scenario tmux-paste-delivery" >&2
+  exit 2
+}
 [ -n "$TENANT" ] || TENANT="accept"
 [ -n "$API_PORT" ] || API_PORT=8080
 
