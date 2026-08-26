@@ -17,9 +17,11 @@ def summarize(
     source: str,
     destinations: list[str],
     marked_destinations: list[str] | None = None,
+    previously_observed: list[str] | None = None,
 ) -> dict:
     destination_set = set(destinations)
     marked_destination_set = set(marked_destinations or [])
+    observed_destination_set = set(previously_observed or []) & destination_set
     records: list[dict] = []
     parse_failures = 0
     with path.open(encoding="utf-8", errors="replace") as handle:
@@ -62,13 +64,14 @@ def summarize(
             "dead_lettered": len(dead),
         }
 
-    observed_destinations = sorted(
+    observed_destination_set.update(
         destination for destination, result in by_destination.items()
         if result["opened_stream_ids"] and destination in marked_destination_set
     )
+    observed_destinations = sorted(observed_destination_set)
     pane_disagreements = sorted(
         destination for destination, result in by_destination.items()
-        if result["opened_stream_ids"] and destination not in marked_destination_set
+        if result["opened_stream_ids"] and destination not in observed_destination_set
     )
     return {
         "parse_failures": parse_failures,
@@ -89,9 +92,11 @@ def main() -> int:
     parser.add_argument("--source", required=True)
     parser.add_argument("--destination", action="append", required=True)
     parser.add_argument("--marked-destination", action="append", default=[])
+    parser.add_argument("--previously-observed", action="append", default=[])
     args = parser.parse_args()
     print(json.dumps(summarize(
-        args.log, args.after_line, args.source, args.destination, args.marked_destination
+        args.log, args.after_line, args.source, args.destination,
+        args.marked_destination, args.previously_observed
     ), separators=(",", ":")))
     return 0
 

@@ -135,6 +135,26 @@ def test_opened_without_pane_marker_is_a_named_log_disagreement(tmp_path):
     assert summary["pane_disagreements"] == ["sme-1"]
 
 
+def test_observed_destinations_stay_sticky_after_markers_scroll_away(tmp_path):
+    log = tmp_path / "custody.log"
+    rows = []
+    for destination in ("sme-1", "sme-2"):
+        rows.extend({
+            "event": event, "stream_id": destination, "source": "architect",
+            "destination": destination,
+        } for event in ("sent", "opened"))
+    log.write_text("\n".join(json.dumps(row) for row in rows) + "\n")
+    result = subprocess.run(
+        ["python3", str(JUDGE), str(log), "--source", "architect",
+         "--destination", "sme-1", "--destination", "sme-2",
+         "--previously-observed", "sme-1", "--marked-destination", "sme-2"],
+        capture_output=True, text=True, check=True,
+    )
+    summary = json.loads(result.stdout)
+    assert summary["observed_destinations"] == ["sme-1", "sme-2"]
+    assert summary["pane_disagreements"] == []
+
+
 def test_custody_summary_counts_unreadable_json_in_the_run(tmp_path):
     log = tmp_path / "custody.log"
     log.write_text('{"event":"sent"\n')

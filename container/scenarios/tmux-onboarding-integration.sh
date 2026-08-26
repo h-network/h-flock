@@ -362,6 +362,7 @@ PROMPT_STREAM_ID="$(printf '%s\n' "$send_output" | sed -n 's/^STREAM_ID=//p' | t
 
 deadline=$((SECONDS + ONBOARD_TIMEOUT))
 OBSERVED=0
+OBSERVED_DESTINATIONS=()
 PANE_DISAGREEMENTS=()
 observe_onboarding() {
   docker logs "$CONTAINER" >"$WORK/container.log" 2>&1 || onboarding_incomplete custody_unavailable
@@ -378,14 +379,23 @@ print(dead)
 PY
 )"
   [ "$prompt_dead" = 0 ] || onboarding_fail "$prompt_dead" prompt_dead_lettered
-  local marked_args=() sme pane
+  local marked_args=() previous_args=() sme pane previously_seen observed_sme
   for sme in "${SME_LIST[@]}"; do
+    previously_seen=0
+    for observed_sme in "${OBSERVED_DESTINATIONS[@]}"; do
+      [ "$observed_sme" = "$sme" ] && previously_seen=1
+    done
+    if [ "$previously_seen" = 1 ]; then
+      previous_args+=(--previously-observed "$sme")
+      continue
+    fi
     pane="$("${TMUX[@]}" capture-pane -p -J -t "${TENANT}:${sme}" -S - 2>/dev/null || true)"
     case "$pane" in *"$marker"*) marked_args+=(--marked-destination "$sme");; esac
   done
   RUN_SUMMARY="$(python3 container/scenarios/onboarding-custody.py "$WORK/container.log" \
     --after-line "$LOG_CURSOR" --source "$ARCHITECT" \
-    --destination "${SME_LIST[0]}" --destination "${SME_LIST[1]}" "${marked_args[@]}")" \
+    --destination "${SME_LIST[0]}" --destination "${SME_LIST[1]}" \
+    "${marked_args[@]}" "${previous_args[@]}")" \
     || onboarding_incomplete custody_unreadable
   parse_failures="$(python3 -c 'import json,sys;print(json.load(sys.stdin)["parse_failures"])' <<<"$RUN_SUMMARY")"
   [ "$parse_failures" = 0 ] || onboarding_incomplete malformed_custody_json
@@ -394,7 +404,8 @@ PY
   dead_count="$(python3 -c 'import json,sys;print(len(json.load(sys.stdin)["dead_stream_ids"]))' <<<"$RUN_SUMMARY")"
   [ "$dead_count" = 0 ] || onboarding_fail "$dead_count" onboarding_dead_lettered
 
-  OBSERVED="$(python3 -c 'import json,sys;print(len(json.load(sys.stdin)["observed_destinations"]))' <<<"$RUN_SUMMARY")"
+  mapfile -t OBSERVED_DESTINATIONS < <(python3 -c 'import json,sys;print("\n".join(json.load(sys.stdin)["observed_destinations"]))' <<<"$RUN_SUMMARY")
+  OBSERVED="${#OBSERVED_DESTINATIONS[@]}"
   mapfile -t PANE_DISAGREEMENTS < <(python3 -c 'import json,sys;print("\n".join(json.load(sys.stdin)["pane_disagreements"]))' <<<"$RUN_SUMMARY")
 }
 
@@ -415,6 +426,16 @@ observe_onboarding
 if [ "$OBSERVED" = 2 ]; then
   echo "ONBOARDING pass"
   exit 0
+fi
+if [ "${#PANE_DISAGREEMENTS[@]}" -gt 0 ]; then
+  # Reserve one bounded last look for the strongest verdict. Ordinary silence
+  # gets no deadline extension; only an apparent log/pane contradiction does.
+  sleep 1
+  observe_onboarding
+  if [ "$OBSERVED" = 2 ]; then
+    echo "ONBOARDING pass"
+    exit 0
+  fi
 fi
 if [ "${#PANE_DISAGREEMENTS[@]}" -gt 0 ]; then
   disagreement_smes="$(IFS=,; echo "${PANE_DISAGREEMENTS[*]}")"
