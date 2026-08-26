@@ -503,7 +503,7 @@ office send --agent=<destination> "<text>"
 office send -a <destination> -- --<leading-dash-body>
 office broadcast <text>...              # tenant broadcast, everyone but you
 office hire <agent> [--cli claude|codex|agy] [--profile <account>]
-office peers | letGo | let-go | pause | resume
+office peers | profiles | letGo | let-go | pause | resume
 office add | list | take | done | cancel | hold | delete
 office status [<agent>]                 # presence, open ticket, last activity
 office cloneToAll <repo-url> [-a a,b] [--dry-run]
@@ -511,10 +511,11 @@ office clone-to-all <repo-url> [-a a,b] [--dry-run]
 office usage [--agent <a>] [--since <ISO>] [--json]
 ```
 
-⚠ **Nineteen command names (including kebab-case aliases `let-go` and `clone-to-all`), and this block listed fifteen until 2026-08-22.**
-`cloneToAll` and `usage` were both shipped and both absent here. The list in
-`office/cli.py:_COMMANDS` is the authority; if the two disagree, the code is
-right and this is the stale one.
+⚠ **Twenty command names (including kebab-case aliases `let-go` and
+`clone-to-all`), and this block listed nineteen — missing `profiles` — until
+2026-08-26.** Before that it listed fifteen until 2026-08-22, missing
+`cloneToAll` and `usage`. The list in `office/cli.py:_COMMANDS` is the
+authority; if the two disagree, the code is right and this is the stale one.
 
 - **`send`** delivers a message to one agent. The body is exactly one quoted
   argument, `--stdin` (body read from standard input; empty stdin is refused), or
