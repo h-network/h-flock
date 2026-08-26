@@ -1,9 +1,15 @@
 import os
+import signal
 import sys
 from flock.port.deliver import run_port
 
 
 def main() -> None:
+    # The switch ignores SIGCHLD so its fire-and-forget port children are
+    # reaped by the kernel.  An ignored disposition survives exec, but a port
+    # must wait for its own tmux clients and observe their real exit statuses.
+    signal.signal(signal.SIGCHLD, signal.SIG_DFL)
+
     if len(sys.argv) < 2:
         sys.stderr.write("Usage: flock.port <agent>\n")
         sys.exit(1)
