@@ -7,14 +7,14 @@
 #
 # --scenario analyse-run --log PATH [--expect-writer NAME=COUNT],
 # --scenario analyse-verification --log PATH, and --scenario analyse-v4-aof
-# --aof-dir DIR run standalone analysers; tmux-boundary and tmux-concurrent-hire
-# run one terminal scenario. Core console emits RESULT console-ready and
+# --aof-dir DIR run standalone analysers; tmux-boundary, tmux-concurrent-hire,
+# and tmux-window-loss run one terminal scenario. Core console emits RESULT console-ready and
 # RESULT console-flow as separate gates.
 #
 # Installs a tenant the way a person would, waits for it to be healthy, runs the
 # selected suites against it, and tears it down.
 #
-# SUITES — bare `accept.sh` is `--core`. They compose: `--core --fault`.
+# SUITES — bare `accept.sh` is `--core`. They compose: `--core --tmux`.
 #
 #   --core    plumbing check · failure simulator · packet switching ·
 #             payload and ack · console            (the framework works)
@@ -22,7 +22,19 @@
 #             partial control damage               (it fails honestly)
 #   --api     token auth and limits · concurrency and time ·
 #             session and log privacy              (the door behaves)
+#   --tmux    credential boundary · concurrent hire · window loss
+#             Requires real agents in real panes and the REST API door. It is
+#             deliberately limited to the three verified scenarios below.
 #   --all     every suite above
+#
+# EXCLUDED: tmux-nemotron is manual integration only. bus-* scenarios belong
+# under conservation/fault, never --tmux.
+#
+# LIMIT: these three members do NOT exercise a successful paste_text.
+# tmux-window-loss targets a missing window, tmux-boundary sends nothing, and
+# tmux-concurrent-hire uses the control-plane opener. Until a successful-paste
+# scenario joins this suite, it does not exercise delivery_unverified and does
+# not run analyse-verification.
 #
 # ⚠ EXIT CODES, so a caller never has to read the prose:
 #   0    every selected suite passed
@@ -93,7 +105,8 @@ while [ $# -gt 0 ]; do
     --core) SUITES="$SUITES core"; shift ;;
     --fault) SUITES="$SUITES fault"; shift ;;
     --api) SUITES="$SUITES api"; shift ;;
-    --all) SUITES="core fault api"; shift ;;
+    --tmux) SUITES="$SUITES tmux"; shift ;;
+    --all) SUITES="core fault api tmux"; shift ;;
     --scenario) SCENARIO="$2"; shift 2 ;;
     --log) ANALYSER_LOG="$2"; shift 2 ;;
     --aof-dir) AOF_DIR="$2"; shift 2 ;;
@@ -177,7 +190,7 @@ run_scenario() {                 # run_scenario <name> <script> [args...]
   # printing at the end made a multi-minute step indistinguishable from a hang,
   # and someone killed a working run because of it. A test bed that goes quiet
   # for minutes teaches people to interrupt it.
-  POD=acme TENANT="$TENANT" CONTAINER="$CONTAINER" bash "$script" "$@" 2>&1 \
+  POD=acme TENANT="$TENANT" CONTAINER="$CONTAINER" API_PORT="$API_PORT" bash "$script" "$@" 2>&1 \
     | grep --line-buffered -E "^RESULT|_RESULT |^==|FAIL|PASS="
   record "$name" "${PIPESTATUS[0]}"
 }
@@ -423,6 +436,21 @@ if has_suite api; then
 
   step "api — session and log privacy"
   run_scenario "api-privacy" container/scenarios/api-session-and-log-privacy.sh
+fi
+
+if has_suite tmux; then
+  # Unlike the API-type synthetic participants used by the other suites, these
+  # scenarios require real processes in real panes. setup.sh above creates the
+  # architect and sme-2 panes; tenant and API port are threaded explicitly by
+  # run_scenario so no scenario can fall through to a coincidental default.
+  step "tmux — credential boundary"
+  WRITER=architect READER=sme-2 run_scenario "tmux-boundary" container/scenarios/tmux-boundary.sh
+
+  step "tmux — concurrent hire"
+  run_scenario "tmux-concurrent-hire" container/scenarios/tmux-concurrent-hire.sh
+
+  step "tmux — observable window loss and recovery"
+  AGENT=sme-2 run_scenario "tmux-window-loss" container/scenarios/tmux-window-loss.sh
 fi
 
 
