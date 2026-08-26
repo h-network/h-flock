@@ -30,12 +30,11 @@ Each of these does more than go stale — it routes a reader somewhere specific.
 | `API.md:53` | Promises `correlation_id` is propagated from the request. `api/app.py:651` **mints unconditionally**. External clients will build threading on it and only find out on multi-turn replies. |
 | `LLD-watchdog.md:88-102` | Says the switch owns and writes `blocked`. **Contradicted by the same file's invariant 4 at 234-238** and by `watchdog/verification.py:118-125`. |
 | `LLD-watchdog.md:217` | Says `WATCHDOG_ENABLED=0` exits the process. It keeps the tailer, sampler and verifier running and silences alerting only. `CONTRACTS.md:956` already states this correctly. |
-| `LLD-port-tmux.md` §4 | Treats CLI **session-file activity** as verification evidence. The section is explicit that verification never reads the pane, so the defect is the evidence it *does* rely on, not a pane claim — activity near a delivery is not receipt of it. |
-| `README.md` | Quick start describes setup prompts that no longer exist; test badge and command list predate recent work. |
-| `CHANGELOG.md` | Declares that every external contract change belongs in it, and stops before the most recent ones. |
+| `README.md` | Quick start describes setup prompts that no longer exist and states **setup does not start Telegram**, which it now does; the test badge and the agent command list omit `office profiles`. |
+| `CHANGELOG.md` | Declares every external contract change belongs in it, then omits **`office profiles`** and the **bundled-client / explicit-publication** contract — so a downstream reader cannot discover what those changes invalidated. |
 | `GLOSSARY.md` | Defines `agent`, `port_type`, `provider`, `launch`, `board`, `host` — and is **silent on `profile` and `account`**, whose meaning is settled in `TODO.md` prose. |
 | `HLD.md` | Silent on the multi-account/profile mechanism and on the explicit-exposure decision tree. |
-| `SPEC-bundled-clients-and-exposure.md:30` | Says both bundled clients run in-tenant; `container/entrypoint.sh` starts one. |
+| `SPEC-bundled-clients-and-exposure.md:30` | Says both bundled clients run in-tenant; `container/entrypoint.sh` starts **only Telegram**. Also owned by no lane. |
 | `SPEC-onboarding-integration.md:75, 96` | Says Phase 2 "never fails" while dead-letters fail; promises every fail carries `failed=N` while the `rc6` category form deliberately carries none. |
 
 ## ⚠⚠⚠ Looks wrong. Is not. Do not "fix" these.
@@ -70,6 +69,13 @@ Each of these does more than go stale — it routes a reader somewhere specific.
 - **`GET /agents/{agent}/messages` returning 404 for tmux agents** — mailboxes exist
   only for `port_type: api` clients, which have nowhere else to receive. A tmux
   agent's messages go to its pane. The 404 is the contract, not a regression.
+- **`LLD-port-tmux.md` §4's activity-based verification** — it compares
+  `pending.verify` against CLI **session-file activity**, and activity near a delivery
+  is not receipt of it. That reads as a hole, but the section says explicitly that
+  verification never reads the pane and that a rendered pane is not a data source, and
+  `verification.py:111-139` **admits activity can false-positive**. The limitation is
+  documented, not hidden. ⚠ Whether activity is *sufficient* evidence is a real open
+  question — but the document is honest about what it relies on.
 - **The profile-login `TODO` row** — stays open. `office profiles` shipping does not
   close it; they are different things.
 
@@ -79,10 +85,12 @@ Each of these does more than go stale — it routes a reader somewhere specific.
 
 1. **Near misses do not fail**, so the count grows unnoticed. It moved by six in a
    single day while every run printed it.
-2. **It only sees doc→code citations.** It anchors on a code symbol near the cited
-   line, so a doc→doc citation has nothing to anchor on. One file carries 25 such
-   citations and the checker reports nothing for it. **The real drift is larger than
-   the number.**
+2. **It checks that a line exists, not that the line still says what is claimed.**
+   Paths and line ranges are hard-checked for doc targets as well as code — a citation
+   past end of file fails. But NEAR/semantic drift needs a backticked symbol to anchor
+   on, so a citation pointing at a valid line whose *content* has moved on is invisible.
+   One file carries 25 doc citations and reports nothing. **The real drift is larger
+   than the number.**
 3. **Do not bulk-renumber.** A mass rewrite restores line numbers while losing the
    check that each citation still *describes* what it claims — taking the counter green
    and leaving the drift. Some files are pure line drift and safe to renumber; the only
@@ -97,6 +105,7 @@ stdin that never received it and exited zero anyway. A compose file that could n
 load while the test suite passed.
 
 ⚠ **A green test count meant nothing in each case, because nothing in CI parsed the
-compose file, drove the setup prompts, or checked doc-to-doc citations.** A suite
+compose file, drove the setup prompts, or checked whether a cited line still says
+what the citation claims.** A suite
 proves only what it touches — and the useful question is not whether it passes, but
 what it never looks at.
