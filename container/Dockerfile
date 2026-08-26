@@ -42,6 +42,7 @@ RUN python3 -m venv "$VIRTUAL_ENV"
 WORKDIR /app
 COPY pyproject.toml ./
 COPY src/ ./src/
+COPY clients/ ./clients/
 RUN pip install --no-cache-dir .
 
 # ⚠ CLI defaults and first-run gates for claude and codex come from the BASE
@@ -57,7 +58,7 @@ RUN pip install --no-cache-dir .
 COPY container/config/pricing.json         /app/container/config/pricing.json
 RUN mkdir -p /etc/flock \
  && cp /app/container/config/pricing.json /etc/flock/pricing.json \
- && chown -R ubuntu:ubuntu /home/ubuntu/.claude /home/ubuntu/.codex /app/container /etc/flock
+ && chown -R ubuntu:ubuntu /home/ubuntu/.claude /home/ubuntu/.codex /app/container /app/clients /etc/flock
 
 COPY container/entrypoint.sh /usr/local/bin/entrypoint.sh
 RUN chmod +x /usr/local/bin/entrypoint.sh

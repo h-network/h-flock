@@ -38,8 +38,10 @@ cleanup() {
   fi
   if [ "$CREATED_PROJECT" = "$PROJECT" ]; then
     echo "FAULT_INJECTION_TEARDOWN project=$CREATED_PROJECT"
+    . container/flock-compose.sh 2>/dev/null || true
+    flock_compose_args
     docker compose -p "$CREATED_PROJECT" --env-file container/.env \
-      -f container/compose.yaml down -v >/dev/null
+      "${FLOCK_COMPOSE_ARGS[@]}" down -v >/dev/null
   fi
 }
 trap cleanup EXIT INT TERM
@@ -77,8 +79,10 @@ TOKEN="$(openssl rand -hex 16)"
   echo "INGRESS_MAX=300"
 } > container/.env
 chmod 600 container/.env
+. container/flock-compose.sh 2>/dev/null || true
+flock_compose_args
 docker compose -p "$PROJECT" --env-file container/.env \
-  -f container/compose.yaml up -d ${BUILD_FLAG} >"$WORK/setup.log" 2>&1
+  "${FLOCK_COMPOSE_ARGS[@]}" up -d ${BUILD_FLAG} >"$WORK/setup.log" 2>&1
 accept_rc=$?
 # We proved absence immediately before invoking accept.sh. If its project now
 # exists, this invocation created it even when a later acceptance gate failed;

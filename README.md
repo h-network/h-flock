@@ -347,9 +347,10 @@ at boot, so copying into a *running* tenant is too late. Create, copy, then
 start:
 
 ```bash
-docker compose -p h-flock-<tenant> --env-file container/.env -f container/compose.yaml create
+. container/flock-compose.sh && flock_compose_args
+docker compose -p h-flock-<tenant> --env-file container/.env "${FLOCK_COMPOSE_ARGS[@]}" create
 docker cp /path/to/certs <container>:/home/ubuntu/tlscerts
-docker compose -p h-flock-<tenant> --env-file container/.env -f container/compose.yaml start
+docker compose -p h-flock-<tenant> --env-file container/.env "${FLOCK_COMPOSE_ARGS[@]}" start
 ```
 
 **Verified end to end:** TLS 1.3 on both doors, `200` with a token and `401`

@@ -22,7 +22,9 @@ mkdir -p "$WORK"
 cleanup() {
   if [ "$CREATED_PROJECT" = "$PROJECT" ]; then
     echo "PARTIAL_CONTROL_TEARDOWN project=$CREATED_PROJECT"
-    docker compose -p "$CREATED_PROJECT" --env-file container/.env -f container/compose.yaml down -v >/dev/null
+    . container/flock-compose.sh 2>/dev/null || true
+    flock_compose_args
+    docker compose -p "$CREATED_PROJECT" --env-file container/.env "${FLOCK_COMPOSE_ARGS[@]}" down -v >/dev/null
   fi
 }
 trap cleanup EXIT INT TERM
@@ -38,7 +40,9 @@ TOKEN="$(openssl rand -hex 16)"
   echo "VERIFY_AFTER_SECONDS=120"; echo "INGRESS_MAX=300"
 } > container/.env
 chmod 600 container/.env
-docker compose -p "$PROJECT" --env-file container/.env -f container/compose.yaml up -d ${BUILD_FLAG} >"$WORK/setup.log" 2>&1
+. container/flock-compose.sh 2>/dev/null || true
+flock_compose_args
+docker compose -p "$PROJECT" --env-file container/.env "${FLOCK_COMPOSE_ARGS[@]}" up -d ${BUILD_FLAG} >"$WORK/setup.log" 2>&1
 up_rc=$?
 if [ -n "$({ docker ps -aq --filter "label=com.docker.compose.project=$PROJECT"; docker network ls -q --filter "label=com.docker.compose.project=$PROJECT"; docker volume ls -q --filter "label=com.docker.compose.project=$PROJECT"; } 2>/dev/null | head -1)" ]; then CREATED_PROJECT="$PROJECT"; fi
 if [ "$up_rc" -ne 0 ] || [ "$CREATED_PROJECT" != "$PROJECT" ]; then echo "REFUSED: disposable tenant creation failed rc=$up_rc" >&2; exit 2; fi

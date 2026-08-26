@@ -354,6 +354,7 @@ def test_keep_zero_captures_evidence_before_owned_project_teardown(tmp_path, pro
     shutil.copy2(JUDGE, repo / "container/scenarios/onboarding-custody.py")
     shutil.copy2(ROOT / "container/compose.yaml", repo / "container/compose.yaml")
     shutil.copy2(ROOT / "container/flock-image.sh", repo / "container/flock-image.sh")
+    shutil.copy2(ROOT / "container/flock-compose.sh", repo / "container/flock-compose.sh")
     tools = tmp_path / "tools"
     tools.mkdir()
     calls = tmp_path / "docker.calls"
