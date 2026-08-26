@@ -377,6 +377,24 @@ EXCLUDED   no readable DANGEROUS input exercised
 verdict    PASS          ← the exclusion CONTAINS the claim
 ```
 
+**Build 124 is the configuration-file version of the same error.** Commit
+`47c34eb` had 832 passing tests. They faithfully exercised the Python surface,
+the bundled-client and entrypoint/setup source contracts, and a constructed
+three-state YAML test. That test replaced `${PORTS:-[]}` with a YAML flow
+sequence **before** calling `yaml.safe_load`; no test invoked Docker Compose.
+Real Compose does the structural YAML parse first and interpolates the resulting
+scalar value afterwards, so interpolation cannot turn that scalar into the
+`ports` array required by the schema. On h-oracle, `docker compose config`
+returned rc 1 for PORTS unset, shell-exported, and read from `container/.env`:
+`services.tenant.ports must be a array`.
+
+⚠ **The 832 tests did not lie; the claim exceeded what they touched.** A claim
+that a Compose file loads needs the Compose parser. Hand-substituting text and
+then parsing it models a different operation and is not a control for that
+claim. Name native configuration parsers under `EXCLUDED` whenever they did not
+run; if loading the configuration is part of the claim, the verdict is
+`REFUSED` until one does.
+
 ⚠ **2. A control must mutate the property, and fail where it should.**
 
 That same counter-example had a control that genuinely failed — in
