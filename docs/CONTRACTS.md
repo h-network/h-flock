@@ -191,7 +191,8 @@ every profiled agent sat at a picker, unreachable, reading as `idle`.
 
 def paste_text(session_name: str, agent_name: str, text: str,
                stream_id: str = "", socket: str | None = None) -> None
-    # load-buffer → paste-buffer -p → delay → Enter → delete-buffer
+    # load-buffer → paste-buffer -p -d → delay → Enter
+    # failures get a best-effort delete; -d deletes on the successful path
     # the sequence in LLD-port-tmux §4, in one place
     # any non-zero tmux result raises TmuxCommandError; normal return means the
     # complete paste sequence succeeded

@@ -14,20 +14,62 @@ from flock.bus import DeadLetter, build as build_envelope, encode, parse, prefix
 
 @patch("flock.port.openers.list_windows")
 @patch("flock.tmux.ops.run_tmux")
-def test_message_opener_window_exists(mock_run_tmux, mock_list_windows):
+def test_message_opener_window_exists(mock_run_tmux, mock_list_windows, capsys):
     mock_list_windows.return_value = {"alice", "bob"}
-    mock_run_tmux.return_value = (0, "", "")
+    buffer_present = False
+
+    def stateful_tmux(*args, **kwargs):
+        nonlocal buffer_present
+        if args[0] == "load-buffer":
+            buffer_present = True
+            return 0, "", ""
+        if args[0] == "paste-buffer":
+            assert buffer_present
+            assert "-d" in args
+            buffer_present = False
+            return 0, "", ""
+        if args[0] == "delete-buffer":
+            if not buffer_present:
+                return 1, "", "unknown buffer"
+            buffer_present = False
+        return 0, "", ""
+
+    mock_run_tmux.side_effect = stateful_tmux
 
     r = FakeRespRedis()
     env = build_envelope(kind="Message", source="alice", destination="bob", payload={"text": "hello"})
+    ingress_key = prefix("acme", "hq", agent="bob", resource="ingress")
+    r.rpush(ingress_key, encode(env))
 
-    message_opener(r, pod="acme", tenant="hq", agent="bob", envelope=env, session_name="hq")
+    receive(
+        r,
+        pod="acme",
+        tenant="hq",
+        agent="bob",
+        openers={
+            "Message": lambda envelope: message_opener(
+                r,
+                pod="acme",
+                tenant="hq",
+                agent="bob",
+                envelope=envelope,
+                session_name="hq",
+            )
+        },
+        timeout=0,
+        blocking=False,
+    )
 
     cmd_args = [call[0] for call in mock_run_tmux.call_args_list]
     assert any("load-buffer" in cmd for cmd in cmd_args)
     assert any("paste-buffer" in cmd for cmd in cmd_args)
     assert any("send-keys" in cmd for cmd in cmd_args)
-    assert any("delete-buffer" in cmd for cmd in cmd_args)
+    assert not any("delete-buffer" in cmd for cmd in cmd_args)
+    assert not buffer_present
+    assert [json.loads(line)["event"] for line in capsys.readouterr().out.splitlines()] == [
+        "received",
+        "opened",
+    ]
 
     load_buffer_calls = [call for call in mock_run_tmux.call_args_list if "load-buffer" in call[0]]
     assert len(load_buffer_calls) == 1
