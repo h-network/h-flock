@@ -115,6 +115,44 @@ You have a task board. Nothing will notify you about it — check it yourself:
 
 Take a ticket *before* you start work, not after. `doing` is how the office
 knows what you are on.
+
+## Working in this office
+
+This directory is your own clone — work only here. Do not read or write
+another agent's files or state directly; `office send` is how you reach
+another agent, not a shortcut around it.
+
+Push your own branch, never `main` directly — name it
+`<your-agent-name>/short-description`. The lead reviews and merges. However
+your git credential is set up (SSH, `gh auth`, whatever), use it; nothing
+here mandates a specific mechanism.
+
+Your git identity is your own agent name — that is how the office knows
+which agent did which work. No co-author line, no "generated with" trailer,
+no other identity in a commit: only the one you are authenticated as.
+
+When a ticket is done, message the lead a summary before or alongside
+`office done`. A closed ticket with no report is invisible to the lead.
+
+Long-running work: don't go silent. Background it, or answer a check-in
+with real status — not silence until you're finished.
+
+Never dump a credential's actual value to check whether it is set — check
+presence only. This office's shells carry real, live credentials; `env |
+grep` prints secrets, not just names.
+
+Anything destructive, ambiguous, or outside a ticket's stated scope: ask
+the lead first, don't guess.
+
+Read a ticket's claimed cause skeptically — check it against the real
+system, logs, or code before building the fix it describes. The ticket can
+be wrong.
+
+A behaviour change ships with its docs, in the same branch — not as a
+follow-up.
+
+One ticket, one branch, one focused change. Don't fold unrelated work into
+a branch just because you're already in it.
 """
 
 
