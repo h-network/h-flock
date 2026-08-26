@@ -11,6 +11,8 @@ import os
 from pathlib import Path
 import re
 import shutil
+import sys
+import textwrap
 
 import pytest
 
@@ -67,7 +69,7 @@ def _accept(*args, env=None):
 
 
 def _executable(path, body):
-    path.write_text(body)
+    path.write_text(textwrap.dedent(body).lstrip())
     path.chmod(0o755)
 
 
@@ -79,16 +81,43 @@ def _shimmed_suite_root(tmp_path):
     (root / "clients/web").mkdir(parents=True)
     tools.mkdir()
     shutil.copy2(ACCEPT, root / "container/accept.sh")
+    shutil.copy2(ROOT / "container/drive-setup.py", root / "container" / "drive-setup.py")
+    shutil.copy2(ROOT / "container/flock-compose.sh", root / "container" / "flock-compose.sh")
     shutil.copytree(ROOT / "container/scenarios", root / "container/scenarios")
     (root / "container/plumbing-check.sh").write_text("")
     (root / "clients/web/server.py").write_text("")
     (root / "clients/web/flow-check.py").write_text("")
     _executable(
         root / "setup.sh",
-        """#!/bin/sh
-answers="$(cat)"
-printf '%s\n' "$answers" >"$MATRIX_STATE/setup.answers"
-api_port="$(printf '%s\n' "$answers" | sed -n '13p')"
+        """#!/bin/bash
+answers=()
+prompts=(
+  "Pod name [acme]: "
+  "Tenant name [hq]: "
+  "How many agents? [3]: "
+  "Agent #1 name [architect]: "
+  "Agent #2 name [sme-2]: "
+  "Use more than one account in this tenant? [y/N]: "
+  "OAuth token for 'default': "
+  "Default CLI (claude/codex/agy) [claude]: "
+  "Any agents differing from that? "
+  "Point any agent at a local model provider? [y/N]: "
+  "Start the REST API door inside the tenant? [y/N]: "
+  "Run the Telegram bot in this tenant? [y/N]: "
+  "Reach the REST API from outside the container (0.0.0.0, every host interface)? [y/N]: "
+  "Host port for the REST API [8080]: "
+  "Reach the session console from outside the container (0.0.0.0, every host interface)? [Y/n]: "
+  "Host port for the session console [8081]: "
+  "Reach published doors from another machine (bind 0.0.0.0 instead of 127.0.0.1)? [Y/n]: "
+  "Path to a TLS certificate (blank for more choices): "
+  "Generate a self-signed certificate? [y/N]: "
+)
+for p in "${prompts[@]}"; do
+  read -rp "$p" a
+  answers+=("$a")
+done
+printf '%s\n' "${answers[@]}" >"$MATRIX_STATE/setup.answers"
+api_port="${answers[13]:-8080}"
 printf 'API_ENABLED=1\nAPI_PORT=%s\nAPI_TOKEN=matrix-token\n' "$api_port" >container/.env
 touch "$MATRIX_STATE/created"
 printf 'healthy\n'
@@ -120,7 +149,17 @@ esac
     _executable(tools / "openssl", "#!/bin/sh\nprintf 'matrix-secret\n'\n")
     _executable(
         tools / "python3",
-        "#!/bin/sh\nprintf '%s\\n' \"$*\" >>\"$MATRIX_STATE/python.calls\"\nexit 0\n",
+        f"""#!/bin/sh
+printf '%s\\n' "$*" >>"$MATRIX_STATE/python.calls"
+case "$1" in
+  container/drive-setup.py)
+    exec {sys.executable} "$@"
+    ;;
+  *)
+    exit 0
+    ;;
+esac
+""",
     )
     return root, _clean_env(
         PATH=f"{tools}:{os.environ['PATH']}",
@@ -255,11 +294,11 @@ def test_compatible_suite_pairs_change_their_harness_effect(tmp_path, mode, flag
         assert before_answers[1] == "accept"
         assert after_answers[1] == "matrix-tenant"
     elif flag == "--api-port":
-        assert before_answers[12] == "8080"
-        assert after_answers[12] == "19456"
+        assert before_answers[13] == "8080"
+        assert after_answers[13] == "19456"
     elif flag == "--session-port":
-        assert before_answers[13] == "8081"
-        assert after_answers[13] == "19457"
+        assert before_answers[15] == "8081"
+        assert after_answers[15] == "19457"
     elif flag == "--console-port":
         before_server = next(line for line in before["python.calls"].splitlines() if "server.py" in line)
         after_server = next(line for line in after["python.calls"].splitlines() if "server.py" in line)

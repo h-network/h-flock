@@ -9,7 +9,7 @@ import time
 
 
 def _executable(path: Path, body: str) -> None:
-    path.write_text(textwrap.dedent(body))
+    path.write_text(textwrap.dedent(body).lstrip())
     path.chmod(0o755)
 
 
@@ -20,6 +20,7 @@ def test_keep_transfers_console_ownership_without_credentials_in_argv(tmp_path):
     tools = root / "tools"
     tools.mkdir()
     shutil.copy2("container/accept.sh", root / "container" / "accept.sh")
+    shutil.copy2("container/drive-setup.py", root / "container" / "drive-setup.py")
 
     _executable(
         root / "setup.sh",
