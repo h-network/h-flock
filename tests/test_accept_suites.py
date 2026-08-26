@@ -37,6 +37,7 @@ MODES = {
     "core": (["--core"], {"--tenant", "--api-port", "--session-port", "--console-port", "--keep", "--no-console"}),
     "fault": (["--fault"], {"--tenant", "--api-port", "--session-port", "--keep"}),
     "api": (["--api"], {"--tenant", "--api-port", "--session-port", "--keep"}),
+    "tmux": (["--tmux"], {"--tenant", "--api-port", "--session-port", "--keep"}),
     "all": (["--all"], {"--tenant", "--api-port", "--session-port", "--console-port", "--keep", "--no-console"}),
     "analyse-run": (["--scenario", "analyse-run"], {"--log", "--expect-writer"}),
     "analyse-verification": (["--scenario", "analyse-verification"], {"--log"}),
@@ -175,7 +176,7 @@ def test_help_is_readable_and_arguments_are_checked():
 
 def test_matrix_inventory_covers_every_parsed_auxiliary_flag():
     parsed = set(re.findall(r"^    (--[a-z-]+)\)", ACCEPT.read_text(), re.MULTILINE))
-    selectors = {"--core", "--fault", "--api", "--all", "--scenario"}
+    selectors = {"--core", "--fault", "--api", "--tmux", "--all", "--scenario"}
     assert parsed - selectors == set(AUXILIARY_FLAGS)
 
 
@@ -228,7 +229,7 @@ def test_console_port_is_not_silently_ignored_when_console_is_disabled():
 SUITE_ALLOWED_PAIRS = [
     (mode, flag)
     for mode, (_, allowed) in MODES.items()
-    if mode in {"bare", "core", "fault", "api", "all"}
+    if mode in {"bare", "core", "fault", "api", "tmux", "all"}
     for flag in allowed
 ]
 
@@ -275,12 +276,13 @@ def test_compatible_suite_pairs_change_their_harness_effect(tmp_path, mode, flag
     [
         [],
         ["--core"],
+        ["--tmux"],
         ["--all"],
         ["--core", "--no-console"],
         ["--all", "--keep"],
         ["--tenant", "documented-example", "--keep"],
     ],
-    ids=["bare", "core", "all", "core-no-console", "all-keep", "documented-ssh"],
+    ids=["bare", "core", "tmux", "all", "core-no-console", "all-keep", "documented-ssh"],
 )
 def test_repository_suite_invocations_still_pass_with_clean_children(tmp_path, args):
     root, env = _shimmed_suite_root(tmp_path)
