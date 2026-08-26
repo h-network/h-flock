@@ -533,11 +533,19 @@ class TelegramBot:
         telegram_client: TelegramClient | None,
         cursor_store: CursorStore,
         target_agent: str = "architect",
+        allowed_chat_id: int | str | None = None,
     ):
         self.flock = flock_client
         self.telegram = telegram_client
         self.cursor_store = cursor_store
         self.target_agent = target_agent
+        # ⚠ Every real inbound update goes through _dispatch_update, which
+        # checks this before touching anything. Without it, any Telegram user
+        # who finds the bot could hire/retire/pause/resume/broadcast, not
+        # just chat — the menu redesign made incoming text powerful enough
+        # that "whoever messages first" is no longer an acceptable identity
+        # check. See _chat_allowed for what happens when this is None.
+        self.allowed_chat_id = allowed_chat_id
         # Per-chat multi-step flows (AddTicket's title/description prompts,
         # Hire's name prompt). A chat with no entry here is not mid-flow, so a
         # plain text message from it is a prompt for its target agent, not an
@@ -550,6 +558,25 @@ class TelegramBot:
 
     def _target_for(self, chat_id: int | str) -> str:
         return self.chat_target_agent.get(chat_id, self.target_agent)
+
+    def _chat_allowed(self, chat_id: int | str) -> bool:
+        """⚠ No configured chat_id means refuse everything, not allow
+        everything. The historical reason --chat-id/TELEGRAM_CHAT_ID exists
+        (a bot can't start a conversation, so a known chat is supplied to
+        drive one directly) was never a security boundary — but incoming
+        messages now are one, and defaulting an unset allowlist to "open"
+        would silently hand office control to whoever finds the bot first.
+        Same call the codebase already makes elsewhere for exposure
+        (SPEC-bundled-clients-and-exposure.md: "when nothing is published,
+        publish nothing" — an explicit yes, not an absent no). In practice
+        this only bites manual/ad-hoc invocations without --chat-id:
+        setup.sh's normal flow requires both TELEGRAM_BOT_TOKEN and
+        TELEGRAM_CHAT_ID before it enables the bot at all, so a real
+        deployment always has one.
+        """
+        if self.allowed_chat_id is None:
+            return False
+        return str(chat_id) == str(self.allowed_chat_id)
 
     def enrol(self, *, timeout_s: float = 60.0) -> bool:
         """Enrol with retry.
@@ -1077,6 +1104,11 @@ class TelegramBot:
         callback = update.get("callback_query")
         if callback:
             chat_id = callback["message"]["chat"]["id"]
+            if not self._chat_allowed(chat_id):
+                # ⚠ No reply, no answered callback query, nothing — silence
+                # tells an unauthorized sender less than a rejection would
+                # (not even that a bot is listening on the other end).
+                return
             self.handle_callback_query(chat_id, callback["id"], callback.get("data", ""))
             return
 
@@ -1085,6 +1117,8 @@ class TelegramBot:
             return
 
         chat_id = msg["chat"]["id"]
+        if not self._chat_allowed(chat_id):
+            return
         text = msg.get("text", "").strip()
         if not text:
             return
@@ -1112,6 +1146,13 @@ class TelegramBot:
         if not self.telegram:
             logger.error("No Telegram token provided; long-polling loop disabled.")
             return
+
+        if self.allowed_chat_id is None:
+            logger.warning(
+                "No --chat-id/TELEGRAM_CHAT_ID configured: every inbound message and "
+                "button tap will be silently ignored (see _chat_allowed). This is not "
+                "a hang — set one to let the bot respond to anyone."
+            )
 
         logger.info(f"Telegram bot starting long-polling loop for {self.target_agent}...")
         offset = None
@@ -1238,7 +1279,8 @@ def main() -> None:
     else:
         telegram = TelegramClient(bot_token=args.bot_token)
 
-    bot = TelegramBot(flock_client=flock, telegram_client=telegram, cursor_store=cursor_store, target_agent=args.agent)
+    bot = TelegramBot(flock_client=flock, telegram_client=telegram, cursor_store=cursor_store,
+                       target_agent=args.agent, allowed_chat_id=args.chat_id or None)
 
     # ⚠ Called once here, unconditionally, before any mode below runs — not
     # per-branch. container/entrypoint.sh forks this process and the api door

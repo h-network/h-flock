@@ -334,11 +334,88 @@ def test_handle_user_prompt_when_refused_by_policy():
 
 # ── inline menu ──────────────────────────────────────────────────────────────
 
-def _make_bot(flock=None, telegram=None, tmpdir=None):
+def _make_bot(flock=None, telegram=None, tmpdir=None, allowed_chat_id=None):
     flock = flock or DummyFlockClient()
     telegram = telegram if telegram is not None else DummyTelegramClient()
     store = CursorStore(str(Path(tmpdir) / "cursor.json"))
-    return TelegramBot(flock, telegram, store, target_agent="architect"), flock, telegram
+    bot_instance = TelegramBot(flock, telegram, store, target_agent="architect", allowed_chat_id=allowed_chat_id)
+    return bot_instance, flock, telegram
+
+
+# ── chat_id restriction ────────────────────────────────────────────────────────
+
+def test_chat_allowed_requires_a_configured_id():
+    """No configured chat_id must refuse everything, not allow everything --
+    the bot can now hire/retire/pause/resume/broadcast, not just chat."""
+    with tempfile.TemporaryDirectory() as tmpdir:
+        bot_instance, _, _ = _make_bot(tmpdir=tmpdir, allowed_chat_id=None)
+        assert bot_instance._chat_allowed(12345) is False
+        assert bot_instance._chat_allowed(0) is False
+
+
+def test_chat_allowed_matches_configured_id_across_str_int():
+    """--chat-id arrives as a str from argparse; Telegram's own chat ids are
+    ints -- the comparison must not silently fail on that type mismatch."""
+    with tempfile.TemporaryDirectory() as tmpdir:
+        bot_instance, _, _ = _make_bot(tmpdir=tmpdir, allowed_chat_id="12345")
+        assert bot_instance._chat_allowed(12345) is True   # int from Telegram
+        assert bot_instance._chat_allowed("12345") is True
+        assert bot_instance._chat_allowed(99999) is False
+
+
+def test_dispatch_update_ignores_a_message_from_an_unconfigured_chat():
+    with tempfile.TemporaryDirectory() as tmpdir:
+        bot_instance, flock, telegram = _make_bot(tmpdir=tmpdir, allowed_chat_id=None)
+        bot_instance._dispatch_update({"message": {"chat": {"id": 999}, "text": "hire sme-9 please"}})
+        assert telegram.sent_messages == []
+        assert flock.hired == []
+
+
+def test_dispatch_update_ignores_a_message_from_the_wrong_chat():
+    with tempfile.TemporaryDirectory() as tmpdir:
+        bot_instance, flock, telegram = _make_bot(tmpdir=tmpdir, allowed_chat_id=42)
+        bot_instance._dispatch_update({"message": {"chat": {"id": 999}, "text": "/menu"}})
+        assert telegram.sent_messages == []
+
+
+def test_dispatch_update_processes_a_message_from_the_allowed_chat():
+    with tempfile.TemporaryDirectory() as tmpdir:
+        bot_instance, flock, telegram = _make_bot(tmpdir=tmpdir, allowed_chat_id=42)
+        bot_instance._dispatch_update({"message": {"chat": {"id": 42}, "text": "/menu"}})
+        assert len(telegram.sent_messages) == 1
+
+
+def test_dispatch_update_ignores_a_callback_from_the_wrong_chat():
+    """Not even answer_callback_query -- an unauthorized tap gets nothing
+    back, not even acknowledgement that a bot is listening."""
+    with tempfile.TemporaryDirectory() as tmpdir:
+        bot_instance, flock, telegram = _make_bot(tmpdir=tmpdir, allowed_chat_id=42)
+        bot_instance._dispatch_update({
+            "callback_query": {"id": "cb-1", "data": "hi", "message": {"chat": {"id": 999}}},
+        })
+        assert telegram.sent_messages == []
+        assert telegram.answered_callbacks == []
+
+
+def test_dispatch_update_processes_a_callback_from_the_allowed_chat():
+    with tempfile.TemporaryDirectory() as tmpdir:
+        bot_instance, flock, telegram = _make_bot(tmpdir=tmpdir, allowed_chat_id=42)
+        bot_instance._dispatch_update({
+            "callback_query": {"id": "cb-1", "data": "ov", "message": {"chat": {"id": 42}}},
+        })
+        assert telegram.answered_callbacks == [{"callback_query_id": "cb-1", "text": None}]
+        assert len(telegram.sent_messages) == 1
+
+
+def test_direct_handler_calls_bypass_the_allowlist():
+    """CLI-driven one-shots (--prompt/--status/--menu) and dry-run mode call
+    handlers directly, never through _dispatch_update -- they're operator
+    invocations from shell access, not untrusted Telegram network input, so
+    the allowlist (which guards inbound Telegram updates) does not apply."""
+    with tempfile.TemporaryDirectory() as tmpdir:
+        bot_instance, flock, telegram = _make_bot(tmpdir=tmpdir, allowed_chat_id=42)
+        bot_instance.handle_text_message(999, "/menu")
+        assert len(telegram.sent_messages) == 1
 
 
 def test_menu_command_sends_sticky_keyboard():
