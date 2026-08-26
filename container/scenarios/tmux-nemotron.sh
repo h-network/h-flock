@@ -15,8 +15,36 @@ AGENTS="${AGENTS:-b74-a b74-b b74-c}"
 ROUNDS="${ROUNDS:-10}"
 OUT="${1:?usage: tmux-nemotron.sh OUTPUT_DIR}"
 mkdir -p "$OUT"
-dx() { docker exec "$CONTAINER" "$@"; }
+dx() { docker exec -i "$CONTAINER" "$@"; }
 read -r -a list <<<"$AGENTS"
+
+read_transport_depth() {
+  dx python3 - "$POD" "$TENANT" <<'PY'
+import os,sys,redis
+pod,tenant=sys.argv[1:3]
+r=redis.Redis.from_url(os.environ.get("REDIS_URL","redis://127.0.0.1:6379/0"))
+print(sum(r.llen(k) for p in (f"pod:{pod}:tenant:{tenant}:agent:*:egress",f"pod:{pod}:tenant:{tenant}:agent:*:ingress") for k in r.scan_iter(match=p)))
+PY
+}
+
+drain_transport() {
+  local timeout="$1" interval="$2" deadline depth
+  deadline=$((SECONDS + timeout))
+  while [ "$SECONDS" -lt "$deadline" ]; do
+    if ! depth="$(read_transport_depth)"; then
+      echo "tmux-nemotron: incomplete reason=queue_depth_probe_failed" >&2
+      return 100
+    fi
+    if ! [[ "$depth" =~ ^[0-9]+$ ]]; then
+      printf 'tmux-nemotron: incomplete reason=unreadable_queue_depth value=%q\n' "$depth" >&2
+      return 100
+    fi
+    [ "$depth" -eq 0 ] && return 0
+    sleep "$interval"
+  done
+  echo "tmux-nemotron: drain_timeout depth=$depth" >&2
+  return 0
+}
 
 token="$(dx printenv API_TOKEN | tr -d '\r')"
 api=http://127.0.0.1:8080
@@ -61,18 +89,9 @@ print(frame["stream_id"])
 PY
 
 # Wait only on transport state. Custody logs remain unread until capture.
-deadline=$((SECONDS + 300))
-while [ "$SECONDS" -lt "$deadline" ]; do
-  depth="$(dx python3 - "$POD" "$TENANT" <<'PY'
-import os,sys,redis
-pod,tenant=sys.argv[1:3]
-r=redis.Redis.from_url(os.environ.get("REDIS_URL","redis://127.0.0.1:6379/0"))
-print(sum(r.llen(k) for p in (f"pod:{pod}:tenant:{tenant}:agent:*:egress",f"pod:{pod}:tenant:{tenant}:agent:*:ingress") for k in r.scan_iter(match=p)))
-PY
-)"
-  [ "$depth" = 0 ] && break
-  sleep 1
-done
+# An unreadable depth is not a non-empty queue: refuse rather than silently
+# consuming the full deadline and then snapshotting an unknown transport state.
+drain_transport 300 1 || exit "$?"
 sleep 15
 
 docker logs "$CONTAINER" >"$OUT/custody.log" 2>&1
