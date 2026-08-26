@@ -106,6 +106,85 @@ class DummyTelegramClient:
         return {"ok": True}
 
 
+def test_enrol_retries_until_success_and_seeds_cursor(monkeypatch):
+    """Reproduces the live acceptance-VM race: the api door isn't listening
+    yet when this client starts, enrol() fails once (or twice), and must
+    retry rather than give up permanently."""
+    slept = []
+    monkeypatch.setattr(bot.time, "sleep", lambda s: slept.append(s))
+
+    class FlakyFlockClient(DummyFlockClient):
+        def __init__(self):
+            super().__init__()
+            self.attempts = 0
+
+        def enrol(self):
+            self.attempts += 1
+            if self.attempts < 3:
+                return 500, {"detail": "<urlopen error [Errno 111] Connection refused>"}
+            return 202, {"stream_id": "s1", "correlation_id": "c1"}
+
+    flock = FlakyFlockClient()
+    with tempfile.TemporaryDirectory() as tmpdir:
+        store = CursorStore(str(Path(tmpdir) / "cursor.json"))
+        bot_instance = TelegramBot(flock, DummyTelegramClient(), store, target_agent="architect")
+        ok = bot_instance.enrol()
+
+    assert ok is True
+    assert flock.attempts == 3
+    assert len(slept) == 2  # retried after attempt 1 and attempt 2, not after the success
+
+
+def test_enrol_gives_up_after_timeout_without_raising(monkeypatch):
+    monkeypatch.setattr(bot.time, "sleep", lambda s: None)
+
+    class AlwaysDownFlockClient(DummyFlockClient):
+        def enrol(self):
+            return 500, {"detail": "<urlopen error [Errno 111] Connection refused>"}
+
+    flock = AlwaysDownFlockClient()
+    with tempfile.TemporaryDirectory() as tmpdir:
+        store = CursorStore(str(Path(tmpdir) / "cursor.json"))
+        bot_instance = TelegramBot(flock, DummyTelegramClient(), store, target_agent="architect")
+        # timeout_s=0 -> the deadline has already passed after the first
+        # attempt, so this returns quickly instead of retrying for 60s.
+        ok = bot_instance.enrol(timeout_s=0)
+
+    assert ok is False
+
+
+def test_run_polling_does_not_enrol_itself():
+    """enrol() is the caller's job now (main(), once, before dispatch) — a
+    second call from inside run_polling would silently double the retry
+    budget and was removed for exactly that reason."""
+    class _StopPolling(BaseException):
+        """Not an Exception: run_polling's `except Exception` (which retries
+        forever on any failure) must not swallow this, or the loop never ends."""
+
+    class CountingFlockClient(DummyFlockClient):
+        def __init__(self):
+            super().__init__()
+            self.enrol_calls = 0
+
+        def enrol(self):
+            self.enrol_calls += 1
+            return 202, {}
+
+    class OneShotTelegramClient(DummyTelegramClient):
+        def get_updates(self, offset=None, timeout=20):
+            raise _StopPolling
+
+    flock = CountingFlockClient()
+    with tempfile.TemporaryDirectory() as tmpdir:
+        store = CursorStore(str(Path(tmpdir) / "cursor.json"))
+        bot_instance = TelegramBot(flock, OneShotTelegramClient(), store, target_agent="architect")
+        try:
+            bot_instance.run_polling()
+        except _StopPolling:
+            pass
+    assert flock.enrol_calls == 0
+
+
 def test_cursor_store():
     with tempfile.TemporaryDirectory() as tmpdir:
         cfile = str(Path(tmpdir) / "cursor.json")

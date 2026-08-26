@@ -413,9 +413,38 @@ class TelegramBot:
         # message from it is a prompt for target_agent, not an answer to a menu.
         self.pending: dict = {}
 
-    def enrol(self) -> None:
-        code, body = self.flock.enrol()
-        logger.info(f"Enrolled application '{self.flock.app_name}': status={code}, body={body}")
+    def enrol(self, *, timeout_s: float = 60.0) -> bool:
+        """Enrol with retry.
+
+        ⚠ container/entrypoint.sh forks the api door and this bundled client
+        within the same instant — `start`/`start_client` fork-and-move-on, with
+        no wait for api's HTTP server to actually be listening yet. A single
+        early attempt can lose that race: measured live on the acceptance VM,
+        `enrol()` got `Connection refused`, logged it, and moved on — the bot
+        then ran forever unenrolled, and every subsequent send failed with
+        "invalid 'as' client: must be an enrolled client with port_type
+        'api'", indistinguishable from a real misconfiguration. Retrying with
+        backoff for up to `timeout_s` covers the race; re-enrolling an
+        already-enrolled name is safe and idempotent (API.md), so retrying
+        never does anything destructive.
+        """
+        deadline = time.time() + timeout_s
+        backoff = 1.0
+        while True:
+            code, body = self.flock.enrol()
+            if code == 202:
+                logger.info(f"Enrolled application '{self.flock.app_name}': status={code}, body={body}")
+                break
+            if time.time() >= deadline:
+                logger.error(
+                    f"Failed to enrol '{self.flock.app_name}' after {timeout_s:.0f}s "
+                    f"(last status={code}, body={body}); sends will fail with "
+                    f"\"invalid 'as' client\" until this succeeds."
+                )
+                return False
+            logger.warning(f"Enrol attempt failed (status={code}, body={body}); retrying in {backoff:.0f}s")
+            time.sleep(backoff)
+            backoff = min(backoff * 1.5, 10.0)
 
         # ⚠ With no stored cursor, start at the END of the mailbox, not the
         # beginning. Messages that arrived before this process started are not
@@ -427,6 +456,7 @@ class TelegramBot:
                 self.cursor = data["next_cursor"]
                 self.cursor_store.save(self.cursor)
                 logger.info(f"No stored cursor; starting from newest ({self.cursor})")
+        return True
 
     def render_progress_message(self, tools_list: list[str], status: str = "working",
                                 started: float | None = None) -> str:
@@ -794,12 +824,17 @@ class TelegramBot:
         return reply_message_text or ""
 
     def run_polling(self) -> None:
-        """Run long-polling loop for Telegram updates."""
+        """Run long-polling loop for Telegram updates.
+
+        Does not call `enrol()` itself — the caller does that once,
+        unconditionally, before dispatching to whichever mode runs (see
+        `main()`). Enrolling here too would just be a second, redundant call
+        with its own 60s retry budget stacked on top of the caller's.
+        """
         if not self.telegram:
             logger.error("No Telegram token provided; long-polling loop disabled.")
             return
 
-        self.enrol()
         logger.info(f"Telegram bot starting long-polling loop for {self.target_agent}...")
         offset = None
 
@@ -940,8 +975,14 @@ def main() -> None:
 
     bot = TelegramBot(flock_client=flock, telegram_client=telegram, cursor_store=cursor_store, target_agent=args.agent)
 
+    # ⚠ Called once here, unconditionally, before any mode below runs — not
+    # per-branch. container/entrypoint.sh forks this process and the api door
+    # at essentially the same instant with no readiness wait, so enrolment can
+    # lose that race; TelegramBot.enrol() retries with backoff to cover it
+    # (see its docstring — this is what was silently broken in production).
+    bot.enrol()
+
     if is_dry_run:
-        bot.enrol()
         if args.menu:
             bot.handle_menu_command("dry_run_chat")
         elif args.status:
@@ -952,10 +993,8 @@ def main() -> None:
             logger.info("Performing dry-run status check...")
             bot.handle_status_command("dry_run_chat")
     elif args.chat_id and args.prompt:
-        bot.enrol()
         bot.handle_user_prompt(args.chat_id, args.prompt)
     elif args.chat_id and args.status:
-        bot.enrol()
         bot.handle_status_command(args.chat_id)
     else:
         if args.chat_id and not args.no_alert_push:
