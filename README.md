@@ -392,6 +392,7 @@ went the way it did rather than only what it was.
 | [`HLD.md`](docs/HLD.md) | **start here** — how the pieces fit, and the invariants |
 | [`API.md`](docs/API.md) | **for app developers** — the whole HTTP surface, no repo needed |
 | [`LLD-bus-and-switch.md`](docs/LLD-bus-and-switch.md) | addressing, the envelope, the two doors, the invariants |
+| [`LLD-office.md`](docs/LLD-office.md) | the agent-facing command — the board, lifecycle, and what crosses the bus versus a direct Redis op |
 | [`LLD-port-tmux.md`](docs/LLD-port-tmux.md) | how text actually gets into a terminal, and why each rule is load-bearing |
 | [`LLD-tmux-host.md`](docs/LLD-tmux-host.md) | the server, windows, geometry, reconciliation |
 | [`LLD-api.md`](docs/LLD-api.md) · [`LLD-session.md`](docs/LLD-session.md) | the two doors — `:8080` envelopes and state, `:8081` terminal bytes |

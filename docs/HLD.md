@@ -539,6 +539,7 @@ documentation audit went looking for exactly this kind of claim.
 | [`../clients/`](../clients) | a Telegram bot and a browser UI, built from `API.md` alone |
 | [`CONTRACTS.md`](CONTRACTS.md) | what more than one module depends on |
 | [`LLD-bus-and-switch.md`](LLD-bus-and-switch.md) | addressing, the envelope, the invariants in full |
+| [`LLD-office.md`](LLD-office.md) | the agent-facing command — the board, lifecycle, and what crosses the bus versus a direct Redis op |
 | [`LLD-port-tmux.md`](LLD-port-tmux.md) | how text actually gets into a terminal |
 | [`LLD-tmux-host.md`](LLD-tmux-host.md) · [`LLD-container.md`](LLD-container.md) | windows, and the tenant |
 | [`LLD-api.md`](LLD-api.md) · [`LLD-session.md`](LLD-session.md) | the two doors |
