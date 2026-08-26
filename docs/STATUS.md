@@ -30,7 +30,7 @@ Each of these does more than go stale — it routes a reader somewhere specific.
 | `API.md:53` | Promises `correlation_id` is propagated from the request. `api/app.py:651` **mints unconditionally**. External clients will build threading on it and only find out on multi-turn replies. |
 | `LLD-watchdog.md:88-102` | Says the switch owns and writes `blocked`. **Contradicted by the same file's invariant 4 at 234-238** and by `watchdog/verification.py:118-125`. |
 | `LLD-watchdog.md:217` | Says `WATCHDOG_ENABLED=0` exits the process. It keeps the tailer, sampler and verifier running and silences alerting only. `CONTRACTS.md:956` already states this correctly. |
-| `LLD-port-tmux.md` §4 | Describes the watchdog comparing against CLI **session-file activity**; a reader converts that into *pane* verification, which is the same false inference as `opened`-proves-delivery. |
+| `LLD-port-tmux.md` §4 | Treats CLI **session-file activity** as verification evidence. The section is explicit that verification never reads the pane, so the defect is the evidence it *does* rely on, not a pane claim — activity near a delivery is not receipt of it. |
 | `README.md` | Quick start describes setup prompts that no longer exist; test badge and command list predate recent work. |
 | `CHANGELOG.md` | Declares that every external contract change belongs in it, and stops before the most recent ones. |
 | `GLOSSARY.md` | Defines `agent`, `port_type`, `provider`, `launch`, `board`, `host` — and is **silent on `profile` and `account`**, whose meaning is settled in `TODO.md` prose. |
@@ -54,8 +54,13 @@ Each of these does more than go stale — it routes a reader somewhere specific.
 - **`HLD.md` §7's `api :8080 / session :8081`** — the doors always bind those ports
   *inside* the container whatever host port is published. The table is about the
   internal bind and was never affected by the exposure work.
-- **`accept.sh`'s LIMIT text** — still accurate. `tmux-paste-delivery` joined `main`
-  but **not the `--tmux` suite**; the suite still runs its original three members.
+- **`accept.sh`'s LIMIT text** — still accurate, and its subject's absence is
+  **deliberate**. `tmux-paste-delivery` joined `main` but **not the `--tmux` suite**,
+  which still runs its original three members. ⚠ The LIMIT wording — *"until a
+  successful-paste scenario joins this suite"* — reads as a roadmap. **It is not one.**
+  Wiring that scenario in is not implied and is not pending; it would be a change to
+  the suite's contract and needs deciding on its own merits, not doing because a
+  sentence appears to promise it.
 - **`TODO.md` rows marked SHIPPED**, and the retained legacy `send_failed` /
   `forward_failed` / `kick_failed` names — deliberate records of why something changed.
 - **`POST /agents/all/envelopes` bypassing the roster check** — `all` is the
