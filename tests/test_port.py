@@ -2,6 +2,9 @@ from conftest import FakeRespRedis
 import json
 import pathlib
 import os
+import signal
+import subprocess
+import sys
 import tempfile
 import pytest
 from unittest.mock import patch, MagicMock
@@ -9,6 +12,28 @@ from flock.port.openers import add_ticket_opener, message_opener, command_opener
 from flock.port.send import main as cli_main
 from flock.port.deliver import run_port
 from flock.bus import DeadLetter, build as build_envelope, encode, parse, prefix, receive
+
+
+def test_port_entrypoint_restores_waitable_children(monkeypatch):
+    """A switch child must not inherit the switch's false-zero wait behavior."""
+    from flock.port import __main__ as port_entrypoint
+
+    previous = signal.getsignal(signal.SIGCHLD)
+    observed = {}
+
+    def probe_run_port(**_kwargs):
+        observed["disposition"] = signal.getsignal(signal.SIGCHLD)
+        observed["returncode"] = subprocess.run(["/bin/sh", "-c", "exit 1"]).returncode
+
+    monkeypatch.setattr(port_entrypoint, "run_port", probe_run_port)
+    monkeypatch.setattr(sys, "argv", ["flock.port", "alice"])
+    signal.signal(signal.SIGCHLD, signal.SIG_IGN)
+    try:
+        port_entrypoint.main()
+    finally:
+        signal.signal(signal.SIGCHLD, previous)
+
+    assert observed == {"disposition": signal.SIG_DFL, "returncode": 1}
 
 
 
