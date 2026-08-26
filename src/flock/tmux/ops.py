@@ -466,4 +466,3 @@ def paste_text(
     except Exception:
         run_tmux("delete-buffer", "-b", buf_name, socket=socket)
         raise
-    checked("delete-buffer", run_tmux("delete-buffer", "-b", buf_name, socket=socket))
