@@ -194,6 +194,33 @@ termination, which is the opposite end of the meaning.
   `ANTHROPIC_AUTH_TOKEN` and the three tier model variables in the window.
 - **frees `endpoint`** for its networking meaning, which is why it collided.
 
+### `account`
+**The credential and config-directory unit — a login, not an agent.** One
+interactive login (`~/.claude-<name>` or `~/.codex-<name>`) and, where one was
+given at setup, an OAuth token. Several agents can share one account and pay
+for exactly one login; `default` is the account nobody named.
+
+- **not:** a synonym for `agent` or `profile`. An account is the login and
+  config directory behind a name; `profile` (below) is the pointer to it.
+- **state:** built. `setup.sh` asks for account names and seeds each one's
+  config directory; `container/seed-home.sh in|out|check` moves logins in and
+  out of a running tenant. The configured set lives in Redis (`accounts`),
+  read by `available_profiles()` and shown whole by `office profiles`.
+
+### `profile`
+**The Redis key naming which account a tmux agent uses** —
+`agent:<name>:profile`. Decides `CLAUDE_CONFIG_DIR` / `CODEX_HOME` in that
+agent's window, so it decides both the config directory and, when the account
+has one, the credential.
+
+- **not:** the account itself — it is the pointer to one. Absent means
+  `default`.
+- **state:** built end to end. `StartAgent` / `office hire --profile`
+  validates it against the configured account registry and persists it before
+  roster visibility, so `flock.tmuxhost` sees the right account when it
+  reconciles the window. `port_type: api` and `control` participants carry no
+  profile — there is no CLI to log in.
+
 ### `launch`
 The Redis key holding **which CLI a participant runs**. `cli` or `runtime` says
 it; 60 occurrences, contained.
