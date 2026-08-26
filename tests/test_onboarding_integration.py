@@ -13,6 +13,7 @@ import pytest
 ROOT = Path(__file__).parents[1]
 TOOL = ROOT / "container/scenarios/tmux-onboarding-integration.sh"
 JUDGE = ROOT / "container/scenarios/onboarding-custody.py"
+NEMOTRON = ROOT / "container/scenarios/tmux-nemotron.sh"
 
 
 @pytest.fixture
@@ -57,6 +58,24 @@ def test_manual_tool_is_outside_acceptance_and_never_emits_result():
     assert "MANUAL INTEGRATION TOOL" in text
     assert 'echo "RESULT ' not in text
     assert "tmux-onboarding-integration" not in (ROOT / "container/accept.sh").read_text()
+
+
+def test_onboarding_prompt_names_the_real_tenant_send_command_and_argument_shape():
+    text = TOOL.read_text()
+    prompt_line = next(line for line in text.splitlines() if line.startswith('prompt="Read '))
+    assert "sendMessage" not in prompt_line
+    assert "include this exact marker in each body" in prompt_line
+    assert "keep each body out of shell parsing" in prompt_line
+    assert "office send -a NAME --file PATH" in prompt_line
+
+
+def test_nemotron_prompt_uses_never_shell_parsed_tenant_send_shape():
+    prompt_line = next(line for line in NEMOTRON.read_text().splitlines() if 'prompt="Build 74' in line)
+    assert "sendMessage" not in prompt_line
+    assert "Keep every body out of shell parsing" in prompt_line
+    assert "office send -a $next --file PATH" in prompt_line
+    assert "write each exact body to a file" in prompt_line
+    assert "replacing PATH with that file's path" in prompt_line
 
 
 def test_usage_documents_provider_convention_and_keep_default():

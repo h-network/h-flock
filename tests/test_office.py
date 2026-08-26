@@ -576,12 +576,33 @@ def test_office_imports_no_other_flock_module_than_bus():
     assert flock_imports == ["flock.bus"]
 
 
-def test_only_office_agent_command_is_packaged():
+def _assert_no_eliminated_send_binary_in_scenarios(sources, eliminated):
+    for path, text in sources.items():
+        for command in eliminated:
+            assert command not in text, f"{path} contains eliminated tenant command {command}"
+
+
+def test_only_office_agent_command_is_packaged_and_scenarios_avoid_eliminated_send_binaries():
     scripts = tomllib.loads(Path("pyproject.toml").read_text())["project"]["scripts"]
     assert scripts["office"] == "flock.office:main"
     assert "flock.port" in scripts
-    for old in ("sendMessage", "sendBroadcast", "peers", "hire", "letGo", "pause", "resume"):
+    retired = ("sendMessage", "sendBroadcast", "peers", "hire", "letGo", "pause", "resume")
+    for old in retired:
         assert old not in scripts
+
+    # These two names were eliminated rather than retained as `office`
+    # subcommands. Scan whole files so variable-built prompts cannot evade the
+    # guard; the remaining retired binary names are current scenario concepts
+    # and valid `office` subcommands such as hire, pause, and resume.
+    eliminated_send_binaries = retired[:2]
+    scenario_sources = {
+        str(path): path.read_text() for path in Path("container/scenarios").glob("*.sh")
+    }
+    _assert_no_eliminated_send_binary_in_scenarios(scenario_sources, eliminated_send_binaries)
+
+    variable_built_prompt = {'mutation.sh': 'body="sendMessage to sme-1"\nprompt="$body"\n'}
+    with pytest.raises(AssertionError, match="mutation.sh contains eliminated tenant command sendMessage"):
+        _assert_no_eliminated_send_binary_in_scenarios(variable_built_prompt, eliminated_send_binaries)
 
 
 def test_status_survives_a_blocked_key_of_the_wrong_type(office_env, capsys):
