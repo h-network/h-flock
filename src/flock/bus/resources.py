@@ -14,6 +14,7 @@ AGENT_STATE_RESOURCES = frozenset(
         "activity",
         "activity.offset",
         "alerted",
+        "doing.alerted",
         "presence",
         "pending.verify",
         "delivery.markers",

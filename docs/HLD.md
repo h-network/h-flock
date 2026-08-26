@@ -365,9 +365,10 @@ Its own process, beside the switch — not a step in the switch's pass, because 
 `capture-pane` that hangs would stall forwarding, and the switch is the data
 path. It reads the board, presence, window activity and the credential files.
 
-**It speaks only when a ticket is old *and* presence is not working *and* the
-window is silent.** Any one alone fires identically for a long build and a wedge,
-which is how a lead learns to ignore alerts and then ignores a real one.
+**On the alerts stream, it speaks only when a ticket is old *and* presence is
+not working *and* the window is silent.** Any one alone fires identically for a
+long build and a wedge, which is how a lead learns to ignore alerts and then
+ignores a real one.
 
 ⚠ **A missing window counts as silent.** Requiring evidence of silence meant an
 agent whose window had gone was never reported at all — the strongest possible
@@ -387,6 +388,30 @@ its own symptom** with nothing fixed.
 
 The lead has the other half: `office status`, a **pull**, and a guide telling it
 to check before assigning and hold work rather than repair.
+
+⚠ **One exception exists, and it is scoped to the lead alone.** A ticket sitting
+in `doing` past `WATCHDOG_DOING_ALERT_SEC` (default 15 minutes) is pasted
+straight into the lead's pane — `office send`'s path, not the alerts stream
+(`LLD-watchdog` §2a). Every reason above for never messaging an agent is
+about the *agent doing the work*: telling it something is wrong invites it to
+"fix" the report instead of the problem, and the paste itself would erase the
+evidence it just delivered. **None of that applies to the lead**, because the
+lead is not the thing being observed — the ticket's agent is. A message to the
+lead cannot reset the ticket's own silence timer; only a message to the
+*stalled agent* could do that, and this alert is never sent there. So the
+"reports, never repairs" boundary holds exactly as before: the watchdog still
+does not tell the affected agent anything, still does not repair, and still
+only widens what a human can see.
+
+The reason it is the lead and not some other participant is the section right
+below, "Why there is a lead at all": `lead` is the one address in the roster
+that a human is expected to actually be reading, and the one place a message
+reads as instruction rather than as one peer's opinion. Messaging any other
+agent about a *different* agent's stalled work would just be more peer chatter
+about a third party's business, for no offsetting gain — that agent has no more
+authority to act on the report than the watchdog does. The lead is not an exception because it is convenient;
+it is the one address where "alerts a human" and "alerts an agent" are, in
+practice, the same address.
 
 ### ⚠ Why there is a lead at all, and it is not an org chart
 

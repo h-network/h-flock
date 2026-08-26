@@ -2,13 +2,25 @@
 
 import json
 import os
+import subprocess
 import time
 from datetime import datetime, timezone
 from pathlib import Path
 
 import redis
 
-from flock.bus import log_record, members, mirror, prefix, port_type
+from flock.bus import (
+    EnvelopeError,
+    build,
+    encode,
+    is_member,
+    log_record,
+    members,
+    mirror,
+    prefix,
+    port_type,
+    require_allowed,
+)
 from flock.watchdog.activity import ActivityTailer
 from flock.watchdog.presence import PresenceSampler
 from flock.watchdog.verification import DeliveryVerifier
@@ -60,6 +72,7 @@ class Watchdog:
         silence_seconds: float = 300,
         cooldown_seconds: int = 3600,
         credential_warn_days: int = 7,
+        doing_alert_seconds: float = 900,
         home_root: str | Path = "/home/ubuntu",
     ):
         self.r = r
@@ -71,6 +84,7 @@ class Watchdog:
         self.silence_seconds = silence_seconds
         self.cooldown_seconds = cooldown_seconds
         self.credential_warn_days = credential_warn_days
+        self.doing_alert_seconds = doing_alert_seconds
         self.home_root = Path(home_root)
         self._reported_blocks: set[tuple[str, str, str]] = set()
 
@@ -228,6 +242,88 @@ class Watchdog:
             self._alert(record)
             self.r.set(alerted_key, ticket_id, ex=self.cooldown_seconds)
 
+    def _lead(self) -> str | None:
+        return _text(self.r.get(prefix(self.pod, self.tenant, resource="lead")))
+
+    def _notify_lead(self, lead: str, text: str) -> None:
+        """Paste one message directly into the lead's pane.
+
+        ⚠ This is the one place the watchdog addresses a participant instead of
+        the alerts stream — see HLD §8c. `office send` cannot be reused as-is:
+        it enqueues onto the *sender's own* egress list for the switch to
+        forward, and the watchdog is deliberately not a roster member with an
+        egress queue anyone polls (§1 — it must not sit in the switch's pass).
+        So this builds the same v4 envelope `office send` would and places it
+        directly on the lead's ingress queue, then kicks `flock.port` the same
+        way the switch does after a normal forward — same envelope shape, same
+        `message_opener` rendering, same delivery subprocess. Only the egress
+        hop, which nothing was ever going to drain, is skipped.
+        """
+        if not is_member(self.r, pod=self.pod, tenant=self.tenant, agent=lead):
+            return
+        if port_type(self.r, pod=self.pod, tenant=self.tenant, agent=lead) != "tmux":
+            return
+        try:
+            require_allowed(self.r, pod=self.pod, tenant=self.tenant, source="watchdog", destination=lead)
+            envelope = build(
+                "Message", "watchdog", lead, {"text": text}, pod=self.pod, tenant=self.tenant
+            )
+            raw = encode(envelope)
+        except EnvelopeError as exc:
+            self._error("lead_alert", exc)
+            return
+        self.r.rpush(prefix(self.pod, self.tenant, lead, "ingress"), raw)
+        log_record("watchdog", "lead_alert_sent", stream_id=envelope["stream_id"], destination=lead)
+        try:
+            subprocess.Popen(["flock.port", lead])
+        except OSError as exc:
+            self._error("lead_alert_kick", exc)
+
+    def _check_doing_duration(self, agents: list[str], now: datetime) -> None:
+        """Tell the lead directly when a ticket has sat in `doing` too long.
+
+        Deliberately board-only: no presence, no window. §2's three-signal
+        `stalled` rule exists to keep the passive /alerts stream from crying
+        wolf at an ordinary long build; this is a narrower, louder nudge aimed
+        only at the lead, whose job is to weigh it, not at a stream a human may
+        not be watching. The two rules are independent and may both fire for
+        the same ticket.
+        """
+        lead = self._lead()
+        if not lead:
+            return
+        for agent in agents:
+            ticket = self._ticket(agent)
+            if not ticket or not isinstance(ticket.get("title"), str):
+                continue
+            started = _timestamp(ticket.get("started_ts"))
+            if started is None:
+                continue
+            doing_age = int((now - started).total_seconds())
+            if doing_age < self.doing_alert_seconds:
+                continue
+            ticket_id = ticket.get("id")
+            if not isinstance(ticket_id, str) or not ticket_id:
+                continue
+
+            # Re-alert once per threshold crossing (15m, 30m, 45m, ...) rather
+            # than once ever, so a ticket stuck for hours keeps nudging the
+            # lead — and at most once per crossing, never once per 30s poll.
+            multiple = int(doing_age // self.doing_alert_seconds)
+            state_key = prefix(self.pod, self.tenant, agent, "doing.alerted")
+            previous = _text(self.r.get(state_key)) or ""
+            prev_id, _, prev_multiple = previous.partition(":")
+            if prev_id == ticket_id and prev_multiple.isdigit() and int(prev_multiple) >= multiple:
+                continue
+
+            minutes = doing_age // 60
+            text = (
+                f'[alert from watchdog] {agent} has been working on '
+                f'"{ticket["title"]}" for {minutes} min, request an update'
+            )
+            self._notify_lead(lead, text)
+            self.r.set(state_key, f"{ticket_id}:{multiple}")
+
     def poll(self, *, now: datetime | None = None) -> None:
         now = (now or datetime.now(timezone.utc)).astimezone(timezone.utc)
         agents = self._agents()
@@ -244,6 +340,10 @@ class Watchdog:
             self._check_blocked(agents, now)
         except Exception as exc:
             self._error("blocked", exc)
+        try:
+            self._check_doing_duration(agents, now)
+        except Exception as exc:
+            self._error("doing_duration", exc)
 
     def _credential_accounts(self) -> list[tuple[str, str, Path]]:
         """Return each CLI account used by an enrolled terminal agent once."""
@@ -381,6 +481,7 @@ def main() -> None:
         silence_seconds=float(os.environ.get("WATCHDOG_SILENCE_SEC", "300")),
         cooldown_seconds=int(os.environ.get("WATCHDOG_COOLDOWN_SEC", "3600")),
         credential_warn_days=int(os.environ.get("WATCHDOG_CREDENTIAL_WARN_DAYS", "7")),
+        doing_alert_seconds=float(os.environ.get("WATCHDOG_DOING_ALERT_SEC", "900")),
     )
     # ⚠ These three moved out of the switch's forwarding loop. They observe
     # agents — CLI transcripts, presence, whether a paste was followed by input

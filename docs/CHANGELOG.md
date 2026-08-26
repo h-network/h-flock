@@ -11,6 +11,29 @@
 
 ---
 
+## 2026-08-26 — the watchdog can message the lead directly for a long-`doing` ticket
+
+Any agent's `tasks.doing` ticket older than `WATCHDOG_DOING_ALERT_SEC` (default
+900s) now pastes `[alert from watchdog] <agent> has been working on "<title>"
+for <N> min, request an update` straight into the tenant's `lead` pane —
+`office send`'s delivery path, not the `<prefix>:alerts` stream. It re-fires
+once per `WATCHDOG_DOING_ALERT_SEC` crossing while the same ticket stays open
+(`LLD-watchdog` §2a), tracked at the new per-agent key
+`<prefix>:agent:<name>:doing.alerted`.
+
+**What this made false:** HLD §8c's *"it alerts a human, and never an
+agent"* and LLD-watchdog §7 invariant 6's *"never into an agent's ingress
+queue"* were both unqualified. Both now carry the single, deliberate
+exception: the tenant's `lead`, and only the lead — never the ticket's own
+agent, never any other peer. Neither statement changes for `stalled`,
+`blocked` or `credential` records, which still go only to the alerts stream.
+
+⚠ Board-only trigger, no presence or window signal — unlike §2's `stalled`
+rule, which exists to keep the *passive* alerts stream from crying wolf. This
+alert is not passive: it lands in front of the one participant whose job is to
+weigh it, so the bar is intentionally lower and the two rules can both fire
+for the same ticket independently.
+
 ## 2026-08-26 — `office profiles`: one place to audit account assignment
 
 `office profiles` lists every configured account, which tmux agents are on it,

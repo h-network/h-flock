@@ -83,6 +83,59 @@ The ticket must have a non-empty `id`. After an alert, the watchdog stores that
 id at `<prefix>:agent:<name>:alerted` with the cooldown TTL. The same ticket is
 not reported again while that key remains; a different ticket can be.
 
+## 2a. Doing-duration: a direct, board-only alert to the lead
+
+A second, independent rule, added after §2 was already shipping: any agent's
+first `tasks.doing` ticket whose `started_ts` is at least `WATCHDOG_DOING_ALERT_SEC`
+old (default `900`, 15 minutes) is reported **directly to the tenant's lead**,
+regardless of presence or window state. It is evaluated every ordinary pass,
+alongside and independently of §2 and §3 — the same ticket can produce both a
+`stalled` record on the alerts stream and a doing-duration message to the lead.
+
+⚠ **Board-only is deliberate, not an oversight.** §2's three-signal rule exists
+so the *passive* alerts stream does not cry wolf at an ordinary long build — a
+human reading it later needs it to mean something. This rule is not passive: it
+is a message that lands in front of the one person whose job is to weigh it, so
+the bar is lower on purpose. A human, not a heuristic, decides whether 15
+minutes on this ticket is normal.
+
+The message is delivered as plain text, not the alerts stream:
+
+```
+[alert from watchdog] <agent> has been working on "<ticket title>" for <N> min, request an update
+```
+
+`<N>` is `doing_age_s // 60`. The pane also carries the ordinary `[message from
+watchdog]` wrapper every delivery gets (§4) — the `[alert from watchdog]`
+tag inside the text is what marks it as this rule's output rather than a peer
+message, since the outer wrapper is identical for both.
+
+**Re-alerts once per threshold crossing, not once per poll and not only once.**
+`doing_age_s // WATCHDOG_DOING_ALERT_SEC` gives a crossing number (1 at 15m, 2
+at 30m, …); the watchdog stores `<ticket_id>:<crossing>` at
+`<prefix>:agent:<name>:doing.alerted` and only sends again once the current
+crossing exceeds the stored one. A ticket open for hours keeps nudging the
+lead at each 15-minute mark; a ticket still in the same 15-minute window does
+not repeat every `WATCHDOG_INTERVAL`. A different ticket id resets the count.
+This is a separate key from `alerted` (§2), which cools down the `stalled`
+alert on a fixed TTL instead — the two rules do not share state.
+
+**Delivery bypasses the switch's forwarding hop, not the envelope format.** The
+watchdog is not a roster member (§1) and has no egress queue for the switch to
+poll, so `office send`'s normal path — write to the sender's own egress,
+let the switch forward it — has nothing to drain it. The watchdog instead
+builds the same v4 envelope `office send` would (source `watchdog`, kind
+`Message`), pushes it directly onto the lead's `ingress` list, and kicks
+`flock.port <lead>` itself — the same two steps the switch performs after
+popping a normal envelope from egress. The rendering the lead sees
+(`message_opener`, the `[message from watchdog]` wrapper, delivery
+verification markers) is identical to any other message; only the egress hop
+is skipped, because nothing was ever going to consume it.
+
+If the tenant has no lead (`<prefix>:lead` unset), or the lead is not a `tmux`
+participant, the check is silently skipped — there is nowhere to deliver a
+pane message to.
+
 ## 3. `blocked`: a retained delivery verdict
 
 The switch, not the watchdog, owns:
@@ -147,20 +200,31 @@ tenant Redis Stream:
 
 The identical JSON is printed as one line to the container log. Humans receive
 it through `GET /alerts` or `GET /alerts/stream`; an agent can inspect current
-state explicitly with `office status`. The watchdog sends no envelope to the
-lead or to any other agent.
+state explicitly with `office status`. The watchdog sends no envelope to a peer
+agent.
 
-That restriction prevents the observation from clearing its own symptom. If a
-lead agent were automatically told that a peer had an old ticket and a quiet
-window, its natural response would be to message the peer. The paste itself
-creates window activity and may create an input event, resetting the evidence
-without fixing the underlying condition. It would also turn a false positive
-into an automated interruption. A human can read the factual record and decide
-whether intervention is warranted; the watchdog cannot.
+That restriction prevents the observation from clearing its own symptom. If an
+ordinary agent were automatically told that a peer had an old ticket and a
+quiet window, its natural response would be to message the peer. The paste
+itself creates window activity and may create an input event, resetting the
+evidence without fixing the underlying condition. It would also turn a false
+positive into an automated interruption. A human can read the factual record
+and decide whether intervention is warranted; the watchdog cannot.
 
 Alert records are facts, not diagnoses. Their common fields are `v`, `ts` and
 `kind`; the remaining fields are specific to `stalled`, `blocked`, or
 `credential` as shown in this document.
+
+⚠ **§2a is the one exception, and it is to the lead only.** HLD §8c
+works out why the lead does not re-create the symptom-clearing problem above:
+the lead is the one participant in this fabric that a human's own judgment is
+meant to reach through, per HLD §8c's "why there is a lead at all" — a title
+is what makes an agent take direction rather than negotiate it, but it is also
+the one address in the roster where a human is expected to actually be
+reading. Messaging the lead is not messaging an agent in the sense this
+section means; it is the closest thing this fabric has to messaging the human
+running it. No other participant gets this treatment, and this section's
+restriction is otherwise unchanged.
 
 ## 5. Credential warnings
 
@@ -220,6 +284,7 @@ agents.
 | `WATCHDOG_SILENCE_SEC` | `300` | minimum window-output silence |
 | `WATCHDOG_COOLDOWN_SEC` | `3600` | per-ticket stall-alert cooldown |
 | `WATCHDOG_CREDENTIAL_WARN_DAYS` | `7` | refresh-token warning horizon |
+| `WATCHDOG_DOING_ALERT_SEC` | `900` | age at which §2a messages the lead directly, and the re-alert period thereafter |
 
 `REDIS_URL`, `POD` and `TENANT` identify the tenant. `TMUX_SESSION` defaults to
 the tenant name; `TMUX_SOCKET` selects an explicit tmux socket when present.
@@ -239,6 +304,12 @@ the tenant name; `TMUX_SOCKET` selects an explicit tmux socket when present.
    reviewing build 77 — the move updated eight docs for the file *paths* and
    missed the sentence about *ownership*.
 5. `blocked` is a limited delivery-verification verdict, not a diagnosis.
-6. Alerts go to the Redis Stream and container log for humans, never into an
-   agent's ingress queue.
+6. ⚠ **AMENDED — §2a is one exception.** Every `stalled`, `blocked` and
+   `credential` alert still goes only to the Redis Stream and container log,
+   never into any agent's ingress queue. §2a's doing-duration message is the
+   single exception, and it is narrower than "an agent's ingress queue" in
+   general: it is addressed only to whichever participant is currently the
+   tenant's `lead` (HLD §8c), never to the agent the ticket names, and never to
+   any other peer. If there is no lead, or the lead is not `tmux`, §2a sends
+   nothing rather than falling back to any other participant.
 7. No terminal content is captured or parsed.
