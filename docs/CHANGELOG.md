@@ -11,6 +11,22 @@
 
 ---
 
+## 2026-08-26 — `office profiles`: one place to audit account assignment
+
+`office profiles` lists every configured account, which tmux agents are on it,
+which agents landed on `default` because no `profile` was set, and which
+members carry no CLI account at all (`api`, `control` port_types).
+
+**What was false:** that account assignment was visible only one agent at a
+time. `office peers -v` (build 108) already showed a peer's own profile, but a
+multi-account tenant had no single command to see which account was
+over-subscribed, under-used, or silently inheriting `default`.
+
+⚠ A legacy tenant with no canonical `accounts` registry in Redis prints
+`configured accounts: unknown` and falls back to the profiles it can observe
+from agents' own `profile` keys, rather than failing closed — the same
+permissive-on-absence precedent as `bus/policy.py`.
+
 ## 2026-08-22 — the custody log outlives the container
 
 **Build 79.** `FLOCK_CUSTODY_FILE` is a byte copy of every record reaching

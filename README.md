@@ -229,6 +229,7 @@ office send -a frontend "can you take a look at this?"
 office send -a frontend --file report.md    # or --stdin; never shell-parsed
 office broadcast standup in five
 office peers                       # who you can talk to
+office profiles                    # which account each colleague runs under
 office status                      # who is working, on what, since when
 office hire networking --cli claude      # a new colleague, live, no restart
 office letGo networking

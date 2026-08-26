@@ -44,6 +44,26 @@ Everything addressable is a name in the roster. What is *behind* the name is its
 what that means. This is structural rather than a convention: the switch has no
 code path that could dispatch on port_type even if someone wanted it to.
 
+### 2a. Accounts — the credential unit, not the agent
+
+A `tmux` participant's CLI (claude, codex) runs against an **account**: a
+login, its config directory (`~/.claude-<name>` / `~/.codex-<name>`) and, where
+one was given at setup, its OAuth credential. The unit is the account, not the
+agent — several agents can share one and pay for exactly one interactive
+login; `default` is the account nobody named.
+
+`setup.sh` asks for the accounts a tenant will use and seeds each one's config
+directory (`container/seed-home.sh in|out|check`). Which account a given agent
+uses is a Redis key, `profile`, set by `StartAgent` / `office hire --profile`
+and validated against the configured registry; `flock.tmuxhost` turns it into
+that agent's window environment (`CLAUDE_CONFIG_DIR` / `CODEX_HOME`).
+`office profiles` reads the registry and every agent's `profile` key back out,
+so a multi-account tenant can be audited from one command.
+
+⚠ **`api` and `control` participants carry no account** — there is no CLI to
+log in, so `office profiles` reports them separately rather than folding them
+into `default`.
+
 ## 3. The parts
 
 ⚠ **Diagram corrected 2026-08-15.** The build-56 rename turned `adapter` into
