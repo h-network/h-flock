@@ -27,6 +27,9 @@ A Telegram bot client that talks to an **h-flock** tenant over HTTP, allowing a 
 | `FLOCK_API_TOKEN` | *required* | Bearer API token for authentication |
 | `TELEGRAM_BOT_TOKEN` | *optional* | Telegram Bot API token (from @BotFather) |
 | `CURSOR_FILE` | `cursor.json` | Path to store the persisted cursor |
+| `TELEGRAM_CHAT_ID` | *optional* | Fixed chat for `--prompt`/`--status` one-shots and for live alert push (§2b) |
+| `ALERTS_CURSOR_FILE` | derived from `CURSOR_FILE` | Path to store the alerts-stream cursor, kept separate from the mailbox cursor |
+| `NO_ALERT_PUSH` | unset | Set to `1` to disable live alert push even when `TELEGRAM_CHAT_ID` is set |
 
 ### Running in Dry-Run Mode (Without Telegram Token)
 
@@ -82,6 +85,41 @@ Try it without a bot token: `python3 clients/telegram/bot.py --api-token "$FLOCK
 
 ---
 
+## 2b. Alerts
+
+**🔔 Alerts** (added to the same inline menu) shows the tenant's recent
+watchdog alerts on demand via `GET /alerts`, and — the more valuable half —
+`AlertPusher` proactively pushes each *new* alert to `--chat-id`/
+`TELEGRAM_CHAT_ID` as it happens via `GET /alerts/stream`, running in a
+background thread alongside the normal polling loop. Disable it with
+`--no-alert-push` / `NO_ALERT_PUSH=1`; it is skipped automatically when no
+chat id is configured (the bot cannot push into a chat it has never heard
+from).
+
+⚠ **Only three alert kinds ever reach either surface: `blocked`, `stalled`,
+`credential`.** These are exactly what `GET /alerts`/`GET /alerts/stream`
+document (API.md's Watchdog Alerts Feed). The two newer, lead-only alerts —
+`doing_duration` and `todo_duration` (the "unpicked ticket" one) — are pasted
+directly into the *lead's* tmux pane as an ordinary `Message` envelope
+(`flock/watchdog/service.py`'s `_notify_lead`, confirmed against `_check_doing_duration`/
+`_check_todo_duration`), and never touch the alerts stream at all. There is
+currently no API surface — REST or SSE — that exposes them to anything but
+the lead's own pane, so this bot cannot surface them regardless of which
+agent it targets. Flagged to architect as a possible follow-up (e.g.
+mirroring them onto the alerts stream too), not built here — it was out of
+this ticket's scope and text-matching the lead's ordinary conversation
+mailbox to guess which messages are secretly alerts would be fragile.
+
+`GET /alerts` has no "give me the most recent N" query — without `after` it
+reads from the *oldest* stored entry, same as every other stream endpoint
+here. The on-demand view therefore fetches up to the retention cap (1000)
+and takes the tail client-side; `AlertPusher` avoids the equivalent problem
+on first run by seeding its cursor from `next_cursor` (the current tail)
+instead of streaming from the beginning, so it does not replay the whole
+retained history as if every alert were new.
+
+---
+
 ## 3. Documentation Gaps in `docs/API.md`
 
 Built strictly against [`docs/API.md`](../../docs/API.md). The following gaps and ambiguities were encountered:
@@ -100,6 +138,12 @@ Built strictly against [`docs/API.md`](../../docs/API.md). The following gaps an
 
 5. **Activity Feed Event Kinds & Schema**:
    Section 5 notes that `tool` events carry a `tool` string (e.g. `"tool": "Bash"`), but does not explicitly enumerate all valid values for `kind` or state whether `tool` is null/absent for non-tool event kinds (`input`, `output`).
+
+6. **No reverse/tail query on `GET /alerts` (or any stream endpoint)**:
+   Without `after`, `GET /alerts?limit=N` returns the *oldest* `N` stored entries (`xrange(min="-")`), not the most recent — unintuitive for a "show me recent alerts" one-shot. A client wanting the tail must fetch up to the retention cap and slice client-side, as this bot does. Worth a line in API.md's §4a gotchas.
+
+7. **The two newest watchdog alerts never reach `GET /alerts`**:
+   `doing_duration` and `todo_duration` ("unpicked ticket") are delivered as a direct `Message` to the lead's tmux pane (`_notify_lead`), not written to the alerts stream `_alert` writes to. API.md's Watchdog Alerts Feed section reads as if it covers "alerts produced by `flock.watchdog`" generally; it does not mention this split, and nothing in the REST/SSE surface exposes those two kinds at all.
 
 ## TLS
 
