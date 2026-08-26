@@ -24,13 +24,17 @@
 #             session and log privacy              (the door behaves)
 #   --tmux    credential boundary · concurrent hire · window loss
 #             Requires real agents in real panes and the REST API door. It is
-#             the only suite that produces real paste markers, so the only one
-#             under which delivery_unverified can fire and verification can be
-#             meaningfully analysed.
+#             deliberately limited to the three verified scenarios below.
 #   --all     every suite above
 #
 # EXCLUDED: tmux-nemotron is manual integration only. bus-* scenarios belong
 # under conservation/fault, never --tmux.
+#
+# LIMIT: these three members do NOT exercise a successful paste_text.
+# tmux-window-loss targets a missing window, tmux-boundary sends nothing, and
+# tmux-concurrent-hire uses the control-plane opener. Until a successful-paste
+# scenario joins this suite, it does not exercise delivery_unverified or make
+# analyse-verification meaningful.
 #
 # ⚠ EXIT CODES, so a caller never has to read the prose:
 #   0    every selected suite passed
