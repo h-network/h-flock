@@ -11,6 +11,29 @@
 
 ---
 
+## 2026-08-26 — the watchdog can also message the lead for an unpicked `todo` ticket
+
+Same family, same day as the `doing`-duration alert below. Any ticket sitting
+in an agent's `tasks.todo` past `WATCHDOG_TODO_ALERT_SEC` (default 300s) now
+pastes `[alert from watchdog] <agent> has an unpicked ticket "<title>"
+waiting <N> min` into the tenant `lead`'s pane, via the same `_notify_lead`
+path the `doing`-duration alert uses.
+
+**What this made false:** that §2a's exception to "alerts a human, never an
+agent" (HLD §8c) was singular. It is now two independent rules sharing one
+mechanism and one scope (the `lead`, never the ticket's agent, never any other
+peer) — HLD §8c and LLD-watchdog §4/§7 invariant 6 are worded to cover both.
+
+New per-agent key `<prefix>:agent:<name>:todo.alerted`, a **HASH** keyed by
+ticket id (unlike `doing.alerted`'s STRING): `tasks.todo` can hold several
+aging tickets for one agent at once, each tracked and re-fired independently,
+with stale ticket ids dropped once they leave `todo`.
+
+⚠ Presence-independent for a different reason than §2a: there is no work in
+progress yet to have a presence opinion about. An agent can be entirely
+healthy and simply not have looked at its board — which is exactly the
+condition this rule surfaces.
+
 ## 2026-08-26 — the watchdog can message the lead directly for a long-`doing` ticket
 
 Any agent's `tasks.doing` ticket older than `WATCHDOG_DOING_ALERT_SEC` (default
