@@ -4,10 +4,14 @@ import inspect
 import json
 import ssl
 import tempfile
+import threading
 from pathlib import Path
 
 from clients.telegram import bot
-from clients.telegram.bot import AlertPusher, CursorStore, FlockClient, TelegramBot, render_alert, _parse_sse_events
+from clients.telegram.bot import (
+    AlertPusher, CursorStore, FlockClient, ReplyPusher, TelegramBot,
+    render_alert, render_reply, _parse_sse_events,
+)
 
 
 class DummyFlockClient:
@@ -21,6 +25,9 @@ class DummyFlockClient:
         self.boards = {"architect": {"todo": [], "doing": [{"title": "Review auth change"}], "hold": [], "done": []}}
         self.added_tickets = []
         self.control_calls = []
+        self.hired = []
+        self.retired = []
+        self.sent_envelopes = []
         self.alerts = []
         self.alerts_next_cursor = None
 
@@ -28,6 +35,7 @@ class DummyFlockClient:
         return 202, {"stream_id": "s1", "correlation_id": "c1"}
 
     def send_message(self, destination, text):
+        self.sent_envelopes.append({"destination": destination, "text": text})
         return 202, {"stream_id": "s2", "correlation_id": "c2"}
 
     def get_presence(self, agent):
@@ -50,13 +58,21 @@ class DummyFlockClient:
                   for name in self.roster]
         return 200, {"agents": agents}
 
-    def add_ticket(self, agent, title, description=""):
-        self.added_tickets.append({"agent": agent, "title": title, "description": description})
+    def add_ticket(self, agent, title, description="", priority=""):
+        self.added_tickets.append({"agent": agent, "title": title, "description": description, "priority": priority})
         return 202, {"stream_id": "s3", "correlation_id": "c3"}
 
     def control_agent(self, kind, agent):
         self.control_calls.append({"kind": kind, "agent": agent})
         return 202, {"stream_id": "s4", "correlation_id": "c4"}
+
+    def hire_agent(self, agent, cli="claude", profile=None, provider=None):
+        self.hired.append({"agent": agent, "cli": cli, "profile": profile, "provider": provider})
+        return 202, {"stream_id": "s5", "correlation_id": "c5"}
+
+    def retire_agent(self, agent):
+        self.retired.append(agent)
+        return 202, {"stream_id": "s6", "correlation_id": "c6"}
 
     def get_messages(self, after=None, limit=100):
         res = []
@@ -85,6 +101,7 @@ class DummyTelegramClient:
         self.edited_messages = []
         self.chat_actions = []
         self.answered_callbacks = []
+        self.commands_set = []
 
     def send_message(self, chat_id, text, reply_to_message_id=None, reply_markup=None):
         msg_id = len(self.sent_messages) + 1
@@ -103,6 +120,10 @@ class DummyTelegramClient:
 
     def answer_callback_query(self, callback_query_id, text=None):
         self.answered_callbacks.append({"callback_query_id": callback_query_id, "text": text})
+        return {"ok": True}
+
+    def set_my_commands(self, commands):
+        self.commands_set.append(commands)
         return {"ok": True}
 
 
@@ -153,6 +174,19 @@ def test_enrol_gives_up_after_timeout_without_raising(monkeypatch):
     assert ok is False
 
 
+def test_enrol_registers_bot_commands():
+    flock = DummyFlockClient()
+    telegram = DummyTelegramClient()
+    with tempfile.TemporaryDirectory() as tmpdir:
+        store = CursorStore(str(Path(tmpdir) / "cursor.json"))
+        bot_instance = TelegramBot(flock, telegram, store, target_agent="architect")
+        bot_instance.enrol()
+
+    assert len(telegram.commands_set) == 1
+    commands = {c["command"] for c in telegram.commands_set[0]}
+    assert {"menu", "status"} <= commands
+
+
 def test_run_polling_does_not_enrol_itself():
     """enrol() is the caller's job now (main(), once, before dispatch) — a
     second call from inside run_polling would silently double the retry
@@ -183,6 +217,23 @@ def test_run_polling_does_not_enrol_itself():
         except _StopPolling:
             pass
     assert flock.enrol_calls == 0
+
+
+def test_handle_user_prompt_returns_immediately_without_waiting():
+    """Live bug this replaced: one chat's unanswered prompt used to block
+    forever waiting for a reply, freezing the whole bot for every chat.
+    handle_user_prompt must now post and return -- no wait loop at all."""
+    flock = DummyFlockClient()
+    flock.presence_state = "working"  # would have looped forever under the old design
+    telegram = DummyTelegramClient()
+    with tempfile.TemporaryDirectory() as tmpdir:
+        store = CursorStore(str(Path(tmpdir) / "cursor.json"))
+        bot_instance = TelegramBot(flock, telegram, store, target_agent="architect")
+
+        reply = bot_instance.handle_user_prompt(111, "hi")
+
+        assert reply == "✅ Sent to architect."
+        assert telegram.sent_messages[-1]["text"] == "✅ Sent to architect."
 
 
 def test_cursor_store():
@@ -230,41 +281,16 @@ def test_handle_user_prompt_when_blocked():
 def test_handle_user_prompt_success():
     flock = DummyFlockClient()
     flock.presence_state = "working"
-    flock.activity_queue = [
-        {"v": 1, "agent": "architect", "ts": "2026-08-09T15:00:00Z", "kind": "tool", "tool": "Read", "cursor": "2000-0"},
-        {"v": 1, "agent": "architect", "ts": "2026-08-09T15:00:01Z", "kind": "tool", "tool": "Bash", "cursor": "2001-0"},
-    ]
-    flock.messages_queue = [
-        {
-            "v": 2,
-            "kind": "Message",
-            "stream_id": "s1",
-            "ts": "2026-08-09T15:00:02Z",
-            "l2": {"source": "architect", "destination": "telegram"},
-            "l3": {
-                "source": "acme:hq:architect",
-                "destination": "acme:hq:telegram",
-            },
-            "payload": {"text": "Auth check passed. 12 tests green."},
-            "cursor": "3000-0",
-        }
-    ]
     telegram = DummyTelegramClient()
     with tempfile.TemporaryDirectory() as tmpdir:
-        cpath = str(Path(tmpdir) / "cursor.json")
-        store = CursorStore(cpath)
+        store = CursorStore(str(Path(tmpdir) / "cursor.json"))
         bot = TelegramBot(flock, telegram, store, target_agent="architect")
 
         reply = bot.handle_user_prompt(12345, "please check auth")
-        assert reply == "Auth check passed. 12 tests green."
 
-        # Cursor updated and saved
-        assert store.load() == "3000-0"
-
-        # Check sent messages: initial progress + final answer
-        assert len(telegram.sent_messages) == 2
-        assert "architect is working" in telegram.sent_messages[0]["text"]
-        assert "architect: Auth check passed" in telegram.sent_messages[1]["text"]
+        assert reply == "✅ Sent to architect."
+        assert len(telegram.sent_messages) == 1
+        assert telegram.sent_messages[0]["text"] == "✅ Sent to architect."
 
 
 def test_door_context_none_for_plain_http():
@@ -315,13 +341,24 @@ def _make_bot(flock=None, telegram=None, tmpdir=None):
     return TelegramBot(flock, telegram, store, target_agent="architect"), flock, telegram
 
 
-def test_menu_command_sends_inline_keyboard():
+def test_menu_command_sends_sticky_keyboard():
     with tempfile.TemporaryDirectory() as tmpdir:
         bot_instance, flock, telegram = _make_bot(tmpdir=tmpdir)
         bot_instance.handle_menu_command(12345)
         assert len(telegram.sent_messages) == 1
         markup = telegram.sent_messages[0]["reply_markup"]
-        assert markup["inline_keyboard"][0][0]["callback_data"] == "ov"
+        assert markup["resize_keyboard"] is True
+        assert markup["is_persistent"] is True
+        flat = [b["text"] for row in markup["keyboard"] for b in row]
+        assert flat == [
+            "📋 Overview", "🎫 Add ticket",
+            "⏯ Lifecycle", "🔔 Alerts",
+            "🎯 Message: architect", "➕ Hire",
+            "📢 Broadcast",
+        ]
+        # every static label resolves to a dispatch code; the dynamic target
+        # button is matched by prefix instead (see handle_text_message)
+        assert set(flat) - {"🎯 Message: architect"} == set(TelegramBot.STICKY_LABELS)
 
 
 def test_handle_text_message_menu_and_status_still_work():
@@ -379,10 +416,14 @@ def test_addticket_full_flow_via_callbacks_and_text():
         assert 12345 in bot_instance.pending
 
         reply = bot_instance.handle_text_message(12345, "Seen twice in CI this week")
+        assert "Priority?" in reply
+        assert 12345 in bot_instance.pending
+
+        reply = bot_instance.handle_callback_query(12345, "cb-3", "ap:high")
         assert "Ticket added to sme-2" in reply
         assert 12345 not in bot_instance.pending
         assert flock.added_tickets == [
-            {"agent": "sme-2", "title": "Fix the flaky test", "description": "Seen twice in CI this week"}
+            {"agent": "sme-2", "title": "Fix the flaky test", "description": "Seen twice in CI this week", "priority": "high"}
         ]
 
 
@@ -392,7 +433,21 @@ def test_addticket_description_dash_skips_it():
         bot_instance.pending[12345] = {"flow": "addticket", "agent": "architect", "stage": "title"}
         bot_instance.handle_text_message(12345, "Quick fix")
         bot_instance.handle_text_message(12345, "-")
-        assert flock.added_tickets == [{"agent": "architect", "title": "Quick fix", "description": ""}]
+        bot_instance.handle_callback_query(12345, "cb-1", "ap:normal")
+        assert flock.added_tickets == [
+            {"agent": "architect", "title": "Quick fix", "description": "", "priority": "normal"}
+        ]
+
+
+def test_addticket_priority_stray_text_reprompts_without_losing_the_flow():
+    with tempfile.TemporaryDirectory() as tmpdir:
+        bot_instance, flock, telegram = _make_bot(tmpdir=tmpdir)
+        bot_instance.pending[12345] = {"flow": "addticket", "agent": "architect", "stage": "priority",
+                                        "title": "Quick fix", "description": ""}
+        reply = bot_instance.handle_text_message(12345, "high please")
+        assert "Tap a priority button" in reply
+        assert 12345 in bot_instance.pending
+        assert flock.added_tickets == []
 
 
 def test_addticket_flow_cancel():
@@ -449,18 +504,254 @@ def test_lifecycle_control_failure_reports_detail():
         assert "unknown agent" in reply
 
 
+def test_lifecycle_picker_includes_retire():
+    with tempfile.TemporaryDirectory() as tmpdir:
+        bot_instance, flock, telegram = _make_bot(tmpdir=tmpdir)
+        bot_instance.handle_callback_query(12345, "cb-1", "lc:architect")
+        buttons = telegram.sent_messages[-1]["reply_markup"]["inline_keyboard"]
+        assert any(b["callback_data"] == "lret:architect" for row in buttons for b in row)
+
+
+def test_retire_requires_typing_the_exact_name():
+    with tempfile.TemporaryDirectory() as tmpdir:
+        bot_instance, flock, telegram = _make_bot(tmpdir=tmpdir)
+
+        reply = bot_instance.handle_callback_query(12345, "cb-1", "lret:architect")
+        assert "Type 'architect' exactly" in reply
+        assert bot_instance.pending[12345] == {"flow": "retire", "agent": "architect"}
+
+        reply = bot_instance.handle_text_message(12345, "architeckt")  # typo
+        assert "doesn't match" in reply
+        assert 12345 in bot_instance.pending  # still open for retry
+        assert flock.retired == []
+
+        reply = bot_instance.handle_text_message(12345, "architect")
+        assert "architect retired" in reply
+        assert 12345 not in bot_instance.pending
+        assert flock.retired == ["architect"]
+
+
+def test_retire_cancel():
+    with tempfile.TemporaryDirectory() as tmpdir:
+        bot_instance, flock, telegram = _make_bot(tmpdir=tmpdir)
+        bot_instance.pending[12345] = {"flow": "retire", "agent": "architect"}
+        reply = bot_instance.handle_text_message(12345, "/cancel")
+        assert reply == "Cancelled."
+        assert 12345 not in bot_instance.pending
+        assert flock.retired == []
+
+
+def test_retire_failure_reports_detail():
+    with tempfile.TemporaryDirectory() as tmpdir:
+        class FailingFlockClient(DummyFlockClient):
+            def retire_agent(self, agent):
+                return 422, {"detail": "unknown agent"}
+
+        flock = FailingFlockClient()
+        bot_instance, _, telegram = _make_bot(flock=flock, tmpdir=tmpdir)
+        bot_instance.pending[12345] = {"flow": "retire", "agent": "architect"}
+        reply = bot_instance.handle_text_message(12345, "architect")
+        assert "Failed to retire architect" in reply
+        assert "unknown agent" in reply
+
+
+# ── broadcast ────────────────────────────────────────────────────────────────
+
+def test_broadcast_full_flow():
+    with tempfile.TemporaryDirectory() as tmpdir:
+        bot_instance, flock, telegram = _make_bot(tmpdir=tmpdir)
+
+        reply = bot_instance.handle_text_message(12345, "📢 Broadcast")
+        assert "type the message" in reply
+        assert bot_instance.pending[12345] == {"flow": "broadcast"}
+
+        reply = bot_instance.handle_text_message(12345, "standup in 5")
+        assert reply == "📢 Broadcast sent."
+        assert 12345 not in bot_instance.pending
+        assert flock.sent_envelopes == [{"destination": "all", "text": "standup in 5"}]
+
+
+def test_broadcast_cancel():
+    with tempfile.TemporaryDirectory() as tmpdir:
+        bot_instance, flock, telegram = _make_bot(tmpdir=tmpdir)
+        bot_instance.pending[12345] = {"flow": "broadcast"}
+        reply = bot_instance.handle_text_message(12345, "/cancel")
+        assert reply == "Cancelled."
+        assert 12345 not in bot_instance.pending
+        assert flock.sent_envelopes == []
+
+
+def test_broadcast_failure_reports_detail():
+    with tempfile.TemporaryDirectory() as tmpdir:
+        class FailingFlockClient(DummyFlockClient):
+            def send_message(self, destination, text):
+                return 422, {"detail": "policy denied"}
+
+        flock = FailingFlockClient()
+        bot_instance, _, telegram = _make_bot(flock=flock, tmpdir=tmpdir)
+        bot_instance.pending[12345] = {"flow": "broadcast"}
+        reply = bot_instance.handle_text_message(12345, "hi all")
+        assert "Broadcast failed" in reply
+        assert "policy denied" in reply
+
+
+# ── hire ─────────────────────────────────────────────────────────────────────
+
+def test_hire_full_flow_via_sticky_button_and_text():
+    with tempfile.TemporaryDirectory() as tmpdir:
+        bot_instance, flock, telegram = _make_bot(tmpdir=tmpdir)
+
+        reply = bot_instance.handle_text_message(12345, "➕ Hire")
+        assert "New agent's name?" in reply
+        assert bot_instance.pending[12345] == {"flow": "hire", "stage": "name"}
+
+        reply = bot_instance.handle_text_message(12345, "sme-9")
+        assert "Profile for sme-9?" in reply
+        assert bot_instance.pending[12345] == {"flow": "hire", "stage": "profile", "name": "sme-9"}
+
+        reply = bot_instance.handle_text_message(12345, "-")
+        assert "Provider for sme-9?" in reply
+        assert bot_instance.pending[12345] == {"flow": "hire", "stage": "provider", "name": "sme-9", "profile": None}
+
+        reply = bot_instance.handle_text_message(12345, "-")
+        assert "Hire accepted for sme-9" in reply
+        assert 12345 not in bot_instance.pending
+        assert flock.hired == [{"agent": "sme-9", "cli": "claude", "profile": None, "provider": None}]
+
+
+def test_hire_with_a_profile_and_provider():
+    with tempfile.TemporaryDirectory() as tmpdir:
+        bot_instance, flock, telegram = _make_bot(tmpdir=tmpdir)
+        bot_instance.pending[12345] = {"flow": "hire", "stage": "name"}
+
+        bot_instance.handle_text_message(12345, "sme-9")
+        bot_instance.handle_text_message(12345, "work")
+        reply = bot_instance.handle_text_message(12345, "gpu-a")
+
+        assert "Hire accepted for sme-9 (profile work, provider gpu-a)" in reply
+        assert flock.hired == [{"agent": "sme-9", "cli": "claude", "profile": "work", "provider": "gpu-a"}]
+
+
+def test_hire_rejects_invalid_name_without_consuming_the_flow():
+    with tempfile.TemporaryDirectory() as tmpdir:
+        bot_instance, flock, telegram = _make_bot(tmpdir=tmpdir)
+        bot_instance.pending[12345] = {"flow": "hire", "stage": "name"}
+
+        reply = bot_instance.handle_text_message(12345, "123")  # all-digits, refused
+        assert "won't work" in reply
+        assert bot_instance.pending[12345] == {"flow": "hire", "stage": "name"}  # still open
+        assert flock.hired == []
+
+        reply = bot_instance.handle_text_message(12345, "all")  # reserved
+        assert "won't work" in reply
+        assert flock.hired == []
+
+        # A valid name after the bad attempts still works, and gets to the profile step.
+        reply = bot_instance.handle_text_message(12345, "sme-9")
+        assert "Profile for sme-9?" in reply
+        bot_instance.handle_text_message(12345, "-")
+        bot_instance.handle_text_message(12345, "-")
+        assert flock.hired == [{"agent": "sme-9", "cli": "claude", "profile": None, "provider": None}]
+
+
+def test_hire_cancel_at_any_stage():
+    with tempfile.TemporaryDirectory() as tmpdir:
+        bot_instance, flock, telegram = _make_bot(tmpdir=tmpdir)
+        for state in (
+            {"flow": "hire", "stage": "name"},
+            {"flow": "hire", "stage": "profile", "name": "sme-9"},
+            {"flow": "hire", "stage": "provider", "name": "sme-9", "profile": None},
+        ):
+            bot_instance.pending[12345] = state
+            reply = bot_instance.handle_text_message(12345, "/cancel")
+            assert reply == "Cancelled."
+            assert 12345 not in bot_instance.pending
+        assert flock.hired == []
+
+
+def test_hire_failure_reports_detail():
+    with tempfile.TemporaryDirectory() as tmpdir:
+        class FailingFlockClient(DummyFlockClient):
+            def hire_agent(self, agent, cli="claude", profile=None, provider=None):
+                return 422, {"detail": "unknown account 'bogus'; available accounts: default, work"}
+
+        flock = FailingFlockClient()
+        bot_instance, _, telegram = _make_bot(flock=flock, tmpdir=tmpdir)
+        bot_instance.pending[12345] = {"flow": "hire", "stage": "provider", "name": "sme-9", "profile": "bogus"}
+        reply = bot_instance.handle_text_message(12345, "-")
+        assert "Failed to hire sme-9" in reply
+        assert "available accounts: default, work" in reply
+
+
+# ── message agent ────────────────────────────────────────────────────────────
+
+def test_message_agent_picker_and_prompt_routing():
+    with tempfile.TemporaryDirectory() as tmpdir:
+        bot_instance, flock, telegram = _make_bot(tmpdir=tmpdir)
+
+        reply = bot_instance.handle_text_message(12345, "🎯 Message: architect")
+        assert "pick a different agent" in reply
+        buttons = telegram.sent_messages[-1]["reply_markup"]["inline_keyboard"]
+        assert any(row[0]["callback_data"] == "ta:sme-2" for row in buttons)
+
+        reply = bot_instance.handle_callback_query(12345, "cb-1", "ta:sme-2")
+        assert "Now messaging sme-2" in reply
+        assert bot_instance.chat_target_agent[12345] == "sme-2"
+        # the re-sent sticky keyboard reflects the new target immediately
+        markup = telegram.sent_messages[-1]["reply_markup"]
+        flat = [b["text"] for row in markup["keyboard"] for b in row]
+        assert "🎯 Message: sme-2" in flat
+
+        bot_instance.handle_text_message(12345, "how's it going?")
+        assert telegram.sent_messages[-1]["text"] == "✅ Sent to sme-2."
+
+
+def test_message_agent_selection_is_per_chat():
+    with tempfile.TemporaryDirectory() as tmpdir:
+        bot_instance, flock, telegram = _make_bot(tmpdir=tmpdir)
+        bot_instance.handle_callback_query(111, "cb-1", "ta:sme-2")
+
+        assert bot_instance._target_for(111) == "sme-2"
+        assert bot_instance._target_for(222) == "architect"  # untouched chat keeps the default
+
+        bot_instance.handle_text_message(222, "hello")
+        assert telegram.sent_messages[-1]["text"] == "✅ Sent to architect."
+
+
+def test_status_command_respects_per_chat_target():
+    with tempfile.TemporaryDirectory() as tmpdir:
+        flock = DummyFlockClient()
+        flock.boards["sme-2"] = {"todo": [], "doing": [{"title": "Fix the flaky test"}], "hold": [], "done": []}
+        bot_instance, _, telegram = _make_bot(flock=flock, tmpdir=tmpdir)
+        bot_instance.chat_target_agent[12345] = "sme-2"
+
+        text = bot_instance.handle_status_command(12345)
+        assert "Agent Status: sme-2" in text
+        assert "Fix the flaky test" in text
+
+
 def test_callback_query_back_to_menu():
+    """An inline "◀ Back" button (e.g. from the Add Ticket agent picker)
+    still resolves to "menu" and re-shows the sticky keyboard."""
     with tempfile.TemporaryDirectory() as tmpdir:
         bot_instance, flock, telegram = _make_bot(tmpdir=tmpdir)
         bot_instance.handle_callback_query(12345, "cb-1", "menu")
-        assert telegram.sent_messages[-1]["reply_markup"]["inline_keyboard"] == TelegramBot.MAIN_MENU
+        markup = telegram.sent_messages[-1]["reply_markup"]
+        assert markup == bot_instance._sticky_keyboard(12345)
 
 
-def test_main_menu_includes_alerts_button():
-    assert any(
-        button["callback_data"] == "al"
-        for row in TelegramBot.MAIN_MENU for button in row
-    )
+def test_sticky_labels_cover_the_office_options():
+    assert set(TelegramBot.STICKY_LABELS.values()) == {"ov", "at", "lc", "al", "hi", "bc"}
+
+
+def test_sticky_keyboard_tap_dispatches_like_the_matching_inline_code():
+    with tempfile.TemporaryDirectory() as tmpdir:
+        flock = DummyFlockClient()
+        flock.alerts = [{"kind": "blocked", "agent": "sme-2", "unconsumed_s": 60, "cursor": "1-0"}]
+        bot_instance, _, telegram = _make_bot(flock=flock, tmpdir=tmpdir)
+
+        reply = bot_instance.handle_text_message(12345, "🔔 Alerts")
+        assert "blocked" in reply
 
 
 # ── alerts ───────────────────────────────────────────────────────────────────
@@ -623,4 +914,113 @@ def test_alert_pusher_resumes_from_persisted_cursor_without_reseeding():
 
         pusher.run(stream_fn=fake_stream)
         assert seen_after == ["42-0"]
+
+
+# ── ReplyPusher (replaces the old inline blocking wait) ───────────────────────
+
+def test_render_reply_uses_source_and_falls_back_to_provided_name():
+    msg = {"l2": {"source": "architect"}, "payload": {"text": "done"}}
+    assert render_reply(msg, fallback_source="telegram") == "architect: done"
+
+    no_source = {"payload": {"text": "hi"}}
+    assert render_reply(no_source, fallback_source="telegram") == "telegram: hi"
+
+    no_text = {"l2": {"source": "architect"}, "payload": {}}
+    assert render_reply(no_text, fallback_source="telegram") == "architect sent a message"
+
+
+def test_reply_pusher_pushes_each_new_message_and_persists_cursor():
+    with tempfile.TemporaryDirectory() as tmpdir:
+        flock = DummyFlockClient()
+        telegram = DummyTelegramClient()
+        store = CursorStore(str(Path(tmpdir) / "cursor.json"))
+        pusher = ReplyPusher(flock, telegram, chat_id=999, cursor_store=store)
+
+        messages = [
+            {"l2": {"source": "architect"}, "payload": {"text": "first"}, "cursor": "10-0"},
+            {"l2": {"source": "architect"}, "payload": {"text": "second"}, "cursor": "11-0"},
+        ]
+
+        def fake_stream(after=None):
+            assert after is None
+            yield from messages
+
+        pusher.run(stream_fn=fake_stream)
+
+        assert len(telegram.sent_messages) == 2
+        assert telegram.sent_messages[0]["text"] == "architect: first"
+        assert telegram.sent_messages[1]["text"] == "architect: second"
+        assert store.load() == "11-0"
+
+
+def test_reply_pusher_seeds_from_tail_on_first_run_not_from_history():
+    with tempfile.TemporaryDirectory() as tmpdir:
+        flock = DummyFlockClient()
+        flock.messages_queue = [
+            {"l2": {"source": "architect"}, "payload": {"text": "old"}, "cursor": "1-0"},
+        ] * 20
+        telegram = DummyTelegramClient()
+        store = CursorStore(str(Path(tmpdir) / "cursor.json"))
+        pusher = ReplyPusher(flock, telegram, chat_id=999, cursor_store=store)
+
+        seen_after = []
+
+        def fake_stream(after=None):
+            seen_after.append(after)
+            return iter([])
+
+        pusher.run(stream_fn=fake_stream)
+        # DummyFlockClient.get_messages(after=None) with a non-empty queue
+        # returns the last item's cursor as next_cursor -- "1-0" here since
+        # every seeded message shares that cursor.
+        assert seen_after == ["1-0"]
+        assert telegram.sent_messages == []
+        assert store.load() == "1-0"
+
+
+def test_reply_pusher_resumes_from_persisted_cursor_without_reseeding():
+    with tempfile.TemporaryDirectory() as tmpdir:
+        flock = DummyFlockClient()
+        flock.messages_queue = [{"l2": {"source": "architect"}, "payload": {"text": "x"}, "cursor": "999-0"}]
+        telegram = DummyTelegramClient()
+        store = CursorStore(str(Path(tmpdir) / "cursor.json"))
+        store.save("42-0")
+        pusher = ReplyPusher(flock, telegram, chat_id=999, cursor_store=store)
+
+        seen_after = []
+
+        def fake_stream(after=None):
+            seen_after.append(after)
+            return iter([])
+
+        pusher.run(stream_fn=fake_stream)
+        assert seen_after == ["42-0"]
+
+
+def test_poll_messages_forever_yields_and_advances_cursor():
+    """Real generator (not injected), exercised for a bounded number of
+    iterations by having the second poll raise a sentinel to stop the
+    otherwise-infinite loop deterministically."""
+    class _Stop(Exception):
+        pass
+
+    flock = FlockClient(base_url="http://unused", token="t", app_name="telegram")
+    calls = {"n": 0}
+
+    def fake_get_messages(after=None):
+        calls["n"] += 1
+        if calls["n"] == 1:
+            return 200, {"messages": [{"cursor": "5-0", "payload": {"text": "a"}}]}
+        raise _Stop
+
+    flock.get_messages = fake_get_messages
+    gen = flock.poll_messages_forever(after=None, interval=0)
+
+    first = next(gen)
+    assert first["cursor"] == "5-0"
+    try:
+        next(gen)
+        assert False, "expected _Stop to propagate"
+    except _Stop:
+        pass
 

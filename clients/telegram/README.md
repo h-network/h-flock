@@ -6,14 +6,12 @@ A Telegram bot client that talks to an **h-flock** tenant over HTTP, allowing a 
 
 ## 1. Overview & Architecture
 
-- **Participant Enrolment:** On startup, the bot enrols as a participant named `telegram` on the bus (`StartAgent` with `port_type: "api"`).
-- **Single Progress Message Editing:** When a user sends a prompt, the bot creates a single Telegram progress message (`⏳ architect is working`) and edits it in place as tool execution events arrive from `/agents/architect/activity`.
-- **Tool Call Summaries:** Tool executions are rendered as tool names (e.g. `⚙ Read`, `⚙ Bash`, `⚙ Edit`). Arguments are intentionally excluded. Edits are coalesced (max once every ~1.5 seconds) to respect Telegram API rate limits.
-- **Typing Indicator:** Telegram's typing indicator is refreshed on a timer (~every 4s) while the agent presence state is `working`.
-- **Separate Answer Delivery:** The answer from `architect` is retrieved from `/agents/telegram/messages` and posted as its own separate message.
-- **`blocked` Visibility:** If `architect` is `blocked`, the bot immediately reports `"architect is not accepting messages right now"` rather than showing a perpetual typing indicator.
-- **Cursor Persistence:** The cursor is saved to disk (`cursor.json`) after processing each message. On restart or reconnection, the saved cursor is passed to `GET /agents/telegram/messages?after=<cursor>` so the bot never replays old messages.
-- **Built for Silence:** If no reply is produced, the bot does not time out or treat it as an error.
+- **Participant Enrolment:** On startup, the bot enrols as a participant named `telegram` on the bus (`StartAgent` with `port_type: "api"`), retrying with backoff for up to 60s — `container/entrypoint.sh` starts the api door and this bundled client within the same instant, no readiness wait, so a single early attempt can lose that race (measured live).
+- **Fire-and-forget prompts, delivery-side pushes replies:** A plain text message posts the envelope (`POST /agents/{agent}/envelopes`, always `202` immediately) and returns right away — no wait loop. `ReplyPusher`, a background thread, independently polls this bot's own mailbox (`GET /agents/telegram/messages`) and pushes each new reply into the chat as it arrives, on its own schedule. This matches how delivery actually works: nothing in the switch/port/api chain waits on anything, so nothing here should either.
+  ⚠ **This replaced an earlier design that blocked inline** — `handle_user_prompt` used to poll-and-wait for a reply, unbounded, inside the same loop that read Telegram's `getUpdates`. One chat's unanswered prompt froze the *entire* bot, for every chat, until that one exchange resolved (measured live on the acceptance VM: the poller sat on one cursor for minutes while every message sent afterward went unread). Removed entirely rather than patched.
+- **`blocked` Visibility:** If `architect` is `blocked`, the bot immediately reports `"architect is not accepting messages right now"` instead of posting.
+- **Cursor Persistence:** `ReplyPusher` persists its mailbox cursor to disk (`cursor.json`) as it delivers each reply, and — like `AlertPusher` — seeds a fresh cursor store from the mailbox's current tail rather than replaying history on first run.
+- **Discoverable commands:** `/menu` and `/status` are registered with Telegram itself via `setMyCommands` at enrol time, so they show up in the client's own `/` command picker instead of requiring the user to know and type them blind.
 
 ---
 
@@ -26,7 +24,7 @@ A Telegram bot client that talks to an **h-flock** tenant over HTTP, allowing a 
 | `FLOCK_API_URL` | `http://localhost:8080` | Base URL of the h-flock REST API service |
 | `FLOCK_API_TOKEN` | *required* | Bearer API token for authentication |
 | `TELEGRAM_BOT_TOKEN` | *optional* | Telegram Bot API token (from @BotFather) |
-| `CURSOR_FILE` | `cursor.json` | Path to store the persisted cursor |
+| `CURSOR_FILE` | `cursor.json` | Path to store `ReplyPusher`'s mailbox cursor |
 | `TELEGRAM_CHAT_ID` | *optional* | Fixed chat for `--prompt`/`--status` one-shots and for live alert push (§2b) |
 | `ALERTS_CURSOR_FILE` | derived from `CURSOR_FILE` | Path to store the alerts-stream cursor, kept separate from the mailbox cursor |
 | `NO_ALERT_PUSH` | unset | Set to `1` to disable live alert push even when `TELEGRAM_CHAT_ID` is set |
@@ -39,7 +37,8 @@ When `TELEGRAM_BOT_TOKEN` is not supplied (or `--dry-run` is passed), the bot op
 # Perform status check against real h-flock data
 python3 clients/telegram/bot.py --api-token "$FLOCK_API_TOKEN" --status
 
-# Send prompt to architect and watch progress edits / reply driven by real h-flock data
+# Post a prompt to architect and return immediately (fire-and-forget — see §1;
+# the reply, if any, is ReplyPusher's job, not this one-shot invocation's)
 python3 clients/telegram/bot.py --api-token "$FLOCK_API_TOKEN" --prompt "can you check the auth change?"
 ```
 
@@ -58,28 +57,74 @@ python3 clients/telegram/bot.py \
 
 ---
 
-## 2a. Inline Menu
+## 2a. Menu: a pinned keyboard, not a one-off message
 
-Sending `/menu` (alongside the existing `/status` and free-text prompts to
-`--agent`) opens an inline-button menu with three actions, scoped to v1 rather
-than full `office` CLI parity:
+Sending `/menu` (registered with Telegram, so it's in the client's `/` picker
+too) shows a **sticky keyboard** — `ReplyKeyboardMarkup`, pinned at the bottom
+of the chat across messages, rather than an inline keyboard attached to one
+message that scrolls away. Its seven buttons are the top-level office options
+— built against `CONTRACTS.md`/`API.md`/`control/openers.py`, not `office`'s
+own (narrower) argparse surface, per office-sme:
 
-- **📋 Office overview** — presence and open ticket (`doing[0]`) for every
+- **📋 Overview** — presence and open ticket (`doing[0]`) for every
   `port_type: "tmux"` agent in the roster. Excludes api clients (like this bot
   itself) and `host`, the same filter the web console uses for lifecycle
   controls.
-- **🎫 Add ticket** — pick an agent from inline buttons, then answer two plain
-  text prompts (title, then description — send `-` to skip it). `/cancel`
-  aborts at either prompt. Posts `AddTicket` to `POST /agents/{agent}/envelopes`.
-- **⏯ Pause / resume agent** — pick an agent, then Pause or Resume. Posts
-  `PauseAgent`/`ResumeAgent` to `POST /agents/host/envelopes`.
+- **🎫 Add ticket** — pick an agent from an inline sub-menu, then title,
+  description (`-` to skip), then a priority (Low/Normal/High, tap only — see
+  below). `/cancel` aborts at any text step. Posts `AddTicket` to `POST
+  /agents/{agent}/envelopes`.
+- **⏯ Lifecycle** — pick an agent from an inline sub-menu, then Pause, Resume,
+  or Retire:
+  - Pause/Resume post `PauseAgent`/`ResumeAgent` to `POST /agents/host/envelopes`.
+  - **🗑 Retire** requires **typing the agent's name exactly** to confirm — the
+    same pattern `clients/web/ui/lifecycle.js` uses, not a yes/no tap.
+    `StopAgent` removes roster membership and identity state; queues and
+    boards are kept for a later re-hire. A mismatched name re-prompts rather
+    than cancelling, same as the web console's disabled-until-match button.
+- **🔔 Alerts** — see §2b.
+- **🎯 Message: `<agent>`** — pick which agent *this chat's* plain-text
+  prompts (and `/status`) go to. Per-chat, not global: `--agent` is only the
+  default until a chat picks one via this button. **This button's own label
+  is dynamic** — it shows the chat's current target and updates the moment it
+  changes, the one part of the keyboard that isn't a fixed constant (see
+  `TelegramBot._sticky_keyboard`).
+- **➕ Hire** — name (validated client-side against the same rule
+  `clients/web/ui/lifecycle.js` uses: lowercase/digits/hyphens, not all
+  digits, not a reserved word), then optional profile, then optional
+  provider (`-` to skip either). Posts `StartAgent` with `port_type: "tmux"`,
+  `cli: "claude"`. Unlike retire, hiring is not destructive — no identity or
+  queues are ever removed — so it skips a type-the-name confirmation.
+  ⚠ **No profile picker**: `office profiles` reads Redis directly and has no
+  REST equivalent, so this client cannot list valid accounts ahead of time. A
+  bad profile name still comes back as a clear `422` — and the api's error
+  conveniently lists the valid ones (`control/openers.py`'s
+  `available_profiles` check).
+- **📢 Broadcast** — type a message, sent to every agent (`POST
+  /agents/all/envelopes`).
 
-`StartAgent`/`StopAgent` (hire/retire) are out of scope for v1 as higher-risk,
-destructive-by-default operations — see `clients/web/SPEC.md` §6a's confirm-by-
-typing-the-name requirement for retire, which this menu does not implement.
+⚠ **`Command` is deliberately not exposed here**, same as the web console
+(`clients/web/SPEC.md` §6): it pastes bare text into a pane and *executes*
+it. If an operator wants to run something, they can type it in the terminal,
+where they can see what they're doing — a chat button is the wrong place for
+that decision.
 
-While a chat has an open Add Ticket flow, its next plain text message is
-consumed as the flow's answer rather than sent to `--agent` as a prompt.
+⚠ **Sticky-keyboard taps arrive as ordinary text messages** — Telegram sends
+the button's label back as if the user typed it, with no `callback_query`.
+`handle_text_message` matches the label against `TelegramBot.STICKY_LABELS`
+(exact match for the six fixed buttons) or the `🎯 Message: ` prefix (for the
+one dynamic button) before falling through to "this is a prompt for the
+chat's target agent". Sub-flows one level down (agent pickers, Lifecycle's
+Pause/Resume/Retire choice, Message-agent, Add Ticket's priority buttons) stay
+**inline** — contextual, one-shot choices tied to a specific message, which is
+what inline keyboards are for; the sticky keyboard is for top-level nav that
+should always be one tap away without re-sending `/menu`.
+
+While a chat has an open multi-step flow (Add Ticket, Hire, Retire,
+Broadcast), its next plain text message is consumed as that flow's answer
+rather than sent to `--agent` as a prompt (and takes priority over a
+sticky-keyboard label, so typing a title that happens to match a button label
+is still treated as the title).
 
 Try it without a bot token: `python3 clients/telegram/bot.py --api-token "$FLOCK_API_TOKEN" --menu`.
 
@@ -87,7 +132,7 @@ Try it without a bot token: `python3 clients/telegram/bot.py --api-token "$FLOCK
 
 ## 2b. Alerts
 
-**🔔 Alerts** (added to the same inline menu) shows the tenant's recent
+**🔔 Alerts** (one of the four sticky-keyboard buttons, §2a) shows the tenant's recent
 watchdog alerts on demand via `GET /alerts`, and — the more valuable half —
 `AlertPusher` proactively pushes each *new* alert to `--chat-id`/
 `TELEGRAM_CHAT_ID` as it happens via `GET /alerts/stream`, running in a
@@ -144,6 +189,9 @@ Built strictly against [`docs/API.md`](../../docs/API.md). The following gaps an
 
 7. **The two newest watchdog alerts never reach `GET /alerts`**:
    `doing_duration` and `todo_duration` ("unpicked ticket") are delivered as a direct `Message` to the lead's tmux pane (`_notify_lead`), not written to the alerts stream `_alert` writes to. API.md's Watchdog Alerts Feed section reads as if it covers "alerts produced by `flock.watchdog`" generally; it does not mention this split, and nothing in the REST/SSE surface exposes those two kinds at all.
+
+8. **The account/profile registry has no REST endpoint**:
+   `available_profiles` (`bus/accounts.py`) — what `office profiles` reads and what `StartAgent`'s `profile` field is validated against (`control/openers.py`) — is direct-Redis only. A REST client can `StartAgent` with a `profile` and get a clear `422` naming the valid accounts if it guesses wrong, but cannot list them ahead of time to offer a picker. `office usage` is the same shape (direct Redis, no REST equivalent).
 
 ## TLS
 
