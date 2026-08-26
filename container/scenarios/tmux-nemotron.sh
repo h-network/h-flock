@@ -43,6 +43,11 @@ drain_transport() {
     sleep "$interval"
   done
   echo "tmux-nemotron: drain_timeout depth=$depth" >&2
+  # ⚠ This rc0 is inherited and is not the final contract: a non-drained queue
+  # makes the snapshot incomplete because in-transit frames can look lost. The
+  # fix must NOT return 100 here, which would skip the evidence below. Instead,
+  # preserve final_depth, capture custody and AOF first, then emit incomplete
+  # reason=drain_timeout depth=N and exit 100. That change needs an in-situ run.
   return 0
 }
 
