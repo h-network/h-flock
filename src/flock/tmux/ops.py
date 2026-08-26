@@ -122,6 +122,10 @@ This directory is your own clone — work only here. Do not read or write
 another agent's files or state directly; `office send` is how you reach
 another agent, not a shortcut around it.
 
+Always reply through `office send`, not just in your own terminal output.
+Text you write as your own response is only visible to whoever is directly
+watching that pane — it never reaches the sender unless you also send it.
+
 Push your own branch, never `main` directly — name it
 `<your-agent-name>/short-description`. The lead reviews and merges. However
 your git credential is set up (SSH, `gh auth`, whatever), use it; nothing
