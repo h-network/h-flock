@@ -852,8 +852,16 @@ the entry shape matches the single-agent route exactly.
   <prefix>:agent:<name>:activity.offset   STRING   where the tail has read to
   <prefix>:agent:<name>:presence          HASH     working | idle | unknown
   <prefix>:agent:<name>:blocked           HASH     { since, stream_id }
+  <prefix>:agent:<name>:doing.alerted     STRING   "<ticket_id>:<crossing>", set by the watchdog
   <prefix>:alerts                         STREAM   tenant-level, MAXLEN ~ 1000
 ```
+
+⚠ **`doing.alerted` does not gate the alerts stream.** It is the dedupe key for
+a *different* mechanism — `LLD-watchdog` §2a's direct paste into the tenant
+`lead`'s pane when a ticket has sat in `doing` past `WATCHDOG_DOING_ALERT_SEC`.
+It is the one case where the watchdog writes to a participant's `ingress`
+rather than only to `<prefix>:alerts`, and it is addressed to the `lead` alone,
+never to the ticket's own agent (`HLD` §8c).
 
 ⚠ **`blocked` is written by the WATCHDOG.** It is a delivery verdict retained
 instead of discarded: set on `unverified`, deleted on `verified`. One writer, and
@@ -974,6 +982,7 @@ or boot-only configuration must not reach agent windows (`LLD-container` §4).
 | `WATCHDOG_SILENCE_SEC` | default `300`. …**and** the window quiet this long |
 | `WATCHDOG_COOLDOWN_SEC` | default `3600`. One alert per ticket within this |
 | `WATCHDOG_CREDENTIAL_WARN_DAYS` | default `7`. Warn before a **refresh** token expires |
+| `WATCHDOG_DOING_ALERT_SEC` | default `900`. A ticket open longer than this is pasted directly into the tenant **lead**'s pane (`LLD-watchdog` §2a), independent of `WATCHDOG_STALL_SEC`/`_SILENCE_SEC`; re-fires once per crossing of this same period |
 | `BOARD_DONE_MAX` | default `500`. Newest finished tickets retained per agent |
 | `DEAD_MAX` | default `500`. Newest dead-lettered envelopes retained per agent |
 | `WINDOW_LOG_MAX_BYTES` | default `8388608` (8 MB). Consumed window-log spool size before truncation |

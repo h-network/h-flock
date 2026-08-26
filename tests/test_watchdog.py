@@ -4,7 +4,7 @@ from datetime import datetime, timezone
 
 import pytest
 
-from flock.bus import prefix
+from flock.bus import parse, prefix
 from flock.watchdog import service
 from flock.watchdog.service import Watchdog
 
@@ -186,6 +186,128 @@ def test_stall_alert_includes_blocked_verdict(monkeypatch):
         "stream_id": "delivery-1",
         "unconsumed_s": 420,
     }
+
+
+def _quiet_windows(now=NOW):
+    """A list-windows reply with fresh activity, so the 3-signal stall check
+    (§2) never fires and doesn't contaminate a doing-duration assertion."""
+    ts = int(now.timestamp())
+    return lambda *args, socket=None: (
+        (0, f"architect\t{ts}\nsme-2\t{ts}", "") if args[0] == "list-windows" else (0, "", "")
+    )
+
+
+def _doing_agent(r, agent="sme-2", *, started="2026-08-09T13:45:00Z", ticket_id="ticket-1", title="review the auth change"):
+    r.lists[_key(agent, "tasks.doing")] = [
+        json.dumps({"id": ticket_id, "title": title, "started_ts": started})
+    ]
+
+
+def _lead(r, name="architect"):
+    r.values[prefix("acme", "hq", resource="lead")] = name
+
+
+def test_doing_duration_messages_the_lead_directly_not_the_alerts_stream(monkeypatch):
+    r = WatchRedis()
+    _doing_agent(r)
+    _lead(r)
+    kicks = []
+    monkeypatch.setattr(service, "run_tmux", _quiet_windows())
+    monkeypatch.setattr(service.subprocess, "Popen", lambda args: kicks.append(args))
+
+    _watchdog(r).poll(now=NOW)
+
+    assert prefix("acme", "hq", resource="alerts") not in r.streams
+    ingress = r.lists[_key("architect", "ingress")]
+    assert len(ingress) == 1
+    envelope = parse(ingress[0])
+    assert envelope["kind"] == "Message"
+    assert envelope["l2"]["source"] == "watchdog"
+    assert envelope["l2"]["destination"] == "architect"
+    assert envelope["payload"]["text"] == (
+        '[alert from watchdog] sme-2 has been working on '
+        '"review the auth change" for 15 min, request an update'
+    )
+    assert kicks == [["flock.port", "architect"]]
+
+
+def test_doing_duration_does_not_fire_before_fifteen_minutes(monkeypatch):
+    r = WatchRedis()
+    _doing_agent(r, started="2026-08-09T13:46:00Z")  # 840s old, under the 900s default
+    _lead(r)
+    monkeypatch.setattr(service, "run_tmux", _quiet_windows())
+    monkeypatch.setattr(service.subprocess, "Popen", lambda args: (_ for _ in ()).throw(AssertionError("should not kick")))
+
+    _watchdog(r).poll(now=NOW)
+
+    assert _key("architect", "ingress") not in r.lists
+
+
+def test_doing_duration_does_not_repeat_within_the_same_threshold_crossing(monkeypatch):
+    r = WatchRedis()
+    _doing_agent(r)
+    _lead(r)
+    kicks = []
+    monkeypatch.setattr(service, "run_tmux", _quiet_windows())
+    monkeypatch.setattr(service.subprocess, "Popen", lambda args: kicks.append(args))
+    watchdog = _watchdog(r)
+
+    watchdog.poll(now=NOW)
+    watchdog.poll(now=NOW)
+    from datetime import timedelta
+    watchdog.poll(now=NOW + timedelta(seconds=60))
+
+    assert len(kicks) == 1
+    assert len(r.lists[_key("architect", "ingress")]) == 1
+
+
+def test_doing_duration_re_alerts_at_the_next_threshold_crossing(monkeypatch):
+    from datetime import timedelta
+
+    r = WatchRedis()
+    _doing_agent(r)
+    _lead(r)
+    kicks = []
+    watchdog = _watchdog(r)
+
+    monkeypatch.setattr(service, "run_tmux", _quiet_windows(NOW))
+    monkeypatch.setattr(service.subprocess, "Popen", lambda args: kicks.append(args))
+    watchdog.poll(now=NOW)
+    assert len(kicks) == 1
+
+    later = NOW + timedelta(seconds=900)
+    monkeypatch.setattr(service, "run_tmux", _quiet_windows(later))
+    watchdog.poll(now=later)
+    assert len(kicks) == 2
+    envelope = parse(r.lists[_key("architect", "ingress")][-1])
+    assert '30 min' in envelope["payload"]["text"]
+
+
+def test_doing_duration_different_ticket_resets_and_re_alerts(monkeypatch):
+    r = WatchRedis()
+    _doing_agent(r)
+    _lead(r)
+    kicks = []
+    watchdog = _watchdog(r)
+    monkeypatch.setattr(service, "run_tmux", _quiet_windows())
+    monkeypatch.setattr(service.subprocess, "Popen", lambda args: kicks.append(args))
+    watchdog.poll(now=NOW)
+    assert len(kicks) == 1
+
+    _doing_agent(r, started="2026-08-09T13:45:00Z", ticket_id="ticket-2", title="fix the flaky test")
+    watchdog.poll(now=NOW)
+    assert len(kicks) == 2
+
+
+def test_doing_duration_does_nothing_without_a_configured_lead(monkeypatch):
+    r = WatchRedis()
+    _doing_agent(r)
+    monkeypatch.setattr(service, "run_tmux", _quiet_windows())
+    monkeypatch.setattr(service.subprocess, "Popen", lambda args: (_ for _ in ()).throw(AssertionError("should not kick")))
+
+    _watchdog(r).poll(now=NOW)
+
+    assert _key("architect", "ingress") not in r.lists
 
 
 def test_credentials_warn_on_claude_refresh_expiry_and_codex_is_unknown(tmp_path, capsys):
