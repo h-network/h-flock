@@ -65,6 +65,8 @@ def test_usage_documents_provider_convention_and_keep_default():
     assert "PROVIDER_LOCAL_MODEL=MODEL" in text
     assert "PROVIDER_<NAME>_*" in text
     assert "KEEP=1 leaves the owned tenant running (default)" in text
+    assert "ONBOARD_CONTRADICTION_GRACE" in text
+    assert "bounded to 1..30s" in text
 
 
 def test_log_pane_disagreement_is_a_category_not_a_fake_failure_count():
@@ -75,6 +77,113 @@ def test_log_pane_disagreement_is_a_category_not_a_fake_failure_count():
     assert "failed=" not in body
     assert "onboarding_log_disagreement \"$disagreement_smes\"" in text
     assert "onboarding_fail 6 log_disagrees_with_pane" not in text
+
+
+@pytest.mark.parametrize("grace", ["0", "31", "not-a-number"])
+def test_contradiction_grace_refuses_unbounded_values(tmp_path, grace):
+    result = run_tool(
+        tmp_path / "evidence",
+        env={"TENANT": "grace-control", "ONBOARD_CONTRADICTION_GRACE": grace},
+    )
+    assert result.returncode == 100
+    assert "ONBOARDING incomplete reason=invalid_contradiction_grace" in result.stderr
+
+
+@pytest.mark.parametrize(
+    ("timeout", "grace"),
+    [("1", "2"), ("10", "11"), ("1", None)],
+)
+def test_contradiction_grace_cannot_exceed_requested_timeout(tmp_path, timeout, grace):
+    env = {"TENANT": "grace-timeout", "ONBOARD_TIMEOUT": timeout}
+    if grace is not None:
+        env["ONBOARD_CONTRADICTION_GRACE"] = grace
+    result = run_tool(tmp_path / "evidence", env=env)
+    assert result.returncode == 100
+    assert "ONBOARDING incomplete reason=contradiction_grace_exceeds_timeout" in result.stderr
+
+
+def test_contradiction_grace_equal_to_timeout_is_accepted_and_effective_deadline_is_stated(tmp_path):
+    result = run_tool(
+        tmp_path / "evidence",
+        env={
+            "TENANT": "grace-boundary", "ONBOARD_TIMEOUT": "2",
+            "ONBOARD_CONTRADICTION_GRACE": "2",
+        },
+    )
+    assert result.returncode == 100
+    assert "ONBOARDING incomplete reason=provider_url_required" in result.stderr
+    assert "contradiction_grace_exceeds_timeout" not in result.stderr
+    assert (
+        "ONBOARDING_TIMING timeout_seconds=2 contradiction_grace_seconds=2 "
+        "effective_deadline_seconds=4"
+    ) in result.stdout
+
+
+def test_contradiction_grace_matches_poll_cadence_by_default():
+    text = TOOL.read_text()
+    assert 'ONBOARD_POLL_SECONDS=2' in text
+    assert 'ONBOARD_CONTRADICTION_GRACE="${ONBOARD_CONTRADICTION_GRACE:-$ONBOARD_POLL_SECONDS}"' in text
+    spec = (ROOT / "docs/SPEC-onboarding-integration.md").read_text()
+    assert "defaults to one observation interval" in spec
+    assert "Changing the poll cadence therefore changes the default grace with it" in spec
+    assert "may never exceed `ONBOARD_TIMEOUT`" in spec
+    assert "maximum effective deadline in seconds" in spec
+
+
+@pytest.mark.parametrize(("render_delay", "expected_rc"), [(0.1, 0), (2.0, 6)])
+def test_contradiction_render_inside_grace_passes_and_outside_fails(tmp_path, render_delay, expected_rc):
+    text = TOOL.read_text()
+    function = re.search(
+        r"finish_onboarding_observation\(\) \{\n.*?\n\}\nfinish_onboarding_observation",
+        text, re.DOTALL,
+    ).group(0).rsplit("\n", 1)[0]
+    marker = tmp_path / "rendered"
+    probe = f'''set -uo pipefail
+{function}
+ONBOARD_CONTRADICTION_GRACE=1
+OBSERVED=0
+PANE_DISAGREEMENTS=(sme-1)
+calls=0
+observe_onboarding() {{
+  calls=$((calls + 1))
+  if [ "$calls" -gt 1 ] && [ -f "$MARKER" ]; then
+    OBSERVED=2
+    PANE_DISAGREEMENTS=()
+  else
+    OBSERVED=0
+    PANE_DISAGREEMENTS=(sme-1)
+  fi
+}}
+onboarding_log_disagreement() {{ exit 6; }}
+onboarding_incomplete() {{ exit 100; }}
+(sleep "$RENDER_DELAY"; touch "$MARKER") &
+finish_onboarding_observation
+'''
+    result = subprocess.run(
+        ["bash", "-c", probe],
+        env={**os.environ, "MARKER": str(marker), "RENDER_DELAY": str(render_delay)},
+        capture_output=True, text=True, timeout=4,
+    )
+    assert result.returncode == expected_rc
+
+
+def test_silence_does_not_receive_contradiction_grace():
+    text = TOOL.read_text()
+    function = re.search(
+        r"finish_onboarding_observation\(\) \{\n.*?\n\}\nfinish_onboarding_observation",
+        text, re.DOTALL,
+    ).group(0).rsplit("\n", 1)[0]
+    probe = f'''{function}
+ONBOARD_CONTRADICTION_GRACE=30
+OBSERVED=0
+PANE_DISAGREEMENTS=()
+observe_onboarding() {{ :; }}
+onboarding_log_disagreement() {{ exit 6; }}
+onboarding_incomplete() {{ exit 100; }}
+finish_onboarding_observation
+'''
+    result = subprocess.run(["bash", "-c", probe], capture_output=True, text=True, timeout=1)
+    assert result.returncode == 100
 
 
 def test_custody_summary_scopes_by_time_source_stream_and_destination(tmp_path):

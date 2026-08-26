@@ -14,6 +14,9 @@
 # PROVIDER_NAME selects the PROVIDER_<NAME>_* variables (default: local).
 # KEEP=1 leaves the owned tenant running (default); KEEP=0 captures evidence
 # first and then tears it down. The tool refuses to adopt an existing tenant.
+# ONBOARD_CONTRADICTION_GRACE controls only the final log/pane contradiction
+# recheck (default: one normal observation interval; bounded to 1..30s and no
+# greater than ONBOARD_TIMEOUT).
 set -uo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
@@ -25,6 +28,8 @@ ARCHITECT="${ARCHITECT:-architect}"
 SMES="${SMES:-sme-1 sme-2}"
 PROVIDER_NAME="${PROVIDER_NAME:-local}"
 ONBOARD_TIMEOUT="${ONBOARD_TIMEOUT:-900}"
+ONBOARD_POLL_SECONDS=2
+ONBOARD_CONTRADICTION_GRACE="${ONBOARD_CONTRADICTION_GRACE:-$ONBOARD_POLL_SECONDS}"
 KEEP="${KEEP:-1}"
 OUT="${1:-}"
 
@@ -168,6 +173,12 @@ trap interrupted INT TERM
 [ -n "$OUT" ] || onboarding_incomplete output_dir_required
 case "$KEEP" in 0|1) ;; *) onboarding_incomplete invalid_keep ;; esac
 [[ "$ONBOARD_TIMEOUT" =~ ^[1-9][0-9]*$ ]] || onboarding_incomplete invalid_timeout
+[[ "$ONBOARD_CONTRADICTION_GRACE" =~ ^[1-9][0-9]*$ ]] \
+  && [ "$ONBOARD_CONTRADICTION_GRACE" -le 30 ] \
+  || onboarding_incomplete invalid_contradiction_grace
+[ "$ONBOARD_CONTRADICTION_GRACE" -le "$ONBOARD_TIMEOUT" ] \
+  || onboarding_incomplete contradiction_grace_exceeds_timeout
+echo "ONBOARDING_TIMING timeout_seconds=$ONBOARD_TIMEOUT contradiction_grace_seconds=$ONBOARD_CONTRADICTION_GRACE effective_deadline_seconds=$((ONBOARD_TIMEOUT + ONBOARD_CONTRADICTION_GRACE))"
 for value in "$POD" "$TENANT" "$ARCHITECT" "$PROVIDER_NAME"; do
   [[ "$value" =~ ^[a-zA-Z0-9][a-zA-Z0-9_-]*$ ]] || onboarding_incomplete invalid_name
 done
@@ -415,30 +426,34 @@ while [ "$SECONDS" -lt "$deadline" ]; do
     echo "ONBOARDING pass"
     exit 0
   fi
-  sleep 2
+  sleep "$ONBOARD_POLL_SECONDS"
 done
 
-# Custody may precede pane rendering briefly, so disagreement is only a verdict
-# after one final observation at the deadline. At that point an opened record
-# without the run marker is a contradiction between the log and the real pane,
-# not an unobserved model choice.
-observe_onboarding
-if [ "$OBSERVED" = 2 ]; then
-  echo "ONBOARDING pass"
-  exit 0
-fi
-if [ "${#PANE_DISAGREEMENTS[@]}" -gt 0 ]; then
-  # Reserve one bounded last look for the strongest verdict. Ordinary silence
-  # gets no deadline extension; only an apparent log/pane contradiction does.
-  sleep 1
+finish_onboarding_observation() {
+  # Custody may precede pane rendering briefly, so disagreement is only a
+  # verdict after one final observation at the deadline. At that point an
+  # opened record without the run marker is an apparent contradiction between
+  # the log and the real pane, not an unobserved model choice.
   observe_onboarding
   if [ "$OBSERVED" = 2 ]; then
     echo "ONBOARDING pass"
     exit 0
   fi
-fi
-if [ "${#PANE_DISAGREEMENTS[@]}" -gt 0 ]; then
-  disagreement_smes="$(IFS=,; echo "${PANE_DISAGREEMENTS[*]}")"
-  onboarding_log_disagreement "$disagreement_smes"
-fi
-onboarding_incomplete onboarding_not_observed
+  if [ "${#PANE_DISAGREEMENTS[@]}" -gt 0 ]; then
+    # Reserve one bounded last look for the strongest verdict. Ordinary silence
+    # gets no deadline extension; only an apparent contradiction does. The
+    # default is derived from the normal poll cadence so those windows agree.
+    sleep "$ONBOARD_CONTRADICTION_GRACE"
+    observe_onboarding
+    if [ "$OBSERVED" = 2 ]; then
+      echo "ONBOARDING pass"
+      exit 0
+    fi
+  fi
+  if [ "${#PANE_DISAGREEMENTS[@]}" -gt 0 ]; then
+    disagreement_smes="$(IFS=,; echo "${PANE_DISAGREEMENTS[*]}")"
+    onboarding_log_disagreement "$disagreement_smes"
+  fi
+  onboarding_incomplete onboarding_not_observed
+}
+finish_onboarding_observation
