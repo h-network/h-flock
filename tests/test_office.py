@@ -2,6 +2,7 @@ from conftest import FakeRespRedis
 import ast
 import io
 import json
+import re
 import subprocess
 import tomllib
 from datetime import datetime, timezone
@@ -576,13 +577,21 @@ def test_office_imports_no_other_flock_module_than_bus():
     assert flock_imports == ["flock.bus"]
 
 
-def _assert_no_eliminated_send_binary_in_scenarios(sources, eliminated):
+def _assert_no_eliminated_send_binary_in_container_sources(sources, eliminated):
     for path, text in sources.items():
         for command in eliminated:
             assert command not in text, f"{path} contains eliminated tenant command {command}"
 
 
-def test_only_office_agent_command_is_packaged_and_scenarios_avoid_eliminated_send_binaries():
+def _container_script_sources():
+    return {
+        str(path): path.read_text()
+        for path in Path("container").rglob("*")
+        if path.is_file() and path.suffix in {".sh", ".py"}
+    }
+
+
+def test_only_office_agent_command_is_packaged_and_container_scripts_avoid_eliminated_send_binaries():
     scripts = tomllib.loads(Path("pyproject.toml").read_text())["project"]["scripts"]
     assert scripts["office"] == "flock.office:main"
     assert "flock.port" in scripts
@@ -591,18 +600,31 @@ def test_only_office_agent_command_is_packaged_and_scenarios_avoid_eliminated_se
         assert old not in scripts
 
     # These two names were eliminated rather than retained as `office`
-    # subcommands. Scan whole files so variable-built prompts cannot evade the
-    # guard; the remaining retired binary names are current scenario concepts
-    # and valid `office` subcommands such as hire, pause, and resume.
+    # subcommands. Scan every checked-in shell and Python script under
+    # container/, so language or variable indirection cannot evade the guard.
+    # The remaining retired binary names are current scenario concepts and
+    # valid `office` subcommands such as hire, pause, and resume.
+    #
+    # Known boundary: a prompt loaded at runtime from a file outside this
+    # repository cannot be inspected by this source guard. All sourced helpers
+    # are in-repo today; an external prompt source needs its own runtime check.
     eliminated_send_binaries = retired[:2]
-    scenario_sources = {
-        str(path): path.read_text() for path in Path("container/scenarios").glob("*.sh")
-    }
-    _assert_no_eliminated_send_binary_in_scenarios(scenario_sources, eliminated_send_binaries)
+    container_sources = _container_script_sources()
+    assert any(Path(path).parent == Path("container") and path.endswith(".sh") for path in container_sources)
+    assert any(path.startswith("container/scenarios/") and path.endswith(".py") for path in container_sources)
+    _assert_no_eliminated_send_binary_in_container_sources(
+        container_sources, eliminated_send_binaries
+    )
 
-    variable_built_prompt = {'mutation.sh': 'body="sendMessage to sme-1"\nprompt="$body"\n'}
-    with pytest.raises(AssertionError, match="mutation.sh contains eliminated tenant command sendMessage"):
-        _assert_no_eliminated_send_binary_in_scenarios(variable_built_prompt, eliminated_send_binaries)
+    mutations = {
+        "mutation.sh": 'body="sendMessage to sme-1"\nprompt="$body"\n',
+        "mutation.py": 'body = "sendMessage to sme-1"\nprompt = body\n',
+    }
+    for path, text in mutations.items():
+        with pytest.raises(AssertionError, match=rf"{re.escape(path)} contains eliminated tenant command sendMessage"):
+            _assert_no_eliminated_send_binary_in_container_sources(
+                {path: text}, eliminated_send_binaries
+            )
 
 
 def test_status_survives_a_blocked_key_of_the_wrong_type(office_env, capsys):
