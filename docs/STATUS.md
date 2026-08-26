@@ -58,6 +58,13 @@ Each of these does more than go stale — it routes a reader somewhere specific.
   but **not the `--tmux` suite**; the suite still runs its original three members.
 - **`TODO.md` rows marked SHIPPED**, and the retained legacy `send_failed` /
   `forward_failed` / `kick_failed` names — deliberate records of why something changed.
+- **`POST /agents/all/envelopes` bypassing the roster check** — `all` is the
+  deliberate L2 broadcast destination and is not a roster member. To an auditor
+  reading route guards this looks like a missing authorisation check; "fixing" it
+  breaks broadcast.
+- **`GET /agents/{agent}/messages` returning 404 for tmux agents** — mailboxes exist
+  only for `port_type: api` clients, which have nowhere else to receive. A tmux
+  agent's messages go to its pane. The 404 is the contract, not a regression.
 - **The profile-login `TODO` row** — stays open. `office profiles` shipping does not
   close it; they are different things.
 
