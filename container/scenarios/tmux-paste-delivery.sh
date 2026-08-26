@@ -1,7 +1,13 @@
 #!/usr/bin/env bash
-# One ordinary agent-to-agent Message through the real tmux opener. `opened` is
-# load-bearing: doors.py emits it only after paste_text returns cleanly; every
-# opener failure dead-letters instead.
+# One ordinary agent-to-agent Message through the real tmux opener. Exact
+# message presence in the destination pane is load-bearing: it observes the
+# effect instead of trusting a subprocess status. `opened` is secondary custody
+# evidence that the opener reported success.
+#
+# This distinction is deliberate. A port process used to inherit SIGCHLD=SIG_IGN,
+# making CPython report rc=0 on ECHILD even when tmux failed. doors.py could then
+# emit opened for a paste that never landed. Pane content cannot false-green in
+# that failure mode.
 # `--break-delivery` corrupts routing before paste_text. It proves these
 # assertions are wired, but does not prove sensitivity to a paste_text failure.
 set -uo pipefail
@@ -30,6 +36,21 @@ for agent in "$SOURCE" "$DESTINATION"; do
   port_type="$(docker exec "$CONTAINER" redis-cli --raw HGET "$ROSTER" "$agent" 2>/dev/null || true)"
   [ "$port_type" = tmux ] || incomplete tmux-paste-delivery "${agent}_not_tmux"
 done
+mapfile -t destination_panes < <("${TMUX[@]}" list-panes -t "${TENANT}:${DESTINATION}" \
+  -F '#{pane_id}|#{pane_pid}' 2>/dev/null || true)
+[ "${#destination_panes[@]}" -eq 1 ] \
+  || incomplete tmux-paste-delivery "${DESTINATION}_pane_count_${#destination_panes[@]}"
+IFS='|' read -r destination_pane_id destination_pane_pid <<<"${destination_panes[0]}"
+[ -n "$destination_pane_id" ] && [ -n "$destination_pane_pid" ] \
+  || incomplete tmux-paste-delivery destination_pane_identity_missing
+
+run_id="${TMUX_PASTE_RUN_ID:-$(date +%s)-$$-$RANDOM}"
+message_text="tmux-paste-${run_id}"
+pane_before="$("${TMUX[@]}" capture-pane -p -J -t "$destination_pane_id" -S - 2>/dev/null)" \
+  || incomplete tmux-paste-delivery destination_pane_capture_failed
+case "$pane_before" in
+  *"$message_text"*) incomplete tmux-paste-delivery stale_message_marker ;;
+esac
 
 restore_needed=0
 resume_needed=0
@@ -75,14 +96,14 @@ if [ "$BREAK_DELIVERY" = 1 ]; then
 fi
 
 send_output="$(docker exec -e POD="$POD" -e TENANT="$TENANT" -e SOURCE="$SOURCE" \
-  -e DESTINATION="$DESTINATION" "$CONTAINER" python3 -c '
+  -e DESTINATION="$DESTINATION" -e MESSAGE_TEXT="$message_text" "$CONTAINER" python3 -c '
 import contextlib, os, redis
 from flock.bus.doors import send
 r=redis.Redis.from_url(os.environ.get("REDIS_URL", "redis://127.0.0.1:6379/0"))
 with open("/proc/1/fd/1", "w") as custody, contextlib.redirect_stdout(custody):
     sid=send(r, pod=os.environ["POD"], tenant=os.environ["TENANT"],
              source=os.environ["SOURCE"], destination=os.environ["DESTINATION"],
-             kind="Message", payload={"text":"tmux paste delivery control"},
+             kind="Message", payload={"text":os.environ["MESSAGE_TEXT"]},
              module="tmux-paste-delivery")
 print("STREAM_ID=" + sid)
 ' 2>/dev/null || true)"
@@ -118,7 +139,11 @@ while [ "$(date +%s)" -lt "$deadline" ]; do
 done
 restore_negative_control
 [ "$matched" -gt 0 ] || incomplete tmux-paste-delivery no_custody_for_stream
+pane_after="$("${TMUX[@]}" capture-pane -p -J -t "$destination_pane_id" -S - 2>/dev/null)" \
+  || incomplete tmux-paste-delivery destination_pane_capture_failed
+case "$pane_after" in *"$message_text"*) pane_contains_message=1;; *) pane_contains_message=0;; esac
+expect "exact message text is present in destination pane" 1 "$pane_contains_message"
 expect "ordinary message entered custody" 1 "$sent"
-expect "ordinary message reached opened after real pane paste" 1 "$opened"
+expect "custody reports opened after pane paste" 1 "$opened"
 expect "ordinary message was not dead-lettered" 0 "$dead"
 finish tmux-paste-delivery

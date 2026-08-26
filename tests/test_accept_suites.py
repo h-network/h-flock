@@ -93,6 +93,16 @@ def test_paste_negative_control_cannot_be_silently_mistargeted():
         assert "--break-delivery requires --scenario tmux-paste-delivery" in result.stderr
 
 
+def test_paste_delivery_observes_the_pane_before_trusting_opened():
+    scenario = (ROOT / "container/scenarios/tmux-paste-delivery.sh").read_text()
+    assert scenario.count("capture-pane -p -J") == 2
+    assert "stale_message_marker" in scenario
+    pane_check = scenario.index('expect "exact message text is present in destination pane"')
+    opened_check = scenario.index('expect "custody reports opened after pane paste"')
+    assert pane_check < opened_check
+    assert "`opened` is secondary custody" in scenario
+
+
 def test_a_silent_failure_is_not_recorded_as_a_pass(tmp_path):
     """The regression that matters: a scenario that fails while printing nothing
     the filter matches must still be recorded as a failure."""
