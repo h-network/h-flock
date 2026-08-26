@@ -261,30 +261,77 @@ free_port() {
 }
 
 echo
-API_ENABLED=0; API_PORT=""; TELEGRAM=0
-read -rp "Open the REST API door? [y/N]: " WANT_API
+API_ENABLED=0; API_PORT=""; API_PUBLISH=0; TELEGRAM=0
+TELEGRAM_BOT_TOKEN=""; TELEGRAM_CHAT_ID=""
+read -rp "Start the REST API door inside the tenant? [y/N]: " WANT_API
 case "${WANT_API:-n}" in y|Y) API_ENABLED=1 ;; esac
 
-# ⚠ The Telegram bot is an HTTP CLIENT of the api door (clients/telegram/bot.py
-# takes --api-url), not a door of its own. It cannot run without it, so the
-# dependency is enforced here rather than left to the operator to discover.
-read -rp "Run the Telegram bot against this tenant? [y/N]: " WANT_TG
+read -rp "Run the Telegram bot in this tenant? [y/N]: " WANT_TG
 case "${WANT_TG:-n}" in
-    y|Y) TELEGRAM=1
-         if [ "$API_ENABLED" = "0" ]; then
-             echo "    the Telegram bot talks to the REST API, so that door is enabled too."
-             API_ENABLED=1
-         fi ;;
+    y|Y)
+        if [ "$API_ENABLED" = "0" ]; then
+            echo "  (the Telegram bot talks to the REST API, so that service is enabled inside the container)"
+            API_ENABLED=1
+        fi
+        existing_tg_token="$(grep -s '^TELEGRAM_BOT_TOKEN=' container/.env 2>/dev/null | cut -d= -f2- || true)"
+        existing_tg_chat="$(grep -s '^TELEGRAM_CHAT_ID=' container/.env 2>/dev/null | cut -d= -f2- || true)"
+        if [ -n "$existing_tg_token" ]; then
+            read -rsp "  Telegram Bot Token [keep existing]: " TG_TOKEN; echo
+        else
+            read -rsp "  Telegram Bot Token (required, blank to skip): " TG_TOKEN; echo
+        fi
+        [ -n "$TG_TOKEN" ] || TG_TOKEN="$existing_tg_token"
+
+        if [ -n "$existing_tg_chat" ]; then
+            read -rp "  Telegram Chat ID [$existing_tg_chat]: " TG_CHAT
+        else
+            read -rp "  Telegram Chat ID (required, blank to skip): " TG_CHAT
+        fi
+        [ -n "$TG_CHAT" ] || TG_CHAT="$existing_tg_chat"
+
+        if [ -n "$TG_TOKEN" ] && [ -n "$TG_CHAT" ]; then
+            TELEGRAM=1
+            TELEGRAM_BOT_TOKEN="$TG_TOKEN"
+            TELEGRAM_CHAT_ID="$TG_CHAT"
+        else
+            echo "  ⚠ Both Telegram Bot Token and Chat ID are required — Telegram bot is not enabled."
+            TELEGRAM=0
+            TELEGRAM_BOT_TOKEN=""
+            TELEGRAM_CHAT_ID=""
+        fi
+        ;;
 esac
 
 if [ "$API_ENABLED" = "1" ]; then
-    DEF_API="$(free_port 8080)"
-    read -rp "  Host port for the REST API [${DEF_API}]: " API_PORT
-    API_PORT="${API_PORT:-$DEF_API}"
+    read -rp "Reach the REST API from outside the container (0.0.0.0, every host interface)? [y/N]: " WANT_PUB_API
+    case "${WANT_PUB_API:-n}" in
+        y|Y)
+            API_PUBLISH=1
+            DEF_API="$(free_port 8080)"
+            read -rp "  Host port for the REST API [${DEF_API}]: " API_PORT
+            API_PORT="${API_PORT:-$DEF_API}"
+            ;;
+        *)
+            API_PUBLISH=0
+            API_PORT=""
+            ;;
+    esac
 fi
-DEF_SESSION="$(free_port 8081)"
-read -rp "Host port for the session console [${DEF_SESSION}]: " SESSION_PORT
-SESSION_PORT="${SESSION_PORT:-$DEF_SESSION}"
+
+SESSION_PUBLISH=0; SESSION_PORT=""
+read -rp "Reach the session console from outside the container (0.0.0.0, every host interface)? [Y/n]: " WANT_PUB_SESSION
+case "${WANT_PUB_SESSION:-y}" in
+    n|N)
+        SESSION_PUBLISH=0
+        SESSION_PORT=""
+        ;;
+    *)
+        SESSION_PUBLISH=1
+        DEF_SESSION="$(free_port 8081)"
+        read -rp "  Host port for the session console [${DEF_SESSION}]: " SESSION_PORT
+        SESSION_PORT="${SESSION_PORT:-$DEF_SESSION}"
+        ;;
+esac
 
 for pair in "api:${API_PORT}" "session:${SESSION_PORT}"; do
     name="${pair%%:*}"; port="${pair#*:}"
@@ -301,38 +348,43 @@ done
 # no TLS it crosses the network in clear text, so the tenant refuses to start
 # unless that is an answered question rather than a default nobody saw.
 TLS_CERT_HOST=""; TLS_KEY_HOST=""; TLS_CERT_CONTAINER=""; TLS_KEY_CONTAINER=""
-TLS_STAGE=""; ALLOW_PLAINTEXT=0; DOOR_HOST="0.0.0.0"
-echo
-read -rp "Reach the console from another machine? [Y/n]: " REMOTE
-if [ "${REMOTE:-y}" = "n" ] || [ "${REMOTE:-y}" = "N" ]; then
-    DOOR_HOST="127.0.0.1"   # published to this host only; plaintext never leaves it
-else
-    read -rp "  Path to a TLS certificate (blank for more choices): " TLS_CERT_HOST
-    if [ -n "$TLS_CERT_HOST" ]; then
-        [ -f "$TLS_CERT_HOST" ] || { echo "  error: TLS certificate not found: $TLS_CERT_HOST" >&2; exit 2; }
-        read -rp "  Path to its key: " TLS_KEY_HOST
-        [ -n "$TLS_KEY_HOST" ] || { echo "  error: a TLS certificate requires its key" >&2; exit 2; }
-        [ -f "$TLS_KEY_HOST" ] || { echo "  error: TLS key not found: $TLS_KEY_HOST" >&2; exit 2; }
+TLS_STAGE=""; ALLOW_PLAINTEXT=0; DOOR_HOST=""
+API_HOST=""; SESSION_HOST=""
+
+if [ "$API_PUBLISH" = "1" ] || [ "$SESSION_PUBLISH" = "1" ]; then
+    echo
+    read -rp "Reach published doors from another machine (bind 0.0.0.0 instead of 127.0.0.1)? [Y/n]: " REMOTE
+    if [ "${REMOTE:-y}" = "n" ] || [ "${REMOTE:-y}" = "N" ]; then
+        DOOR_HOST="127.0.0.1"   # published to this host only; plaintext never leaves it
     else
-        read -rp "  Generate a self-signed certificate? [y/N]: " SELF_SIGNED
-        if [[ "${SELF_SIGNED:-n}" =~ ^[Yy] ]]; then
-            command -v openssl >/dev/null 2>&1 || { echo "  error: openssl is required to generate a certificate" >&2; exit 2; }
-            echo "  ⚠ Self-signed TLS encrypts traffic, but clients that verify certificates"
-            echo "    will reject it unless they are explicitly configured to trust it."
-            TLS_STAGE="$(mktemp -d)"
-            trap 'rm -rf "$TLS_STAGE"' EXIT
-            TLS_CERT_HOST="$TLS_STAGE/tls.crt"
-            TLS_KEY_HOST="$TLS_STAGE/tls.key"
-            openssl req -x509 -newkey rsa:2048 -sha256 -nodes -days 365 \
-                -subj "/CN=${TENANT}" -addext "subjectAltName=DNS:${TENANT},IP:127.0.0.1" \
-                -keyout "$TLS_KEY_HOST" -out "$TLS_CERT_HOST" >/dev/null 2>&1 \
-                || { echo "  error: could not generate the self-signed certificate" >&2; exit 2; }
-            chmod 0644 "$TLS_CERT_HOST" "$TLS_KEY_HOST"
+        DOOR_HOST="0.0.0.0"
+        read -rp "  Path to a TLS certificate (blank for more choices): " TLS_CERT_HOST
+        if [ -n "$TLS_CERT_HOST" ]; then
+            [ -f "$TLS_CERT_HOST" ] || { echo "  error: TLS certificate not found: $TLS_CERT_HOST" >&2; exit 2; }
+            read -rp "  Path to its key: " TLS_KEY_HOST
+            [ -n "$TLS_KEY_HOST" ] || { echo "  error: a TLS certificate requires its key" >&2; exit 2; }
+            [ -f "$TLS_KEY_HOST" ] || { echo "  error: TLS key not found: $TLS_KEY_HOST" >&2; exit 2; }
         else
-            echo "  ⚠ Plain HTTP: the api token and everything typed into a terminal"
-            echo "    cross the network unencrypted. Fine on a trusted LAN, not on one"
-            echo "    you share. Recorded as ALLOW_PLAINTEXT_PUBLISH=1 in container/.env."
-            ALLOW_PLAINTEXT=1
+            read -rp "  Generate a self-signed certificate? [y/N]: " SELF_SIGNED
+            if [[ "${SELF_SIGNED:-n}" =~ ^[Yy] ]]; then
+                command -v openssl >/dev/null 2>&1 || { echo "  error: openssl is required to generate a certificate" >&2; exit 2; }
+                echo "  ⚠ Self-signed TLS encrypts traffic, but clients that verify certificates"
+                echo "    will reject it unless they are explicitly configured to trust it."
+                TLS_STAGE="$(mktemp -d)"
+                trap 'rm -rf "$TLS_STAGE"' EXIT
+                TLS_CERT_HOST="$TLS_STAGE/tls.crt"
+                TLS_KEY_HOST="$TLS_STAGE/tls.key"
+                openssl req -x509 -newkey rsa:2048 -sha256 -nodes -days 365 \
+                    -subj "/CN=${TENANT}" -addext "subjectAltName=DNS:${TENANT},IP:127.0.0.1" \
+                    -keyout "$TLS_KEY_HOST" -out "$TLS_CERT_HOST" >/dev/null 2>&1 \
+                    || { echo "  error: could not generate the self-signed certificate" >&2; exit 2; }
+                chmod 0644 "$TLS_CERT_HOST" "$TLS_KEY_HOST"
+            else
+                echo "  ⚠ Plain HTTP: the api token and everything typed into a terminal"
+                echo "    cross the network unencrypted. Fine on a trusted LAN, not on one"
+                echo "    you share. Recorded as ALLOW_PLAINTEXT_PUBLISH=1 in container/.env."
+                ALLOW_PLAINTEXT=1
+            fi
         fi
     fi
 fi
@@ -349,6 +401,20 @@ if [ -n "$TLS_CERT_HOST" ]; then
         # the door's ubuntu process needs the staged key to be readable.
         install -m 0644 "$TLS_KEY_HOST" "$TLS_STAGE/tls.key"
     fi
+fi
+
+if [ "$API_PUBLISH" = "1" ] || [ "$SESSION_PUBLISH" = "1" ]; then
+    API_HOST="${DOOR_HOST}"
+    SESSION_HOST="${DOOR_HOST}"
+    {
+        echo "services:"
+        echo "  tenant:"
+        echo "    ports:"
+        [ "$API_PUBLISH" = "1" ] && [ -n "$API_PORT" ] && echo "      - \"${API_HOST}:${API_PORT}:8080\""
+        [ "$SESSION_PUBLISH" = "1" ] && [ -n "$SESSION_PORT" ] && echo "      - \"${SESSION_HOST}:${SESSION_PORT}:8081\""
+    } > container/compose.ports.yaml
+else
+    rm -f container/compose.ports.yaml
 fi
 
 # Only exceptions travel, so the env stays small and readable.
@@ -399,9 +465,9 @@ TOKEN="$(grep -s '^API_TOKEN=' container/.env | cut -d= -f2)"
     done
     echo "API_ENABLED=${API_ENABLED}"
     [ -n "$API_PORT" ] && echo "API_PORT=${API_PORT}"
-    echo "SESSION_PORT=${SESSION_PORT}"
-    echo "API_HOST=${DOOR_HOST}"
-    echo "SESSION_HOST=${DOOR_HOST}"
+    [ -n "$SESSION_PORT" ] && echo "SESSION_PORT=${SESSION_PORT}"
+    [ -n "$API_HOST" ] && echo "API_HOST=${API_HOST}"
+    [ -n "$SESSION_HOST" ] && echo "SESSION_HOST=${SESSION_HOST}"
     [ "$ALLOW_PLAINTEXT" = "1" ] && echo "ALLOW_PLAINTEXT_PUBLISH=1"
     if [ -n "$TLS_CERT_CONTAINER" ]; then
         echo "API_TLS_CERT=${TLS_CERT_CONTAINER}"
@@ -409,6 +475,8 @@ TOKEN="$(grep -s '^API_TOKEN=' container/.env | cut -d= -f2)"
         echo "SESSION_TLS_CERT=${TLS_CERT_CONTAINER}"
         echo "SESSION_TLS_KEY=${TLS_KEY_CONTAINER}"
     fi
+    [ -n "$TELEGRAM_BOT_TOKEN" ] && echo "TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN}"
+    [ -n "$TELEGRAM_CHAT_ID" ] && echo "TELEGRAM_CHAT_ID=${TELEGRAM_CHAT_ID}"
     [ "${#CLI_MAP[@]}"     -gt 0 ] && echo "AGENT_CLIS=$(IFS=,; echo "${CLI_MAP[*]}")"
     [ "${#PROFILE_MAP[@]}" -gt 0 ] && echo "AGENT_PROFILES=$(IFS=,; echo "${PROFILE_MAP[*]}")"
     if [ "${#PROVIDER_MAP[@]}" -gt 0 ]; then
@@ -424,7 +492,9 @@ chmod 600 container/.env
 echo "wrote container/.env"
 
 CONTAINER="h-flock-${TENANT}-tenant-1"
-COMPOSE=(docker compose -p "h-flock-${TENANT}" --env-file container/.env -f container/compose.yaml)
+. container/flock-compose.sh 2>/dev/null || true
+flock_compose_args
+COMPOSE=(docker compose -p "h-flock-${TENANT}" --env-file container/.env "${FLOCK_COMPOSE_ARGS[@]}")
 # ⚠ Build only when there is no image for THIS commit. The tag carries the SHA,
 # so an existing one is proof it matches the source; rebuilding it produces a
 # byte-identical result and used to happen on every tenant, five times in a full
@@ -502,14 +572,21 @@ if [ -n "$TLS_CERT_CONTAINER" ]; then SCHEME=https; SESSION_SCHEME=wss; fi
 # ⚠ Print only doors that are actually running. Printing a URL for a door the
 # entrypoint declined to start is how "why is nothing listening" becomes a hunt.
 if [ "$API_ENABLED" = "1" ]; then
-    echo "  api      ${SCHEME}://127.0.0.1:${API_PORT}   token in container/.env"
+    if [ "$API_PUBLISH" = "1" ]; then
+        echo "  api      ${SCHEME}://${API_HOST:-127.0.0.1}:${API_PORT}   token in container/.env"
+    else
+        echo "  api      enabled inside tenant (not published to host)   token in container/.env"
+    fi
 else
     echo "  api      not enabled (API_ENABLED=0) — set it in container/.env to open it"
 fi
-echo "  session  ${SESSION_SCHEME}://127.0.0.1:${SESSION_PORT}/session"
+if [ "$SESSION_PUBLISH" = "1" ]; then
+    echo "  session  ${SESSION_SCHEME}://${SESSION_HOST:-127.0.0.1}:${SESSION_PORT}/session"
+else
+    echo "  session  enabled inside tenant (not published to host)"
+fi
 if [ "$TELEGRAM" = "1" ]; then
-    echo "  telegram python3 -m clients.telegram.bot --api-url ${SCHEME}://127.0.0.1:${API_PORT}"
-    echo "           ⚠ not started by this script; it is a client, and it needs its own bot token"
+    echo "  telegram bot running in tenant (chat id: ${TELEGRAM_CHAT_ID})"
 fi
 echo "  attach   docker exec -it -e TMUX_TMPDIR=/home/ubuntu/.flock/tmux $CONTAINER tmux attach -t ${TENANT}"
 if [ -n "$TLS_CERT_CONTAINER" ]; then

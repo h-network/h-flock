@@ -296,9 +296,11 @@ cleanup() {
   # killed unrelated SSH shells whose command line happened to contain it.
   [ -n "$CONSOLE_PID" ] && kill "$CONSOLE_PID" 2>/dev/null || true
   # Never destroy a compose project that this invocation did not create.
+  . container/flock-compose.sh 2>/dev/null || true
+  flock_compose_args
   [ "$CREATED_PROJECT" = "$PROJECT" ] && \
     docker compose -p "$CREATED_PROJECT" --env-file container/.env \
-      -f container/compose.yaml down -v 2>&1 | tail -2
+      "${FLOCK_COMPOSE_ARGS[@]}" down -v 2>&1 | tail -2
 }
 
 # This harness is destructive by design. Refuse the live office even if its

@@ -144,8 +144,10 @@ PY
 
 print_teardown() {
   if [ "$OWNED" = 1 ]; then
+    . container/flock-compose.sh 2>/dev/null || true
+    flock_compose_args
     printf 'TEARDOWN command='
-    printf '%q ' docker compose -p "$PROJECT" --env-file container/.env -f container/compose.yaml down -v
+    printf '%q ' docker compose -p "$PROJECT" --env-file container/.env "${FLOCK_COMPOSE_ARGS[@]}" down -v
     echo
   elif [ -n "$PROJECT" ]; then
     echo "TEARDOWN unavailable reason=tenant_not_owned project=$PROJECT"
@@ -159,7 +161,9 @@ finalize() {
   trap - EXIT INT TERM
   capture_evidence
   if [ "$OWNED" = 1 ] && [ "$KEEP" = 0 ]; then
-    docker compose -p "$PROJECT" --env-file container/.env -f container/compose.yaml down -v >/dev/null 2>&1 || true
+    . container/flock-compose.sh 2>/dev/null || true
+    flock_compose_args
+    docker compose -p "$PROJECT" --env-file container/.env "${FLOCK_COMPOSE_ARGS[@]}" down -v >/dev/null 2>&1 || true
   fi
   print_teardown
   [ -n "$WORK" ] && rm -rf "$WORK"
@@ -304,10 +308,9 @@ if declare -f flock_image_tag >/dev/null; then
 else
   BUILD_FLAG=--build
 fi
-unset AGENT_CLIS AGENT_PROVIDERS AGENT_PROFILES FLOCK_ACCOUNTS
-export API_TOKEN="$API_TOKEN_CREATED" API_ENABLED=0 API_HOST=127.0.0.1
-export SESSION_HOST=127.0.0.1 SESSION_PORT="$session_port"
-docker compose -p "$PROJECT" --env-file container/.env -f container/compose.yaml up -d ${BUILD_FLAG} \
+. container/flock-compose.sh 2>/dev/null || true
+flock_compose_args
+docker compose -p "$PROJECT" --env-file container/.env "${FLOCK_COMPOSE_ARGS[@]}" up -d ${BUILD_FLAG} \
   || onboarding_fail 1 tenant_start_failed
 
 health=""

@@ -73,19 +73,15 @@ services:
       # branches on it and an unset value there would probe a door that is not
       # running. Set API_ENABLED=1 in container/.env to publish it.
       API_ENABLED: "${API_ENABLED:-0}"
-      API_HOST: "${API_HOST:-0.0.0.0}"
-      SESSION_HOST: "${SESSION_HOST:-0.0.0.0}"
+      API_HOST: "${API_HOST:-}"
+      SESSION_HOST: "${SESSION_HOST:-}"
       ALLOW_PLAINTEXT_PUBLISH: "${ALLOW_PLAINTEXT_PUBLISH:-0}"
       API_TLS_CERT: "${API_TLS_CERT:-}"
       API_TLS_KEY: "${API_TLS_KEY:-}"
       SESSION_TLS_CERT: "${SESSION_TLS_CERT:-}"
       SESSION_TLS_KEY: "${SESSION_TLS_KEY:-}"
-    ports:
-      # Both doors published, one mapping each, so exposure is a decision per
-      # door and neither module depends on the other (LLD-container §3).
-      # API_HOST=127.0.0.1 pulls one back to loopback without touching the other.
-      - "${API_HOST:-0.0.0.0}:${API_PORT:-8080}:8080"
-      - "${SESSION_HOST:-0.0.0.0}:${SESSION_PORT:-8081}:8081"
+      TELEGRAM_BOT_TOKEN: "${TELEGRAM_BOT_TOKEN:-}"
+      TELEGRAM_CHAT_ID: "${TELEGRAM_CHAT_ID:-}"
     # A tenant is either up or it is not; if a module exits the container exits
     # and this brings it back (LLD-container §6).
     restart: unless-stopped

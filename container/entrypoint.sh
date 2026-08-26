@@ -62,6 +62,18 @@ start() {
   jlog "{\"module\":\"container\",\"writer\":\"container\",\"event\":\"started\",\"reason\":\"$name pid=$pid\"}"
 }
 
+start_client() {
+  local name="$1"; shift
+  (
+    "$@" || {
+      local code=$?
+      jlog "{\"module\":\"client\",\"writer\":\"$name\",\"event\":\"failed\",\"reason\":\"exit=$code\"}"
+    }
+  ) &
+  local pid=$!
+  jlog "{\"module\":\"container\",\"writer\":\"container\",\"event\":\"started\",\"reason\":\"client $name pid=$pid\"}"
+}
+
 # If a module exits, the tenant exits and the restart policy brings it back.
 # Deliberately blunt for a skeleton — no partial states to reason about (§6).
 shutdown() {
@@ -84,7 +96,8 @@ for door in API SESSION; do
   # A door that is not started cannot leak a token, so it is not judged. Keep
   # this in step with the API_ENABLED guard further down.
   [ "$door" = "API" ] && [ "${API_ENABLED:-0}" = "0" ] && continue
-  eval "published=\"\${${door}_HOST:-127.0.0.1}\""
+  eval "published=\"\${${door}_HOST:-}\""
+  [ -z "$published" ] && continue
   eval "cert=\"\${${door}_TLS_CERT:-}\""
   eval "key=\"\${${door}_TLS_KEY:-}\""
   [ "$door" = "SESSION" ] && [ -z "$cert" ] && cert="${API_TLS_CERT:-}" && key="${API_TLS_KEY:-}"
@@ -356,4 +369,23 @@ else
 fi
 start session env API_TOKEN="$api_token" python3 -m flock.session
 
-wait -n
+# ── bundled clients ───────────────────────────────────────────────────────────
+# Bundled clients (Telegram bot, web console) run inside the tenant reaching the
+# local REST API on 127.0.0.1:8080. They start only when configured, and a client
+# failure does not take down the tenant.
+if [ -n "${TELEGRAM_BOT_TOKEN:-}" ]; then
+  if [ "${API_ENABLED:-0}" = "0" ]; then
+    jlog '{"module":"container","writer":"container","event":"client_skipped","reason":"telegram configured but API_ENABLED is 0"}'
+  else
+    tg_args=(
+      python3 -m clients.telegram.bot
+      --api-url "http://127.0.0.1:8080"
+      --api-token "$api_token"
+      --bot-token "$TELEGRAM_BOT_TOKEN"
+    )
+    [ -n "${TELEGRAM_CHAT_ID:-}" ] && tg_args+=(--chat-id "$TELEGRAM_CHAT_ID")
+    start_client telegram "${tg_args[@]}"
+  fi
+fi
+
+wait -n "${pids[@]}"

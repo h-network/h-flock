@@ -8,6 +8,7 @@ build/
 dist/
 
 container/.env
+container/compose.ports.yaml
 
 # Credentials arrive here by docker cp and must never be committed.
 container/home/*
