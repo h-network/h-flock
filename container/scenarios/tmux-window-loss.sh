@@ -21,8 +21,9 @@ LAUNCH="pod:${POD}:tenant:${TENANT}:agent:${AGENT}:launch"
 
 TOKEN="$(docker exec "$C" printenv API_TOKEN 2>/dev/null || true)"
 [ -n "$TOKEN" ] || incomplete tmux-window-loss missing_api_token
-tmuxhost_pid="$(docker exec "$C" pgrep -fo 'python3 -m flock.tmuxhost' 2>/dev/null || true)"
-[ -n "$tmuxhost_pid" ] || incomplete tmux-window-loss missing_tmuxhost_pid
+mapfile -t tmuxhost_pids < <(docker exec "$C" pgrep -f '[p]ython3 -m flock.tmuxhost' 2>/dev/null || true)
+[ "${#tmuxhost_pids[@]}" -eq 1 ] || incomplete tmux-window-loss tmuxhost_pid_count_${#tmuxhost_pids[@]}
+tmuxhost_pid="${tmuxhost_pids[0]}"
 
 mapfile -t before < <("${TMUX[@]}" list-windows -t "$TENANT" \
   -F '#{window_name}|#{window_id}|#{pane_pid}' 2>/dev/null | awk -F'|' -v a="$AGENT" '$1==a')
@@ -45,6 +46,14 @@ resume_tmuxhost() {
 }
 trap resume_tmuxhost EXIT
 docker exec "$C" kill -STOP "$tmuxhost_pid" >/dev/null 2>&1 || incomplete tmux-window-loss tmuxhost_stop_failed
+stop_deadline=$(( $(date +%s) + 5 ))
+tmuxhost_state=""
+while [ "$(date +%s)" -lt "$stop_deadline" ]; do
+  tmuxhost_state="$(docker exec "$C" awk '/^State:/{print $2}' "/proc/$tmuxhost_pid/status" 2>/dev/null || true)"
+  [ "$tmuxhost_state" = T ] && break
+  sleep 0.1
+done
+[ "$tmuxhost_state" = T ] || incomplete tmux-window-loss tmuxhost_not_stopped
 "${TMUX[@]}" kill-window -t "$old_window_id" >/dev/null 2>&1 || incomplete tmux-window-loss window_kill_failed
 
 absent_count="$("${TMUX[@]}" list-windows -t "$TENANT" -F '#{window_name}' 2>/dev/null | awk -v a="$AGENT" '$0==a' | wc -l | tr -d ' ')"
@@ -57,27 +66,36 @@ response="$(curl -sS -w $'\n%{http_code}' -H "Authorization: Bearer $TOKEN" \
 status="${response##*$'\n'}"
 body="${response%$'\n'*}"
 expect "message accepted during reconcile gap" 202 "${status:-000}"
+[ "$status" = 202 ] || finish tmux-window-loss
 stream_id="$(python3 -c 'import json,sys; print(json.loads(sys.stdin.read()).get("stream_id", ""))' <<<"$body" 2>/dev/null || true)"
-[ -n "$stream_id" ] || incomplete tmux-window-loss missing_stream_id
+if [ -z "$stream_id" ]; then
+  echo "  ✗ HTTP 202 response has no valid stream_id" >&2
+  _FAILED=$((_FAILED+1))
+  finish tmux-window-loss
+fi
 
 custody_counts() {
   docker logs "$C" 2>/dev/null | python3 -c '
 import json, sys
-sid, target=sys.argv[1:3]; dead=opened=0
+sid, target=sys.argv[1:3]; dead=opened=parse_failures=0
 for line in sys.stdin:
+    if not line.lstrip().startswith("{"): continue
     try: row=json.loads(line)
-    except Exception: continue
+    except Exception:
+        parse_failures += 1
+        continue
     if row.get("stream_id") != sid or row.get("destination") != target: continue
     dead += row.get("event") == "dead_lettered" and row.get("reason") == "window_missing"
     opened += row.get("event") == "opened"
-print(dead, opened)
+print(dead, opened, parse_failures)
 ' "$stream_id" "$AGENT"
 }
 
 deadline=$(( $(date +%s) + DEADLINE_SECONDS ))
-dead=0; opened=0
+dead=0; opened=0; parse_failures=0
 while [ "$(date +%s)" -lt "$deadline" ]; do
-  read -r dead opened <<<"$(custody_counts)"
+  read -r dead opened parse_failures <<<"$(custody_counts)"
+  [ "$parse_failures" = 0 ] || incomplete tmux-window-loss malformed_custody_json
   [ "$dead" -ge 1 ] && break
   sleep 0.2
 done
@@ -102,7 +120,8 @@ new_pane_pid="${recovered#*|}"
 if docker exec "$C" kill -0 "$old_pane_pid" >/dev/null 2>&1; then echo "  ✗ old pane pid is still live" >&2; _FAILED=$((_FAILED+1)); else echo "  ✓ old pane pid is gone"; fi
 expect "roster desired state unchanged" "$port_type" "$(docker exec "$C" redis-cli --raw HGET "$ROSTER" "$AGENT" 2>/dev/null || true)"
 expect "launch desired state unchanged" "$launch_before" "$(docker exec "$C" redis-cli --raw GET "$LAUNCH" 2>/dev/null || true)"
-read -r dead opened <<<"$(custody_counts)"
+read -r dead opened parse_failures <<<"$(custody_counts)"
+[ "$parse_failures" = 0 ] || incomplete tmux-window-loss malformed_custody_json
 expect "dead letter remains singular after recovery" 1 "$dead"
 expect "recovery did not retry or deliver stream" 0 "$opened"
 finish tmux-window-loss

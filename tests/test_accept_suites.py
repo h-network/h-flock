@@ -7,6 +7,7 @@ recorded as a PASS. An always-green gate is the defect this whole suite exists t
 catch, so the helper that decides pass from fail is itself under test.
 """
 import subprocess
+import os
 from pathlib import Path
 
 ROOT = Path(__file__).parents[1]
@@ -30,6 +31,32 @@ def test_help_is_readable_and_arguments_are_checked():
     assert subprocess.run(["bash", str(ACCEPT), "--help"], capture_output=True).returncode == 0
     bad = subprocess.run(["bash", str(ACCEPT), "--nonsense"], capture_output=True)
     assert bad.returncode == 2, "an unknown argument must not be silently ignored"
+
+
+def test_scenario_exports_selected_api_port(tmp_path):
+    """The standalone exec must receive the door selected by --api-port."""
+    fake_bash = tmp_path / "bash"
+    fake_bash.write_text("#!/bin/sh\nprintf 'TENANT=%s API_PORT=%s\\n' \"$TENANT\" \"$API_PORT\"\n")
+    fake_bash.chmod(0o755)
+    result = subprocess.run(
+        ["/bin/bash", str(ACCEPT), "--scenario", "tmux-window-loss", "--tenant", "chosen", "--api-port", "9456"],
+        capture_output=True,
+        text=True,
+        env={**os.environ, "PATH": f"{tmp_path}:{os.environ['PATH']}"},
+    )
+    assert result.returncode == 0
+    assert result.stdout == "TENANT=chosen API_PORT=9456\n"
+
+
+def test_scenario_refuses_missing_api_port():
+    result = subprocess.run(
+        ["/bin/bash", str(ACCEPT), "--scenario", "tmux-window-loss", "--tenant", "chosen"],
+        capture_output=True,
+        text=True,
+        env={key: value for key, value in os.environ.items() if key != "API_PORT"},
+    )
+    assert result.returncode == 100
+    assert "RESULT tmux-window-loss incomplete reason=api_port_required" in result.stderr
 
 
 def test_a_silent_failure_is_not_recorded_as_a_pass(tmp_path):
