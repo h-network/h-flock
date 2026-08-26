@@ -290,21 +290,29 @@ agent does when it fills its window, and that needs the same machine.
 
 ---
 
-## Sprint 6 — the door for callers we don't trust
+## ~~Sprint 6 — the door for callers we don't trust~~ — CLOSED, no build
 
-**Rows:** the remainder of *security: what is left after build 36* · the narrow
-version of *signed envelopes*
-**Files:** `src/flock/api/`.
+**Rows:** the remainder of *security: what is left after build 36*
+**Files:** none — no api-lane work follows from this.
 
-CORS and per-client tokens. Today there is **one shared bearer token for all
-clients**, and `as` is validated only against roster membership — a declaration,
-not a credential, so any token holder can post as any enrolled client.
+⚠ **DECIDED 2026-08-26** (`docs/TODO.md`, "security: what is left after build
+36"): **not building CORS or per-client tokens.** The trust boundary is the
+container, not identity inside it — access control that doesn't match that
+model is false security, not defense in depth. Audit logging (the custody
+chain) is the honest tool for this trust model; access control is not.
 
-⚠ **That is the whole of the signing row worth building.** Intra-tenant
-signatures buy nothing: any key an agent can sign with it can also read, same
-user, same box. The general version invites signing everything and gaining
-nothing. Cross-tenant is the first real boundary, and it is blocked on the
-decision below.
+⚠ **Nothing new is needed to make that true.** Direct `flock.api` traffic —
+the one shared bearer token, `as` validated only against roster membership —
+is already traced through the custody chain: bus/port stdout logs and
+`GET /agents/{agent}/activity` (`LLD-api.md:172`). The row closes on the
+existing mechanism, not a new one.
+
+The narrow version of *signed envelopes* — per-client keys at the door — is
+withdrawn along with it, for the same reason: it was the access-control
+answer to the gap this decision says isn't being closed that way. Intra-tenant
+signatures still buy nothing regardless — any key an agent can sign with it
+can also read, same user, same box. Cross-tenant remains the first real
+boundary and is still blocked on the `gateway`/switch-branch decision below.
 
 ---
 
