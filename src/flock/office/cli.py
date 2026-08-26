@@ -22,6 +22,7 @@ _COMMANDS = (
     "send",
     "broadcast",
     "peers",
+    "profiles",
     "status",
     "hire",
     "letGo",
@@ -55,6 +56,7 @@ def _root_parser() -> argparse.ArgumentParser:
         "send": "send a message to one agent",
         "broadcast": "send a message to every peer agent",
         "peers": "list peer agents",
+        "profiles": "list configured accounts and their agents",
         "status": "show agent presence and open work",
         "hire": "enrol a new agent",
         "letGo": "retire an agent",
@@ -192,6 +194,47 @@ def _peers_command(argv: list[str]) -> None:
         if raw_ticket is not None:
             fields.append(f"task={json.dumps(_ticket(raw_ticket, state='doing')['title'])}")
         print(f"{display_name}: {', '.join(fields)}")
+
+
+def _profiles_command(argv: list[str]) -> None:
+    parser = _operation_parser("profiles", "List configured accounts and their agents.")
+    parser.parse_args(argv)
+    r, pod, tenant, _ = _context()
+    configured = available_profiles(r, pod=pod, tenant=tenant)
+    assignments: dict[str, list[str]] = {}
+    implicit_default: list[str] = []
+    excluded: list[str] = []
+    for agent in sorted(members(r, pod=pod, tenant=tenant)):
+        agent_port_type = port_type(r, pod=pod, tenant=tenant, agent=agent)
+        if agent_port_type != "tmux":
+            excluded.append(f"{agent} ({agent_port_type or 'unknown'})")
+            continue
+        profile = _text(r.get(prefix(pod, tenant, agent=agent, resource="profile")))
+        account = profile or "default"
+        assignments.setdefault(account, []).append(agent)
+        if not profile:
+            implicit_default.append(agent)
+
+    if configured is None:
+        print("configured accounts: unknown (legacy tenant has no canonical account registry)")
+        account_names = sorted(assignments)
+    else:
+        # available_profiles maps an absent or empty Redis set to None, so a
+        # present registry is necessarily non-empty here.
+        print(f"configured accounts: {', '.join(configured)}")
+        account_names = sorted(set(configured) | set(assignments))
+
+    print("account users:")
+    for account in account_names:
+        label = account
+        if configured is not None and account not in configured:
+            label += " (not configured)"
+        users = ", ".join(assignments.get(account, ())) or "(no agents)"
+        print(f"  {label}: {users}")
+    implicit = ", ".join(implicit_default) or "(none)"
+    print(f"agents using default because no profile is set: {implicit}")
+    excluded_text = ", ".join(excluded) or "(none)"
+    print(f"members without CLI accounts ({len(excluded)}): {excluded_text}")
 
 
 def _timestamp(value) -> datetime | None:
@@ -857,6 +900,8 @@ def _run(args: list[str]) -> None:
             _broadcast_command(remainder)
         elif command == "peers":
             _peers_command(remainder)
+        elif command == "profiles":
+            _profiles_command(remainder)
         elif command == "status":
             _status_command(remainder)
         elif command in ("hire", "letGo", "let-go", "pause", "resume"):

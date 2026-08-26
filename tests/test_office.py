@@ -37,6 +37,7 @@ def test_root_help_lists_whole_surface_without_environment_or_redis(monkeypatch,
         "send",
         "broadcast",
         "peers",
+        "profiles",
         "status",
         "hire",
         "letGo",
@@ -58,7 +59,7 @@ def test_root_help_lists_whole_surface_without_environment_or_redis(monkeypatch,
 
 @pytest.mark.parametrize(
     "command",
-    ["send", "broadcast", "peers", "status", "hire", "letGo", "let-go", "pause", "resume", "list", "take", "done", "cancel", "hold", "delete", "add", "cloneToAll", "clone-to-all"],
+    ["send", "broadcast", "peers", "profiles", "status", "hire", "letGo", "let-go", "pause", "resume", "list", "take", "done", "cancel", "hold", "delete", "add", "cloneToAll", "clone-to-all"],
 )
 def test_every_subcommand_has_environment_free_help(monkeypatch, command):
     monkeypatch.delenv("AGENT_NAME", raising=False)
@@ -251,6 +252,42 @@ def test_peers_reads_configured_first_agent_instead_of_sorting(office_env, capsy
     office_env.values["pod:acme:tenant:hq:lead"] = b"zeus"
     cli.main(["peers"])
     assert capsys.readouterr().out.strip() == "alpha, zeus (lead)"
+
+
+def test_profiles_lists_configured_accounts_and_tmux_users(office_env, capsys):
+    office_env.sets[prefix("acme", "hq", resource="accounts")] = {
+        b"default", b"unused", b"work",
+    }
+    office_env.values[prefix("acme", "hq", agent="backend", resource="profile")] = "work"
+
+    cli.main(["profiles"])
+
+    assert capsys.readouterr().out.splitlines() == [
+        "configured accounts: default, unused, work",
+        "account users:",
+        "  default: frontend",
+        "  unused: (no agents)",
+        "  work: backend",
+        "agents using default because no profile is set: frontend",
+        "members without CLI accounts (2): api (api), host (control)",
+    ]
+
+
+def test_profiles_preserves_unknown_for_empty_or_legacy_registry_and_lists_exclusions(
+    office_env, capsys,
+):
+    office_env.values[prefix("acme", "hq", agent="backend", resource="profile")] = "legacy"
+
+    cli.main(["profiles"])
+
+    assert capsys.readouterr().out.splitlines() == [
+        "configured accounts: unknown (legacy tenant has no canonical account registry)",
+        "account users:",
+        "  default: frontend",
+        "  legacy: backend",
+        "agents using default because no profile is set: frontend",
+        "members without CLI accounts (2): api (api), host (control)",
+    ]
 
 
 def test_status_lists_tmux_agents_with_presence_ticket_and_activity(office_env, monkeypatch, capsys):
