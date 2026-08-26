@@ -89,6 +89,36 @@ def test_contradiction_grace_refuses_unbounded_values(tmp_path, grace):
     assert "ONBOARDING incomplete reason=invalid_contradiction_grace" in result.stderr
 
 
+@pytest.mark.parametrize(
+    ("timeout", "grace"),
+    [("1", "2"), ("10", "11"), ("1", None)],
+)
+def test_contradiction_grace_cannot_exceed_requested_timeout(tmp_path, timeout, grace):
+    env = {"TENANT": "grace-timeout", "ONBOARD_TIMEOUT": timeout}
+    if grace is not None:
+        env["ONBOARD_CONTRADICTION_GRACE"] = grace
+    result = run_tool(tmp_path / "evidence", env=env)
+    assert result.returncode == 100
+    assert "ONBOARDING incomplete reason=contradiction_grace_exceeds_timeout" in result.stderr
+
+
+def test_contradiction_grace_equal_to_timeout_is_accepted_and_effective_deadline_is_stated(tmp_path):
+    result = run_tool(
+        tmp_path / "evidence",
+        env={
+            "TENANT": "grace-boundary", "ONBOARD_TIMEOUT": "2",
+            "ONBOARD_CONTRADICTION_GRACE": "2",
+        },
+    )
+    assert result.returncode == 100
+    assert "ONBOARDING incomplete reason=provider_url_required" in result.stderr
+    assert "contradiction_grace_exceeds_timeout" not in result.stderr
+    assert (
+        "ONBOARDING_TIMING timeout_seconds=2 contradiction_grace_seconds=2 "
+        "effective_deadline_seconds=4"
+    ) in result.stdout
+
+
 def test_contradiction_grace_matches_poll_cadence_by_default():
     text = TOOL.read_text()
     assert 'ONBOARD_POLL_SECONDS=2' in text
@@ -96,6 +126,8 @@ def test_contradiction_grace_matches_poll_cadence_by_default():
     spec = (ROOT / "docs/SPEC-onboarding-integration.md").read_text()
     assert "defaults to one observation interval" in spec
     assert "Changing the poll cadence therefore changes the default grace with it" in spec
+    assert "may never exceed `ONBOARD_TIMEOUT`" in spec
+    assert "maximum effective deadline in seconds" in spec
 
 
 @pytest.mark.parametrize(("render_delay", "expected_rc"), [(0.1, 0), (2.0, 6)])

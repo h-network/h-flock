@@ -15,7 +15,8 @@
 # KEEP=1 leaves the owned tenant running (default); KEEP=0 captures evidence
 # first and then tears it down. The tool refuses to adopt an existing tenant.
 # ONBOARD_CONTRADICTION_GRACE controls only the final log/pane contradiction
-# recheck (default: one normal observation interval; bounded to 1..30s).
+# recheck (default: one normal observation interval; bounded to 1..30s and no
+# greater than ONBOARD_TIMEOUT).
 set -uo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
@@ -175,6 +176,9 @@ case "$KEEP" in 0|1) ;; *) onboarding_incomplete invalid_keep ;; esac
 [[ "$ONBOARD_CONTRADICTION_GRACE" =~ ^[1-9][0-9]*$ ]] \
   && [ "$ONBOARD_CONTRADICTION_GRACE" -le 30 ] \
   || onboarding_incomplete invalid_contradiction_grace
+[ "$ONBOARD_CONTRADICTION_GRACE" -le "$ONBOARD_TIMEOUT" ] \
+  || onboarding_incomplete contradiction_grace_exceeds_timeout
+echo "ONBOARDING_TIMING timeout_seconds=$ONBOARD_TIMEOUT contradiction_grace_seconds=$ONBOARD_CONTRADICTION_GRACE effective_deadline_seconds=$((ONBOARD_TIMEOUT + ONBOARD_CONTRADICTION_GRACE))"
 for value in "$POD" "$TENANT" "$ARCHITECT" "$PROVIDER_NAME"; do
   [[ "$value" =~ ^[a-zA-Z0-9][a-zA-Z0-9_-]*$ ]] || onboarding_incomplete invalid_name
 done

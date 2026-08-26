@@ -36,12 +36,16 @@ Reuse the existing provider convention. **Do not invent `VLLM_URL`.**
     ONBOARD_TIMEOUT  seconds to wait for onboarding traffic   (default: 900)
     ONBOARD_CONTRADICTION_GRACE
                      final log/pane contradiction recheck     (default: one poll interval,
-                                                                allowed: 1..30 seconds)
+                                                                allowed: 1..min(30, ONBOARD_TIMEOUT))
 
 The contradiction grace defaults to one observation interval, so a pane render
 that a normal poll would have caught is not reported as a log/pane contradiction.
 Changing the poll cadence therefore changes the default grace with it; an
 operator may override the grace within its bounded range.
+The grace may never exceed `ONBOARD_TIMEOUT`, so the exceptional recheck cannot
+outlast the observation window that the operator requested.
+At startup the tool prints `ONBOARDING_TIMING` with the timeout, contradiction
+grace, and their sum as the maximum effective deadline in seconds.
 
 Positional arg is an output directory, as `tmux-nemotron.sh` takes one.
 
