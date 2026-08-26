@@ -159,7 +159,7 @@ what keeps a new agent's first envelope from being dead-lettered.
 What runs in the window is configuration, not this module's opinion. It starts
 what it is told to start, in the working directory `/workdir/<agent>` it is told to use,
 with `AGENT_GUIDE=/workdir/<agent>/AGENTS.md` and `OFFICE_TOOLS=office` in the environment.
-`write_agent_guide` generates both `AGENTS.md` and `CLAUDE.md` (rendering lead guidance based on `<prefix>:lead`, including instructing the lead to check `office status` and hold work if an agent is `blocked`)
+`write_agent_guide` generates both `AGENTS.md` and `CLAUDE.md` (rendering lead guidance based on `<prefix>:lead`, including instructing the lead to check `office status` and hold work if an agent is `blocked`, along with general office working guidelines)
 and pre-approves project trust across all three CLIs in a **profile-aware** manner (`.claude-<profile>.json`, `.codex-<profile>/config.toml`, `.gemini/.../settings.json`). Blind to profiles, a profiled agent sits at a workspace trust prompt while presence reads `idle`.
 - Claude trust (`ensure_claude_project_trusted`) writes both `hasTrustDialogAccepted: true` and `hasCompletedProjectOnboarding: true` to `.claude.json` (or `.claude-<profile>/.claude.json`).
 - Agy trust (`ensure_agy_project_trusted`) explicitly sets `enableTelemetry: False` in `settings.json` in addition to appending `cwd` to `trustedWorkspaces`.

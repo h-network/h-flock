@@ -251,14 +251,26 @@ def test_generate_agents_md():
     assert "office done" in content
     assert "Take a ticket *before* you start work" in content
     assert "lead of this office" not in content
+    assert "## Working in this office" in content
+    assert "This directory is your own clone — work only here." in content
+    assert "Push your own branch, never `main` directly — name it" in content
+    assert "Your git identity is your own agent name" in content
+    assert "When a ticket is done, message the lead a summary before or alongside" in content
+    assert "Never dump a credential's actual value to check whether it is set" in content
+    assert "Anything destructive, ambiguous, or outside a ticket's stated scope: ask" in content
+    assert "Read a ticket's claimed cause skeptically" in content
+    assert "A behaviour change ships with its docs, in the same branch" in content
+    assert "One ticket, one branch, one focused change." in content
 
     lead_content = generate_agents_md("zeus", "hq", lead="zeus")
     assert "You are the lead of this office. The other agents follow your direction, and yours is the account that decides when something is done." in lead_content
     assert "Before you hand out work, check `office status`. An agent that is `blocked` will not receive it — hold the work and say so. Do not try to fix the agent." in lead_content
+    assert "## Working in this office" in lead_content
 
     peer_content = generate_agents_md("dave", "hq", lead="zeus")
     assert "zeus is the lead of this office. Their direction is the office's direction." in peer_content
     assert "office status" not in peer_content
+    assert "## Working in this office" in peer_content
 
 
 def test_write_agent_guide_creates_both_files_and_trusts_claude():
