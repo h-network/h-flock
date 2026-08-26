@@ -10,6 +10,7 @@ import json
 import logging
 import os
 import pathlib
+import re
 import ssl
 import sys
 import threading
@@ -94,11 +95,13 @@ class FlockClient:
         """Get task boards for every enrolled agent in one round-trip."""
         return self.request("GET", "/board")
 
-    def add_ticket(self, agent: str, title: str, description: str = "") -> tuple[int, dict]:
+    def add_ticket(self, agent: str, title: str, description: str = "", priority: str = "") -> tuple[int, dict]:
         """Add a ticket to an agent's board without interrupting them."""
         payload: dict = {"title": title}
         if description:
             payload["description"] = description
+        if priority:
+            payload["priority"] = priority
         return self.request(
             "POST",
             f"/agents/{agent}/envelopes",
@@ -113,12 +116,71 @@ class FlockClient:
             {"kind": kind, "payload": {"agent": agent}, "as": self.app_name},
         )
 
+    def retire_agent(self, agent: str) -> tuple[int, dict]:
+        """StopAgent: removes roster membership and identity state. Queues
+        and boards are kept for a later re-hire — destructive to identity,
+        not to work already recorded."""
+        return self.request(
+            "POST",
+            "/agents/host/envelopes",
+            {"kind": "StopAgent", "payload": {"agent": agent}, "as": self.app_name},
+        )
+
+    def hire_agent(self, agent: str, cli: str = "claude", profile: str | None = None,
+                    provider: str | None = None) -> tuple[int, dict]:
+        """StartAgent with port_type "tmux": a new terminal agent with its own
+        window and CLI. Unlike StopAgent (retire), this is not destructive —
+        no identity or queues are ever removed by hiring.
+
+        ⚠ `profile` is validated server-side against the tenant's account
+        registry (`available_profiles`, `control/openers.py`), which lists
+        the valid accounts in its error if the name is wrong. There is no
+        REST endpoint that exposes that registry ahead of time — `office
+        profiles` reads Redis directly — so this client cannot offer a picker
+        and doesn't pretend to; a bad profile name is a clear 422, not a
+        guess. `provider` points the agent at a named local model endpoint
+        (`AGENT_PROVIDERS`) — format-checked only, no registry to validate
+        against either."""
+        payload: dict = {"agent": agent, "port_type": "tmux", "cli": cli}
+        if profile:
+            payload["profile"] = profile
+        if provider:
+            payload["provider"] = provider
+        return self.request(
+            "POST",
+            "/agents/host/envelopes",
+            {"kind": "StartAgent", "payload": payload, "as": self.app_name},
+        )
+
     def get_messages(self, after: str | None = None, limit: int = 100) -> tuple[int, dict]:
         """Catch-up poll mailbox messages for this client."""
         path = f"/agents/{self.app_name}/messages?limit={limit}"
         if after:
             path += f"&after={urllib.parse.quote(after)}"
         return self.request("GET", path)
+
+    def poll_messages_forever(self, after: str | None = None, interval: float = 1.0):
+        """Yield each new mailbox message for this client as it arrives,
+        forever — a blocking generator wrapping repeated `get_messages`
+        calls, so ReplyPusher can consume it exactly like AlertPusher
+        consumes `stream_alerts`. Polling rather than SSE: `GET
+        /agents/{client}/messages/stream` exists, but this client is a
+        plain synchronous urllib caller with no long-lived-connection
+        machinery beyond what `stream_alerts` already built for one
+        endpoint — a second one wasn't worth it for a mailbox this low in
+        volume. Errors are logged and retried on the same interval rather
+        than raised, so one bad poll never kills the pushing thread.
+        """
+        cursor = after
+        while True:
+            code, data = self.get_messages(after=cursor)
+            if code == 200:
+                for msg in data.get("messages", []):
+                    cursor = msg.get("cursor", cursor)
+                    yield msg
+            else:
+                logger.warning(f"poll_messages_forever: GET /agents/{self.app_name}/messages failed: status={code}, body={data}")
+            time.sleep(interval)
 
     def get_activity(self, agent: str, after: str | None = None, limit: int = 100) -> tuple[int, dict]:
         """Catch-up poll activity feed events for an agent."""
@@ -211,6 +273,13 @@ def _parse_sse_events(line_iter):
         elif line.startswith("id:"):
             event_id = line[len("id:"):].strip()
 
+
+# Same rule and reserved set clients/web/ui/lifecycle.js enforces client-side
+# for hire — kept identical so a name this bot refuses is refused everywhere,
+# not just here. The api would refuse it too, but telling the user before the
+# round trip is worth the duplication of one regex.
+_AGENT_NAME = re.compile(r"^(?![0-9]+$)[a-z0-9][a-z0-9-]{0,62}$")
+_RESERVED_AGENT_NAMES = {"all", "pod", "tenant", "agent"}
 
 _ALERT_ICONS = {"blocked": "⊘", "stalled": "⏳", "credential": "🔑"}
 
@@ -310,6 +379,64 @@ class AlertPusher:
                 self.telegram.send_message(self.chat_id, render_alert(alert))
 
 
+def render_reply(message: dict, fallback_source: str) -> str:
+    """One-line rendering of a mailbox message for ReplyPusher."""
+    source = message.get("l2", {}).get("source") or fallback_source
+    payload = message.get("payload")
+    text = payload.get("text") if isinstance(payload, dict) else None
+    return f"{source}: {text}" if text else f"{source} sent a message"
+
+
+class ReplyPusher:
+    """Consumes this bot's own mailbox (GET /agents/{app_name}/messages) and
+    pushes each new reply into a fixed Telegram chat as it arrives.
+
+    Same shape as AlertPusher (seed cursor from the tail, run in its own
+    thread, persist cursor as it goes) — polling instead of SSE since that's
+    what `FlockClient.poll_messages_forever` wraps. This is what actually
+    delivers a reply now: `handle_user_prompt` only posts and returns,
+    matching the real fire-and-forget delivery model (`POST
+    /agents/{agent}/envelopes` always returns 202 immediately; nothing in
+    switch/port/api waits on anything). The old design had
+    `handle_user_prompt` itself poll-and-wait inline, which blocked the
+    entire polling loop for every chat while one reply was pending — measured
+    live on the acceptance VM. This owns that job instead, independently.
+    """
+
+    def __init__(self, flock: "FlockClient", telegram, chat_id, cursor_store: CursorStore):
+        self.flock = flock
+        self.telegram = telegram
+        self.chat_id = chat_id
+        self.cursor_store = cursor_store
+
+    def _seed_cursor(self) -> str | None:
+        """On a fresh cursor store, start at the current tail — a message
+        that arrived before this process started is not an answer to
+        anything sent through it; replaying it looks like lag at best and a
+        stale, mismatched reply at worst."""
+        code, data = self.flock.get_messages(after=None)
+        if code == 200 and data.get("next_cursor"):
+            return data["next_cursor"]
+        return None
+
+    def run(self, stream_fn=None) -> None:
+        """Blocking; run this in its own thread. `stream_fn` defaults to
+        `self.flock.poll_messages_forever` and is overridable so tests can
+        inject a finite, network-free generator."""
+        stream_fn = stream_fn or self.flock.poll_messages_forever
+        cursor = self.cursor_store.load()
+        if cursor is None:
+            cursor = self._seed_cursor()
+            if cursor:
+                self.cursor_store.save(cursor)
+        for message in stream_fn(after=cursor):
+            cursor = message.get("cursor", cursor)
+            if cursor:
+                self.cursor_store.save(cursor)
+            if self.telegram:
+                self.telegram.send_message(self.chat_id, render_reply(message, self.flock.app_name))
+
+
 class TelegramClient:
     """Wrapper for Telegram Bot HTTP API."""
 
@@ -364,6 +491,12 @@ class TelegramClient:
             data["text"] = text
         return self.request("answerCallbackQuery", data)
 
+    def set_my_commands(self, commands: list[dict]) -> dict:
+        """Register the bot's `/` command list with Telegram itself, so it
+        shows up in the client's own command picker instead of requiring the
+        user to know and type a command blind."""
+        return self.request("setMyCommands", {"commands": commands})
+
     def get_updates(self, offset: int | None = None, timeout: int = 20) -> list[dict]:
         """⚠ getUpdates is per-BOT, not per-chat.
 
@@ -405,13 +538,18 @@ class TelegramBot:
         self.telegram = telegram_client
         self.cursor_store = cursor_store
         self.target_agent = target_agent
-        self.cursor = cursor_store.load()
-        self.last_edit_time = 0.0
-        self.min_edit_interval = 1.5
-        # Per-chat multi-step flows (currently just AddTicket's title/description
-        # prompts). A chat with no entry here is not mid-flow, so a plain text
-        # message from it is a prompt for target_agent, not an answer to a menu.
+        # Per-chat multi-step flows (AddTicket's title/description prompts,
+        # Hire's name prompt). A chat with no entry here is not mid-flow, so a
+        # plain text message from it is a prompt for its target agent, not an
+        # answer to a menu.
         self.pending: dict = {}
+        # Which agent a chat's plain-text prompts go to, if the operator has
+        # picked one via 🎯 Message agent — falls back to target_agent
+        # (--agent) when a chat has never picked one.
+        self.chat_target_agent: dict = {}
+
+    def _target_for(self, chat_id: int | str) -> str:
+        return self.chat_target_agent.get(chat_id, self.target_agent)
 
     def enrol(self, *, timeout_s: float = 60.0) -> bool:
         """Enrol with retry.
@@ -446,55 +584,27 @@ class TelegramBot:
             time.sleep(backoff)
             backoff = min(backoff * 1.5, 10.0)
 
-        # ⚠ With no stored cursor, start at the END of the mailbox, not the
-        # beginning. Messages that arrived before this process started are not
-        # answers to anything it asked — replaying them makes every prompt get
-        # the previous exchange's reply, which is indistinguishable from lag.
-        if self.cursor is None:
-            code, data = self.flock.get_messages(after=None)
-            if code == 200 and data.get("next_cursor"):
-                self.cursor = data["next_cursor"]
-                self.cursor_store.save(self.cursor)
-                logger.info(f"No stored cursor; starting from newest ({self.cursor})")
+        # Register /menu, /status with Telegram itself so they show up in the
+        # client's own "/" command list instead of requiring the user to know
+        # and type them blind. Best-effort: a failure here does not affect
+        # anything the bot actually does, only how discoverable it is.
+        if self.telegram:
+            res = self.telegram.set_my_commands([
+                {"command": "menu", "description": "Open the office menu (overview, tickets, agents, alerts)"},
+                {"command": "status", "description": f"Quick status check for {self.target_agent}"},
+            ])
+            if not res.get("ok", True):
+                logger.warning(f"setMyCommands failed: {res}")
+
         return True
 
-    def render_progress_message(self, tools_list: list[str], status: str = "working",
-                                started: float | None = None) -> str:
-        """Collapse consecutive repeats and count them.
-
-        ⚠ The activity feed carries tool NAMES only — never arguments, paths or
-        commands — so ten shell calls are ten identical events. Listing them
-        numbered produced "1. Bash 2. Bash … 10. Bash", which tells a reader
-        nothing except that something is happening.
-
-        Collapsing runs keeps the one fact the feed actually has (which tools,
-        how many, in what order) and drops the noise.
-        """
-        elapsed = ""
-        if started is not None:
-            secs = int(time.time() - started)
-            elapsed = f" · {secs}s" if secs < 60 else f" · {secs // 60}m{secs % 60:02d}s"
-        lines = [f"⏳ {self.target_agent} is {status}{elapsed}"]
-
-        runs: list[list] = []
-        for tool in tools_list:
-            if runs and runs[-1][0] == tool:
-                runs[-1][1] += 1
-            else:
-                runs.append([tool, 1])
-
-        for tool, n in runs[-8:]:
-            lines.append(f"   ⚙ {tool}" + (f" ×{n}" if n > 1 else ""))
-        if len(runs) > 8:
-            lines.insert(1, f"   … {len(tools_list) - sum(n for _, n in runs[-8:])} earlier calls")
-        return "\n".join(lines)
-
     def handle_status_command(self, chat_id: int | str) -> str:
-        code, presence_data = self.flock.get_presence(self.target_agent)
-        code_b, board_data = self.flock.get_board(self.target_agent)
+        agent = self._target_for(chat_id)
+        code, presence_data = self.flock.get_presence(agent)
+        code_b, board_data = self.flock.get_board(agent)
 
         if code != 200:
-            text = f"❌ Unable to fetch status for {self.target_agent}: {presence_data.get('detail', 'error')}"
+            text = f"❌ Unable to fetch status for {agent}: {presence_data.get('detail', 'error')}"
         else:
             pres = presence_data.get("presence", {})
             state = pres.get("state", "unknown")
@@ -507,7 +617,7 @@ class TelegramBot:
                 doing_str = first.get("title", str(first)) if isinstance(first, dict) else str(first)
 
             text = (
-                f"🤖 Agent Status: {self.target_agent}\n"
+                f"🤖 Agent Status: {agent}\n"
                 f"State: {state} (since {since})\n"
                 f"Doing: {doing_str}\n"
                 f"Ingress depth: {presence_data.get('depths', {}).get('ingress', 0)}"
@@ -517,16 +627,72 @@ class TelegramBot:
             self.telegram.send_message(chat_id, text)
         return text
 
-    # ── inline menu ──────────────────────────────────────────────────────────
-    # Callback data is kept short (Telegram caps it at 64 bytes) and prefixed by
-    # action: "ov" overview, "at"/"at:<agent>" add-ticket, "lc"/"lc:<agent>"
-    # lifecycle picker, "lp:<agent>"/"lr:<agent>" pause/resume.
-    MAIN_MENU = [
-        [{"text": "📋 Office overview", "callback_data": "ov"}],
-        [{"text": "🎫 Add ticket", "callback_data": "at"}],
-        [{"text": "⏯ Pause / resume agent", "callback_data": "lc"}],
-        [{"text": "🔔 Alerts", "callback_data": "al"}],
-    ]
+    # ── sticky menu ──────────────────────────────────────────────────────────
+    # The top-level menu is a persistent ReplyKeyboardMarkup — pinned at the
+    # bottom of the chat across messages, rather than an inline keyboard
+    # attached to one message that scrolls away. Its buttons are ordinary
+    # text: tapping one sends its label back as a plain message (no
+    # callback_query), so handle_text_message matches the label against
+    # STICKY_LABELS before treating text as a prompt for target_agent.
+    # Sub-flows one level down (agent pickers, pause/resume) stay inline —
+    # contextual, one-shot choices tied to a specific message, which is what
+    # inline keyboards are for; the sticky keyboard is for top-level nav that
+    # should always be one tap away.
+    #
+    # ⚠ One button is dynamic: "🎯 Message: <agent>" shows the CURRENT target
+    # for this chat and changes as that changes, so the keyboard is rebuilt
+    # per-chat (_sticky_keyboard(chat_id)) rather than being one static
+    # constant. It is matched by prefix, not exact text (see
+    # handle_text_message), since its suffix varies — unlike the Sprint-Z
+    # design this was modelled after, staleness here is harmless: tapping an
+    # old render of this button always opens a fresh agent picker rather than
+    # directly re-invoking a stored (function, args) pair, so there is
+    # nothing for a stale label to get wrong.
+    STICKY_TARGET_PREFIX = "🎯 Message: "
+    STICKY_LABELS = {
+        "📋 Overview": "ov",
+        "🎫 Add ticket": "at",
+        "⏯ Lifecycle": "lc",
+        "🔔 Alerts": "al",
+        "➕ Hire": "hi",
+        "📢 Broadcast": "bc",
+    }
+
+    def _sticky_keyboard(self, chat_id: int | str) -> dict:
+        target_label = f"{self.STICKY_TARGET_PREFIX}{self._target_for(chat_id)}"
+        layout = [
+            ["📋 Overview", "🎫 Add ticket"],
+            ["⏯ Lifecycle", "🔔 Alerts"],
+            [target_label, "➕ Hire"],
+            ["📢 Broadcast"],
+        ]
+        return {
+            "keyboard": [[{"text": label} for label in row] for row in layout],
+            "resize_keyboard": True,
+            "is_persistent": True,
+        }
+
+    def _dispatch_menu_action(self, chat_id: int | str, code: str) -> str:
+        """Shared by the sticky keyboard (text label tap) and any inline
+        button still using these same short codes (e.g. a sub-flow's "◀
+        Back" — see handle_callback_query)."""
+        if code == "menu":
+            return self.handle_menu_command(chat_id)
+        if code == "ov":
+            return self.handle_overview_command(chat_id)
+        if code == "at":
+            return self.handle_addticket_start(chat_id)
+        if code == "lc":
+            return self.handle_lifecycle_start(chat_id)
+        if code == "al":
+            return self.handle_alerts_command(chat_id)
+        if code == "hi":
+            return self.handle_hire_start(chat_id)
+        if code == "ta":
+            return self.handle_message_agent_start(chat_id)
+        if code == "bc":
+            return self.handle_broadcast_start(chat_id)
+        return ""
 
     def _tmux_agents(self) -> list[str]:
         """Enrolled agents with a terminal window — the ones a person can add a
@@ -543,9 +709,9 @@ class TelegramBot:
         return result
 
     def handle_menu_command(self, chat_id: int | str) -> str:
-        text = "h-flock menu — pick an action:"
+        text = "h-flock menu — pinned below, always one tap away:"
         if self.telegram:
-            self.telegram.send_message(chat_id, text, reply_markup={"inline_keyboard": self.MAIN_MENU})
+            self.telegram.send_message(chat_id, text, reply_markup=self._sticky_keyboard(chat_id))
         return text
 
     def handle_overview_command(self, chat_id: int | str) -> str:
@@ -597,16 +763,32 @@ class TelegramBot:
             self.telegram.send_message(chat_id, text)
         return text
 
+    def handle_addticket_priority(self, chat_id: int | str, priority: str) -> str:
+        state = self.pending.get(chat_id)
+        if not state or state.get("flow") != "addticket" or state.get("stage") != "priority":
+            return ""
+        agent, title = state["agent"], state["title"]
+        description = state.get("description", "")
+        del self.pending[chat_id]
+        code, resp = self.flock.add_ticket(agent, title, description, priority)
+        if code == 202:
+            text = f"✅ Ticket added to {agent}: {title} [{priority}]"
+        else:
+            text = f"❌ Failed to add ticket: {resp.get('detail', 'error')}"
+        if self.telegram:
+            self.telegram.send_message(chat_id, text)
+        return text
+
     def handle_lifecycle_start(self, chat_id: int | str) -> str:
         agents = self._tmux_agents()
         if not agents:
-            text = "No agents enrolled to pause or resume."
+            text = "No agents enrolled."
             if self.telegram:
                 self.telegram.send_message(chat_id, text)
             return text
         buttons = [[{"text": agent, "callback_data": f"lc:{agent}"}] for agent in agents]
         buttons.append([{"text": "◀ Back", "callback_data": "menu"}])
-        text = "Pause / resume — pick an agent:"
+        text = "Lifecycle — pick an agent:"
         if self.telegram:
             self.telegram.send_message(chat_id, text, reply_markup={"inline_keyboard": buttons})
         return text
@@ -617,9 +799,10 @@ class TelegramBot:
                 {"text": "⏸ Pause", "callback_data": f"lp:{agent}"},
                 {"text": "▶ Resume", "callback_data": f"lr:{agent}"},
             ],
+            [{"text": "🗑 Retire", "callback_data": f"lret:{agent}"}],
             [{"text": "◀ Back", "callback_data": "lc"}],
         ]
-        text = f"{agent} — pause or resume?"
+        text = f"{agent} — pause, resume, or retire?"
         if self.telegram:
             self.telegram.send_message(chat_id, text, reply_markup={"inline_keyboard": buttons})
         return text
@@ -631,6 +814,55 @@ class TelegramBot:
             text = f"✅ {agent} {verb}."
         else:
             text = f"❌ Failed to {verb[:-1]} {agent}: {resp.get('detail', 'error')}"
+        if self.telegram:
+            self.telegram.send_message(chat_id, text)
+        return text
+
+    def handle_retire_start(self, chat_id: int | str, agent: str) -> str:
+        # ⚠ Same confirm-by-typing-the-name pattern clients/web/ui/lifecycle.js
+        # uses for retire, not a yes/no tap — StopAgent removes roster
+        # membership and identity state (queues and boards are kept), and a
+        # single misplaced tap is too cheap a way to do that.
+        self.pending[chat_id] = {"flow": "retire", "agent": agent}
+        text = f"Type '{agent}' exactly to confirm retiring them (queues and boards are kept; /cancel to abort)."
+        if self.telegram:
+            self.telegram.send_message(chat_id, text)
+        return text
+
+    def handle_message_agent_start(self, chat_id: int | str) -> str:
+        agents = self._tmux_agents()
+        if not agents:
+            text = "No agents enrolled to message."
+            if self.telegram:
+                self.telegram.send_message(chat_id, text)
+            return text
+        buttons = [[{"text": agent, "callback_data": f"ta:{agent}"}] for agent in agents]
+        buttons.append([{"text": "◀ Back", "callback_data": "menu"}])
+        text = f"Currently messaging {self._target_for(chat_id)} — pick a different agent:"
+        if self.telegram:
+            self.telegram.send_message(chat_id, text, reply_markup={"inline_keyboard": buttons})
+        return text
+
+    def handle_message_agent_pick(self, chat_id: int | str, agent: str) -> str:
+        self.chat_target_agent[chat_id] = agent
+        text = f"🎯 Now messaging {agent}. Send any message to reach them."
+        if self.telegram:
+            # Re-send the sticky keyboard too -- its "🎯 Message: ..." button
+            # is stale the instant the target changes, and nothing else
+            # would refresh it short of the user sending /menu again.
+            self.telegram.send_message(chat_id, text, reply_markup=self._sticky_keyboard(chat_id))
+        return text
+
+    def handle_hire_start(self, chat_id: int | str) -> str:
+        self.pending[chat_id] = {"flow": "hire", "stage": "name"}
+        text = "New agent's name? (lowercase letters, digits, hyphens; not all digits; /cancel to abort)"
+        if self.telegram:
+            self.telegram.send_message(chat_id, text)
+        return text
+
+    def handle_broadcast_start(self, chat_id: int | str) -> str:
+        self.pending[chat_id] = {"flow": "broadcast"}
+        text = "Broadcast to every agent — type the message, or /cancel to abort."
         if self.telegram:
             self.telegram.send_message(chat_id, text)
         return text
@@ -672,15 +904,92 @@ class TelegramBot:
                 if self.telegram:
                     self.telegram.send_message(chat_id, reply)
                 return reply
-            # stage == "description"
-            description = "" if text.strip() == "-" else text.strip()
-            agent, title = state["agent"], state["title"]
+            if state["stage"] == "description":
+                state["description"] = "" if text.strip() == "-" else text.strip()
+                state["stage"] = "priority"
+                buttons = [[
+                    {"text": "🔵 Low", "callback_data": "ap:low"},
+                    {"text": "⚪ Normal", "callback_data": "ap:normal"},
+                    {"text": "🔴 High", "callback_data": "ap:high"},
+                ]]
+                reply = "Priority?"
+                if self.telegram:
+                    self.telegram.send_message(chat_id, reply, reply_markup={"inline_keyboard": buttons})
+                return reply
+            # stage == "priority": this step is answered by tapping a button
+            # (handle_addticket_priority), not typed text — stray text here
+            # just gets pointed back at the buttons rather than silently lost.
+            reply = "Tap a priority button above, or /cancel."
+            if self.telegram:
+                self.telegram.send_message(chat_id, reply)
+            return reply
+
+        if state["flow"] == "hire":
+            if state["stage"] == "name":
+                name = text.strip()
+                if not _AGENT_NAME.match(name) or name in _RESERVED_AGENT_NAMES:
+                    reply = "That name won't work — lowercase letters, digits and hyphens, not all digits, not a reserved word. Try again, or /cancel."
+                    if self.telegram:
+                        self.telegram.send_message(chat_id, reply)
+                    return reply  # stay in "name" stage; do not consume the pending flow
+                state["name"] = name
+                state["stage"] = "profile"
+                # ⚠ No picker: office profiles reads Redis directly and has no
+                # REST equivalent, so this client cannot list valid accounts
+                # ahead of time (see FlockClient.hire_agent). A bad name still
+                # gets a clear error, listing the valid ones, from the api.
+                reply = f"Profile for {name}? (account/profile name, or - for the default; /cancel to abort)"
+                if self.telegram:
+                    self.telegram.send_message(chat_id, reply)
+                return reply
+
+            if state["stage"] == "profile":
+                state["profile"] = None if text.strip() == "-" else text.strip()
+                state["stage"] = "provider"
+                reply = f"Provider for {state['name']}? (named local model endpoint, or - for the default; /cancel to abort)"
+                if self.telegram:
+                    self.telegram.send_message(chat_id, reply)
+                return reply
+
+            # stage == "provider"
+            provider = None if text.strip() == "-" else text.strip()
+            name, profile = state["name"], state["profile"]
             del self.pending[chat_id]
-            code, resp = self.flock.add_ticket(agent, title, description)
+            code, resp = self.flock.hire_agent(name, profile=profile, provider=provider)
             if code == 202:
-                reply = f"✅ Ticket added to {agent}: {title}"
+                extras = ", ".join(f"{k} {v}" for k, v in (("profile", profile), ("provider", provider)) if v)
+                reply = f"✅ Hire accepted for {name}" + (f" ({extras})" if extras else "") + " · window and CLI follow shortly."
             else:
-                reply = f"❌ Failed to add ticket: {resp.get('detail', 'error')}"
+                reply = f"❌ Failed to hire {name}: {resp.get('detail', 'error')}"
+            if self.telegram:
+                self.telegram.send_message(chat_id, reply)
+            return reply
+
+        if state["flow"] == "retire":
+            agent = state["agent"]
+            if text.strip() != agent:
+                reply = f"That doesn't match '{agent}' — type it exactly to confirm, or /cancel."
+                if self.telegram:
+                    self.telegram.send_message(chat_id, reply)
+                return reply  # stay open for retry, same as the web console's disabled-until-match button
+            del self.pending[chat_id]
+            code, resp = self.flock.retire_agent(agent)
+            if code == 202:
+                reply = f"✅ {agent} retired · queues and boards retained for a later re-hire."
+            else:
+                reply = f"❌ Failed to retire {agent}: {resp.get('detail', 'error')}"
+            if self.telegram:
+                self.telegram.send_message(chat_id, reply)
+            return reply
+
+        if state["flow"] == "broadcast":
+            message = text.strip()
+            del self.pending[chat_id]
+            code, resp = self.flock.send_message("all", message)
+            if code == 202:
+                reply = "📢 Broadcast sent."
+            else:
+                reply = f"❌ Broadcast failed: {resp.get('detail', 'error')}"
             if self.telegram:
                 self.telegram.send_message(chat_id, reply)
             return reply
@@ -690,32 +999,35 @@ class TelegramBot:
     def handle_callback_query(self, chat_id: int | str, callback_id: str, data: str) -> str:
         if self.telegram:
             self.telegram.answer_callback_query(callback_id)
-        if data == "menu":
-            return self.handle_menu_command(chat_id)
-        if data == "ov":
-            return self.handle_overview_command(chat_id)
-        if data == "at":
-            return self.handle_addticket_start(chat_id)
+        if data in ("menu", "ov", "at", "lc", "al", "hi", "ta"):
+            return self._dispatch_menu_action(chat_id, data)
         if data.startswith("at:"):
             return self.handle_addticket_pick_agent(chat_id, data[len("at:"):])
-        if data == "al":
-            return self.handle_alerts_command(chat_id)
-        if data == "lc":
-            return self.handle_lifecycle_start(chat_id)
         if data.startswith("lc:"):
             return self.handle_lifecycle_pick_agent(chat_id, data[len("lc:"):])
         if data.startswith("lp:"):
             return self.handle_lifecycle_control(chat_id, "PauseAgent", data[len("lp:"):])
         if data.startswith("lr:"):
             return self.handle_lifecycle_control(chat_id, "ResumeAgent", data[len("lr:"):])
+        if data.startswith("lret:"):
+            return self.handle_retire_start(chat_id, data[len("lret:"):])
+        if data.startswith("ta:"):
+            return self.handle_message_agent_pick(chat_id, data[len("ta:"):])
+        if data.startswith("ap:"):
+            return self.handle_addticket_priority(chat_id, data[len("ap:"):])
         return ""
 
     def handle_text_message(self, chat_id: int | str, text: str) -> str:
         """Entry point for a plain (non-callback) chat message: a pending
-        flow's answer, a known command, or a prompt for target_agent."""
+        flow's answer, a sticky-keyboard tap, a known command, or a prompt
+        for this chat's target agent."""
         pending_reply = self.handle_pending_text(chat_id, text)
         if pending_reply is not None:
             return pending_reply
+        if text in self.STICKY_LABELS:
+            return self._dispatch_menu_action(chat_id, self.STICKY_LABELS[text])
+        if text.startswith(self.STICKY_TARGET_PREFIX):
+            return self.handle_message_agent_start(chat_id)
         if text == "/menu":
             return self.handle_menu_command(chat_id)
         if text == "/status":
@@ -723,105 +1035,61 @@ class TelegramBot:
         return self.handle_user_prompt(chat_id, text)
 
     def handle_user_prompt(self, chat_id: int | str, text: str) -> str:
-        # Check presence first — if blocked, report plainly without endless typing
-        code, presence_data = self.flock.get_presence(self.target_agent)
+        """Post `text` to this chat's target agent (§ 🎯 Message agent,
+        default target_agent/--agent) and return immediately.
+
+        ⚠ No wait, no reply capture here — that used to be a `while not
+        completed` loop polling for target_agent's reply, unbounded, run
+        inline in the polling loop. It matched nothing about how delivery
+        actually works: POST /agents/{agent}/envelopes returns 202
+        immediately and always: the switch/port/api chain is fire-and-forget
+        all the way to the destination's inbox stream, nothing in it waits on
+        anything. The blocking was invented here, not required by the
+        transport, and it broke badly in production — one chat waiting
+        forever for a reply froze the poller for every other chat too
+        (measured live on the acceptance VM). ReplyPusher is what delivers
+        the eventual reply now, on its own schedule, matching the actual
+        fire-and-forget model.
+        """
+        agent = self._target_for(chat_id)
+        code, presence_data = self.flock.get_presence(agent)
         state = presence_data.get("presence", {}).get("state") if code == 200 else "unknown"
 
         if state == "blocked":
-            reply_text = f"{self.target_agent} is not accepting messages right now"
+            reply_text = f"{agent} is not accepting messages right now"
             if self.telegram:
                 self.telegram.send_message(chat_id, reply_text)
             return reply_text
 
-        # Post envelope to architect
-        code, resp = self.flock.send_message(self.target_agent, text)
+        code, resp = self.flock.send_message(agent, text)
         if code != 202:
-            reply_text = f"Failed to send message to {self.target_agent}: {resp.get('detail', 'error')}"
+            reply_text = f"Failed to send message to {agent}: {resp.get('detail', 'error')}"
             if self.telegram:
                 self.telegram.send_message(chat_id, reply_text)
             return reply_text
 
-        # Send initial progress message to Telegram chat
-        progress_text = f"⏳ {self.target_agent} is working"
-        msg_id = None
+        reply_text = f"✅ Sent to {agent}."
         if self.telegram:
-            res = self.telegram.send_message(chat_id, progress_text)
-            if res.get("ok"):
-                msg_id = res.get("result", {}).get("message_id")
+            self.telegram.send_message(chat_id, reply_text)
+        return reply_text
 
-        tools_used: list[str] = []
-        last_activity_cursor = None
-        last_typing_time = 0.0
-        started_at = time.time()
+    def _dispatch_update(self, update: dict) -> None:
+        callback = update.get("callback_query")
+        if callback:
+            chat_id = callback["message"]["chat"]["id"]
+            self.handle_callback_query(chat_id, callback["id"], callback.get("data", ""))
+            return
 
-        completed = False
-        reply_message_text = None
+        msg = update.get("message") or update.get("edited_message")
+        if not msg:
+            return
 
-        while not completed:
-            now = time.time()
+        chat_id = msg["chat"]["id"]
+        text = msg.get("text", "").strip()
+        if not text:
+            return
 
-            # Refresh Telegram typing indicator every ~4 seconds while working
-            if self.telegram and (now - last_typing_time >= 4.0):
-                self.telegram.send_chat_action(chat_id, "typing")
-                last_typing_time = now
-
-            # Poll activity feed
-            act_code, act_data = self.flock.get_activity(self.target_agent, after=last_activity_cursor)
-            if act_code == 200:
-                events = act_data.get("activity", [])
-                new_tools = False
-                for evt in events:
-                    last_activity_cursor = evt.get("cursor", last_activity_cursor)
-                    if evt.get("kind") == "tool" and evt.get("tool"):
-                        tools_used.append(evt["tool"])
-                        new_tools = True
-
-                # Coalesce Telegram edits (at most once per ~1.5s)
-                if new_tools and self.telegram and msg_id and (now - self.last_edit_time >= self.min_edit_interval):
-                    updated_text = self.render_progress_message(tools_used, started=started_at)
-                    self.telegram.edit_message_text(chat_id, msg_id, updated_text)
-                    self.last_edit_time = now
-
-            # Poll mailbox for reply from target_agent
-            msg_code, msg_data = self.flock.get_messages(after=self.cursor)
-            if msg_code == 200:
-                msgs = msg_data.get("messages", [])
-                # ⚠ Drain the whole batch. Breaking on the first reply left the
-                # rest queued, so one extra message — an agent sending twice, or
-                # a reply arriving between prompts — put the bot permanently one
-                # behind: every prompt then answered with the PREVIOUS reply, and
-                # it never caught up because each prompt consumed exactly one.
-                replies = []
-                for m in msgs:
-                    self.cursor = m.get("cursor", self.cursor)
-                    if m.get("l2", {}).get("source") == self.target_agent:
-                        replies.append(m.get("payload", {}).get("text", str(m.get("payload"))))
-                if msgs:
-                    self.cursor_store.save(self.cursor)
-                if replies:
-                    reply_message_text = "\n\n".join(replies)
-                    completed = True
-
-            if not completed:
-                # Re-check presence to catch if agent becomes blocked
-                p_code, p_data = self.flock.get_presence(self.target_agent)
-                if p_code == 200:
-                    curr_state = p_data.get("presence", {}).get("state")
-                    if curr_state == "blocked":
-                        blocked_msg = f"{self.target_agent} is not accepting messages right now"
-                        if self.telegram and msg_id:
-                            self.telegram.edit_message_text(chat_id, msg_id, f"⛔ {blocked_msg}")
-                        completed = True
-                        reply_message_text = blocked_msg
-                        break
-
-                time.sleep(1.0)
-
-        # Post answer as its own separate message
-        if reply_message_text and self.telegram and reply_message_text != f"{self.target_agent} is not accepting messages right now":
-            self.telegram.send_message(chat_id, f"{self.target_agent}: {reply_message_text}")
-
-        return reply_message_text or ""
+        self.handle_text_message(chat_id, text)
 
     def run_polling(self) -> None:
         """Run long-polling loop for Telegram updates.
@@ -830,6 +1098,16 @@ class TelegramBot:
         unconditionally, before dispatching to whichever mode runs (see
         `main()`). Enrolling here too would just be a second, redundant call
         with its own 60s retry budget stacked on top of the caller's.
+
+        ⚠ Each update is dispatched to its own thread rather than handled
+        inline. `handle_user_prompt` blocks — unboundedly, by design — until
+        target_agent replies. Handled inline, that means ONE unanswered
+        prompt stops this loop from ever calling `get_updates()` again,
+        freezing the bot for every chat, not just the stuck one: measured
+        live — a user's "hi" outlived architect's reply-via-office-send, and
+        every message the user sent afterward went unread by Telegram's
+        getUpdates until the first exchange finally resolved and unblocked
+        the loop. They looked lost; they were just never fetched.
         """
         if not self.telegram:
             logger.error("No Telegram token provided; long-polling loop disabled.")
@@ -843,24 +1121,7 @@ class TelegramBot:
                 updates = self.telegram.get_updates(offset=offset, timeout=20)
                 for update in updates:
                     offset = update["update_id"] + 1
-
-                    callback = update.get("callback_query")
-                    if callback:
-                        chat_id = callback["message"]["chat"]["id"]
-                        self.handle_callback_query(chat_id, callback["id"], callback.get("data", ""))
-                        continue
-
-                    msg = update.get("message") or update.get("edited_message")
-                    if not msg:
-                        continue
-
-                    chat_id = msg["chat"]["id"]
-                    text = msg.get("text", "").strip()
-
-                    if not text:
-                        continue
-
-                    self.handle_text_message(chat_id, text)
+                    threading.Thread(target=self._dispatch_update, args=(update,), daemon=True).start()
             except Exception as exc:
                 logger.error(f"Error in long-polling loop: {exc}")
                 time.sleep(3.0)
@@ -895,6 +1156,10 @@ class DryRunTelegramClient:
 
     def answer_callback_query(self, callback_query_id: str, text: str | None = None) -> dict:
         print(f"[DRY-RUN Telegram] answerCallbackQuery ({callback_query_id}){f': {text}' if text else ''}")
+        return {"ok": True}
+
+    def set_my_commands(self, commands: list[dict]) -> dict:
+        print(f"[DRY-RUN Telegram] setMyCommands: {commands}")
         return {"ok": True}
 
     def get_updates(self, offset: int | None = None, timeout: int = 20) -> list[dict]:
@@ -997,12 +1262,18 @@ def main() -> None:
     elif args.chat_id and args.status:
         bot.handle_status_command(args.chat_id)
     else:
-        if args.chat_id and not args.no_alert_push:
-            alerts_cursor_file = args.alerts_cursor_file or _sibling_path(args.cursor_file, "alerts")
-            pusher = AlertPusher(flock, telegram, args.chat_id, CursorStore(filepath=alerts_cursor_file))
-            threading.Thread(target=pusher.run, daemon=True, name="alert-pusher").start()
-        elif not args.chat_id:
-            logger.info("TELEGRAM_CHAT_ID not set; live alert push disabled (the Alerts menu still works on demand).")
+        if args.chat_id:
+            # cursor_store (--cursor-file) is entirely ReplyPusher's now — the
+            # mailbox cursor it used to track for handle_user_prompt's old
+            # wait loop moved here wholesale when that loop was removed.
+            reply_pusher = ReplyPusher(flock, telegram, args.chat_id, cursor_store)
+            threading.Thread(target=reply_pusher.run, daemon=True, name="reply-pusher").start()
+            if not args.no_alert_push:
+                alerts_cursor_file = args.alerts_cursor_file or _sibling_path(args.cursor_file, "alerts")
+                pusher = AlertPusher(flock, telegram, args.chat_id, CursorStore(filepath=alerts_cursor_file))
+                threading.Thread(target=pusher.run, daemon=True, name="alert-pusher").start()
+        else:
+            logger.info("TELEGRAM_CHAT_ID not set; live reply/alert push disabled (the menu still works on demand).")
         bot.run_polling()
 
 
