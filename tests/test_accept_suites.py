@@ -27,6 +27,7 @@ AUXILIARY_FLAGS = {
     "--log": ["--log", "/dev/null"],
     "--aof-dir": ["--aof-dir", "/tmp/matrix-aof"],
     "--expect-writer": ["--expect-writer", "bench-send=1"],
+    "--break-delivery": ["--break-delivery"],
 }
 
 # This is the parser/dispatch contract, not a live-behaviour matrix. Invalid
@@ -43,6 +44,7 @@ MODES = {
     "analyse-verification": (["--scenario", "analyse-verification"], {"--log"}),
     "analyse-v4-aof": (["--scenario", "analyse-v4-aof"], {"--aof-dir"}),
     "tmux-boundary": (["--scenario", "tmux-boundary"], {"--tenant"}),
+    "tmux-paste-delivery": (["--scenario", "tmux-paste-delivery"], {"--tenant", "--break-delivery"}),
     "tmux-concurrent-hire": (["--scenario", "tmux-concurrent-hire"], {"--tenant", "--api-port"}),
     "tmux-window-loss": (["--scenario", "tmux-window-loss"], {"--tenant", "--api-port"}),
 }
@@ -196,6 +198,9 @@ def test_incompatible_flag_mode_pairs_refuse_before_dispatch(mode, flag, flag_fi
     args = [*flag_args, *mode_args] if flag_first else [*mode_args, *flag_args]
     result = _accept(*args)
     assert result.returncode == 2, result.stdout + result.stderr
+    if flag == "--break-delivery":
+        assert result.stderr.strip() == "accept: --break-delivery requires --scenario tmux-paste-delivery"
+        return
     mode_label = f"--scenario {mode}" if "--scenario" in mode_args else "selected suites"
     assert result.stderr.strip() == f"accept: {flag} is incompatible with {mode_label}"
 
