@@ -12,6 +12,7 @@ import os
 import pathlib
 import ssl
 import sys
+import threading
 import time
 import urllib.error
 import urllib.parse
@@ -126,6 +127,115 @@ class FlockClient:
             path += f"&after={urllib.parse.quote(after)}"
         return self.request("GET", path)
 
+    def get_alerts(self, after: str | None = None, limit: int = 100) -> tuple[int, dict]:
+        """Catch-up poll watchdog alerts (blocked / stalled / credential —
+        API.md's Watchdog Alerts Feed). ⚠ There is no "give me the tail"
+        query: without `after`, this reads from the OLDEST stored alert, same
+        as every other stream endpoint. A caller wanting "recent" must fetch
+        with a large `limit` and take the tail itself (see TelegramBot's
+        handle_alerts_command)."""
+        path = f"/alerts?limit={limit}"
+        if after:
+            path += f"&after={urllib.parse.quote(after)}"
+        return self.request("GET", path)
+
+    def stream_alerts(self, after: str | None = None):
+        """Yield alert dicts from GET /alerts/stream as they arrive.
+
+        Blocking generator — never returns on its own — meant to run in its
+        own thread. Reconnects with capped exponential backoff on any
+        connection failure or stream-side `error` event, resuming from the
+        last cursor seen so a reconnect does not replay what was already
+        delivered.
+
+        ⚠ Uses a finite socket timeout despite API.md §4a's "SSE heartbeats
+        are not guaranteed, do not infer death from silence" — that warning
+        is about not treating silence as a *logical* error (do not, say, tell
+        a user "alerts are broken"). For a background reconnect loop the
+        trade-off flips: periodically reconnecting an idle-but-healthy stream
+        is harmless (cursor-based resume, no duplicates, no gap), while a
+        socket that died without a FIN and is never noticed hangs this thread
+        forever. Bounded timeout + resume is strictly safer here.
+        """
+        cursor = after
+        backoff = 1.0
+        while True:
+            path = "/alerts/stream"
+            if cursor:
+                path += f"?after={urllib.parse.quote(cursor)}"
+            req = urllib.request.Request(f"{self.base_url}{path}", headers=self._headers(), method="GET")
+            try:
+                with urllib.request.urlopen(req, timeout=90, context=self.ssl_context) as resp:
+                    backoff = 1.0
+                    for event_type, event_id, data in _parse_sse_events(resp):
+                        if event_id:
+                            cursor = event_id
+                        if event_type == "error" or data is None:
+                            continue
+                        try:
+                            parsed = json.loads(data)
+                        except json.JSONDecodeError:
+                            continue
+                        if not isinstance(parsed, dict):
+                            continue
+                        if parsed.get("cursor"):
+                            cursor = parsed["cursor"]
+                        yield parsed
+            except Exception as exc:
+                logger.warning(f"alerts stream disconnected, retrying in {backoff:.0f}s: {exc}")
+            time.sleep(backoff)
+            backoff = min(backoff * 2, 30.0)
+
+
+def _parse_sse_events(line_iter):
+    """Parse raw SSE lines into `(event_type, id, data)` tuples, one per
+    blank-line-terminated frame. Pure and network-free so it is directly unit
+    testable; `stream_alerts` is the only network-touching caller."""
+    event_type = None
+    event_id = None
+    data_lines: list[str] = []
+    for raw_line in line_iter:
+        line = raw_line.decode("utf-8", errors="replace") if isinstance(raw_line, bytes) else raw_line
+        line = line.rstrip("\r\n")
+        if line == "":
+            if data_lines:
+                yield event_type, event_id, "\n".join(data_lines)
+            event_type, data_lines = None, []
+            continue
+        if line.startswith(":"):
+            continue  # comment / keepalive
+        if line.startswith("event:"):
+            event_type = line[len("event:"):].strip()
+        elif line.startswith("data:"):
+            data_lines.append(line[len("data:"):].strip())
+        elif line.startswith("id:"):
+            event_id = line[len("id:"):].strip()
+
+
+_ALERT_ICONS = {"blocked": "⊘", "stalled": "⏳", "credential": "🔑"}
+
+
+def render_alert(alert: dict) -> str:
+    """One-line rendering of a GET /alerts entry, shared by the on-demand
+    Alerts menu and the live AlertPusher so the two never drift."""
+    kind = alert.get("kind", "unknown")
+    icon = _ALERT_ICONS.get(kind, "🔔")
+    agent = alert.get("agent", "?")
+
+    def _minutes(seconds) -> str:
+        return f"{seconds // 60}m" if isinstance(seconds, int) else "unknown"
+
+    if kind == "blocked":
+        return f"{icon} blocked — {agent} — unconsumed {_minutes(alert.get('unconsumed_s'))}"
+    if kind == "stalled":
+        ticket = alert.get("ticket", "")
+        return f"{icon} stalled — {agent} — \"{ticket}\" — doing {_minutes(alert.get('doing_age_s'))}"
+    if kind == "credential":
+        return f"{icon} credential — {alert.get('account', '?')}/{alert.get('cli', '?')} — {alert.get('status', '?')}"
+    # Forward-compatible fallback for a kind this client does not know yet.
+    details = {k: v for k, v in alert.items() if k not in ("v", "ts", "cursor", "kind")}
+    return f"{icon} {kind} — {json.dumps(details)}"
+
 
 class CursorStore:
     """Persists cursor to disk so bot restarts do not replay mailbox."""
@@ -149,6 +259,55 @@ class CursorStore:
             self.filepath.write_text(json.dumps({"cursor": cursor, "updated_at": time.time()}), encoding="utf-8")
         except Exception as exc:
             logger.warning(f"Failed to save cursor to {self.filepath}: {exc}")
+
+
+class AlertPusher:
+    """Consumes GET /alerts/stream and pushes each new alert to a fixed
+    Telegram chat as it happens — the point (per the ticket) is not having to
+    be watching the pane or the menu to find out.
+
+    ⚠ Only the three kinds `GET /alerts` documents ever arrive here: blocked,
+    stalled, credential. `doing_duration` and `todo_duration` — the two
+    lead-only alerts watchdog added — are pasted directly into the *lead's*
+    tmux pane as an ordinary Message envelope (`flock.watchdog.service`
+    `_notify_lead`) and never touch the alerts stream at all (confirmed by
+    reading `_check_doing_duration`/`_check_todo_duration` against `_alert`).
+    They are invisible to this client and to `GET /alerts` alike — there is
+    currently no API surface that exposes them to anything but the lead's own
+    pane.
+    """
+
+    def __init__(self, flock: "FlockClient", telegram, chat_id, cursor_store: CursorStore):
+        self.flock = flock
+        self.telegram = telegram
+        self.chat_id = chat_id
+        self.cursor_store = cursor_store
+
+    def _seed_cursor(self) -> str | None:
+        """On a fresh cursor store, start at the current tail rather than
+        replay the whole retained history (up to 1000 alerts) as if every one
+        were new — the same reasoning TelegramBot.enrol applies to mailboxes."""
+        code, data = self.flock.get_alerts(limit=1000)
+        if code == 200 and data.get("next_cursor"):
+            return data["next_cursor"]
+        return None
+
+    def run(self, stream_fn=None) -> None:
+        """Blocking; run this in its own thread. `stream_fn` defaults to
+        `self.flock.stream_alerts` and is overridable so tests can inject a
+        finite, network-free generator."""
+        stream_fn = stream_fn or self.flock.stream_alerts
+        cursor = self.cursor_store.load()
+        if cursor is None:
+            cursor = self._seed_cursor()
+            if cursor:
+                self.cursor_store.save(cursor)
+        for alert in stream_fn(after=cursor):
+            cursor = alert.get("cursor", cursor)
+            if cursor:
+                self.cursor_store.save(cursor)
+            if self.telegram:
+                self.telegram.send_message(self.chat_id, render_alert(alert))
 
 
 class TelegramClient:
@@ -336,6 +495,7 @@ class TelegramBot:
         [{"text": "📋 Office overview", "callback_data": "ov"}],
         [{"text": "🎫 Add ticket", "callback_data": "at"}],
         [{"text": "⏯ Pause / resume agent", "callback_data": "lc"}],
+        [{"text": "🔔 Alerts", "callback_data": "al"}],
     ]
 
     def _tmux_agents(self) -> list[str]:
@@ -445,6 +605,22 @@ class TelegramBot:
             self.telegram.send_message(chat_id, text)
         return text
 
+    def handle_alerts_command(self, chat_id: int | str, limit: int = 10) -> str:
+        # GET /alerts has no "give me the tail" query (see FlockClient.get_alerts);
+        # fetch up to the stream's own retention cap and slice the tail here.
+        code, data = self.flock.get_alerts(limit=1000)
+        if code != 200:
+            text = f"❌ Unable to fetch alerts: {data.get('detail', 'error')}"
+        else:
+            alerts = data.get("alerts", [])[-limit:]
+            if not alerts:
+                text = "🔔 No alerts."
+            else:
+                text = "\n".join(["🔔 Recent alerts"] + [render_alert(a) for a in alerts])
+        if self.telegram:
+            self.telegram.send_message(chat_id, text)
+        return text
+
     def handle_pending_text(self, chat_id: int | str, text: str) -> str | None:
         """Consume `text` as an answer to a pending flow's prompt. Returns None
         (leaving `text` untouched by the caller) when the chat has no flow open."""
@@ -492,6 +668,8 @@ class TelegramBot:
             return self.handle_addticket_start(chat_id)
         if data.startswith("at:"):
             return self.handle_addticket_pick_agent(chat_id, data[len("at:"):])
+        if data == "al":
+            return self.handle_alerts_command(chat_id)
         if data == "lc":
             return self.handle_lifecycle_start(chat_id)
         if data.startswith("lc:"):
@@ -710,6 +888,13 @@ def _door_ssl_context(api_url: str, ca_cert: str, insecure: bool) -> "ssl.SSLCon
     return ssl.create_default_context(cafile=ca_cert or None)
 
 
+def _sibling_path(path: str, suffix: str) -> str:
+    """`cursor.json` -> `cursor.alerts.json`: a default alerts-cursor path
+    that lives beside --cursor-file without colliding with it."""
+    p = pathlib.Path(path)
+    return str(p.with_name(f"{p.stem}.{suffix}{p.suffix}"))
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="h-flock Telegram bot client")
     parser.add_argument("--api-url", default=os.getenv("FLOCK_API_URL", "http://localhost:8080"), help="h-flock API base URL")
@@ -730,6 +915,10 @@ def main() -> None:
     # drive a known chat without waiting for an inbound message first.
     parser.add_argument("--chat-id", type=str, default=os.getenv("TELEGRAM_CHAT_ID", ""),
                         help="Drive this chat directly instead of polling for one")
+    parser.add_argument("--alerts-cursor-file", default=os.getenv("ALERTS_CURSOR_FILE", ""),
+                        help="File path to store the alerts-stream cursor (default: derived from --cursor-file)")
+    parser.add_argument("--no-alert-push", action="store_true", default=os.getenv("NO_ALERT_PUSH") == "1",
+                        help="Disable proactively pushing new watchdog alerts to --chat-id")
 
     args = parser.parse_args()
 
@@ -769,6 +958,12 @@ def main() -> None:
         bot.enrol()
         bot.handle_status_command(args.chat_id)
     else:
+        if args.chat_id and not args.no_alert_push:
+            alerts_cursor_file = args.alerts_cursor_file or _sibling_path(args.cursor_file, "alerts")
+            pusher = AlertPusher(flock, telegram, args.chat_id, CursorStore(filepath=alerts_cursor_file))
+            threading.Thread(target=pusher.run, daemon=True, name="alert-pusher").start()
+        elif not args.chat_id:
+            logger.info("TELEGRAM_CHAT_ID not set; live alert push disabled (the Alerts menu still works on demand).")
         bot.run_polling()
 
 
