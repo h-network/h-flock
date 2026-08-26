@@ -79,7 +79,8 @@ def test_custody_summary_scopes_by_time_source_stream_and_destination(tmp_path):
     log.write_text("\n".join(json.dumps(row) for row in rows) + "\n")
     result = subprocess.run(
         ["python3", str(JUDGE), str(log), "--after-line", "1", "--source", "architect",
-         "--destination", "sme-1", "--destination", "sme-2"],
+         "--destination", "sme-1", "--destination", "sme-2",
+         "--marked-destination", "sme-1"],
         capture_output=True, text=True, check=True,
     )
     summary = json.loads(result.stdout)
@@ -90,6 +91,8 @@ def test_custody_summary_scopes_by_time_source_stream_and_destination(tmp_path):
         "dead_lettered_stream_ids": [], "sent": 1, "opened": 1, "dead_lettered": 0,
     }
     assert summary["destinations"]["sme-2"]["dead_lettered"] == 1
+    assert summary["observed_destinations"] == ["sme-1"]
+    assert summary["pane_disagreements"] == []
 
 
 def test_custody_summary_never_treats_an_orphan_terminal_record_as_delivery(tmp_path):
@@ -105,6 +108,20 @@ def test_custody_summary_never_treats_an_orphan_terminal_record_as_delivery(tmp_
     summary = json.loads(result.stdout)
     assert summary["terminal_without_sent"] == ["missing-sent"]
     assert summary["destinations"]["sme-1"]["opened"] == 0
+
+
+def test_opened_without_pane_marker_is_a_named_log_disagreement(tmp_path):
+    log = tmp_path / "custody.log"
+    log.write_text("\n".join(json.dumps({
+        "event": event, "stream_id": "delivered", "source": "architect", "destination": "sme-1",
+    }) for event in ("sent", "opened")) + "\n")
+    result = subprocess.run(
+        ["python3", str(JUDGE), str(log), "--source", "architect", "--destination", "sme-1"],
+        capture_output=True, text=True, check=True,
+    )
+    summary = json.loads(result.stdout)
+    assert summary["observed_destinations"] == []
+    assert summary["pane_disagreements"] == ["sme-1"]
 
 
 def test_custody_summary_counts_unreadable_json_in_the_run(tmp_path):

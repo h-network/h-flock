@@ -43,8 +43,8 @@ onboarding_incomplete() {
 }
 
 onboarding_fail() {
-  local count="$1" reason="$2"
-  echo "ONBOARDING fail failed=$count reason=$reason" >&2
+  local count="$1" reason="$2" detail="${3:-}"
+  echo "ONBOARDING fail failed=$count reason=$reason${detail:+ $detail}" >&2
   exit "$count"
 }
 
@@ -356,7 +356,9 @@ PROMPT_STREAM_ID="$(printf '%s\n' "$send_output" | sed -n 's/^STREAM_ID=//p' | t
 [ -n "$PROMPT_STREAM_ID" ] || onboarding_fail 1 prompt_send_failed
 
 deadline=$((SECONDS + ONBOARD_TIMEOUT))
-while [ "$SECONDS" -lt "$deadline" ]; do
+OBSERVED=0
+PANE_DISAGREEMENTS=()
+observe_onboarding() {
   docker logs "$CONTAINER" >"$WORK/container.log" 2>&1 || onboarding_incomplete custody_unavailable
   prompt_dead="$(python3 - "$WORK/container.log" "$LOG_CURSOR" "$PROMPT_STREAM_ID" <<'PY'
 import json,sys
@@ -371,9 +373,14 @@ print(dead)
 PY
 )"
   [ "$prompt_dead" = 0 ] || onboarding_fail "$prompt_dead" prompt_dead_lettered
+  local marked_args=() sme pane
+  for sme in "${SME_LIST[@]}"; do
+    pane="$("${TMUX[@]}" capture-pane -p -J -t "${TENANT}:${sme}" -S - 2>/dev/null || true)"
+    case "$pane" in *"$marker"*) marked_args+=(--marked-destination "$sme");; esac
+  done
   RUN_SUMMARY="$(python3 container/scenarios/onboarding-custody.py "$WORK/container.log" \
     --after-line "$LOG_CURSOR" --source "$ARCHITECT" \
-    --destination "${SME_LIST[0]}" --destination "${SME_LIST[1]}")" \
+    --destination "${SME_LIST[0]}" --destination "${SME_LIST[1]}" "${marked_args[@]}")" \
     || onboarding_incomplete custody_unreadable
   parse_failures="$(python3 -c 'import json,sys;print(json.load(sys.stdin)["parse_failures"])' <<<"$RUN_SUMMARY")"
   [ "$parse_failures" = 0 ] || onboarding_incomplete malformed_custody_json
@@ -382,17 +389,30 @@ PY
   dead_count="$(python3 -c 'import json,sys;print(len(json.load(sys.stdin)["dead_stream_ids"]))' <<<"$RUN_SUMMARY")"
   [ "$dead_count" = 0 ] || onboarding_fail "$dead_count" onboarding_dead_lettered
 
-  observed=0
-  for sme in "${SME_LIST[@]}"; do
-    opened="$(python3 -c 'import json,sys; d=json.load(sys.stdin); print(len(d["destinations"][sys.argv[1]]["opened_stream_ids"]))' "$sme" <<<"$RUN_SUMMARY")"
-    pane="$("${TMUX[@]}" capture-pane -p -J -t "${TENANT}:${sme}" -S - 2>/dev/null || true)"
-    case "$pane" in *"$marker"*) has_marker=1;; *) has_marker=0;; esac
-    [ "$opened" -ge 1 ] && [ "$has_marker" = 1 ] && observed=$((observed+1))
-  done
-  if [ "$observed" = 2 ]; then
+  OBSERVED="$(python3 -c 'import json,sys;print(len(json.load(sys.stdin)["observed_destinations"]))' <<<"$RUN_SUMMARY")"
+  mapfile -t PANE_DISAGREEMENTS < <(python3 -c 'import json,sys;print("\n".join(json.load(sys.stdin)["pane_disagreements"]))' <<<"$RUN_SUMMARY")
+}
+
+while [ "$SECONDS" -lt "$deadline" ]; do
+  observe_onboarding
+  if [ "$OBSERVED" = 2 ]; then
     echo "ONBOARDING pass"
     exit 0
   fi
   sleep 2
 done
+
+# Custody may precede pane rendering briefly, so disagreement is only a verdict
+# after one final observation at the deadline. At that point an opened record
+# without the run marker is a contradiction between the log and the real pane,
+# not an unobserved model choice.
+observe_onboarding
+if [ "$OBSERVED" = 2 ]; then
+  echo "ONBOARDING pass"
+  exit 0
+fi
+if [ "${#PANE_DISAGREEMENTS[@]}" -gt 0 ]; then
+  disagreement_smes="$(IFS=,; echo "${PANE_DISAGREEMENTS[*]}")"
+  onboarding_fail 6 log_disagrees_with_pane "smes=$disagreement_smes"
+fi
 onboarding_incomplete onboarding_not_observed

@@ -11,8 +11,15 @@ import json
 from pathlib import Path
 
 
-def summarize(path: Path, after_line: int, source: str, destinations: list[str]) -> dict:
+def summarize(
+    path: Path,
+    after_line: int,
+    source: str,
+    destinations: list[str],
+    marked_destinations: list[str] | None = None,
+) -> dict:
     destination_set = set(destinations)
+    marked_destination_set = set(marked_destinations or [])
     records: list[dict] = []
     parse_failures = 0
     with path.open(encoding="utf-8", errors="replace") as handle:
@@ -55,11 +62,21 @@ def summarize(path: Path, after_line: int, source: str, destinations: list[str])
             "dead_lettered": len(dead),
         }
 
+    observed_destinations = sorted(
+        destination for destination, result in by_destination.items()
+        if result["opened_stream_ids"] and destination in marked_destination_set
+    )
+    pane_disagreements = sorted(
+        destination for destination, result in by_destination.items()
+        if result["opened_stream_ids"] and destination not in marked_destination_set
+    )
     return {
         "parse_failures": parse_failures,
         "stream_ids": sorted(all_stream_ids),
         "dead_stream_ids": sorted(dead_stream_ids),
         "terminal_without_sent": sorted(terminal_without_sent),
+        "observed_destinations": observed_destinations,
+        "pane_disagreements": pane_disagreements,
         "destinations": by_destination,
         "records": records,
     }
@@ -71,8 +88,11 @@ def main() -> int:
     parser.add_argument("--after-line", type=int, default=0)
     parser.add_argument("--source", required=True)
     parser.add_argument("--destination", action="append", required=True)
+    parser.add_argument("--marked-destination", action="append", default=[])
     args = parser.parse_args()
-    print(json.dumps(summarize(args.log, args.after_line, args.source, args.destination), separators=(",", ":")))
+    print(json.dumps(summarize(
+        args.log, args.after_line, args.source, args.destination, args.marked_destination
+    ), separators=(",", ":")))
     return 0
 
 
