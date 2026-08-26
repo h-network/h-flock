@@ -33,8 +33,8 @@
 # LIMIT: these three members do NOT exercise a successful paste_text.
 # tmux-window-loss targets a missing window, tmux-boundary sends nothing, and
 # tmux-concurrent-hire uses the control-plane opener. Until a successful-paste
-# scenario joins this suite, it does not exercise delivery_unverified or make
-# analyse-verification meaningful.
+# scenario joins this suite, it does not exercise delivery_unverified and does
+# not run analyse-verification.
 #
 # ⚠ EXIT CODES, so a caller never has to read the prose:
 #   0    every selected suite passed

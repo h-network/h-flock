@@ -34,7 +34,11 @@ def test_help_is_readable_and_arguments_are_checked():
     assert "real agents in real panes" in help_result.stdout
     assert "tmux-nemotron is manual integration only" in help_result.stdout
     assert "do NOT exercise a successful paste_text" in help_result.stdout
+    assert "tmux-window-loss targets a missing window" in help_result.stdout
+    assert "tmux-boundary sends nothing" in help_result.stdout
+    assert "tmux-concurrent-hire uses the control-plane opener" in help_result.stdout
     assert "delivery_unverified" in help_result.stdout
+    assert "not run analyse-verification" in help_result.stdout
     bad = subprocess.run(["bash", str(ACCEPT), "--nonsense"], capture_output=True)
     assert bad.returncode == 2, "an unknown argument must not be silently ignored"
 
