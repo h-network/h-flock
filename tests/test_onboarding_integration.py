@@ -2,6 +2,7 @@ import json
 import os
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
+import re
 import shutil
 import subprocess
 import threading
@@ -64,6 +65,16 @@ def test_usage_documents_provider_convention_and_keep_default():
     assert "PROVIDER_LOCAL_MODEL=MODEL" in text
     assert "PROVIDER_<NAME>_*" in text
     assert "KEEP=1 leaves the owned tenant running (default)" in text
+
+
+def test_log_pane_disagreement_is_a_category_not_a_fake_failure_count():
+    text = TOOL.read_text()
+    body = re.search(r"onboarding_log_disagreement\(\) \{\n(.*?)\n\}", text, re.DOTALL).group(1)
+    assert 'ONBOARDING fail reason=log_disagrees_with_pane smes=$1' in body
+    assert "exit 6" in body
+    assert "failed=" not in body
+    assert "onboarding_log_disagreement \"$disagreement_smes\"" in text
+    assert "onboarding_fail 6 log_disagrees_with_pane" not in text
 
 
 def test_custody_summary_scopes_by_time_source_stream_and_destination(tmp_path):

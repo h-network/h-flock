@@ -48,6 +48,11 @@ onboarding_fail() {
   exit "$count"
 }
 
+onboarding_log_disagreement() {
+  echo "ONBOARDING fail reason=log_disagrees_with_pane smes=$1" >&2
+  exit 6
+}
+
 redact_stream() {
   PROVIDER_SECRET="${PROVIDER_TOKEN:-}" API_SECRET="${API_TOKEN_CREATED:-}" python3 -c '
 import os,sys
@@ -413,6 +418,6 @@ if [ "$OBSERVED" = 2 ]; then
 fi
 if [ "${#PANE_DISAGREEMENTS[@]}" -gt 0 ]; then
   disagreement_smes="$(IFS=,; echo "${PANE_DISAGREEMENTS[*]}")"
-  onboarding_fail 6 log_disagrees_with_pane "smes=$disagreement_smes"
+  onboarding_log_disagreement "$disagreement_smes"
 fi
 onboarding_incomplete onboarding_not_observed
