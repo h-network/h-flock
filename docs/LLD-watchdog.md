@@ -136,6 +136,40 @@ If the tenant has no lead (`<prefix>:lead` unset), or the lead is not a `tmux`
 participant, the check is silently skipped — there is nowhere to deliver a
 pane message to.
 
+## 2b. Todo-duration: the same alert for a ticket nobody has taken yet
+
+A third rule, same family as §2a and added alongside it: any ticket in an
+agent's `tasks.todo` whose `created_ts` is at least `WATCHDOG_TODO_ALERT_SEC`
+old (default `300`, 5 minutes) is reported to the lead the same way — direct
+pane message, not the alerts stream, board-only trigger.
+
+⚠ **Presence-independent for a different reason than §2a's.** §2a's ticket is
+already `doing`, so an agent could be `working`, `idle` or silent and the rule
+still cares only about the board. Here there is no work in progress to have a
+presence opinion about at all: the agent may be perfectly healthy and simply
+not have looked at its board yet. That is exactly the condition this rule
+exists to surface, so presence was never going to be part of it.
+
+```
+[alert from watchdog] <agent> has an unpicked ticket "<ticket title>" waiting <N> min
+```
+
+`<N>` is `todo_age_s // 60`.
+
+**State is a HASH, not a STRING, because `todo` is not a one-ticket slot.**
+`tasks.doing` holds at most one entry, so `doing.alerted` (§2a) can be a single
+`<ticket_id>:<crossing>` string. `tasks.todo` can hold several tickets at once,
+and each independently ages — so `<prefix>:agent:<name>:todo.alerted` is a HASH
+keyed by ticket id, each field holding the last crossing number sent for that
+id. A ticket taken, cancelled or deleted leaves the board; the next pass
+diffs the hash's fields against the ids still present in `todo` and drops
+whatever no longer matches, so the hash does not grow with tickets that will
+never be evaluated again.
+
+Delivery reuses the exact mechanism §2a introduced (`_notify_lead`): same
+envelope build, same direct write to the lead's `ingress`, same
+`flock.port <lead>` kick, same silent no-op when there is no `tmux` lead.
+
 ## 3. `blocked`: a retained delivery verdict
 
 The switch, not the watchdog, owns:
@@ -215,8 +249,9 @@ Alert records are facts, not diagnoses. Their common fields are `v`, `ts` and
 `kind`; the remaining fields are specific to `stalled`, `blocked`, or
 `credential` as shown in this document.
 
-⚠ **§2a is the one exception, and it is to the lead only.** HLD §8c
-works out why the lead does not re-create the symptom-clearing problem above:
+⚠ **§2a and §2b are the exception, and it is to the lead only.** Both share
+one delivery mechanism (`_notify_lead`) and the same scope. HLD §8c works out
+why the lead does not re-create the symptom-clearing problem above:
 the lead is the one participant in this fabric that a human's own judgment is
 meant to reach through, per HLD §8c's "why there is a lead at all" — a title
 is what makes an agent take direction rather than negotiate it, but it is also
@@ -285,6 +320,7 @@ agents.
 | `WATCHDOG_COOLDOWN_SEC` | `3600` | per-ticket stall-alert cooldown |
 | `WATCHDOG_CREDENTIAL_WARN_DAYS` | `7` | refresh-token warning horizon |
 | `WATCHDOG_DOING_ALERT_SEC` | `900` | age at which §2a messages the lead directly, and the re-alert period thereafter |
+| `WATCHDOG_TODO_ALERT_SEC` | `300` | age at which §2b messages the lead directly, and the re-alert period thereafter |
 
 `REDIS_URL`, `POD` and `TENANT` identify the tenant. `TMUX_SESSION` defaults to
 the tenant name; `TMUX_SOCKET` selects an explicit tmux socket when present.
@@ -304,12 +340,13 @@ the tenant name; `TMUX_SOCKET` selects an explicit tmux socket when present.
    reviewing build 77 — the move updated eight docs for the file *paths* and
    missed the sentence about *ownership*.
 5. `blocked` is a limited delivery-verification verdict, not a diagnosis.
-6. ⚠ **AMENDED — §2a is one exception.** Every `stalled`, `blocked` and
-   `credential` alert still goes only to the Redis Stream and container log,
-   never into any agent's ingress queue. §2a's doing-duration message is the
-   single exception, and it is narrower than "an agent's ingress queue" in
-   general: it is addressed only to whichever participant is currently the
-   tenant's `lead` (HLD §8c), never to the agent the ticket names, and never to
-   any other peer. If there is no lead, or the lead is not `tmux`, §2a sends
-   nothing rather than falling back to any other participant.
+6. ⚠ **AMENDED — §2a and §2b are the exception.** Every `stalled`, `blocked`
+   and `credential` alert still goes only to the Redis Stream and container
+   log, never into any agent's ingress queue. §2a's doing-duration message and
+   §2b's todo-duration message are the exception, and it is narrower than "an
+   agent's ingress queue" in general: both are addressed only to whichever
+   participant is currently the tenant's `lead` (HLD §8c), never to the agent
+   the ticket names, and never to any other peer. If there is no lead, or the
+   lead is not `tmux`, neither rule falls back to any other participant — they
+   send nothing.
 7. No terminal content is captured or parsed.

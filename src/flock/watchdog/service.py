@@ -73,6 +73,7 @@ class Watchdog:
         cooldown_seconds: int = 3600,
         credential_warn_days: int = 7,
         doing_alert_seconds: float = 900,
+        todo_alert_seconds: float = 300,
         home_root: str | Path = "/home/ubuntu",
     ):
         self.r = r
@@ -85,6 +86,7 @@ class Watchdog:
         self.cooldown_seconds = cooldown_seconds
         self.credential_warn_days = credential_warn_days
         self.doing_alert_seconds = doing_alert_seconds
+        self.todo_alert_seconds = todo_alert_seconds
         self.home_root = Path(home_root)
         self._reported_blocks: set[tuple[str, str, str]] = set()
 
@@ -324,6 +326,65 @@ class Watchdog:
             self._notify_lead(lead, text)
             self.r.set(state_key, f"{ticket_id}:{multiple}")
 
+    def _check_todo_duration(self, agents: list[str], now: datetime) -> None:
+        """Tell the lead directly when a ticket has sat unpicked in `todo`.
+
+        Same family as `_check_doing_duration`, same delivery and dedup shape,
+        independent job and state. Presence-independent for the same reason:
+        an agent can be perfectly healthy and simply not have looked at its
+        board yet, which is exactly the case this exists to surface.
+
+        Unlike `doing` (one ticket, enforced), `todo` can hold several at
+        once, so the per-ticket crossing count is a HASH keyed by ticket id
+        rather than the single STRING `doing.alerted` uses — more than one of
+        an agent's queued tickets can independently be old.
+        """
+        lead = self._lead()
+        if not lead:
+            return
+        for agent in agents:
+            state_key = prefix(self.pod, self.tenant, agent, "todo.alerted")
+            raw_tickets = self.r.lrange(prefix(self.pod, self.tenant, agent, "tasks.todo"), 0, -1)
+            present_ids = set()
+            for raw in raw_tickets:
+                try:
+                    ticket = json.loads(_text(raw))
+                except (TypeError, json.JSONDecodeError):
+                    continue
+                if not isinstance(ticket, dict) or not isinstance(ticket.get("title"), str):
+                    continue
+                ticket_id = ticket.get("id")
+                if not isinstance(ticket_id, str) or not ticket_id:
+                    continue
+                present_ids.add(ticket_id)
+                created = _timestamp(ticket.get("created_ts"))
+                if created is None:
+                    continue
+                todo_age = int((now - created).total_seconds())
+                if todo_age < self.todo_alert_seconds:
+                    continue
+
+                # Re-alert once per threshold crossing, same rule as doing.alerted.
+                multiple = int(todo_age // self.todo_alert_seconds)
+                previous = _text(self.r.hget(state_key, ticket_id))
+                if previous is not None and previous.isdigit() and int(previous) >= multiple:
+                    continue
+
+                minutes = todo_age // 60
+                text = (
+                    f'[alert from watchdog] {agent} has an unpicked ticket '
+                    f'"{ticket["title"]}" waiting {minutes} min'
+                )
+                self._notify_lead(lead, text)
+                self.r.hset(state_key, ticket_id, str(multiple))
+
+            # A ticket taken, cancelled or deleted leaves `todo` and its crossing
+            # count is no longer meaningful; drop it rather than let the hash
+            # grow with entries no board state will ever match again.
+            stale = {_text(field) for field in (self.r.hkeys(state_key) or [])} - present_ids
+            if stale:
+                self.r.hdel(state_key, *stale)
+
     def poll(self, *, now: datetime | None = None) -> None:
         now = (now or datetime.now(timezone.utc)).astimezone(timezone.utc)
         agents = self._agents()
@@ -344,6 +405,10 @@ class Watchdog:
             self._check_doing_duration(agents, now)
         except Exception as exc:
             self._error("doing_duration", exc)
+        try:
+            self._check_todo_duration(agents, now)
+        except Exception as exc:
+            self._error("todo_duration", exc)
 
     def _credential_accounts(self) -> list[tuple[str, str, Path]]:
         """Return each CLI account used by an enrolled terminal agent once."""
@@ -482,6 +547,7 @@ def main() -> None:
         cooldown_seconds=int(os.environ.get("WATCHDOG_COOLDOWN_SEC", "3600")),
         credential_warn_days=int(os.environ.get("WATCHDOG_CREDENTIAL_WARN_DAYS", "7")),
         doing_alert_seconds=float(os.environ.get("WATCHDOG_DOING_ALERT_SEC", "900")),
+        todo_alert_seconds=float(os.environ.get("WATCHDOG_TODO_ALERT_SEC", "300")),
     )
     # ⚠ These three moved out of the switch's forwarding loop. They observe
     # agents — CLI transcripts, presence, whether a paste was followed by input
