@@ -34,6 +34,14 @@ Reuse the existing provider convention. **Do not invent `VLLM_URL`.**
     ARCHITECT        architect agent name                     (default: architect)
     SMES             two SME names, space separated           (default: "sme-1 sme-2")
     ONBOARD_TIMEOUT  seconds to wait for onboarding traffic   (default: 900)
+    ONBOARD_CONTRADICTION_GRACE
+                     final log/pane contradiction recheck     (default: one poll interval,
+                                                                allowed: 1..30 seconds)
+
+The contradiction grace defaults to one observation interval, so a pane render
+that a normal poll would have caught is not reported as a log/pane contradiction.
+Changing the poll cadence therefore changes the default grace with it; an
+operator may override the grace within its bounded range.
 
 Positional arg is an output directory, as `tmux-nemotron.sh` takes one.
 
