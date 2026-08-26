@@ -69,6 +69,40 @@ def test_scenario_refuses_missing_api_port():
     assert "RESULT tmux-window-loss incomplete reason=api_port_required" in result.stderr
 
 
+def test_paste_negative_control_reaches_scenario(tmp_path):
+    fake_bash = tmp_path / "bash"
+    fake_bash.write_text("#!/bin/sh\nprintf 'args=%s\\n' \"$*\"\n")
+    fake_bash.chmod(0o755)
+    result = subprocess.run(
+        ["/bin/bash", str(ACCEPT), "--scenario", "tmux-paste-delivery", "--tenant", "chosen", "--break-delivery"],
+        capture_output=True,
+        text=True,
+        env={**os.environ, "PATH": f"{tmp_path}:{os.environ['PATH']}"},
+    )
+    assert result.returncode == 0
+    assert result.stdout == "args=container/scenarios/tmux-paste-delivery.sh --break-delivery\n"
+
+
+def test_paste_negative_control_cannot_be_silently_mistargeted():
+    for command in (
+        ["/bin/bash", str(ACCEPT), "--break-delivery"],
+        ["/bin/bash", str(ACCEPT), "--scenario", "analyse-verification", "--log", "/dev/null", "--break-delivery"],
+    ):
+        result = subprocess.run(command, capture_output=True, text=True)
+        assert result.returncode == 2
+        assert "--break-delivery requires --scenario tmux-paste-delivery" in result.stderr
+
+
+def test_paste_delivery_observes_the_pane_before_trusting_opened():
+    scenario = (ROOT / "container/scenarios/tmux-paste-delivery.sh").read_text()
+    assert scenario.count("capture-pane -p -J") == 2
+    assert "stale_message_marker" in scenario
+    pane_check = scenario.index('expect "exact message text is present in destination pane"')
+    opened_check = scenario.index('expect "custody reports opened after pane paste"')
+    assert pane_check < opened_check
+    assert "`opened` is secondary custody" in scenario
+
+
 def test_a_silent_failure_is_not_recorded_as_a_pass(tmp_path):
     """The regression that matters: a scenario that fails while printing nothing
     the filter matches must still be recorded as a failure."""

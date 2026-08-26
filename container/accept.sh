@@ -94,6 +94,7 @@ SCENARIO=""
 ANALYSER_LOG=""
 AOF_DIR=""
 ANALYSER_ARGS=()
+SCENARIO_ARGS=()
 while [ $# -gt 0 ]; do
   case "$1" in
     --tenant) TENANT="$2"; TENANT_EXPLICIT=1; shift 2 ;;
@@ -111,10 +112,16 @@ while [ $# -gt 0 ]; do
     --log) ANALYSER_LOG="$2"; shift 2 ;;
     --aof-dir) AOF_DIR="$2"; shift 2 ;;
     --expect-writer) ANALYSER_ARGS+=(--expect-writer "$2"); shift 2 ;;
+    --break-delivery) SCENARIO_ARGS+=(--break-delivery); shift ;;
     -h|--help) sed -n '2,40p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'; exit 0 ;;
     *) echo "accept: unknown argument '$1'" >&2; exit 2 ;;
   esac
 done
+# SCENARIO_ARGS currently contains only --break-delivery; widen this guard when another scenario flag is added.
+[ "${#SCENARIO_ARGS[@]}" -eq 0 ] || [ "$SCENARIO" = tmux-paste-delivery ] || {
+  echo "accept: --break-delivery requires --scenario tmux-paste-delivery" >&2
+  exit 2
+}
 [ -n "$TENANT" ] || TENANT="accept"
 [ -n "$API_PORT" ] || API_PORT=8080
 
@@ -140,10 +147,10 @@ if [ -n "$SCENARIO" ]; then
     analyse-v4-aof)
       [ -n "$AOF_DIR" ] || { echo "RESULT analyse-v4-aof incomplete reason=missing_argument" >&2; exit 100; }
       exec python3 container/scenarios/analyse-v4-aof.py "$AOF_DIR" ;;
-    tmux-boundary)
+    tmux-boundary|tmux-paste-delivery)
       [ "$TENANT_EXPLICIT" = 1 ] || { echo "RESULT $SCENARIO incomplete reason=tenant_required" >&2; exit 100; }
       export TENANT API_PORT
-      exec bash "container/scenarios/${SCENARIO}.sh" ;;
+      exec bash "container/scenarios/${SCENARIO}.sh" "${SCENARIO_ARGS[@]}" ;;
     tmux-concurrent-hire|tmux-window-loss)
       [ "$TENANT_EXPLICIT" = 1 ] || { echo "RESULT $SCENARIO incomplete reason=tenant_required" >&2; exit 100; }
       [ "$API_PORT_EXPLICIT" = 1 ] || { echo "RESULT $SCENARIO incomplete reason=api_port_required" >&2; exit 100; }
