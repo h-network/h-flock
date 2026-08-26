@@ -9,9 +9,142 @@ catch, so the helper that decides pass from fail is itself under test.
 import subprocess
 import os
 from pathlib import Path
+import re
+import shutil
+
+import pytest
 
 ROOT = Path(__file__).parents[1]
 ACCEPT = ROOT / "container/accept.sh"
+
+AUXILIARY_FLAGS = {
+    "--tenant": ["--tenant", "matrix-tenant"],
+    "--api-port": ["--api-port", "19456"],
+    "--session-port": ["--session-port", "19457"],
+    "--console-port": ["--console-port", "19458"],
+    "--keep": ["--keep"],
+    "--no-console": ["--no-console"],
+    "--log": ["--log", "/dev/null"],
+    "--aof-dir": ["--aof-dir", "/tmp/matrix-aof"],
+    "--expect-writer": ["--expect-writer", "bench-send=1"],
+    "--break-delivery": ["--break-delivery"],
+}
+
+# This is the parser/dispatch contract, not a live-behaviour matrix. Invalid
+# pairs must stop at rc2; valid standalone pairs are proved below with child
+# shims that expose the argv or environment they actually received.
+MODES = {
+    "bare": ([], {"--tenant", "--api-port", "--session-port", "--console-port", "--keep", "--no-console"}),
+    "core": (["--core"], {"--tenant", "--api-port", "--session-port", "--console-port", "--keep", "--no-console"}),
+    "fault": (["--fault"], {"--tenant", "--api-port", "--session-port", "--keep"}),
+    "api": (["--api"], {"--tenant", "--api-port", "--session-port", "--keep"}),
+    "tmux": (["--tmux"], {"--tenant", "--api-port", "--session-port", "--keep"}),
+    "all": (["--all"], {"--tenant", "--api-port", "--session-port", "--console-port", "--keep", "--no-console"}),
+    "analyse-run": (["--scenario", "analyse-run"], {"--log", "--expect-writer"}),
+    "analyse-verification": (["--scenario", "analyse-verification"], {"--log"}),
+    "analyse-v4-aof": (["--scenario", "analyse-v4-aof"], {"--aof-dir"}),
+    "tmux-boundary": (["--scenario", "tmux-boundary"], {"--tenant"}),
+    "tmux-paste-delivery": (["--scenario", "tmux-paste-delivery"], {"--tenant", "--break-delivery"}),
+    "tmux-concurrent-hire": (["--scenario", "tmux-concurrent-hire"], {"--tenant", "--api-port"}),
+    "tmux-window-loss": (["--scenario", "tmux-window-loss"], {"--tenant", "--api-port"}),
+}
+
+
+def _clean_env(**extra):
+    env = {key: value for key, value in os.environ.items() if key not in {"TENANT", "API_PORT"}}
+    env.update(extra)
+    return env
+
+
+def _accept(*args, env=None):
+    return subprocess.run(
+        ["/bin/bash", str(ACCEPT), *args],
+        capture_output=True,
+        text=True,
+        cwd=ROOT,
+        env=env or _clean_env(),
+    )
+
+
+def _executable(path, body):
+    path.write_text(body)
+    path.chmod(0o755)
+
+
+def _shimmed_suite_root(tmp_path):
+    """A no-Docker accept root whose children all return clean verdicts."""
+    root = tmp_path / "repo"
+    tools = root / "tools"
+    (root / "container").mkdir(parents=True)
+    (root / "clients/web").mkdir(parents=True)
+    tools.mkdir()
+    shutil.copy2(ACCEPT, root / "container/accept.sh")
+    shutil.copytree(ROOT / "container/scenarios", root / "container/scenarios")
+    (root / "container/plumbing-check.sh").write_text("")
+    (root / "clients/web/server.py").write_text("")
+    (root / "clients/web/flow-check.py").write_text("")
+    _executable(
+        root / "setup.sh",
+        """#!/bin/sh
+answers="$(cat)"
+printf '%s\n' "$answers" >"$MATRIX_STATE/setup.answers"
+api_port="$(printf '%s\n' "$answers" | sed -n '13p')"
+printf 'API_ENABLED=1\nAPI_PORT=%s\nAPI_TOKEN=matrix-token\n' "$api_port" >container/.env
+touch "$MATRIX_STATE/created"
+printf 'healthy\n'
+""",
+    )
+    _executable(
+        tools / "docker",
+        """#!/bin/sh
+printf '%s\n' "$*" >>"$MATRIX_STATE/docker.calls"
+case "$1 $2" in
+  'ps -aq') [ -f "$MATRIX_STATE/created" ] && printf 'container-id\n' ;;
+  'inspect --format') printf 'healthy\n' ;;
+  'exec h-flock-'*) printf 'architect\n' ;;
+esac
+case " $* " in *' down -v '*) rm -f "$MATRIX_STATE/created" ;; esac
+""",
+    )
+    _executable(
+        tools / "bash",
+        """#!/bin/sh
+case "$1" in
+  container/plumbing-check.sh) printf 'PASS=1 FAIL=0\n' ;;
+  container/scenarios/*) printf 'RESULT shim pass\n' ;;
+  *) exit 2 ;;
+esac
+""",
+    )
+    _executable(tools / "curl", "#!/bin/sh\nprintf '200'\n")
+    _executable(tools / "openssl", "#!/bin/sh\nprintf 'matrix-secret\n'\n")
+    _executable(
+        tools / "python3",
+        "#!/bin/sh\nprintf '%s\\n' \"$*\" >>\"$MATRIX_STATE/python.calls\"\nexit 0\n",
+    )
+    return root, _clean_env(
+        PATH=f"{tools}:{os.environ['PATH']}",
+        MATRIX_STATE=str(tmp_path),
+    )
+
+
+def _run_shimmed_suite(root, env, *args):
+    state = Path(env["MATRIX_STATE"])
+    for name in ("created", "setup.answers", "docker.calls", "python.calls"):
+        (state / name).unlink(missing_ok=True)
+    result = subprocess.run(
+        ["/bin/bash", "container/accept.sh", *args],
+        cwd=root,
+        env=env,
+        capture_output=True,
+        text=True,
+        timeout=10,
+    )
+    evidence = {}
+    for name in ("setup.answers", "docker.calls", "python.calls"):
+        path = state / name
+        evidence[name] = path.read_text() if path.exists() else ""
+    return result, evidence
 
 
 def _helpers():
@@ -41,6 +174,170 @@ def test_help_is_readable_and_arguments_are_checked():
     assert "not run analyse-verification" in help_result.stdout
     bad = subprocess.run(["bash", str(ACCEPT), "--nonsense"], capture_output=True)
     assert bad.returncode == 2, "an unknown argument must not be silently ignored"
+
+
+def test_matrix_inventory_covers_every_parsed_auxiliary_flag():
+    parsed = set(re.findall(r"^    (--[a-z-]+)\)", ACCEPT.read_text(), re.MULTILINE))
+    selectors = {"--core", "--fault", "--api", "--tmux", "--all", "--scenario"}
+    assert parsed - selectors == set(AUXILIARY_FLAGS)
+
+
+INVALID_MODE_FLAG_PAIRS = [
+    (mode, flag)
+    for mode, (_, allowed) in MODES.items()
+    for flag in AUXILIARY_FLAGS
+    if flag not in allowed
+]
+
+
+@pytest.mark.parametrize("mode,flag", INVALID_MODE_FLAG_PAIRS)
+@pytest.mark.parametrize("flag_first", [False, True])
+def test_incompatible_flag_mode_pairs_refuse_before_dispatch(mode, flag, flag_first):
+    mode_args, _ = MODES[mode]
+    flag_args = AUXILIARY_FLAGS[flag]
+    args = [*flag_args, *mode_args] if flag_first else [*mode_args, *flag_args]
+    result = _accept(*args)
+    assert result.returncode == 2, result.stdout + result.stderr
+    if flag == "--break-delivery":
+        assert result.stderr.strip() == "accept: --break-delivery requires --scenario tmux-paste-delivery"
+        return
+    mode_label = f"--scenario {mode}" if "--scenario" in mode_args else "selected suites"
+    assert result.stderr.strip() == f"accept: {flag} is incompatible with {mode_label}"
+
+
+@pytest.mark.parametrize("flag", ["--tenant", "--api-port", "--session-port", "--console-port",
+                                  "--scenario", "--log", "--aof-dir", "--expect-writer"])
+def test_value_flags_without_values_are_bad_arguments(flag):
+    result = _accept(flag)
+    assert result.returncode == 2
+    assert f"accept: {flag} requires a value" in result.stderr
+
+
+def test_value_flag_does_not_consume_the_next_flag_as_its_value():
+    result = _accept("--tenant", "--api")
+    assert result.returncode == 2
+    assert "accept: --tenant requires a value" in result.stderr
+
+
+def test_scenario_and_suite_selection_cannot_be_combined():
+    result = _accept("--fault", "--scenario", "analyse-verification", "--log", "/dev/null")
+    assert result.returncode == 2
+    assert "suite selector is incompatible" in result.stderr
+
+
+def test_console_port_is_not_silently_ignored_when_console_is_disabled():
+    result = _accept("--core", "--no-console", "--console-port", "19458")
+    assert result.returncode == 2
+    assert "--console-port is incompatible" in result.stderr
+
+
+SUITE_ALLOWED_PAIRS = [
+    (mode, flag)
+    for mode, (_, allowed) in MODES.items()
+    if mode in {"bare", "core", "fault", "api", "tmux", "all"}
+    for flag in allowed
+]
+
+
+@pytest.mark.parametrize("mode,flag", SUITE_ALLOWED_PAIRS)
+def test_compatible_suite_pairs_change_their_harness_effect(tmp_path, mode, flag):
+    root, env = _shimmed_suite_root(tmp_path)
+    mode_args, _ = MODES[mode]
+    baseline, before = _run_shimmed_suite(root, env, *mode_args)
+    changed, after = _run_shimmed_suite(root, env, *mode_args, *AUXILIARY_FLAGS[flag])
+    assert baseline.returncode == changed.returncode == 0, (
+        baseline.stdout + baseline.stderr + changed.stdout + changed.stderr
+    )
+
+    before_answers = before["setup.answers"].splitlines()
+    after_answers = after["setup.answers"].splitlines()
+    if flag == "--tenant":
+        assert before_answers[1] == "accept"
+        assert after_answers[1] == "matrix-tenant"
+    elif flag == "--api-port":
+        assert before_answers[12] == "8080"
+        assert after_answers[12] == "19456"
+    elif flag == "--session-port":
+        assert before_answers[13] == "8081"
+        assert after_answers[13] == "19457"
+    elif flag == "--console-port":
+        before_server = next(line for line in before["python.calls"].splitlines() if "server.py" in line)
+        after_server = next(line for line in after["python.calls"].splitlines() if "server.py" in line)
+        assert "--port 8099" in before_server
+        assert "--port 19458" in after_server
+    elif flag == "--keep":
+        assert " down -v" in before["docker.calls"]
+        assert " down -v" not in after["docker.calls"]
+        assert "kept: container=" in changed.stdout
+    elif flag == "--no-console":
+        assert "server.py" in before["python.calls"]
+        assert "server.py" not in after["python.calls"]
+    else:
+        raise AssertionError(f"missing suite effect proof for {flag}")
+
+
+@pytest.mark.parametrize(
+    "args",
+    [
+        [],
+        ["--core"],
+        ["--tmux"],
+        ["--all"],
+        ["--core", "--no-console"],
+        ["--all", "--keep"],
+        ["--tenant", "documented-example", "--keep"],
+    ],
+    ids=["bare", "core", "tmux", "all", "core-no-console", "all-keep", "documented-ssh"],
+)
+def test_repository_suite_invocations_still_pass_with_clean_children(tmp_path, args):
+    root, env = _shimmed_suite_root(tmp_path)
+    result, _ = _run_shimmed_suite(root, env, *args)
+    assert result.returncode == 0, result.stdout + result.stderr
+
+
+@pytest.mark.parametrize(
+    "scenario,args,expected",
+    [
+        ("analyse-run", ["--log", "/capture/log", "--expect-writer", "bench-send=2"],
+         "container/scenarios/analyse-run.py|/capture/log|--expect-writer|bench-send=2"),
+        ("analyse-verification", ["--log", "/capture/log"],
+         "container/scenarios/analyse-verification.py|/capture/log"),
+        ("analyse-v4-aof", ["--aof-dir", "/capture/aof"],
+         "container/scenarios/analyse-v4-aof.py|/capture/aof"),
+    ],
+)
+def test_analyser_flags_reach_the_selected_child(tmp_path, scenario, args, expected):
+    fake_python = tmp_path / "python3"
+    fake_python.write_text("#!/bin/sh\n(IFS='|'; printf '%s\\n' \"$*\")\n")
+    fake_python.chmod(0o755)
+    result = _accept(
+        "--scenario", scenario, *args,
+        env=_clean_env(PATH=f"{tmp_path}:{os.environ['PATH']}"),
+    )
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert result.stdout.strip() == expected
+
+
+@pytest.mark.parametrize(
+    "scenario,args,expected",
+    [
+        ("tmux-boundary", ["--tenant", "chosen"], "TENANT=chosen API_PORT=8080"),
+        ("tmux-concurrent-hire", ["--tenant", "chosen", "--api-port", "19456"],
+         "TENANT=chosen API_PORT=19456"),
+        ("tmux-window-loss", ["--tenant", "chosen", "--api-port", "19456"],
+         "TENANT=chosen API_PORT=19456"),
+    ],
+)
+def test_tmux_flags_reach_the_selected_child(tmp_path, scenario, args, expected):
+    fake_bash = tmp_path / "bash"
+    fake_bash.write_text("#!/bin/sh\nprintf 'TENANT=%s API_PORT=%s\\n' \"$TENANT\" \"$API_PORT\"\n")
+    fake_bash.chmod(0o755)
+    result = _accept(
+        "--scenario", scenario, *args,
+        env=_clean_env(PATH=f"{tmp_path}:{os.environ['PATH']}"),
+    )
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert result.stdout.strip() == expected
 
 
 def test_scenario_exports_selected_api_port(tmp_path):

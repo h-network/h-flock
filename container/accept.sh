@@ -10,6 +10,8 @@
 # --aof-dir DIR run standalone analysers; tmux-boundary, tmux-concurrent-hire,
 # and tmux-window-loss run one terminal scenario. Core console emits RESULT console-ready and
 # RESULT console-flow as separate gates.
+# Auxiliary flags are mode-specific. A flag that cannot affect the selected
+# suite or scenario is rejected with exit 2 instead of being silently ignored.
 #
 # Installs a tenant the way a person would, waits for it to be healthy, runs the
 # selected suites against it, and tears it down.
@@ -95,33 +97,91 @@ ANALYSER_LOG=""
 AOF_DIR=""
 ANALYSER_ARGS=()
 SCENARIO_ARGS=()
+USED_TENANT=0; USED_API_PORT=0; USED_SESSION_PORT=0; USED_CONSOLE_PORT=0
+USED_KEEP=0; USED_NO_CONSOLE=0; USED_LOG=0; USED_AOF_DIR=0; USED_EXPECT_WRITER=0
+USED_BREAK_DELIVERY=0
+SUITE_SELECTED=0
+need_value() {
+  [ "$#" -ge 2 ] && [ -n "$2" ] && [ "${2#--}" = "$2" ] || {
+    echo "accept: $1 requires a value" >&2
+    exit 2
+  }
+}
 while [ $# -gt 0 ]; do
   case "$1" in
-    --tenant) TENANT="$2"; TENANT_EXPLICIT=1; shift 2 ;;
-    --api-port) API_PORT="$2"; API_PORT_EXPLICIT=1; shift 2 ;;
-    --session-port) SESSION_PORT="$2"; shift 2 ;;
-    --console-port) CONSOLE_PORT="$2"; shift 2 ;;
-    --keep) KEEP=1; shift ;;
-    --no-console) CONSOLE=0; shift ;;
-    --core) SUITES="$SUITES core"; shift ;;
-    --fault) SUITES="$SUITES fault"; shift ;;
-    --api) SUITES="$SUITES api"; shift ;;
-    --tmux) SUITES="$SUITES tmux"; shift ;;
-    --all) SUITES="core fault api tmux"; shift ;;
-    --scenario) SCENARIO="$2"; shift 2 ;;
-    --log) ANALYSER_LOG="$2"; shift 2 ;;
-    --aof-dir) AOF_DIR="$2"; shift 2 ;;
-    --expect-writer) ANALYSER_ARGS+=(--expect-writer "$2"); shift 2 ;;
-    --break-delivery) SCENARIO_ARGS+=(--break-delivery); shift ;;
+    --tenant) need_value "$@"; TENANT="$2"; TENANT_EXPLICIT=1; USED_TENANT=1; shift 2 ;;
+    --api-port) need_value "$@"; API_PORT="$2"; API_PORT_EXPLICIT=1; USED_API_PORT=1; shift 2 ;;
+    --session-port) need_value "$@"; SESSION_PORT="$2"; USED_SESSION_PORT=1; shift 2 ;;
+    --console-port) need_value "$@"; CONSOLE_PORT="$2"; USED_CONSOLE_PORT=1; shift 2 ;;
+    --keep) KEEP=1; USED_KEEP=1; shift ;;
+    --no-console) CONSOLE=0; USED_NO_CONSOLE=1; shift ;;
+    --core) SUITES="$SUITES core"; SUITE_SELECTED=1; shift ;;
+    --fault) SUITES="$SUITES fault"; SUITE_SELECTED=1; shift ;;
+    --api) SUITES="$SUITES api"; SUITE_SELECTED=1; shift ;;
+    --tmux) SUITES="$SUITES tmux"; SUITE_SELECTED=1; shift ;;
+    --all) SUITES="core fault api tmux"; SUITE_SELECTED=1; shift ;;
+    --scenario) need_value "$@"; SCENARIO="$2"; shift 2 ;;
+    --log) need_value "$@"; ANALYSER_LOG="$2"; USED_LOG=1; shift 2 ;;
+    --aof-dir) need_value "$@"; AOF_DIR="$2"; USED_AOF_DIR=1; shift 2 ;;
+    --expect-writer) need_value "$@"; ANALYSER_ARGS+=(--expect-writer "$2"); USED_EXPECT_WRITER=1; shift 2 ;;
+    --break-delivery) SCENARIO_ARGS+=(--break-delivery); USED_BREAK_DELIVERY=1; shift ;;
     -h|--help) sed -n '2,40p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'; exit 0 ;;
     *) echo "accept: unknown argument '$1'" >&2; exit 2 ;;
   esac
 done
 # SCENARIO_ARGS currently contains only --break-delivery; widen this guard when another scenario flag is added.
-[ "${#SCENARIO_ARGS[@]}" -eq 0 ] || [ "$SCENARIO" = tmux-paste-delivery ] || {
+[ "$USED_BREAK_DELIVERY" = 0 ] || [ "$SCENARIO" = tmux-paste-delivery ] || {
   echo "accept: --break-delivery requires --scenario tmux-paste-delivery" >&2
   exit 2
 }
+
+MODE_LABEL="selected suites"
+[ -n "$SCENARIO" ] && MODE_LABEL="--scenario $SCENARIO"
+reject_flag() { echo "accept: $1 is incompatible with $MODE_LABEL" >&2; exit 2; }
+if [ -n "$SCENARIO" ]; then
+  [ "$SUITE_SELECTED" = 0 ] || reject_flag "suite selector"
+  [ "$USED_SESSION_PORT" = 0 ] || reject_flag --session-port
+  [ "$USED_CONSOLE_PORT" = 0 ] || reject_flag --console-port
+  [ "$USED_KEEP" = 0 ] || reject_flag --keep
+  [ "$USED_NO_CONSOLE" = 0 ] || reject_flag --no-console
+  case "$SCENARIO" in
+    analyse-run)
+      [ "$USED_TENANT" = 0 ] || reject_flag --tenant
+      [ "$USED_API_PORT" = 0 ] || reject_flag --api-port
+      [ "$USED_AOF_DIR" = 0 ] || reject_flag --aof-dir ;;
+    analyse-verification)
+      [ "$USED_TENANT" = 0 ] || reject_flag --tenant
+      [ "$USED_API_PORT" = 0 ] || reject_flag --api-port
+      [ "$USED_AOF_DIR" = 0 ] || reject_flag --aof-dir
+      [ "$USED_EXPECT_WRITER" = 0 ] || reject_flag --expect-writer ;;
+    analyse-v4-aof)
+      [ "$USED_TENANT" = 0 ] || reject_flag --tenant
+      [ "$USED_API_PORT" = 0 ] || reject_flag --api-port
+      [ "$USED_LOG" = 0 ] || reject_flag --log
+      [ "$USED_EXPECT_WRITER" = 0 ] || reject_flag --expect-writer ;;
+    tmux-boundary|tmux-paste-delivery)
+      [ "$USED_API_PORT" = 0 ] || reject_flag --api-port
+      [ "$USED_LOG" = 0 ] || reject_flag --log
+      [ "$USED_AOF_DIR" = 0 ] || reject_flag --aof-dir
+      [ "$USED_EXPECT_WRITER" = 0 ] || reject_flag --expect-writer ;;
+    tmux-concurrent-hire|tmux-window-loss)
+      [ "$USED_LOG" = 0 ] || reject_flag --log
+      [ "$USED_AOF_DIR" = 0 ] || reject_flag --aof-dir
+      [ "$USED_EXPECT_WRITER" = 0 ] || reject_flag --expect-writer ;;
+  esac
+else
+  [ "$USED_LOG" = 0 ] || reject_flag --log
+  [ "$USED_AOF_DIR" = 0 ] || reject_flag --aof-dir
+  [ "$USED_EXPECT_WRITER" = 0 ] || reject_flag --expect-writer
+  if [ "$USED_NO_CONSOLE" = 1 ] && [ "$USED_CONSOLE_PORT" = 1 ]; then
+    reject_flag --console-port
+  fi
+  case " ${SUITES:-core} " in
+    *" core "*) ;;
+    *) [ "$USED_CONSOLE_PORT" = 0 ] || reject_flag --console-port
+       [ "$USED_NO_CONSOLE" = 0 ] || reject_flag --no-console ;;
+  esac
+fi
 [ -n "$TENANT" ] || TENANT="accept"
 [ -n "$API_PORT" ] || API_PORT=8080
 
