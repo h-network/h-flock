@@ -43,8 +43,8 @@ resume_tmuxhost() {
     fi
   fi
 }
-docker exec "$C" kill -STOP "$tmuxhost_pid" >/dev/null 2>&1 || incomplete tmux-window-loss tmuxhost_stop_failed
 trap resume_tmuxhost EXIT
+docker exec "$C" kill -STOP "$tmuxhost_pid" >/dev/null 2>&1 || incomplete tmux-window-loss tmuxhost_stop_failed
 "${TMUX[@]}" kill-window -t "$old_window_id" >/dev/null 2>&1 || incomplete tmux-window-loss window_kill_failed
 
 absent_count="$("${TMUX[@]}" list-windows -t "$TENANT" -F '#{window_name}' 2>/dev/null | awk -v a="$AGENT" '$0==a' | wc -l | tr -d ' ')"
