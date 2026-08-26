@@ -411,16 +411,30 @@ does not retry (`LLD-bus-and-switch` §3.3, rail 3). It emits `kick_started` whe
 handle away. Those attempt records do not claim that the port ran or delivered.
 
 ⚠ **The switch must set `signal.signal(signal.SIGCHLD, signal.SIG_IGN)` at
-start.** Without it the kernel keeps every exited kick as a zombie until the
-switch reaps it, and CPython only reaps at the top of the *next* `Popen` — so
-during a burst the reaping lags the spawning. Measured: **65 zombies** for a
-100-envelope run, **40 still present at rest** afterwards, clearing only when
-traffic resumed. `SIG_IGN` makes the kernel reap them immediately and the count
-never leaves zero.
+start (`src/flock/switch/service.py:243`).** Without it the kernel keeps every
+exited kick as a zombie until the switch reaps it, and CPython only reaps at the
+top of the *next* `Popen` — so during a burst the reaping lags the spawning.
+Measured: **65 zombies** for a 100-envelope run, **40 still present at rest**
+afterwards, clearing only when traffic resumed. `SIG_IGN` makes the kernel reap
+them immediately and the count never leaves zero.
 
-This is safe *because* the kick is fire and forget (rail 3): `SIG_IGN` makes
-`wait()` and `poll()` unusable, and we never call them — a return code is
-exactly what rail 3 forbids caring about.
+This is safe **only inside the switch**, because its kick is fire and forget
+(rail 3): `SIG_IGN` makes `wait()` and `poll()` unusable, and the switch never
+calls them. But an ignored signal disposition survives `exec`, so the spawned
+`flock.port` inherits it. A port *does* wait on its own tmux and control
+subprocesses and treats their return codes as evidence. Its entry point must
+therefore reset `SIGCHLD` to `SIG_DFL` before running any delivery code
+(`src/flock/port/__main__.py:7-11`). Without that reset, a child which really
+exits non-zero can be auto-reaped before CPython waits for it and be reported as
+return code zero: a paste or control action that failed then reads as accepted.
+
+⚠ **The ignore and the reset are one mechanism, not independent defensive
+lines.** Removing the switch half reintroduces the zombie leak; removing the
+port half makes the switch's necessary disposition corrupt every subprocess
+status the port observes. Neither line is redundant, and changing either
+requires re-evaluating the other. `tests/test_port.py:36` is the behavioural
+guard: under an inherited `SIG_IGN`, the port must expose `SIG_DFL` and preserve
+a real child exit status of 1.
 
 ⚠ **Throw the handle away.** Discard the `Popen` return value. Keeping the
 handles in a list to "track" the children is the natural-looking improvement and
