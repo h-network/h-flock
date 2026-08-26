@@ -358,7 +358,7 @@ docker logs "$CONTAINER" >"$WORK/container.log" 2>&1 || onboarding_incomplete cu
 LOG_CURSOR="$(wc -l <"$WORK/container.log" | tr -d ' ')"
 run_id="$(date +%s)-$$-$RANDOM"
 marker="onboarding-${run_id}"
-prompt="Read /workdir/${ARCHITECT}/AGENTS.md and onboard ${SME_LIST[0]} and ${SME_LIST[1]} using sendMessage. Send each SME an ordinary message you compose yourself and include this exact marker in each message: ${marker}"
+prompt="Read /workdir/${ARCHITECT}/AGENTS.md and onboard ${SME_LIST[0]} and ${SME_LIST[1]}. Compose one ordinary message for each SME and include this exact marker in each body: ${marker}. To keep each body out of shell parsing, write it to a file and send it with the tenant command office send -a NAME --file PATH, replacing NAME and PATH for that SME."
 send_output="$(docker exec -e POD="$POD" -e TENANT="$TENANT" -e SOURCE="${SME_LIST[0]}" \
   -e DESTINATION="$ARCHITECT" -e PROMPT="$prompt" "$CONTAINER" python3 -c '
 import contextlib,os,redis

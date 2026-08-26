@@ -26,7 +26,7 @@ echo "tmux-nemotron agents=${#list[@]} rounds=$ROUNDS capture=$OUT"
 for i in "${!list[@]}"; do
   agent="${list[$i]}"
   next="${list[$(( (i + 1) % ${#list[@]} ))]}"
-  prompt="Build 74 integration exercise. Send exactly $ROUNDS separate messages to $next using sendMessage. Compose every message yourself in your own words. Across them include multiline text, a fenced code block, double and single quotes, backslashes, Unicode, and JSON inside prose; do not simplify or escape them merely for this test. After all sends succeed, run: touch /workdir/$agent/build74.done"
+  prompt="Build 74 integration exercise. Send exactly $ROUNDS separate messages to $next. Compose every message yourself in your own words. Across them include multiline text, a fenced code block, double and single quotes, backslashes, Unicode, and JSON inside prose; do not simplify or escape them merely for this test. Keep every body out of shell parsing: write each exact body to a file, then send it with office send -a $next --file PATH, replacing PATH with that file's path. After all sends succeed, run: touch /workdir/$agent/build74.done"
   dx curl -sS -o /dev/null -H "Authorization: Bearer $token" \
     -H 'Content-Type: application/json' -X POST \
     -d "$(python3 -c 'import json,sys; print(json.dumps({"kind":"Message","payload":{"text":sys.argv[1]}}))' "$prompt")" \

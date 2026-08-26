@@ -2,6 +2,7 @@ from conftest import FakeRespRedis
 import ast
 import io
 import json
+import re
 import subprocess
 import tomllib
 from datetime import datetime, timezone
@@ -576,12 +577,25 @@ def test_office_imports_no_other_flock_module_than_bus():
     assert flock_imports == ["flock.bus"]
 
 
-def test_only_office_agent_command_is_packaged():
+def test_only_office_agent_command_is_packaged_and_scenario_prompts_use_it():
     scripts = tomllib.loads(Path("pyproject.toml").read_text())["project"]["scripts"]
     assert scripts["office"] == "flock.office:main"
     assert "flock.port" in scripts
+    prompt_text = "\n".join(
+        assignment
+        for path in Path("container/scenarios").glob("*.sh")
+        for assignment in re.findall(
+            r'''(?ms)^\s*(?:prompt|PROMPT)=(?:"(?:\\.|[^"\\])*"|'[^']*')''',
+            path.read_text(),
+        )
+    )
+    assert "office send" in prompt_text
     for old in ("sendMessage", "sendBroadcast", "peers", "hire", "letGo", "pause", "resume"):
         assert old not in scripts
+        # Several retired binary names remain valid *subcommands*. Remove only
+        # the explicit `office NAME` form before checking for a stale standalone
+        # name or a tool-shaped spelling such as office_peers.
+        assert old not in prompt_text.replace(f"office {old}", "")
 
 
 def test_status_survives_a_blocked_key_of_the_wrong_type(office_env, capsys):
