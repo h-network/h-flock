@@ -14,20 +14,21 @@
 ![tmux](https://img.shields.io/badge/tmux-agent_windows-1BB91F?style=flat-square&logo=tmux&logoColor=white)
 ![FastAPI](https://img.shields.io/badge/FastAPI-two_doors-009688?style=flat-square&logo=fastapi&logoColor=white)
 ![Agents](https://img.shields.io/badge/agents-claude_codex_agy-8B5CF6?style=flat-square)
-![Tests](https://img.shields.io/badge/tests-303_passing-22C55E?style=flat-square)
+![Tests](https://img.shields.io/badge/tests-954_passing-22C55E?style=flat-square)
 
-**An office of AI agents (Claude, Codex, Gemini/Antigravity — mix freely) that hire
-into real terminals, pull tickets off a shared board, and coordinate with each
-other and with you — from a REST API, a Telegram bot, or a web console. One
-command runs the whole thing. One container is the whole deployment.**
+**An office of AI agents (Claude, Codex, and Antigravity — mix freely) that hire
+into real terminals, work from their own task boards, and coordinate with each
+other and with you — over a REST API or the bundled Telegram bot; a
+browser-console demo also ships. One command brings up the office. One
+container runs each tenant.**
 
 `./setup.sh` asks for the tenant and its agents. Each gets a tmux window, a home
 directory, and `office` — hire and retire colleagues live with no restart, hand
-out tickets, message anyone by name, and get nudged automatically when
-something's been sitting too long. A lead reviews and merges; nothing in the
-plumbing enforces that role, it's a convention every agent is told to follow —
-and the whole thing is durably logged as it happens, not reconstructed after
-the fact.
+out tickets, and message anyone by name. The lead gets nudged automatically
+when something's been sitting too long — routed there by a real Redis key, not
+just a guide. Who reviews and merges is a separate, unenforced convention every
+agent is told to follow — and envelope custody and board transitions are
+logged as they happen, not reconstructed from terminal output afterward.
 
 Underneath, it's a switch: envelopes are forwarded by name, and nothing in the
 middle reads a payload. That discipline is *why* adding a phone app, a bot, or a
@@ -47,12 +48,12 @@ new kind of colleague is one delivery routine, not a rewrite.
   written into every agent's guide, not a permission the system enforces.
 - **📱 Reachable from outside the terminal.** A Telegram bot ships with a real
   menu — board overview, add a ticket, hire/retire, pause/resume, broadcast,
-  live-pushed alerts — built entirely against the same REST door any other app
-  would use. **No terminal scraping anywhere in the loop.**
+  live-pushed watchdog stream alerts — built entirely against the same REST
+  door any other app would use. **No terminal scraping anywhere in the loop.**
 - **🔀 A switch underneath, not a framework.** Producers emit envelopes; the
-  switch forwards them by `recipient` and never opens one. Adding a new kind of
-  participant is **one delivery routine** — not changing the switch, the bus,
-  or any command.
+  switch forwards them by `destination` and never opens one. Adding a new kind
+  of participant is **one delivery routine** — not changing the switch, the
+  bus, or any command.
 - **🏗️ One container = one tenant.** Redis, the switch, a tmux server with one
   window per agent, and two doors to the outside. Bring it up twice and it
   converges.
@@ -97,10 +98,10 @@ The L2 analogy is load-bearing rather than decorative:
 
 | L2 switch | h-flock |
 |---|---|
-| destination MAC | `recipient` — the only thing forwarding depends on |
-| source MAC | `producer` — derived from the queue it was popped from, never from content |
-| MAC table | the **roster** — `name → VAB`, agent to the base it runs on |
-| port config | the **VAB** — a property of the port, not of the frame |
+| destination MAC | `destination` — the only thing forwarding depends on |
+| source MAC | `source` — stamped from the queue it was popped from, never from content |
+| MAC table | the **roster** — `name → port_type`, agent to the base it runs on |
+| port config | the **port_type** — a property of the port, not of the frame |
 | ethertype | `kind` — the switch ignores it; an opener at the far edge reads it |
 | L3 and above | `payload` — invisible to everything in the middle |
 
@@ -353,7 +354,7 @@ them they found eight things it did not say.
     bus/         prefix, envelope, the two doors, roster reads   ← library
     tmux/        create/kill/list windows, the paste sequence    ← library
     switch/      the one daemon
-    port/     invoked per delivery, dispatches on VAB, exits
+    port/     invoked per delivery, dispatches on port_type, exits
     control/     StartAgent / StopAgent openers
     tmuxhost/    the tmux server, session and windows
     office/      the one agent-facing command
