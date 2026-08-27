@@ -290,29 +290,29 @@ agent does when it fills its window, and that needs the same machine.
 
 ---
 
-## ~~Sprint 6 — the door for callers we don't trust~~ — CLOSED, no build
+## Sprint 6 — the door for callers we don't trust
 
 **Rows:** the remainder of *security: what is left after build 36*
-**Files:** none — no api-lane work follows from this.
+**Files:** `src/flock/api/`.
 
-⚠ **DECIDED 2026-08-26** (`docs/TODO.md`, "security: what is left after build
-36"): **not building CORS or per-client tokens.** The trust boundary is the
-container, not identity inside it — access control that doesn't match that
-model is false security, not defense in depth. Audit logging (the custody
-chain) is the honest tool for this trust model; access control is not.
+⚠ **AMENDED 2026-08-27** (`docs/TODO.md`, "security: what is left after build
+36"): the 2026-08-26 closure ("not building CORS or per-client tokens") was
+right for the intra-tenant case and wrong to apply to a *published* door.
+Loopback-only, the container is the trust boundary and access control adds
+nothing over audit logging. **Published (`API_PUBLISH=1`), that boundary
+doesn't hold** — a caller is anyone with the one shared bearer token, not a
+colleague sharing `sudo`, and `as` is a self-declared field nobody verifies.
 
-⚠ **Nothing new is needed to make that true.** Direct `flock.api` traffic —
-the one shared bearer token, `as` validated only against roster membership —
-is already traced through the custody chain: bus/port stdout logs and
-`GET /agents/{agent}/activity` (`LLD-api.md:172`). The row closes on the
-existing mechanism, not a new one.
+**Scope, reopened:** per-client HMAC (`kid`/`sig` on the envelope) and CORS,
+required only when the door is published — off entirely for the loopback-only
+default, so the common case pays nothing for it. Rotation is implied by
+`kid`'s date suffix and still needs an actual answer, not just an implication.
 
-The narrow version of *signed envelopes* — per-client keys at the door — is
-withdrawn along with it, for the same reason: it was the access-control
-answer to the gap this decision says isn't being closed that way. Intra-tenant
-signatures still buy nothing regardless — any key an agent can sign with it
-can also read, same user, same box. Cross-tenant remains the first real
-boundary and is still blocked on the `gateway`/switch-branch decision below.
+Intra-tenant signatures still buy nothing regardless of this amendment — any
+key an agent can sign with it can also read, same user, same box. Cross-tenant
+remains the first *structural* boundary and is still blocked on the
+`gateway`/switch-branch decision below; this sprint is about the door, not
+that.
 
 ---
 
