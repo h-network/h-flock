@@ -48,8 +48,9 @@ new kind of colleague is one delivery routine, not a rewrite.
   written into every agent's guide, not a permission the system enforces.
 - **📱 Reachable from outside the terminal.** A Telegram bot ships with a real
   menu — board overview, add a ticket, hire/retire, pause/resume, broadcast,
-  live-pushed watchdog stream alerts — built entirely against the same REST
-  door any other app would use. **No terminal scraping anywhere in the loop.**
+  live-pushed alerts for blocked/stalled/credential conditions — built
+  entirely against the same REST door any other app would use. **No terminal
+  scraping anywhere in the loop.**
 - **🔀 A switch underneath, not a framework.** Producers emit envelopes; the
   switch forwards them by `destination` and never opens one. Adding a new kind
   of participant is **one delivery routine** — not changing the switch, the
