@@ -82,6 +82,7 @@ services:
       SESSION_TLS_KEY: "${SESSION_TLS_KEY:-}"
       TELEGRAM_BOT_TOKEN: "${TELEGRAM_BOT_TOKEN:-}"
       TELEGRAM_CHAT_ID: "${TELEGRAM_CHAT_ID:-}"
+      TELEGRAM_VOICE: "${TELEGRAM_VOICE:-0}"
     # A tenant is either up or it is not; if a module exits the container exits
     # and this brings it back (LLD-container §6).
     restart: unless-stopped

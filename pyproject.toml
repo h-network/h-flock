@@ -17,6 +17,7 @@ dependencies = [
     # session route answers 404 and only logs a warning. Its own tests pass
     # because TestClient does not need one.
     "websockets>=12,<16",
+    "edge-tts>=7.0.0,<8",
 ]
 
 [project.scripts]
