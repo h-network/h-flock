@@ -477,6 +477,7 @@ class ReplyPusher:
                 self.cursor_store.save(cursor)
             if self.telegram:
                 reply_text = render_reply(message, self.flock.app_name)
+                self.telegram.send_message(self.chat_id, reply_text)
                 is_voice = (
                     self.voice_enabled_fn(self.chat_id)
                     if self.voice_enabled_fn
@@ -490,11 +491,9 @@ class ReplyPusher:
                     ) or self.tts_voice or "en-US-AvaNeural"
                     voice_file = synthesize_speech(reply_text, msg_voice)
                     try:
-                        self.telegram.send_voice(self.chat_id, voice_file, caption=reply_text)
+                        self.telegram.send_voice(self.chat_id, voice_file)
                     finally:
                         pathlib.Path(voice_file).unlink(missing_ok=True)
-                else:
-                    self.telegram.send_message(self.chat_id, reply_text)
 
 
 class TelegramClient:

@@ -1246,12 +1246,42 @@ def test_reply_pusher_voice_reply_success(monkeypatch):
 
         pusher.run(stream_fn=fake_stream)
 
+        assert len(telegram.sent_messages) == 1
+        assert telegram.sent_messages[0]["chat_id"] == 999
+        assert telegram.sent_messages[0]["text"] == "architect: spoken reply"
         assert len(telegram.sent_voices) == 1
         assert telegram.sent_voices[0]["chat_id"] == 999
-        assert telegram.sent_voices[0]["caption"] == "architect: spoken reply"
-        assert telegram.sent_messages == []
         assert store.load() == "20-0"
         assert not saved_files[0].exists()
+
+
+def test_reply_pusher_text_only_when_voice_disabled():
+    with tempfile.TemporaryDirectory() as tmpdir:
+        flock = DummyFlockClient()
+        telegram = DummyTelegramClient()
+        store = CursorStore(str(Path(tmpdir) / "cursor.json"))
+        pusher = ReplyPusher(
+            flock,
+            telegram,
+            chat_id=999,
+            cursor_store=store,
+            voice_enabled=False,
+        )
+
+        messages = [
+            {"l2": {"source": "architect"}, "payload": {"text": "text only reply"}, "cursor": "21-0"},
+        ]
+
+        def fake_stream(after=None):
+            yield from messages
+
+        pusher.run(stream_fn=fake_stream)
+
+        assert len(telegram.sent_messages) == 1
+        assert telegram.sent_messages[0]["chat_id"] == 999
+        assert telegram.sent_messages[0]["text"] == "architect: text only reply"
+        assert telegram.sent_voices == []
+        assert store.load() == "21-0"
 
 
 def test_reply_pusher_per_message_voice_override(monkeypatch):
