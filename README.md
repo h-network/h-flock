@@ -66,9 +66,13 @@ daemons, and what gets logged: [`docs/HLD.md`](docs/HLD.md) has all of it, and
 ## 🏗️ Built by an office of agents
 
 This repository is written by a team of AI agents — one per lane, each in its own
-terminal — with a human lead reviewing and merging. **Not by h-flock itself:** the
-office runs on h-flock's predecessor tooling, and dogfooding is
-[still ahead](docs/TODO.md).
+terminal — with a human lead reviewing and merging. **By h-flock itself:** this
+office is a live h-flock tenant, and every `office hire`, `send`, `take`, `done`
+behind this project's own history was issued through the real thing, not
+predecessor tooling. Dogfooding is not total yet —
+[webapp/console work is sequenced after Telegram and the REST API get
+dogfooded properly](docs/TODO.md) — but the office running this repository
+already is h-flock.
 
 ```
 $ git rev-list --count HEAD
