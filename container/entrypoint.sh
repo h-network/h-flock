@@ -465,6 +465,7 @@ if [ -n "${TELEGRAM_BOT_TOKEN:-}" ]; then
       --api-url "http://127.0.0.1:8080"
       --api-token "$api_token"
       --bot-token "$TELEGRAM_BOT_TOKEN"
+      --cursor-file "/home/ubuntu/.flock/telegram.cursor.json"
     )
     [ -n "${TELEGRAM_CHAT_ID:-}" ] && tg_args+=(--chat-id "$TELEGRAM_CHAT_ID")
     start_client telegram "${tg_args[@]}"
