@@ -371,7 +371,7 @@ uses `writer: usage` and carries `agent`, `cli`, `model`, `input`, `cache_read`,
 `cache_write`, and `output`; `stream_id` and `correlation_id` appear only when a
 preceding delivery marker can be attributed without guessing. The tenant
 `usage` Stream stores the same JSON object in its `usage` field, capped
-approximately at 10,000 entries (`src/flock/watchdog/activity.py:369-452`).
+approximately at 10,000 entries (`src/flock/watchdog/activity.py:480-566`).
 
 Control openers (`src/flock/control/openers.py:37-73`) emit
 `{start,stop,pause,resume}_agent_accepted` upon successfully acknowledging all

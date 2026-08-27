@@ -199,13 +199,24 @@ The deterministic lab run established the boundary:
 | credential-free Codex at its login prompt, with prior activity | blocked |
 | credential-free Claude at its login prompt, with prior activity | blocked |
 | bare shell | never marked |
-| agy | never marked |
+| agy | never marked *(row is from the original lab run; see the correction below)* |
 
 The limit is history, not a special terminal screen. The switch judges only an
 agent that has previously produced an activity offset or feed. A new agent's
 first delivery is dropped unjudged even if the agent is unable to consume it;
-the watchdog therefore has no `blocked` verdict to report. Bare shells and agy
-are not verified at all, so they cannot become `blocked`.
+the watchdog therefore has no `blocked` verdict to report. Bare shells are not
+verified at all, so they cannot become `blocked`.
+
+⚠ **CORRECTED 2026-08-27 — agy is no longer in that set.** The lab run above
+predates `~/.gemini/antigravity-cli/history.jsonl` being wired into
+`ActivityTailer` (`watchdog/activity.py`'s `_agy_events`, same fix as HLD §8's
+correction). `VERIFIABLE_CLIS` in `port/openers.py` now includes `agy`, so a
+delivery to an agy agent with prior activity history is marked and judged
+exactly like claude/codex: **verified** if a later `input` line for that
+agent's `workspace` follows the marker, **blocked** if none does before the
+verification delay elapses. Confirmed live against `_input_times()` reading a
+real agy agent's activity stream, not re-run in the lab — the underlying
+mechanism is CLI-agnostic and was never agy-specific.
 
 No screen is scraped to fill that limit. Measurement showed that a consumed
 message remains visible in terminal scrollback, making it indistinguishable

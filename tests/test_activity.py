@@ -1,5 +1,6 @@
 from conftest import FakeRedis
 import json
+from datetime import datetime, timezone
 from pathlib import Path
 
 from flock.bus import prefix
@@ -200,3 +201,91 @@ def test_agy_agent_has_empty_stream_even_when_an_old_claude_session_exists(tmp_p
     ActivityTailer(r, pod="acme", tenant="hq", home_root=tmp_path).poll()
     assert _events(r) == []
     assert prefix("acme", "hq", "sme-2", "activity.offset") not in r.values
+
+
+def _history_path(tmp_path: Path) -> Path:
+    return tmp_path / ".gemini" / "antigravity-cli" / "history.jsonl"
+
+
+def _ms(iso: str) -> int:
+    return int(datetime.fromisoformat(iso).replace(tzinfo=timezone.utc).timestamp() * 1000)
+
+
+def test_agy_reads_history_jsonl_filtered_by_workspace(tmp_path):
+    """One shared file, two agy agents — each sees only its own lines."""
+    r = FakeRedis(agents=("frontend", "backend"))
+    r.values[prefix("acme", "hq", "frontend", "launch")] = "agy"
+    r.values[prefix("acme", "hq", "backend", "launch")] = "agy"
+    _write_lines(
+        _history_path(tmp_path),
+        [
+            {"display": "hi", "timestamp": _ms("2026-08-09T10:00:00"), "workspace": "/workdir/frontend", "conversationId": "a"},
+            {"display": "hi", "timestamp": _ms("2026-08-09T10:00:01"), "workspace": "/workdir/backend", "conversationId": "b"},
+            {"display": "/model", "timestamp": _ms("2026-08-09T10:00:02"), "workspace": "/workdir/frontend", "type": "slash_command"},
+            {"display": "not ours", "timestamp": _ms("2026-08-09T10:00:03"), "workspace": "/workdir/someone-else"},
+        ],
+    )
+
+    ActivityTailer(r, pod="acme", tenant="hq", home_root=tmp_path).poll()
+
+    assert _events(r, "frontend") == [
+        {"v": 1, "agent": "frontend", "ts": "2026-08-09T10:00:00.000Z", "kind": "input"},
+        {"v": 1, "agent": "frontend", "ts": "2026-08-09T10:00:02.000Z", "kind": "input"},
+    ]
+    assert _events(r, "backend") == [
+        {"v": 1, "agent": "backend", "ts": "2026-08-09T10:00:01.000Z", "kind": "input"}
+    ]
+    # Privacy: the submitted text itself never rides into the reduced stream.
+    assert "hi" not in json.dumps(r.streams)
+    assert "not ours" not in json.dumps(r.streams)
+
+
+def test_agy_emits_no_usage_records(tmp_path):
+    """No token/cost source exists for agy — history.jsonl carries none."""
+    r = FakeRedis()
+    r.values[prefix("acme", "hq", "sme-2", "launch")] = "agy"
+    _write_lines(
+        _history_path(tmp_path),
+        [{"display": "hi", "timestamp": _ms("2026-08-09T10:00:00"), "workspace": "/workdir/sme-2"}],
+    )
+    ActivityTailer(r, pod="acme", tenant="hq", home_root=tmp_path).poll()
+    assert prefix("acme", "hq", resource="usage") not in r.streams
+
+
+def test_agy_shared_file_keeps_independent_offsets_per_agent(tmp_path):
+    r = FakeRedis(agents=("frontend", "backend"))
+    r.values[prefix("acme", "hq", "frontend", "launch")] = "agy"
+    r.values[prefix("acme", "hq", "backend", "launch")] = "agy"
+    history = _history_path(tmp_path)
+    _write_lines(
+        history,
+        [{"display": "hi", "timestamp": _ms("2026-08-09T10:00:00"), "workspace": "/workdir/frontend"}],
+    )
+    tailer = ActivityTailer(r, pod="acme", tenant="hq", home_root=tmp_path)
+    tailer.poll()
+
+    with history.open("a") as output:
+        output.write(json.dumps({"display": "hi again", "timestamp": _ms("2026-08-09T10:00:05"), "workspace": "/workdir/backend"}) + "\n")
+    tailer.poll()
+
+    assert len(_events(r, "frontend")) == 1
+    assert len(_events(r, "backend")) == 1
+    frontend_offset = json.loads(r.values[prefix("acme", "hq", "frontend", "activity.offset")])["offsets"][str(history)]
+    backend_offset = json.loads(r.values[prefix("acme", "hq", "backend", "activity.offset")])["offsets"][str(history)]
+    assert frontend_offset == backend_offset == history.stat().st_size
+
+
+def test_agy_ignores_a_line_with_no_matching_workspace(tmp_path):
+    r = FakeRedis()
+    r.values[prefix("acme", "hq", "sme-2", "launch")] = "agy"
+    _write_lines(
+        _history_path(tmp_path),
+        [
+            {"display": "welcome", "timestamp": _ms("2026-08-09T10:00:00")},  # no workspace at all yet
+            {"display": "hi", "timestamp": _ms("2026-08-09T10:00:01"), "workspace": "/workdir/sme-2"},
+        ],
+    )
+    ActivityTailer(r, pod="acme", tenant="hq", home_root=tmp_path).poll()
+    assert _events(r) == [
+        {"v": 1, "agent": "sme-2", "ts": "2026-08-09T10:00:01.000Z", "kind": "input"}
+    ]

@@ -290,10 +290,11 @@ def _status_row(r, *, pod: str, tenant: str, agent: str, now: datetime) -> str:
         opened = _age(ticket.get("started_ts"), now=now)
         task = f'"{ticket["title"]}"' + (f" {opened}" if opened else "")
 
-    launch_cli = _text(r.get(prefix(pod, tenant, agent=agent, resource="launch")))
-    if launch_cli == "agy":
-        activity = "not collected (agy)"
-    elif presence_state == "unknown":
+    # ⚠ No agy special case here anymore. `PresenceSampler._tailable()` now
+    # covers agy too (`~/.gemini/antigravity-cli/history.jsonl`), so an agy
+    # agent reaches the same branches as claude/codex on real presence data —
+    # "not collected (agy)" would now be a lie printed next to a real value.
+    if presence_state == "unknown":
         activity = "no activity feed"
     else:
         last = _age(decoded_presence.get("last_activity"), now=now)

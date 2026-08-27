@@ -338,13 +338,34 @@ def test_status_unknown_feed_and_optional_blocked_override(office_env, monkeypat
     assert "backend     blocked" in capsys.readouterr().out
 
 
-def test_status_names_agy_agent_not_collected(office_env, capsys):
-    """Build 105 §2: office status names agy agents as not collected."""
+def test_status_reads_agy_agent_the_same_as_any_other_cli(office_env, capsys):
+    """history.jsonl wiring: an agy agent's status row carries no CLI-specific
+    caveat anymore — presence and activity render exactly like claude/codex,
+    off the same `presence` hash `PresenceSampler` now also writes for agy."""
+    office_env.values["pod:acme:tenant:hq:agent:frontend:launch"] = b"agy"
+    office_env.values["pod:acme:tenant:hq:agent:frontend:presence"] = {
+        b"state": b"idle",
+        b"since": b"2026-08-09T13:59:00.000Z",
+        b"last_activity": b"2026-08-09T13:59:00.000Z",
+    }
+    cli.main(["status", "frontend"])
+    out = capsys.readouterr().out
+    assert "frontend" in out
+    assert "idle" in out
+    assert "last activity" in out
+    assert "agy" not in out
+    assert "not collected" not in out
+
+
+def test_status_names_agy_agent_unknown_with_no_activity_yet(office_env, capsys):
+    """No presence recorded reads exactly like an untailed claude/codex agent
+    — `unknown` / `no activity feed` — not a permanent agy-specific label."""
     office_env.values["pod:acme:tenant:hq:agent:frontend:launch"] = b"agy"
     cli.main(["status", "frontend"])
     out = capsys.readouterr().out
     assert "frontend" in out
-    assert "not collected (agy)" in out
+    assert "unknown" in out
+    assert "no activity feed" in out
 
 
 def test_status_rejects_non_tmux_or_unknown_agent(office_env, capsys):

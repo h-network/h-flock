@@ -302,9 +302,22 @@ built from files the CLIs write themselves rather than from anything rendered.
 format and survives its releases; a rendered pane does not. That is invariant 7
 and it is why this exists at all.
 
-⚠ **`unknown` is not `idle`.** An agy agent and a bare shell write no session
-file, so nothing can be said about them — and saying `idle` would be a lie a
-client renders as "ready".
+⚠ **`unknown` is not `idle`.** A bare shell writes no session file, so nothing
+can be said about it — and saying `idle` would be a lie a client renders as
+"ready".
+
+⚠ **CORRECTED 2026-08-27.** This read *"An agy agent and a bare shell write no
+session file"*, which was true when written and is provably false now:
+`~/.gemini/antigravity-cli/history.jsonl` exists on a live tenant, one line
+per submitted input (`{display, timestamp, workspace, conversationId}`), and
+`watchdog/activity.py`'s `ActivityTailer` tails it — filtered per line by
+`workspace`, since the file is shared, non-relocatable, across every agy agent
+on the host. It carries only `input`, never `output`/`tool`, but that is
+enough for `working`/`idle` and for `verify` below: recency and aliveness both
+turn on *any* activity, not which kind. Whether Antigravity always wrote this
+file or added it after this line was written is unknown and does not matter —
+what mattered was that the claim stopped being checked against the live
+system.
 
 ⚠ **Activity carries tool *names*, never arguments.** The feed is designed to
 leave the tenant over HTTP; a `Bash` argument is a command line and a `Write`
