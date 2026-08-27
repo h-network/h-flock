@@ -422,6 +422,7 @@ def _ticket(raw, *, state: str) -> dict:
         "created_ts": ticket.get("created_ts", ticket.get("created_at", "")),
         "started_ts": ticket.get("started_ts"),
         "done_ts": ticket.get("done_ts"),
+        "held_ts": ticket.get("held_ts"),
     }
     if ticket.get("priority") is not None:
         normalized["priority"] = ticket["priority"]
@@ -463,7 +464,35 @@ def _log_task(event: str, *, agent: str, ticket: dict) -> None:
     log_record("office", event, destination=agent, task_id=ticket["id"])
 
 
-def _list_one(r, *, pod: str, tenant: str, agent: str, heading: bool) -> None:
+# One timestamp field per state, naming "age" consistently as "time in the
+# state this line is printed under" rather than mixing in a different notion
+# (e.g. done's total created→done duration) that would need its own label to
+# not be misread as the others.
+_AGE_FIELD = {"todo": "created_ts", "doing": "started_ts", "hold": "held_ts", "done": "done_ts"}
+
+
+def _ticket_age(ticket: dict, *, state: str, now: datetime) -> str | None:
+    value = ticket.get(_AGE_FIELD[state])
+    if not value and state == "hold":
+        # A ticket held before held_ts existed (or by an older client) has
+        # nothing there yet; created_ts is the next best "how long has this
+        # been sitting" signal rather than showing nothing at all.
+        value = ticket.get("created_ts")
+    return _age(value, now=now)
+
+
+def _ticket_line(ticket: dict, *, state: str, now: datetime) -> str:
+    line = f"{ticket['id'][:8]}  {ticket['title']}"
+    priority = ticket.get("priority")
+    if priority:
+        line += f"  p:{priority}"
+    age = _ticket_age(ticket, state=state, now=now)
+    if age:
+        line += f"  age:{age}"
+    return line
+
+
+def _list_one(r, *, pod: str, tenant: str, agent: str, heading: bool, now: datetime) -> None:
     if heading:
         print(f"{agent}:")
     keys = _task_keys(pod, tenant, agent)
@@ -473,7 +502,7 @@ def _list_one(r, *, pod: str, tenant: str, agent: str, heading: bool) -> None:
         tickets = [_ticket(raw, state=state) for raw in r.lrange(keys[state], 0, -1)]
         if tickets:
             for ticket in tickets:
-                print(f"{indent}  {ticket['id'][:8]}  {ticket['title']}")
+                print(f"{indent}  {_ticket_line(ticket, state=state, now=now)}")
         else:
             print(f"{indent}  (empty)")
 
@@ -489,10 +518,11 @@ def _list_command(argv: list[str]) -> None:
         agents = sorted(agent for agent in members(r, pod=pod, tenant=tenant) if port_type(r, pod=pod, tenant=tenant, agent=agent) == "tmux")
     else:
         agents = [args.agent or source]
+    now = datetime.now(timezone.utc)
     for index, agent in enumerate(agents):
         if index:
             print()
-        _list_one(r, pod=pod, tenant=tenant, agent=agent, heading=args.all)
+        _list_one(r, pod=pod, tenant=tenant, agent=agent, heading=args.all, now=now)
 
 
 def _take_command(argv: list[str]) -> None:
@@ -550,6 +580,7 @@ def _hold_command(argv: list[str]) -> None:
     _, raw, ticket = _select(r, keys, ("doing",), args.id)
     _remove(r, keys["doing"], raw)
     ticket["status"] = "hold"
+    ticket["held_ts"] = _now()
     r.rpush(keys["hold"], _serialized(ticket))
     record_task_event("hold", id=ticket["id"], title=ticket["title"], agent=source, actor=source)
     _log_task("task_held", agent=source, ticket=ticket)

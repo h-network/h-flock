@@ -394,6 +394,54 @@ def test_list_prints_short_ids_and_titles_for_all_four_lists(office_env, capsys)
     assert "secret" not in output
 
 
+def test_list_shows_priority_and_state_scoped_age(office_env, monkeypatch, capsys):
+    fixed_now = datetime(2026, 8, 27, 12, 0, 0, tzinfo=timezone.utc)
+
+    class _FixedDatetime(datetime):
+        @classmethod
+        def now(cls, tz=None):
+            return fixed_now
+
+    monkeypatch.setattr(cli, "datetime", _FixedDatetime)
+    office_env.lists = {
+        _task("frontend", "todo"): [
+            b'{"id":"a1","title":"waiting","priority":"high","created_ts":"2026-08-27T09:00:00Z"}'
+        ],
+        _task("frontend", "doing"): [
+            b'{"id":"b2","title":"working","started_ts":"2026-08-27T11:30:00Z"}'
+        ],
+        # held before `held_ts` existed: falls back to created_ts.
+        _task("frontend", "hold"): [
+            b'{"id":"d4","title":"parked","created_ts":"2026-08-27T10:00:00Z"}'
+        ],
+        _task("frontend", "done"): [
+            b'{"id":"c3","title":"shipped","done_ts":"2026-08-27T11:55:00Z"}'
+        ],
+    }
+    cli.main(["list"])
+    output = capsys.readouterr().out
+    assert "a1  waiting  p:high  age:3h" in output
+    assert "b2  working  age:30m" in output
+    assert "d4  parked  age:2h" in output
+    assert "c3  shipped  age:5m" in output
+
+
+def test_hold_records_held_ts_and_list_reads_it_over_created_ts(office_env, monkeypatch, capsys, tmp_path):
+    monkeypatch.setenv("TASK_RECORD", str(tmp_path / "tasks.jsonl"))
+    office_env.lists[_task("frontend", "doing")] = [
+        b'{"id":"heldid01","title":"pause this","created_ts":"2020-01-01T00:00:00Z"}'
+    ]
+    cli.main(["hold"])
+    held = json.loads(office_env.lists[_task("frontend", "hold")][0])
+    assert held["held_ts"] is not None
+    capsys.readouterr()
+    cli.main(["list"])
+    lines = capsys.readouterr().out.splitlines()
+    (line,) = [entry for entry in lines if entry.startswith("  heldid0")]
+    # held_ts (just now) wins over the decade-old created_ts.
+    assert "age:0s" in line or "age:1s" in line
+
+
 def test_take_refuses_when_doing_is_nonempty_without_moving(office_env, capsys):
     office_env.lists[_task("frontend", "doing")] = [b'{"id":"open"}']
     office_env.lists[_task("frontend", "todo")] = [b'{"id":"next"}']
