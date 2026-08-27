@@ -253,7 +253,7 @@ directory from the named custody volume, so ordinary container removal keeps
 the evidence; an explicit volume removal deletes it. `mirror(line)` never
 raises and must be called only for a line also printed to stdout: writing on
 only one path creates either missing evidence or a duplicate custody record
-(`src/flock/bus/logging.py:27-51`, `container/compose.yaml:105-123`).
+(`src/flock/bus/logging.py:27-51`, `container/compose.yaml:105-122`).
 
 | Field | | |
 |---|---|---|

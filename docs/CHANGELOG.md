@@ -11,6 +11,12 @@
 
 ---
 
+## 2026-08-27 — entrypoint validates segment format upfront and reconciles custody log permissions
+
+`container/entrypoint.sh` now validates `POD`, `TENANT`, and `AGENTS` against segment rules (`^[a-z0-9][a-z0-9-]{0,62}$`, non-all-digits, non-reserved) before starting Redis, failing fast with a clear error if invalid names (e.g. uppercase letters) are configured. Additionally, `entrypoint.sh` reconciles ownership and permissions on `FLOCK_CUSTODY_FILE` and its parent directory at startup (repairing permissions carried over from `cp -r` / cloned deployments or root mounts) and fails fast if the custody file is unwritable.
+
+**What was false:** that an invalid `TENANT` (e.g. `TENANT=h-EF`) would be caught cleanly; it previously started Redis, failed deep in Python `purge_transport` with an unhandled `KeyError` traceback, and caused the container to crash-loop. It was also false that custody logging on a cloned or hand-copied deployment would work out of the box without permission errors; a permission-denied custody file previously resulted in stderr spam and silent loss of durable custody logs.
+
 ## 2026-08-27 — ingress admission is atomic and broadcast is all-or-none
 
 `INGRESS_MAX` is now enforced by one Lua check-and-append operation. Unicast

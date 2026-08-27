@@ -109,16 +109,16 @@ Tier A is documentation, B internal code, C Redis/environment, and D wire.
 | `API_PORT` / `SESSION_PORT` | `container/compose.yaml:58` | env var | Host-side published ports; container-side ports remain 8080/8081. | Port mapping. | C |
 | `API_TLS_*` / `SESSION_TLS_*` | `container/compose.yaml:63` | env var | In-container certificate/key paths for each door. | TLS termination material. | C |
 | `ALLOW_PLAINTEXT_PUBLISH` | `container/compose.yaml:75` | env var | Explicit operator acceptance of publishing a plaintext door beyond loopback. | Insecure-listener override. | C |
-| `FLOCK_ALLOW_PLAINTEXT` | `container/entrypoint.sh:107` | env var | Entrypoint's internal assertion that exposure policy was already evaluated. | Policy handoff flag. | C |
-| `REDIS_BIND` / `REDIS_PASSWORD` | `container/entrypoint.sh:112`, `container/entrypoint.sh:113` | env var | Redis listen address and credential required when widened beyond loopback. | Internal switch-store listener security. | C |
-| `REDIS_URL` | `container/entrypoint.sh:135` | env var | Connection string handed only to framework processes that need Redis. | Control-plane store address. | C |
-| `REDIS_READY_SECONDS` | `container/entrypoint.sh:152` | env var | Maximum boot wait for Redis readiness. | Dependency convergence timeout. | C |
+| `FLOCK_ALLOW_PLAINTEXT` | `container/entrypoint.sh:190` | env var | Entrypoint's internal assertion that exposure policy was already evaluated. | Policy handoff flag. | C |
+| `REDIS_BIND` / `REDIS_PASSWORD` | `container/entrypoint.sh:195`, `container/entrypoint.sh:210` | env var | Redis listen address and credential required when widened beyond loopback. | Internal switch-store listener security. | C |
+| `REDIS_URL` | `container/entrypoint.sh:218` | env var | Connection string handed only to framework processes that need Redis. | Control-plane store address. | C |
+| `REDIS_READY_SECONDS` | `container/entrypoint.sh:235` | env var | Maximum boot wait for Redis readiness. | Dependency convergence timeout. | C |
 | `FLOCK_CUSTODY_FILE` | `container/entrypoint.sh:16` | env var | Mounted append-only byte mirror of custody records written to container stdout, retained across tenant teardown. | Durable observation ledger. | C |
-| `ROSTER_POLL_SECONDS` | `container/compose.yaml:28` | env var | Shared refresh interval for switch and tmuxhost. | Control-plane refresh interval. | C |
-| `WATCHDOG_ENABLED` | `container/entrypoint.sh:323` | env var | Enables the separate human-alerting observer. | Network monitor enable flag. | C |
-| `door` | `container/entrypoint.sh:83` | doc term | One externally published API or session process/port. | Network ingress door/listener. | A |
-| `start` | `container/entrypoint.sh:57` | identifier | Shell helper that launches a named child and records its PID. | Process supervisor launch, though it is not a supervisor. | B |
-| `rcli` | `container/entrypoint.sh:143` | identifier | Auth-aware wrapper around `redis-cli` used during boot seeding. | Control-plane configuration client. | B |
+| `ROSTER_POLL_SECONDS` | `container/compose.yaml:31` | env var | Shared refresh interval for switch and tmuxhost. | Control-plane refresh interval. | C |
+| `WATCHDOG_ENABLED` | `container/entrypoint.sh:417` | env var | Enables the separate human-alerting observer. | Network monitor enable flag. | C |
+| `door` | `container/entrypoint.sh:165` | doc term | One externally published API or session process/port. | Network ingress door/listener. | A |
+| `start` | `container/entrypoint.sh:127` | identifier | Shell helper that launches a named child and records its PID. | Process supervisor launch, though it is not a supervisor. | B |
+| `rcli` | `container/entrypoint.sh:226` | identifier | Auth-aware wrapper around `redis-cli` used during boot seeding. | Control-plane configuration client. | B |
 | `startAgent` | `src/flock/tmuxhost/host.py:104` | identifier | CLI launcher applying office-specific approval and model settings; not lifecycle `StartAgent`. | Port-attached process launcher. | B |
 
 ## Explicit findings

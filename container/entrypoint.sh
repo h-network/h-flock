@@ -14,13 +14,66 @@ set -euo pipefail
 # writing to it would feed the tail loop back into itself. This file is tailed
 # by nobody.
 export FLOCK_CUSTODY_FILE="${FLOCK_CUSTODY_FILE:-/home/ubuntu/.flock/custody/custody.jsonl}"
-mkdir -p "$(dirname "$FLOCK_CUSTODY_FILE")" 2>/dev/null || true
+custody_dir="$(dirname "$FLOCK_CUSTODY_FILE")"
+
+# ⚠ Custody directory and file permissions:
+# In cloned deployments (cp -r) or mounted volumes, file ownership may carry over
+# from another user or root, preventing the container's unprivileged user from writing.
+# Fix ownership/permissions via sudo if needed, and verify writability upfront.
+if ! mkdir -p "$custody_dir" 2>/dev/null; then
+  if command -v sudo >/dev/null 2>&1 && sudo -n true 2>/dev/null; then
+    sudo mkdir -p "$custody_dir" 2>/dev/null || true
+  fi
+fi
+
+if [ -d "$custody_dir" ]; then
+  if [ ! -w "$custody_dir" ] || ([ -e "$FLOCK_CUSTODY_FILE" ] && [ ! -w "$FLOCK_CUSTODY_FILE" ]); then
+    if command -v sudo >/dev/null 2>&1 && sudo -n true 2>/dev/null; then
+      sudo chown -R "$(id -u):$(id -g)" "$custody_dir" 2>/dev/null || true
+      sudo chmod 755 "$custody_dir" 2>/dev/null || true
+      [ -e "$FLOCK_CUSTODY_FILE" ] && sudo chmod 644 "$FLOCK_CUSTODY_FILE" 2>/dev/null || true
+    fi
+  fi
+fi
+
+if ! touch "$FLOCK_CUSTODY_FILE" 2>/dev/null; then
+  if command -v sudo >/dev/null 2>&1 && sudo -n true 2>/dev/null; then
+    sudo touch "$FLOCK_CUSTODY_FILE" 2>/dev/null || true
+    sudo chown "$(id -u):$(id -g)" "$FLOCK_CUSTODY_FILE" 2>/dev/null || true
+    sudo chmod 644 "$FLOCK_CUSTODY_FILE" 2>/dev/null || true
+  fi
+fi
+
+if [ ! -w "$FLOCK_CUSTODY_FILE" ]; then
+  echo "entrypoint: FLOCK_CUSTODY_FILE '$FLOCK_CUSTODY_FILE' is not writable" >&2
+  exit 1
+fi
 
 # Print one record to stdout and to the durable mirror. Never fails the caller:
-# a full or unwritable volume must not take the tenant down.
+# a full or unwritable volume at runtime must not take the tenant down.
 jlog() {
   printf '%s\n' "$1"
-  printf '%s\n' "$1" >> "$FLOCK_CUSTODY_FILE" 2>/dev/null || true
+  { printf '%s\n' "$1" >> "$FLOCK_CUSTODY_FILE"; } 2>/dev/null || true
+}
+
+validate_segment() {
+  local var="$1"
+  local val="${!var:-}"
+  if [[ ! "$val" =~ ^[a-z0-9][a-z0-9-]{0,62}$ ]]; then
+    echo "entrypoint: $var must be lowercase alphanumeric/hyphens (1-63 chars, starting with letter or digit)" >&2
+    return 1
+  fi
+  if [[ "$val" =~ ^[0-9]+$ ]]; then
+    echo "entrypoint: $var cannot be all digits" >&2
+    return 1
+  fi
+  case "$val" in
+    pod|tenant|agent|all)
+      echo "entrypoint: $var cannot be reserved word '$val'" >&2
+      return 1
+      ;;
+  esac
+  return 0
 }
 
 require() {
@@ -37,6 +90,23 @@ require() {
 # API_TOKEN is not optional: the api is the only mapped port and therefore the
 # entire attack surface (LLD-container §3).
 require POD TENANT AGENTS API_TOKEN
+validate_segment POD
+validate_segment TENANT
+
+IFS=',' read -ra _agent_entries <<< "$AGENTS"
+[ "${#_agent_entries[@]}" -gt 0 ] || { echo "entrypoint: AGENTS cannot be empty" >&2; exit 1; }
+for _entry in "${_agent_entries[@]}"; do
+  _name="${_entry%%:*}"
+  _port_type="${_entry#*:}"
+  if [ "$_name" = "$_entry" ] || [ -z "$_port_type" ]; then
+    echo "entrypoint: AGENTS entry '$_entry' is not name:port_type" >&2
+    exit 1
+  fi
+  if [[ ! "$_name" =~ ^[a-z0-9][a-z0-9-]{0,62}$ ]] || [[ "$_name" =~ ^[0-9]+$ ]] || [ "$_name" = "pod" ] || [ "$_name" = "tenant" ] || [ "$_name" = "agent" ] || [ "$_name" = "all" ]; then
+    echo "entrypoint: AGENTS entry name '$_name' must be lowercase alphanumeric/hyphens (not all digits or reserved)" >&2
+    exit 1
+  fi
+done
 
 # Hold it out of the inherited environment from here on. The tmux server is
 # started below and every agent window inherits the server's environment, so an
