@@ -130,6 +130,26 @@ reads for other commands, assembled into a display rather than a new read
 path. Plain `office peers` is unchanged by `-v` existing; a test pins that
 specifically, because that is when a regression would happen unnoticed.
 
+⚠ **`-i`/`--interfaces` adds a second, explicitly labeled line for
+`port_type in ("api", "control")` roster members — never merged into the peer
+list itself.** This exists because the plain colleague list, on its own, once
+led an agent to conclude a real roster member (a Telegram bot) was not a valid
+`office send` destination just because `peers` didn't say so. `CONTRACTS.md`
+§5's "clients are hidden from an agent's view, not from its inbox" invariant is
+about the *bare* command and about `broadcast` never reaching a client — it
+says nothing about a second, deliberately-requested, deliberately-labeled line
+naming exactly which non-colleague addresses exist, which is a different act
+from folding them into "peers" as if they were colleagues. `profiles` already
+sets this precedent (its "members without CLI accounts" list is the same
+`api`/`control` set, framed for account auditing instead); `-i` is that same
+fact, framed for "who else can I address" instead of "who has no CLI account".
+Every `api`/`control` roster row got there through a `StartAgent` call, so
+membership itself is the sanctioning act — there is no further "allowed" flag
+to read, and none is invented here. `-i` composes with `-v` (interfaces line
+prints last, after either plain or verbose peer output) and is a no-op change
+to bare `office peers` and to `office peers -v` alone — both keep their pinned
+shapes exactly.
+
 **`profiles`** (`cli.py:199`) is the tenant-wide account audit `peers -v`
 cannot give: every configured account, which tmux agents are on it, which
 landed on `default` implicitly, and which roster members carry no account at

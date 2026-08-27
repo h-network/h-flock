@@ -224,6 +224,33 @@ def test_peers_verbose_distinguishes_framework_profile_and_current_task(
     ]
 
 
+def test_peers_interfaces_lists_api_and_control_labeled_apart_from_colleagues(
+    office_env, capsys
+):
+    cli.main(["peers", "--interfaces"])
+    assert capsys.readouterr().out.splitlines() == [
+        "backend",
+        "interfaces (api/control — recognized, not tmux colleagues): api (api), host (control)",
+    ]
+
+
+def test_peers_interfaces_combines_with_verbose(office_env, capsys):
+    cli.main(["peers", "-v", "-i"])
+    assert capsys.readouterr().out.splitlines() == [
+        "backend: framework=unknown",
+        "interfaces (api/control — recognized, not tmux colleagues): api (api), host (control)",
+    ]
+
+
+def test_peers_interfaces_reports_none_when_roster_has_no_clients(office_env, capsys):
+    office_env.roster = {"frontend": "tmux", "backend": "tmux"}
+    cli.main(["peers", "--interfaces"])
+    assert capsys.readouterr().out.splitlines() == [
+        "backend",
+        "interfaces (api/control — recognized, not tmux colleagues): (none)",
+    ]
+
+
 def test_peers_plain_output_contract_is_unchanged_with_enriched_state(
     office_env, capsys
 ):

@@ -243,6 +243,7 @@ def test_generate_agents_md():
     assert "$TENANT" in content
     assert "$OFFICE_TOOLS" in content
     assert "office peers" in content
+    assert "office peers -i" in content
     assert "valid `office send` destination" in content
     assert "whether or not `peers` lists it" in content
     assert "[message from <name>] …" in content

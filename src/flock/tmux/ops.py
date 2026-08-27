@@ -97,7 +97,8 @@ Run any of those with --help. To see your tmux colleagues:
     office peers
 
 That's colleagues only — an app client (a Telegram bot, say) or the tenant's
-lifecycle provider won't be on it, but is still a valid `office send` destination.
+lifecycle provider won't be on it; `office peers -i` lists those too, labeled
+apart from colleagues. Either way it's still a valid `office send` destination.
 A message arrives in your terminal as `[message from <name>] …` — reply by name,
 whether or not `peers` lists it:
 
