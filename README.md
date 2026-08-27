@@ -14,14 +14,25 @@
 ![tmux](https://img.shields.io/badge/tmux-agent_windows-1BB91F?style=flat-square&logo=tmux&logoColor=white)
 ![FastAPI](https://img.shields.io/badge/FastAPI-two_doors-009688?style=flat-square&logo=fastapi&logoColor=white)
 ![Agents](https://img.shields.io/badge/agents-claude_codex_agy-8B5CF6?style=flat-square)
-![Tests](https://img.shields.io/badge/tests-303_passing-22C55E?style=flat-square)
+![Tests](https://img.shields.io/badge/tests-954_passing-22C55E?style=flat-square)
 
-**A message bus for AI agents that live in terminals — and for the apps that talk to them. Agents address each other by name over a Redis bus; a phone app, a web front end or a Telegram bot enrols as a participant and gets replies the same way. One self-contained container.**
+**An office of AI agents (Claude, Codex, and Antigravity — mix freely) that hire
+into real terminals, work from their own task boards, and coordinate with each
+other and with you — over a REST API or the bundled Telegram bot; a
+browser-console demo also ships. One command brings up the office. One
+container runs each tenant.**
 
 `./setup.sh` asks for the tenant and its agents. Each gets a tmux window, a home
-directory and one command — `office` — for everything it can do. Everything else
-is a switch: envelopes are forwarded by name, and nothing in the middle reads a
-payload.
+directory, and `office` — hire and retire colleagues live with no restart, hand
+out tickets, and message anyone by name. The lead gets nudged automatically
+when something's been sitting too long — routed there by a real Redis key, not
+just a guide. Who reviews and merges is a separate, unenforced convention every
+agent is told to follow — and envelope custody and board transitions are
+logged as they happen, not reconstructed from terminal output afterward.
+
+Underneath, it's a switch: envelopes are forwarded by name, and nothing in the
+middle reads a payload. That discipline is *why* adding a phone app, a bot, or a
+new kind of colleague is one delivery routine, not a rewrite.
 
 [Quick start](#-quick-start) · [How it works](#️-how-it-works) · [Built by agents](#-built-by-an-office-of-agents) · [Build an app](#-build-an-app) · [Architecture](docs/HLD.md) · [API reference](docs/API.md)
 
@@ -31,17 +42,22 @@ payload.
 
 ## ✨ What it is
 
-- **🔀 A switch, not a framework.** Producers emit envelopes; the switch forwards
-  them by `recipient` and never opens one. Adding a new kind of participant is
-  writing **one delivery routine** — not changing the switch, the bus, or any
-  command.
-- **🏢 One container = one tenant.** Redis, the switch, a tmux server with one
+- **🏢 An office, not a framework.** Hire an agent, it gets a terminal and a
+  board. Give it a ticket, it pulls it when it's ready — nothing pushes work
+  onto a busy colleague. A lead hands out work and merges it; that's a role
+  written into every agent's guide, not a permission the system enforces.
+- **📱 Reachable from outside the terminal.** A Telegram bot ships with a real
+  menu — board overview, add a ticket, hire/retire, pause/resume, broadcast,
+  live-pushed alerts for blocked/stalled/credential conditions — built
+  entirely against the same REST door any other app would use. **No terminal
+  scraping anywhere in the loop.**
+- **🔀 A switch underneath, not a framework.** Producers emit envelopes; the
+  switch forwards them by `destination` and never opens one. Adding a new kind
+  of participant is **one delivery routine** — not changing the switch, the
+  bus, or any command.
+- **🏗️ One container = one tenant.** Redis, the switch, a tmux server with one
   window per agent, and two doors to the outside. Bring it up twice and it
   converges.
-- **📱 Apps are participants, not spectators.** A Telegram bot or a web console
-  enrols as a client, gets its own address and mailbox, and an agent replies to it
-  with the same command it uses for a colleague. **No terminal scraping anywhere
-  in the loop.**
 
 Boards, presence and activity, live terminals, accounts, adapters that are not
 daemons, and what gets logged: [`docs/HLD.md`](docs/HLD.md) has all of it, and
@@ -83,10 +99,10 @@ The L2 analogy is load-bearing rather than decorative:
 
 | L2 switch | h-flock |
 |---|---|
-| destination MAC | `recipient` — the only thing forwarding depends on |
-| source MAC | `producer` — derived from the queue it was popped from, never from content |
-| MAC table | the **roster** — `name → VAB`, agent to the base it runs on |
-| port config | the **VAB** — a property of the port, not of the frame |
+| destination MAC | `destination` — the only thing forwarding depends on |
+| source MAC | `source` — stamped from the queue it was popped from, never from content |
+| MAC table | the **roster** — `name → port_type`, agent to the base it runs on |
+| port config | the **port_type** — a property of the port, not of the frame |
 | ethertype | `kind` — the switch ignores it; an opener at the far edge reads it |
 | L3 and above | `payload` — invisible to everything in the middle |
 
@@ -339,7 +355,7 @@ them they found eight things it did not say.
     bus/         prefix, envelope, the two doors, roster reads   ← library
     tmux/        create/kill/list windows, the paste sequence    ← library
     switch/      the one daemon
-    port/     invoked per delivery, dispatches on VAB, exits
+    port/     invoked per delivery, dispatches on port_type, exits
     control/     StartAgent / StopAgent openers
     tmuxhost/    the tmux server, session and windows
     office/      the one agent-facing command
