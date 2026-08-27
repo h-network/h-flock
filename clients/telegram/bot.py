@@ -658,6 +658,34 @@ class TelegramClient:
         return []
 
 
+class ChatDict(dict):
+    """Dictionary keyed by chat_id that normalizes int and str keys to str."""
+
+    def _k(self, key):
+        return str(key)
+
+    def __getitem__(self, key):
+        return super().__getitem__(self._k(key))
+
+    def __setitem__(self, key, value):
+        super().__setitem__(self._k(key), value)
+
+    def __delitem__(self, key):
+        super().__delitem__(self._k(key))
+
+    def __contains__(self, key):
+        return super().__contains__(self._k(key))
+
+    def get(self, key, default=None):
+        return super().get(self._k(key), default)
+
+    def pop(self, key, *args):
+        return super().pop(self._k(key), *args)
+
+    def setdefault(self, key, default=None):
+        return super().setdefault(self._k(key), default)
+
+
 class TelegramBot:
     """Coalesces activity tool calls into a single Telegram progress message."""
 
@@ -681,16 +709,16 @@ class TelegramBot:
         # just chat — the menu redesign made incoming text powerful enough
         # that "whoever messages first" is no longer an acceptable identity
         # check. See _chat_allowed for what happens when this is None.
-        self.allowed_chat_id = allowed_chat_id
+        self.allowed_chat_id = str(allowed_chat_id) if allowed_chat_id is not None else None
         # Per-chat multi-step flows (AddTicket's title/description prompts,
         # Hire's name prompt). A chat with no entry here is not mid-flow, so a
         # plain text message from it is a prompt for its target agent, not an
         # answer to a menu.
-        self.pending: dict = {}
+        self.pending: dict = ChatDict()
         # Which agent a chat's plain-text prompts go to, if the operator has
         # picked one via 🎯 Message agent — falls back to target_agent
         # (--agent) when a chat has never picked one.
-        self.chat_target_agent: dict = {}
+        self.chat_target_agent: dict = ChatDict()
         # Tenant-level feature flag for spoken TTS voice replies
         self.voice_feature_enabled = (
             (os.getenv("TELEGRAM_VOICE") == "1")
@@ -698,17 +726,17 @@ class TelegramBot:
             else bool(voice_feature_enabled)
         )
         # Per-chat toggle for spoken TTS voice replies
-        self.chat_voice_enabled: dict[int | str, bool] = {}
+        self.chat_voice_enabled: dict = ChatDict()
         self.default_tts_voice = default_tts_voice or os.getenv("TTS_VOICE", "en-US-AvaNeural")
 
     def is_voice_enabled(self, chat_id: int | str) -> bool:
-        return self.voice_feature_enabled and self.chat_voice_enabled.get(chat_id, False)
+        return self.voice_feature_enabled and self.chat_voice_enabled.get(str(chat_id), False)
 
     def _voice_label(self, chat_id: int | str) -> str:
-        return "🔊 Voice: ON" if self.is_voice_enabled(chat_id) else "🔇 Voice: OFF"
+        return "🔊 Voice: ON" if self.is_voice_enabled(str(chat_id)) else "🔇 Voice: OFF"
 
     def _target_for(self, chat_id: int | str) -> str:
-        return self.chat_target_agent.get(chat_id, self.target_agent)
+        return self.chat_target_agent.get(str(chat_id), self.target_agent)
 
     def _chat_allowed(self, chat_id: int | str) -> bool:
         """⚠ No configured chat_id means refuse everything, not allow
@@ -727,7 +755,7 @@ class TelegramBot:
         """
         if self.allowed_chat_id is None:
             return False
-        return str(chat_id) == str(self.allowed_chat_id)
+        return str(chat_id) == self.allowed_chat_id
 
     def enrol(self, *, timeout_s: float = 60.0) -> bool:
         """Enrol with retry.
@@ -855,21 +883,22 @@ class TelegramBot:
         }
 
     def handle_voice_toggle(self, chat_id: int | str) -> str:
+        cid = str(chat_id)
         if not self.voice_feature_enabled:
             text = "Voice replies are not enabled for this tenant (set TELEGRAM_VOICE=1 in container/.env)."
             if self.telegram:
-                self.telegram.send_message(chat_id, text)
+                self.telegram.send_message(cid, text)
             return text
-        current = self.chat_voice_enabled.get(chat_id, False)
+        current = self.chat_voice_enabled.get(cid, False)
         new_state = not current
-        self.chat_voice_enabled[chat_id] = new_state
+        self.chat_voice_enabled[cid] = new_state
         if new_state:
             voice_info = f" (voice: {self.default_tts_voice})" if self.default_tts_voice else ""
             text = f"🔊 Voice replies enabled for this chat{voice_info}."
         else:
             text = "🔇 Voice replies disabled for this chat."
         if self.telegram:
-            self.telegram.send_message(chat_id, text, reply_markup=self._sticky_keyboard(chat_id))
+            self.telegram.send_message(cid, text, reply_markup=self._sticky_keyboard(cid))
         return text
 
     def _dispatch_menu_action(self, chat_id: int | str, code: str) -> str:
@@ -959,26 +988,28 @@ class TelegramBot:
         return text
 
     def handle_addticket_pick_agent(self, chat_id: int | str, agent: str) -> str:
-        self.pending[chat_id] = {"flow": "addticket", "agent": agent, "stage": "title"}
+        cid = str(chat_id)
+        self.pending[cid] = {"flow": "addticket", "agent": agent, "stage": "title"}
         text = f"Ticket title for {agent}? (/cancel to abort)"
         if self.telegram:
-            self.telegram.send_message(chat_id, text)
+            self.telegram.send_message(cid, text)
         return text
 
     def handle_addticket_priority(self, chat_id: int | str, priority: str) -> str:
-        state = self.pending.get(chat_id)
+        cid = str(chat_id)
+        state = self.pending.get(cid)
         if not state or state.get("flow") != "addticket" or state.get("stage") != "priority":
             return ""
         agent, title = state["agent"], state["title"]
         description = state.get("description", "")
-        del self.pending[chat_id]
+        del self.pending[cid]
         code, resp = self.flock.add_ticket(agent, title, description, priority)
         if code == 202:
             text = f"✅ Ticket added to {agent}: {title} [{priority}]"
         else:
             text = f"❌ Failed to add ticket: {resp.get('detail', 'error')}"
         if self.telegram:
-            self.telegram.send_message(chat_id, text)
+            self.telegram.send_message(cid, text)
         return text
 
     def handle_lifecycle_start(self, chat_id: int | str) -> str:
@@ -1025,10 +1056,11 @@ class TelegramBot:
         # uses for retire, not a yes/no tap — StopAgent removes roster
         # membership and identity state (queues and boards are kept), and a
         # single misplaced tap is too cheap a way to do that.
-        self.pending[chat_id] = {"flow": "retire", "agent": agent}
+        cid = str(chat_id)
+        self.pending[cid] = {"flow": "retire", "agent": agent}
         text = f"Type '{agent}' exactly to confirm retiring them (queues and boards are kept; /cancel to abort)."
         if self.telegram:
-            self.telegram.send_message(chat_id, text)
+            self.telegram.send_message(cid, text)
         return text
 
     def handle_message_agent_start(self, chat_id: int | str) -> str:
@@ -1046,27 +1078,30 @@ class TelegramBot:
         return text
 
     def handle_message_agent_pick(self, chat_id: int | str, agent: str) -> str:
-        self.chat_target_agent[chat_id] = agent
+        cid = str(chat_id)
+        self.chat_target_agent[cid] = agent
         text = f"🎯 Now messaging {agent}. Send any message to reach them."
         if self.telegram:
             # Re-send the sticky keyboard too -- its "🎯 Message: ..." button
             # is stale the instant the target changes, and nothing else
             # would refresh it short of the user sending /menu again.
-            self.telegram.send_message(chat_id, text, reply_markup=self._sticky_keyboard(chat_id))
+            self.telegram.send_message(cid, text, reply_markup=self._sticky_keyboard(cid))
         return text
 
     def handle_hire_start(self, chat_id: int | str) -> str:
-        self.pending[chat_id] = {"flow": "hire", "stage": "name"}
+        cid = str(chat_id)
+        self.pending[cid] = {"flow": "hire", "stage": "name"}
         text = "New agent's name? (lowercase letters, digits, hyphens; not all digits; /cancel to abort)"
         if self.telegram:
-            self.telegram.send_message(chat_id, text)
+            self.telegram.send_message(cid, text)
         return text
 
     def handle_broadcast_start(self, chat_id: int | str) -> str:
-        self.pending[chat_id] = {"flow": "broadcast"}
+        cid = str(chat_id)
+        self.pending[cid] = {"flow": "broadcast"}
         text = "Broadcast to every agent — type the message, or /cancel to abort."
         if self.telegram:
-            self.telegram.send_message(chat_id, text)
+            self.telegram.send_message(cid, text)
         return text
 
     def handle_alerts_command(self, chat_id: int | str, limit: int = 10) -> str:
@@ -1088,14 +1123,15 @@ class TelegramBot:
     def handle_pending_text(self, chat_id: int | str, text: str) -> str | None:
         """Consume `text` as an answer to a pending flow's prompt. Returns None
         (leaving `text` untouched by the caller) when the chat has no flow open."""
-        state = self.pending.get(chat_id)
+        cid = str(chat_id)
+        state = self.pending.get(cid)
         if not state:
             return None
         if text.strip() == "/cancel":
-            del self.pending[chat_id]
+            del self.pending[cid]
             reply = "Cancelled."
             if self.telegram:
-                self.telegram.send_message(chat_id, reply)
+                self.telegram.send_message(cid, reply)
             return reply
 
         if state["flow"] == "addticket":
@@ -1104,7 +1140,7 @@ class TelegramBot:
                 state["stage"] = "description"
                 reply = "Description? (send - to skip, /cancel to abort)"
                 if self.telegram:
-                    self.telegram.send_message(chat_id, reply)
+                    self.telegram.send_message(cid, reply)
                 return reply
             if state["stage"] == "description":
                 state["description"] = "" if text.strip() == "-" else text.strip()
@@ -1116,14 +1152,14 @@ class TelegramBot:
                 ]]
                 reply = "Priority?"
                 if self.telegram:
-                    self.telegram.send_message(chat_id, reply, reply_markup={"inline_keyboard": buttons})
+                    self.telegram.send_message(cid, reply, reply_markup={"inline_keyboard": buttons})
                 return reply
             # stage == "priority": this step is answered by tapping a button
             # (handle_addticket_priority), not typed text — stray text here
             # just gets pointed back at the buttons rather than silently lost.
             reply = "Tap a priority button above, or /cancel."
             if self.telegram:
-                self.telegram.send_message(chat_id, reply)
+                self.telegram.send_message(cid, reply)
             return reply
 
         if state["flow"] == "hire":
@@ -1132,7 +1168,7 @@ class TelegramBot:
                 if not _AGENT_NAME.match(name) or name in _RESERVED_AGENT_NAMES:
                     reply = "That name won't work — lowercase letters, digits and hyphens, not all digits, not a reserved word. Try again, or /cancel."
                     if self.telegram:
-                        self.telegram.send_message(chat_id, reply)
+                        self.telegram.send_message(cid, reply)
                     return reply  # stay in "name" stage; do not consume the pending flow
                 state["name"] = name
                 state["stage"] = "profile"
@@ -1142,7 +1178,7 @@ class TelegramBot:
                 # gets a clear error, listing the valid ones, from the api.
                 reply = f"Profile for {name}? (account/profile name, or - for the default; /cancel to abort)"
                 if self.telegram:
-                    self.telegram.send_message(chat_id, reply)
+                    self.telegram.send_message(cid, reply)
                 return reply
 
             if state["stage"] == "profile":
@@ -1150,13 +1186,13 @@ class TelegramBot:
                 state["stage"] = "provider"
                 reply = f"Provider for {state['name']}? (named local model endpoint, or - for the default; /cancel to abort)"
                 if self.telegram:
-                    self.telegram.send_message(chat_id, reply)
+                    self.telegram.send_message(cid, reply)
                 return reply
 
             # stage == "provider"
             provider = None if text.strip() == "-" else text.strip()
             name, profile = state["name"], state["profile"]
-            del self.pending[chat_id]
+            del self.pending[cid]
             code, resp = self.flock.hire_agent(name, profile=profile, provider=provider)
             if code == 202:
                 extras = ", ".join(f"{k} {v}" for k, v in (("profile", profile), ("provider", provider)) if v)
@@ -1164,7 +1200,7 @@ class TelegramBot:
             else:
                 reply = f"❌ Failed to hire {name}: {resp.get('detail', 'error')}"
             if self.telegram:
-                self.telegram.send_message(chat_id, reply)
+                self.telegram.send_message(cid, reply)
             return reply
 
         if state["flow"] == "retire":
@@ -1172,28 +1208,28 @@ class TelegramBot:
             if text.strip() != agent:
                 reply = f"That doesn't match '{agent}' — type it exactly to confirm, or /cancel."
                 if self.telegram:
-                    self.telegram.send_message(chat_id, reply)
+                    self.telegram.send_message(cid, reply)
                 return reply  # stay open for retry, same as the web console's disabled-until-match button
-            del self.pending[chat_id]
+            del self.pending[cid]
             code, resp = self.flock.retire_agent(agent)
             if code == 202:
                 reply = f"✅ {agent} retired · queues and boards retained for a later re-hire."
             else:
                 reply = f"❌ Failed to retire {agent}: {resp.get('detail', 'error')}"
             if self.telegram:
-                self.telegram.send_message(chat_id, reply)
+                self.telegram.send_message(cid, reply)
             return reply
 
         if state["flow"] == "broadcast":
             message = text.strip()
-            del self.pending[chat_id]
+            del self.pending[cid]
             code, resp = self.flock.send_message("all", message)
             if code == 202:
                 reply = "📢 Broadcast sent."
             else:
                 reply = f"❌ Broadcast failed: {resp.get('detail', 'error')}"
             if self.telegram:
-                self.telegram.send_message(chat_id, reply)
+                self.telegram.send_message(cid, reply)
             return reply
 
         return None
@@ -1280,7 +1316,7 @@ class TelegramBot:
     def _dispatch_update(self, update: dict) -> None:
         callback = update.get("callback_query")
         if callback:
-            chat_id = callback["message"]["chat"]["id"]
+            chat_id = str(callback["message"]["chat"]["id"])
             if not self._chat_allowed(chat_id):
                 # ⚠ No reply, no answered callback query, nothing — silence
                 # tells an unauthorized sender less than a rejection would
@@ -1293,7 +1329,7 @@ class TelegramBot:
         if not msg:
             return
 
-        chat_id = msg["chat"]["id"]
+        chat_id = str(msg["chat"]["id"])
         if not self._chat_allowed(chat_id):
             return
         text = msg.get("text", "").strip()

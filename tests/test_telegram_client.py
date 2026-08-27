@@ -1397,3 +1397,90 @@ def test_telegram_bot_enrol_registers_voice_command():
     assert "status" in cmds
     assert "voice" in cmds
 
+
+def test_telegram_bot_chat_id_type_normalization_with_reply_pusher(monkeypatch):
+    flock = DummyFlockClient()
+    telegram = DummyTelegramClient()
+    with tempfile.TemporaryDirectory() as tmpdir:
+        store = CursorStore(str(Path(tmpdir) / "cursor.json"))
+        bot_instance = TelegramBot(
+            flock_client=flock,
+            telegram_client=telegram,
+            cursor_store=store,
+            allowed_chat_id="46444780",
+            voice_feature_enabled=True,
+        )
+
+        # Telegram sends integer chat_id in JSON updates
+        update = {
+            "update_id": 1,
+            "message": {
+                "message_id": 10,
+                "chat": {"id": 46444780},
+                "text": "/voice",
+            },
+        }
+        bot_instance._dispatch_update(update)
+
+        # Both int and str lookups should now return True
+        assert bot_instance.is_voice_enabled(46444780) is True
+        assert bot_instance.is_voice_enabled("46444780") is True
+
+        # ReplyPusher with string chat_id should see voice enabled
+        pusher = ReplyPusher(
+            flock=flock,
+            telegram=telegram,
+            chat_id="46444780",
+            cursor_store=store,
+            voice_enabled_fn=bot_instance.is_voice_enabled,
+        )
+
+        synthesized = []
+
+        def fake_synthesize(text, voice="en-US-AvaNeural", output_path=None):
+            synthesized.append((text, voice))
+            p = Path(tmpdir) / "test.mp3"
+            p.write_bytes(b"dummy audio")
+            return str(p)
+
+        monkeypatch.setattr(bot, "synthesize_speech", fake_synthesize)
+
+        messages = [
+            {"l2": {"source": "architect"}, "payload": {"text": "live spoken reply"}, "cursor": "30-0"},
+        ]
+
+        def fake_stream(after=None):
+            yield from messages
+
+        pusher.run(stream_fn=fake_stream)
+
+        assert len(synthesized) == 1
+        assert len(telegram.sent_messages) == 2
+        assert telegram.sent_messages[-1]["text"] == "architect: live spoken reply"
+        assert len(telegram.sent_voices) == 1
+        assert telegram.sent_voices[0]["chat_id"] == "46444780"
+
+
+def test_telegram_bot_int_str_chat_id_in_flows():
+    flock = DummyFlockClient()
+    telegram = DummyTelegramClient()
+    store = CursorStore()
+    bot_instance = TelegramBot(
+        flock_client=flock,
+        telegram_client=telegram,
+        cursor_store=store,
+        allowed_chat_id=46444780,
+    )
+
+    # Set target agent via int chat_id, query via str chat_id and vice versa
+    bot_instance.handle_message_agent_pick(46444780, "specialist")
+    assert bot_instance._target_for(46444780) == "specialist"
+    assert bot_instance._target_for("46444780") == "specialist"
+
+    # Multi-step pending flow started with int chat_id, continued with str chat_id
+    bot_instance.handle_addticket_pick_agent(46444780, "architect")
+    reply = bot_instance.handle_pending_text("46444780", "My Ticket Title")
+    assert "Description?" in reply
+    assert "46444780" in bot_instance.pending
+
+
