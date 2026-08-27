@@ -352,6 +352,11 @@ def _control_command(command: str, argv: list[str]) -> None:
         parser.add_argument("--profile", metavar="ACCOUNT",
                             help="account whose config dir and credential this agent uses "
                                  "(default: the tenant's default account)")
+        mode_group = parser.add_mutually_exclusive_group()
+        mode_group.add_argument("--resume", action="store_true", default=None,
+                                help="resume prior session history (default when history exists)")
+        mode_group.add_argument("--fresh", action="store_true", default=None,
+                                help="start a clean session ignoring prior history")
     args = parser.parse_args(argv)
     r, pod, tenant, source = _context()
     if command == "hire" and args.profile:
@@ -365,6 +370,10 @@ def _control_command(command: str, argv: list[str]) -> None:
         payload["cli"] = args.cli
         if args.profile:
             payload["profile"] = args.profile
+        if args.fresh:
+            payload["resume"] = False
+        elif args.resume:
+            payload["resume"] = True
 
     stream_id = send(
         r,

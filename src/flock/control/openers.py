@@ -17,7 +17,7 @@ from flock.bus import (
 _STARTABLE_VABS = {"tmux", "api"}
 _FIXED_PARTICIPANTS = {"api", "host"}
 _START_AGENT_KEYS = frozenset(
-    {"agent", "port_type", "cli", "profile", "provider", "export", "import"}
+    {"agent", "port_type", "cli", "profile", "provider", "export", "import", "resume"}
 )
 _TARGET_ONLY_KEYS = frozenset({"agent"})
 
@@ -247,6 +247,20 @@ def start_agent(
     _write_desired(
         committed, "launch published", "launch publish", lambda: r.set(launch_key, cli)
     )
+
+    resume = payload.get("resume")
+    if resume is not None:
+        if not isinstance(resume, bool):
+            raise ValueError("StartAgent payload.resume must be a boolean")
+        resume_key = prefix(pod, tenant, agent=agent, resource="resume")
+        old_resume = r.get(resume_key) if existing_port_type == "tmux" else None
+        old_resume = old_resume.decode() if isinstance(old_resume, bytes) else old_resume
+        desired_resume = "1" if resume else "0"
+        config_changed = config_changed or (existing_port_type == "tmux" and old_resume != desired_resume)
+        _write_desired(
+            committed, "resume published", "resume publish",
+            lambda: r.set(resume_key, desired_resume),
+        )
     if policy_supplied:
         policy_key = tags_key(pod, tenant, agent)
         _write_desired(

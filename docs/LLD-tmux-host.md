@@ -290,3 +290,17 @@ properly.
 ⚠ **Trust and guide failures are recorded, not swallowed.** They still never
 raise into a delivery path, but each emits a `tmux` `error` naming the directory.
 Silence here is how the profile-blind trust bug hid.
+
+⚠ **Re-hiring auto-resumes prior session history.** When `tmuxhost` creates a
+window for an agent, it checks whether prior session history exists for that
+agent's working directory (`has_session_history`):
+- `claude`: `.claude[-<profile>]/projects/-workdir-<name>/*.jsonl`
+- `codex`: `.codex[-<profile>]/sessions/**/rollout-*.jsonl` matching `payload.cwd`
+- `agy`: `.gemini/antigravity-cli/history.jsonl` matching `workspace`
+
+If prior history exists and `resume` is not explicitly set to `0` (`--fresh`),
+`tmuxhost` launches with the CLI's native resume command (`startAgent claude --resume`,
+`startAgent codex resume --last`, or `startAgent agy --continue`). If multiple
+sessions exist, it continues the most recent recorded session. When explicit
+`resume: true` (`--resume`) or `resume: false` (`--fresh`) is set via `StartAgent`,
+that explicit instruction overrides auto-detection.

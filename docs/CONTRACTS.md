@@ -603,7 +603,7 @@ the api validates.
 |---|---|---|---|
 | `Message` | `tmux` | `{"text": "..."}` | pastes `[message from <source>] <text>` |
 | `Command` | `tmux` | `{"text": "..."}` | pastes `<text>` **bare** — it executes |
-| `StartAgent` | `control` | `{"agent": "networking", "cli": "claude", "port_type": "tmux"}` | publishes desired launch state, enrols (tmuxhost reconciles window and CLI) |
+| `StartAgent` | `control` | `{"agent": "networking", "cli": "claude", "port_type": "tmux", "resume": true}` | publishes desired launch state, enrols (tmuxhost reconciles window and CLI, auto-resuming history) |
 | `StopAgent` | `control` | `{"agent": "networking"}` | removes roster row, purges identity state, kills window inline (tmuxhost cleans up on reconcile) |
 | `PauseAgent` | `control` | `{"agent": "networking"}` | marks paused in Redis and interrupts CLI |
 | `ResumeAgent` | `control` | `{"agent": "networking"}` | clears pause in Redis, resumes CLI, kicks pending ingress |
@@ -718,9 +718,20 @@ The agent you just killed comes back, one poll later, looking like the host
 working correctly.
 
 tmuxhost is the only creator. A repeated `StartAgent` with changed CLI, profile,
-or provider removes the stale window after publishing the new desired state;
-tmuxhost then rebuilds it through the same path used at boot. An unchanged hire
-is idempotent and leaves the running window alone.
+provider, or resume setting removes the stale window after publishing the new
+desired state; tmuxhost then rebuilds it through the same path used at boot. An
+unchanged hire is idempotent and leaves the running window alone.
+
+⚠ **Session history and re-hiring**: `StopAgent` cleans up Redis state and kills
+the active tmux window, but deliberately leaves `/workdir/<name>` and prior CLI
+session files on disk (`~/.claude[-<profile>]/projects/...`,
+`~/.codex[-<profile>]/sessions/...`, `~/.gemini/antigravity-cli/history.jsonl`).
+When `StartAgent` is subsequently called for that agent name without an explicit
+`resume: false` (`--fresh`), `tmuxhost` auto-detects existing session history for
+that workspace and launches with the CLI's native resume command (`startAgent claude --resume`,
+`startAgent codex resume --last`, `startAgent agy --continue`), attaching to the
+most recent session recorded for that directory. Explicit `resume: true` forces
+resumption; explicit `resume: false` starts a fresh session.
 
 ⚠ **`launch` is a separate key, not a roster value.** `LLD-bus-and-switch` §3.2
 is explicit that nothing beyond the port_type lives in the roster — *"what is started
