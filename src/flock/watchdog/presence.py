@@ -45,9 +45,15 @@ class PresenceSampler:
         Without it a freshly hired, authenticated agent reads `unknown` — the
         same answer as a bare shell — so a client cannot tell a ready agent from
         an unknowable one until it happens to do something.
+
+        ⚠ `agy` joined `claude`/`codex` here once `~/.gemini/antigravity-cli/
+        history.jsonl` was confirmed live (`ActivityTailer._agy_events`) — it
+        only carries `input`, never `output`/`tool`, but that is enough for
+        `working`/`idle` the same way it is enough for verification's aliveness
+        check: recency of *any* activity, not which kind.
         """
         launch = _text(self.r.get(prefix(self.pod, self.tenant, agent, "launch")))
-        return launch in ("claude", "codex")
+        return launch in ("claude", "codex", "agy")
 
     def _last_activity(self, agent: str) -> datetime | None:
         if not self._tailable(agent):

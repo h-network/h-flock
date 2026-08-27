@@ -79,15 +79,26 @@ def test_malformed_latest_activity_falls_back_to_last_valid_event():
     assert r.reverse_counts == [10]
 
 
-def test_agy_is_unknown_even_when_an_old_activity_stream_exists():
+def test_agy_reads_working_from_its_own_activity_stream():
+    """agy joined `_tailable`'s CLI set once history.jsonl was confirmed live
+    and wired into ActivityTailer — an agy agent now reads real presence off
+    the same activity stream claude/codex populate, not a permanent `unknown`.
+    """
     r = PresenceRedis()
     r.values[prefix("acme", "hq", "sme-2", "launch")] = "agy"
     r.streams[prefix("acme", "hq", "sme-2", "activity")] = [
         _activity("sme-2", "2026-08-09T12:00:59Z", "1-0")
     ]
     PresenceSampler(r, pod="acme", tenant="hq").poll({"sme-2"}, now=NOW)
-    assert _presence(r, "sme-2")["state"] == "unknown"
-    assert _presence(r, "sme-2")["last_activity"] == ""
+    assert _presence(r, "sme-2")["state"] == "working"
+    assert _presence(r, "sme-2")["last_activity"] == "2026-08-09T12:00:59.000Z"
+
+
+def test_agy_with_no_activity_yet_is_idle_not_unknown():
+    r = PresenceRedis()
+    r.values[prefix("acme", "hq", "sme-2", "launch")] = "agy"
+    PresenceSampler(r, pod="acme", tenant="hq").poll({"sme-2"}, now=NOW)
+    assert _presence(r, "sme-2")["state"] == "idle"
 
 
 def test_a_fresh_tailable_agent_is_idle_not_unknown():

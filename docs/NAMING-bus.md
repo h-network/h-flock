@@ -74,7 +74,7 @@ D wire compatibility.
 | ActivityTailer | `src/flock/watchdog/activity.py:67` | identifier | B | Reads agent CLI session files and writes privacy-reduced input/output/tool events. | Traffic/activity monitor, not a packet tailer. |
 | activity | `src/flock/watchdog/activity.py:153` | doc term | A | Reduced history of observable CLI input, output, and tool-use events. | Link activity/traffic observation. |
 | input / output / tool | `src/flock/watchdog/activity.py:29` | wire | D | Values of activity event `kind`, classifying user input, agent text, and tool invocation. | Traffic classes, not envelope kinds. |
-| flavor | `src/flock/watchdog/activity.py:118` | identifier | B | Session-log format/parser family, currently Claude or Codex. | Decoder type. |
+| flavor | `src/flock/watchdog/activity.py:567` | identifier | B | Session-log format/parser family: Claude, Codex, or (2026-08-27) Agy's shared `history.jsonl`. | Decoder type. |
 | PresenceSampler | `src/flock/watchdog/presence.py:32` | identifier | B | Derives current working, idle, or unknown presence from launch type and recent activity. | Link/host state estimator. |
 | presence | `src/flock/watchdog/presence.py:97` | doc term | A | Current derived availability state with transition and last-activity times. | Operational state, not reachability alone. |
 | tailable | `src/flock/watchdog/presence.py:41` | identifier | B | Whether the configured CLI is expected to produce a session file this process understands. | Observable by this monitor. |

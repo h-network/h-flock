@@ -10,9 +10,15 @@ from flock.tmux import list_windows, paste_text, run_tmux
 get_tmux_windows = list_windows
 
 # The CLIs that write a session file the switch can tail. An agent running
-# anything else — agy, a bare shell — produces no activity, so a delivery to it
-# can never be confirmed and must not be marked.
-VERIFIABLE_CLIS = frozenset({"claude", "codex"})
+# anything else — a bare shell — produces no activity, so a delivery to it can
+# never be confirmed and must not be marked.
+#
+# ⚠ `agy` joined this set once `~/.gemini/antigravity-cli/history.jsonl` was
+# confirmed live and wired into `ActivityTailer` (`watchdog/activity.py`'s
+# `_agy_events`) — it records every submitted input, including a paste, so the
+# same "input after the marker" aliveness check that verifies claude/codex now
+# applies to agy too.
+VERIFIABLE_CLIS = frozenset({"claude", "codex", "agy"})
 
 
 def mark_delivery_pending(

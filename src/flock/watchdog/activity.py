@@ -36,6 +36,22 @@ def _timestamp(value) -> datetime | None:
     return parsed.astimezone(timezone.utc)
 
 
+def _ms_epoch_to_iso(value) -> str | None:
+    """Convert history.jsonl's integer millisecond timestamp to our ISO shape."""
+    try:
+        ms = float(value)
+    except (TypeError, ValueError):
+        return None
+    try:
+        return (
+            datetime.fromtimestamp(ms / 1000, tz=timezone.utc)
+            .isoformat(timespec="milliseconds")
+            .replace("+00:00", "Z")
+        )
+    except (OverflowError, OSError, ValueError):
+        return None
+
+
 def _claude_events(record: dict) -> list[tuple[str, str | None]]:
     record_type = record.get("type")
     if record_type == "user":
@@ -201,6 +217,26 @@ def _codex_usage(record: dict, current_model: str = "") -> dict | None:
     return usage_dict
 
 
+def _agy_events(record: dict, agent: str) -> list[tuple[str, str | None]]:
+    """One `input` event per submitted line addressed to this agent.
+
+    ⚠ `history.jsonl` is one shared, non-relocatable file for every agy agent
+    on the host (same limit as the credential check's account lookup) — every
+    agent's tailer reads the same bytes and keeps only the lines whose
+    `workspace` is its own `/workdir/<agent>`, the same attribution field
+    codex's `_codex_session_belongs_to` already uses for its `cwd`.
+
+    ⚠ Input only. The file records what was submitted, never what the CLI
+    produced or ran — there is no agy analogue of `output` or `tool` here.
+    That is enough for presence (recency of *any* event) and for delivery
+    verification (an `input` after a marker), which is what this exists for;
+    it is not a substitute for the richer claude/codex activity feed.
+    """
+    if record.get("workspace") != f"/workdir/{agent}":
+        return []
+    return [("input", None)]
+
+
 _EMIT_USAGE_LUA = """
 local stream_key = KEYS[1]
 local seen_key = KEYS[2]
@@ -306,13 +342,19 @@ class ActivityTailer:
         return model
 
     def _newest(self, agent: str) -> tuple[Path, str] | None:
+        cli = self._cli(agent)
+        if cli == "agy":
+            # ⚠ One shared, non-relocatable file for every agy agent on the
+            # host (`watchdog/service.py`'s credential lookup carries the same
+            # comment for `antigravity-oauth-token`) — profile plays no part,
+            # and there is no per-agent file to pick the newest of. Per-agent
+            # attribution happens per LINE, in `_agy_events`, not per file here.
+            path = self.home_root / ".gemini" / "antigravity-cli" / "history.jsonl"
+            return (path, "agy") if path.is_file() else None
         profile = self._profile(agent)
         suffix = f"-{profile}" if profile else ""
         claude = self.home_root / f".claude{suffix}" / "projects" / f"-workdir-{agent}"
         codex = self.home_root / f".codex{suffix}" / "sessions"
-        cli = self._cli(agent)
-        if cli == "agy":
-            return None
         candidates = []
         if cli in (None, "claude"):
             candidates.extend((path, "claude") for path in claude.glob("*.jsonl"))
@@ -529,7 +571,12 @@ class ActivityTailer:
         size = path.stat().st_size
         if offset > size:
             offset = 0
-        parser = _claude_events if flavor == "claude" else _codex_events
+        if flavor == "claude":
+            parser = _claude_events
+        elif flavor == "codex":
+            parser = _codex_events
+        else:
+            parser = lambda record: _agy_events(record, agent)
 
         current_model = ""
         if flavor == "codex":
@@ -568,15 +615,27 @@ class ActivityTailer:
                             current_model = m
 
                 timestamp = record.get("timestamp")
-                if not isinstance(timestamp, str) or not timestamp:
-                    timestamp = _now()
+                if not (isinstance(timestamp, str) and timestamp):
+                    if flavor == "agy":
+                        # history.jsonl's `timestamp` is milliseconds since
+                        # epoch, not the ISO string claude/codex write.
+                        timestamp = _ms_epoch_to_iso(timestamp) or _now()
+                    else:
+                        timestamp = _now()
                 for kind, tool in parser(record):
                     self._append(agent, timestamp, kind, tool)
 
                 if flavor == "codex":
                     usage = _codex_usage(record, current_model=current_model)
-                else:
+                elif flavor == "claude":
                     usage = _claude_usage(record)
+                else:
+                    # No usage source exists for agy. history.jsonl carries no
+                    # token counts, and the only richer per-turn data
+                    # (~/.gemini/antigravity-cli/conversations/*.db) is opaque
+                    # protobuf blobs with no readable schema — checked, not
+                    # assumed. Nothing here to parse.
+                    usage = None
 
                 if usage is not None:
                     self._emit_usage(agent, timestamp, usage)
