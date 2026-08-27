@@ -92,11 +92,14 @@ def generate_agents_md(agent_name: str, tenant: str = "default", lead: str | Non
     $TENANT          the office you are in
     $OFFICE_TOOLS    the commands available to you
 
-Run any of those with --help. To see who you can talk to:
+Run any of those with --help. To see your tmux colleagues:
 
     office peers
 
-A message arrives in your terminal as `[message from <name>] …` — reply by name:
+That's colleagues only — an app client (a Telegram bot, say) or the tenant's
+lifecycle provider won't be on it, but is still a valid `office send` destination.
+A message arrives in your terminal as `[message from <name>] …` — reply by name,
+whether or not `peers` lists it:
 
     office send -a <name> "one quoted argument"
     office send -a <name> --stdin      < the body on stdin
