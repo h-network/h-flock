@@ -664,6 +664,12 @@ no special-cased teardown.
   The switch fans out over roster *fields* and by invariant 8 cannot read a port_type,
   so it has no way to exclude them. Client-side filtering is what `office
   broadcast` does; the switch does not and structurally could not.
+- **`office peers -i`/`--interfaces` is an opt-in exception to the first bullet,
+  not a repeal of it.** It prints `api`/`control` roster members on a second,
+  explicitly labeled line, never merged into the peer list `-i`-less output
+  still returns unchanged. Bare `peers` and `broadcast` are exactly as hidden
+  as above; `-i` exists because that hiding, on its own, once cost an agent a
+  correct reply to a real client (`LLD-office.md` §4).
 
 `cli` defaults to `claude`. `Message` and `Command` share a payload shape and
 differ only in whether the prefix is rendered — see `LLD-port-tmux` §3 for why

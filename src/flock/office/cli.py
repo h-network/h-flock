@@ -166,6 +166,12 @@ def _broadcast_command(argv: list[str]) -> None:
 def _peers_command(argv: list[str]) -> None:
     parser = _operation_parser("peers", "List peer agents in this office.")
     parser.add_argument("-v", "--verbose", action="store_true", help="show framework, profile, and current task")
+    parser.add_argument(
+        "-i",
+        "--interfaces",
+        action="store_true",
+        help="also list api/control roster members, labeled apart from tmux colleagues",
+    )
     args = parser.parse_args(argv)
     r, pod, tenant, source = _context()
     raw_lead = r.get(prefix(pod, tenant, resource="lead"))
@@ -177,23 +183,35 @@ def _peers_command(argv: list[str]) -> None:
         if agent != source and port_type(r, pod=pod, tenant=tenant, agent=agent) == "tmux"
     ]
     formatted = [f"{agent} (lead)" if agent == lead else agent for agent in peer_names]
-    if not args.verbose:
+
+    if not args.verbose and not args.interfaces:
         print(", ".join(formatted))
         return
 
-    for agent, display_name in zip(peer_names, formatted):
-        framework = _text(r.get(prefix(pod, tenant, agent=agent, resource="launch"))) or "unknown"
-        profile = _text(r.get(prefix(pod, tenant, agent=agent, resource="profile")))
-        raw_ticket = next(
-            iter(r.lrange(prefix(pod, tenant, agent=agent, resource="tasks.doing"), 0, 0)),
-            None,
+    if args.verbose:
+        for agent, display_name in zip(peer_names, formatted):
+            framework = _text(r.get(prefix(pod, tenant, agent=agent, resource="launch"))) or "unknown"
+            profile = _text(r.get(prefix(pod, tenant, agent=agent, resource="profile")))
+            raw_ticket = next(
+                iter(r.lrange(prefix(pod, tenant, agent=agent, resource="tasks.doing"), 0, 0)),
+                None,
+            )
+            fields = [f"framework={framework}"]
+            if profile:
+                fields.append(f"profile={profile}")
+            if raw_ticket is not None:
+                fields.append(f"task={json.dumps(_ticket(raw_ticket, state='doing')['title'])}")
+            print(f"{display_name}: {', '.join(fields)}")
+    else:
+        print(", ".join(formatted))
+
+    if args.interfaces:
+        labeled = sorted(
+            f"{agent} ({port_type(r, pod=pod, tenant=tenant, agent=agent)})"
+            for agent in all_agents
+            if agent != source and port_type(r, pod=pod, tenant=tenant, agent=agent) in ("api", "control")
         )
-        fields = [f"framework={framework}"]
-        if profile:
-            fields.append(f"profile={profile}")
-        if raw_ticket is not None:
-            fields.append(f"task={json.dumps(_ticket(raw_ticket, state='doing')['title'])}")
-        print(f"{display_name}: {', '.join(fields)}")
+        print(f"interfaces (api/control — recognized, not tmux colleagues): {', '.join(labeled) or '(none)'}")
 
 
 def _profiles_command(argv: list[str]) -> None:
