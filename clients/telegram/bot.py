@@ -390,16 +390,19 @@ def render_reply(message: dict, fallback_source: str) -> str:
     return f"{source}: {text}" if text else f"{source} sent a message"
 
 
+DEFAULT_TTS_VOICE = "en-GB-RyanNeural"
+
+
 def synthesize_speech(
     text: str,
-    voice: str = "en-US-AvaNeural",
+    voice: str = DEFAULT_TTS_VOICE,
     output_path: str | pathlib.Path | None = None,
 ) -> str:
     """Render text to an MP3 file using edge-tts."""
     cleaned_text = text.strip()
     if not cleaned_text:
         raise ValueError("empty text for TTS synthesis")
-    selected_voice = voice or "en-US-AvaNeural"
+    selected_voice = voice or DEFAULT_TTS_VOICE
 
     if output_path is None:
         fd, temp_path = tempfile.mkstemp(suffix=".mp3", prefix="flock_tts_")
@@ -447,7 +450,7 @@ class ReplyPusher:
         self.telegram = telegram
         self.chat_id = chat_id
         self.cursor_store = cursor_store
-        self.tts_voice = tts_voice or os.getenv("TTS_VOICE", "en-US-AvaNeural")
+        self.tts_voice = tts_voice or os.getenv("TTS_VOICE", DEFAULT_TTS_VOICE)
         self.voice_enabled = voice_enabled
         self.voice_enabled_fn = voice_enabled_fn
 
@@ -488,7 +491,7 @@ class ReplyPusher:
                         message.get("payload", {}).get("voice")
                         if isinstance(message.get("payload"), dict)
                         else None
-                    ) or self.tts_voice or "en-US-AvaNeural"
+                    ) or self.tts_voice or DEFAULT_TTS_VOICE
                     voice_file = synthesize_speech(reply_text, msg_voice)
                     try:
                         self.telegram.send_voice(self.chat_id, voice_file)
@@ -727,7 +730,7 @@ class TelegramBot:
         )
         # Per-chat toggle for spoken TTS voice replies
         self.chat_voice_enabled: dict = ChatDict()
-        self.default_tts_voice = default_tts_voice or os.getenv("TTS_VOICE", "en-US-AvaNeural")
+        self.default_tts_voice = default_tts_voice or os.getenv("TTS_VOICE", DEFAULT_TTS_VOICE)
 
     def is_voice_enabled(self, chat_id: int | str) -> bool:
         return self.voice_feature_enabled and self.chat_voice_enabled.get(str(chat_id), False)
@@ -1499,8 +1502,8 @@ def main() -> None:
                         help="Disable proactively pushing new watchdog alerts to --chat-id")
     parser.add_argument("--voice", action="store_true", default=os.getenv("TELEGRAM_VOICE") == "1",
                         help="Enable spoken voice replies feature for this tenant")
-    parser.add_argument("--tts-voice", default=os.getenv("TTS_VOICE", "en-US-AvaNeural"),
-                        help="Default edge-tts voice for spoken replies (e.g. en-US-AvaNeural)")
+    parser.add_argument("--tts-voice", default=os.getenv("TTS_VOICE", DEFAULT_TTS_VOICE),
+                        help=f"Default edge-tts voice for spoken replies (default: {DEFAULT_TTS_VOICE})")
 
     args = parser.parse_args()
 

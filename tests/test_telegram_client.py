@@ -1118,7 +1118,7 @@ def test_poll_messages_forever_yields_and_advances_cursor():
 
 def test_synthesize_speech_empty_text_raises_value_error():
     try:
-        synthesize_speech("   ", "en-US-AvaNeural")
+        synthesize_speech("   ", "en-GB-RyanNeural")
         assert False, "expected ValueError"
     except ValueError:
         pass
@@ -1137,7 +1137,7 @@ def test_synthesize_speech_failure_cleans_up_and_raises(monkeypatch, tmp_path):
 
     out_file = tmp_path / "test.mp3"
     try:
-        synthesize_speech("hello", "en-US-AvaNeural", output_path=out_file)
+        synthesize_speech("hello", "en-GB-RyanNeural", output_path=out_file)
         assert False, "expected RuntimeError"
     except RuntimeError as exc:
         assert "network down" in str(exc)
@@ -1156,9 +1156,14 @@ def test_synthesize_speech_success(monkeypatch, tmp_path):
     monkeypatch.setattr(bot.edge_tts, "Communicate", FakeCommunicate)
 
     out_file = tmp_path / "voice.mp3"
-    res_path = synthesize_speech("hello world", "en-US-AvaNeural", output_path=out_file)
+    res_path = synthesize_speech("hello world", "en-GB-RyanNeural", output_path=out_file)
     assert Path(res_path).exists()
-    assert Path(res_path).read_bytes() == b"audio:en-US-AvaNeural:hello world"
+    assert Path(res_path).read_bytes() == b"audio:en-GB-RyanNeural:hello world"
+
+    # Default voice parameter test
+    out_file_default = tmp_path / "voice_default.mp3"
+    res_path_default = synthesize_speech("default call", output_path=out_file_default)
+    assert Path(res_path_default).read_bytes() == b"audio:en-GB-RyanNeural:default call"
 
 
 def test_telegram_client_send_voice_multipart(monkeypatch):
@@ -1221,15 +1226,15 @@ def test_reply_pusher_voice_reply_success(monkeypatch):
             telegram,
             chat_id=999,
             cursor_store=store,
-            tts_voice="en-US-AvaNeural",
+            tts_voice="en-GB-RyanNeural",
             voice_enabled=True,
         )
 
         saved_files = []
 
-        def fake_synthesize(text, voice="en-US-AvaNeural", output_path=None):
+        def fake_synthesize(text, voice="en-GB-RyanNeural", output_path=None):
             assert text == "architect: spoken reply"
-            assert voice == "en-US-AvaNeural"
+            assert voice == "en-GB-RyanNeural"
             p = Path(tmpdir) / "voice_out.mp3"
             p.write_bytes(b"spoken audio")
             saved_files.append(p)
@@ -1300,7 +1305,7 @@ def test_reply_pusher_per_message_voice_override(monkeypatch):
 
         synthesized_voices = []
 
-        def fake_synthesize(text, voice="en-US-AvaNeural", output_path=None):
+        def fake_synthesize(text, voice="en-GB-RyanNeural", output_path=None):
             synthesized_voices.append(voice)
             p = Path(tmpdir) / "voice.mp3"
             p.write_bytes(b"audio")
@@ -1353,10 +1358,10 @@ def test_telegram_bot_voice_toggle_and_menu_when_feature_enabled():
         cursor_store=store,
         target_agent="architect",
         allowed_chat_id=12345,
-        default_tts_voice="en-US-AvaNeural",
         voice_feature_enabled=True,
     )
 
+    assert bot_instance.default_tts_voice == "en-GB-RyanNeural"
     assert not bot_instance.is_voice_enabled(12345)
     assert bot_instance._voice_label(12345) == "🔇 Voice: OFF"
     kb = bot_instance._sticky_keyboard(12345)
@@ -1366,7 +1371,7 @@ def test_telegram_bot_voice_toggle_and_menu_when_feature_enabled():
     # Toggle ON via handle_voice_toggle
     reply = bot_instance.handle_voice_toggle(12345)
     assert "🔊 Voice replies enabled" in reply
-    assert "en-US-AvaNeural" in reply
+    assert "en-GB-RyanNeural" in reply
     assert bot_instance.is_voice_enabled(12345)
     assert bot_instance._voice_label(12345) == "🔊 Voice: ON"
 
@@ -1437,7 +1442,7 @@ def test_telegram_bot_chat_id_type_normalization_with_reply_pusher(monkeypatch):
 
         synthesized = []
 
-        def fake_synthesize(text, voice="en-US-AvaNeural", output_path=None):
+        def fake_synthesize(text, voice="en-GB-RyanNeural", output_path=None):
             synthesized.append((text, voice))
             p = Path(tmpdir) / "test.mp3"
             p.write_bytes(b"dummy audio")
