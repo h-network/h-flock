@@ -13,11 +13,14 @@ import pathlib
 import re
 import ssl
 import sys
+import edge_tts
+import tempfile
 import threading
 import time
 import urllib.error
 import urllib.parse
 import urllib.request
+import uuid
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(name)s: %(message)s")
 logger = logging.getLogger("flock_telegram")
@@ -387,6 +390,33 @@ def render_reply(message: dict, fallback_source: str) -> str:
     return f"{source}: {text}" if text else f"{source} sent a message"
 
 
+def synthesize_speech(
+    text: str,
+    voice: str = "en-US-AvaNeural",
+    output_path: str | pathlib.Path | None = None,
+) -> str:
+    """Render text to an MP3 file using edge-tts."""
+    cleaned_text = text.strip()
+    if not cleaned_text:
+        raise ValueError("empty text for TTS synthesis")
+    selected_voice = voice or "en-US-AvaNeural"
+
+    if output_path is None:
+        fd, temp_path = tempfile.mkstemp(suffix=".mp3", prefix="flock_tts_")
+        os.close(fd)
+        target_path = temp_path
+    else:
+        target_path = str(output_path)
+
+    try:
+        communicate = edge_tts.Communicate(cleaned_text, selected_voice)
+        asyncio.run(communicate.save(target_path))
+        return target_path
+    except Exception:
+        pathlib.Path(target_path).unlink(missing_ok=True)
+        raise
+
+
 class ReplyPusher:
     """Consumes this bot's own mailbox (GET /agents/{app_name}/messages) and
     pushes each new reply into a fixed Telegram chat as it arrives.
@@ -403,11 +433,23 @@ class ReplyPusher:
     live on the acceptance VM. This owns that job instead, independently.
     """
 
-    def __init__(self, flock: "FlockClient", telegram, chat_id, cursor_store: CursorStore):
+    def __init__(
+        self,
+        flock: "FlockClient",
+        telegram,
+        chat_id,
+        cursor_store: CursorStore,
+        tts_voice: str | None = None,
+        voice_enabled: bool = False,
+        voice_enabled_fn=None,
+    ):
         self.flock = flock
         self.telegram = telegram
         self.chat_id = chat_id
         self.cursor_store = cursor_store
+        self.tts_voice = tts_voice or os.getenv("TTS_VOICE", "en-US-AvaNeural")
+        self.voice_enabled = voice_enabled
+        self.voice_enabled_fn = voice_enabled_fn
 
     def _seed_cursor(self) -> str | None:
         """On a fresh cursor store, start at the current tail — a message
@@ -434,7 +476,25 @@ class ReplyPusher:
             if cursor:
                 self.cursor_store.save(cursor)
             if self.telegram:
-                self.telegram.send_message(self.chat_id, render_reply(message, self.flock.app_name))
+                reply_text = render_reply(message, self.flock.app_name)
+                is_voice = (
+                    self.voice_enabled_fn(self.chat_id)
+                    if self.voice_enabled_fn
+                    else self.voice_enabled
+                )
+                if is_voice:
+                    msg_voice = (
+                        message.get("payload", {}).get("voice")
+                        if isinstance(message.get("payload"), dict)
+                        else None
+                    ) or self.tts_voice or "en-US-AvaNeural"
+                    voice_file = synthesize_speech(reply_text, msg_voice)
+                    try:
+                        self.telegram.send_voice(self.chat_id, voice_file, caption=reply_text)
+                    finally:
+                        pathlib.Path(voice_file).unlink(missing_ok=True)
+                else:
+                    self.telegram.send_message(self.chat_id, reply_text)
 
 
 class TelegramClient:
@@ -462,6 +522,81 @@ class TelegramClient:
         except Exception as exc:
             logger.error(f"Telegram request failed: {exc}")
             return {"ok": False, "description": str(exc)}
+
+    def request_multipart(
+        self,
+        method: str,
+        fields: dict | None = None,
+        files: dict | None = None,
+    ) -> dict:
+        url = f"{self.base_url}/{method}"
+        boundary = f"----FlockTelegramBoundary{uuid.uuid4().hex}"
+        body = bytearray()
+
+        if fields:
+            for name, val in fields.items():
+                if val is None:
+                    continue
+                body.extend(f"--{boundary}\r\n".encode("utf-8"))
+                body.extend(f'Content-Disposition: form-data; name="{name}"\r\n\r\n'.encode("utf-8"))
+                body.extend(str(val).encode("utf-8"))
+                body.extend(b"\r\n")
+
+        if files:
+            for name, (filename, data, content_type) in files.items():
+                body.extend(f"--{boundary}\r\n".encode("utf-8"))
+                body.extend(
+                    f'Content-Disposition: form-data; name="{name}"; filename="{filename}"\r\n'.encode("utf-8")
+                )
+                body.extend(f"Content-Type: {content_type}\r\n\r\n".encode("utf-8"))
+                body.extend(data)
+                body.extend(b"\r\n")
+
+        body.extend(f"--{boundary}--\r\n".encode("utf-8"))
+        headers = {"Content-Type": f"multipart/form-data; boundary={boundary}"}
+        req = urllib.request.Request(url, data=bytes(body), headers=headers, method="POST")
+        try:
+            with urllib.request.urlopen(req, timeout=60) as resp:
+                return json.loads(resp.read().decode("utf-8"))
+        except urllib.error.HTTPError as err:
+            err_body = err.read().decode("utf-8")
+            logger.error(f"Telegram API error {method}: {err.code} {err_body}")
+            try:
+                return json.loads(err_body)
+            except Exception:
+                return {"ok": False, "description": err_body}
+        except Exception as exc:
+            logger.error(f"Telegram multipart request failed: {exc}")
+            return {"ok": False, "description": str(exc)}
+
+    def send_voice(
+        self,
+        chat_id: int | str,
+        voice: str | bytes | pathlib.Path,
+        caption: str | None = None,
+        reply_to_message_id: int | None = None,
+        reply_markup: dict | None = None,
+    ) -> dict:
+        """Send voice audio via Telegram sendVoice endpoint using multipart upload."""
+        if isinstance(voice, (str, pathlib.Path)):
+            voice_path = pathlib.Path(voice)
+            filename = voice_path.name or "voice.mp3"
+            with open(voice_path, "rb") as f:
+                voice_data = f.read()
+        else:
+            filename = "voice.mp3"
+            voice_data = bytes(voice)
+
+        fields: dict = {"chat_id": chat_id}
+        if caption:
+            fields["caption"] = caption[:1024]
+        if reply_to_message_id:
+            fields["reply_to_message_id"] = reply_to_message_id
+        if reply_markup is not None:
+            fields["reply_markup"] = json.dumps(reply_markup)
+
+        files = {"voice": (filename, voice_data, "audio/mpeg")}
+        return self.request_multipart("sendVoice", fields=fields, files=files)
 
     def send_message(self, chat_id: int | str, text: str, reply_to_message_id: int | None = None,
                       reply_markup: dict | None = None) -> dict:
@@ -534,6 +669,8 @@ class TelegramBot:
         cursor_store: CursorStore,
         target_agent: str = "architect",
         allowed_chat_id: int | str | None = None,
+        default_tts_voice: str | None = None,
+        voice_feature_enabled: bool | None = None,
     ):
         self.flock = flock_client
         self.telegram = telegram_client
@@ -555,6 +692,21 @@ class TelegramBot:
         # picked one via 🎯 Message agent — falls back to target_agent
         # (--agent) when a chat has never picked one.
         self.chat_target_agent: dict = {}
+        # Tenant-level feature flag for spoken TTS voice replies
+        self.voice_feature_enabled = (
+            (os.getenv("TELEGRAM_VOICE") == "1")
+            if voice_feature_enabled is None
+            else bool(voice_feature_enabled)
+        )
+        # Per-chat toggle for spoken TTS voice replies
+        self.chat_voice_enabled: dict[int | str, bool] = {}
+        self.default_tts_voice = default_tts_voice or os.getenv("TTS_VOICE", "en-US-AvaNeural")
+
+    def is_voice_enabled(self, chat_id: int | str) -> bool:
+        return self.voice_feature_enabled and self.chat_voice_enabled.get(chat_id, False)
+
+    def _voice_label(self, chat_id: int | str) -> str:
+        return "🔊 Voice: ON" if self.is_voice_enabled(chat_id) else "🔇 Voice: OFF"
 
     def _target_for(self, chat_id: int | str) -> str:
         return self.chat_target_agent.get(chat_id, self.target_agent)
@@ -619,6 +771,7 @@ class TelegramBot:
             res = self.telegram.set_my_commands([
                 {"command": "menu", "description": "Open the office menu (overview, tickets, agents, alerts)"},
                 {"command": "status", "description": f"Quick status check for {self.target_agent}"},
+                {"command": "voice", "description": "Toggle spoken voice replies (TTS)"},
             ])
             if not res.get("ok", True):
                 logger.warning(f"setMyCommands failed: {res}")
@@ -687,17 +840,38 @@ class TelegramBot:
 
     def _sticky_keyboard(self, chat_id: int | str) -> dict:
         target_label = f"{self.STICKY_TARGET_PREFIX}{self._target_for(chat_id)}"
+        last_row = ["📢 Broadcast"]
+        if self.voice_feature_enabled:
+            last_row.append(self._voice_label(chat_id))
         layout = [
             ["📋 Overview", "🎫 Add ticket"],
             ["⏯ Lifecycle", "🔔 Alerts"],
             [target_label, "➕ Hire"],
-            ["📢 Broadcast"],
+            last_row,
         ]
         return {
             "keyboard": [[{"text": label} for label in row] for row in layout],
             "resize_keyboard": True,
             "is_persistent": True,
         }
+
+    def handle_voice_toggle(self, chat_id: int | str) -> str:
+        if not self.voice_feature_enabled:
+            text = "Voice replies are not enabled for this tenant (set TELEGRAM_VOICE=1 in container/.env)."
+            if self.telegram:
+                self.telegram.send_message(chat_id, text)
+            return text
+        current = self.chat_voice_enabled.get(chat_id, False)
+        new_state = not current
+        self.chat_voice_enabled[chat_id] = new_state
+        if new_state:
+            voice_info = f" (voice: {self.default_tts_voice})" if self.default_tts_voice else ""
+            text = f"🔊 Voice replies enabled for this chat{voice_info}."
+        else:
+            text = "🔇 Voice replies disabled for this chat."
+        if self.telegram:
+            self.telegram.send_message(chat_id, text, reply_markup=self._sticky_keyboard(chat_id))
+        return text
 
     def _dispatch_menu_action(self, chat_id: int | str, code: str) -> str:
         """Shared by the sticky keyboard (text label tap) and any inline
@@ -719,6 +893,8 @@ class TelegramBot:
             return self.handle_message_agent_start(chat_id)
         if code == "bc":
             return self.handle_broadcast_start(chat_id)
+        if code == "vt":
+            return self.handle_voice_toggle(chat_id)
         return ""
 
     def _tmux_agents(self) -> list[str]:
@@ -1026,7 +1202,7 @@ class TelegramBot:
     def handle_callback_query(self, chat_id: int | str, callback_id: str, data: str) -> str:
         if self.telegram:
             self.telegram.answer_callback_query(callback_id)
-        if data in ("menu", "ov", "at", "lc", "al", "hi", "ta"):
+        if data in ("menu", "ov", "at", "lc", "al", "hi", "ta", "vt"):
             return self._dispatch_menu_action(chat_id, data)
         if data.startswith("at:"):
             return self.handle_addticket_pick_agent(chat_id, data[len("at:"):])
@@ -1055,6 +1231,8 @@ class TelegramBot:
             return self._dispatch_menu_action(chat_id, self.STICKY_LABELS[text])
         if text.startswith(self.STICKY_TARGET_PREFIX):
             return self.handle_message_agent_start(chat_id)
+        if text.startswith("🔊 Voice") or text.startswith("🔇 Voice") or text in ("/voice", "/tts"):
+            return self.handle_voice_toggle(chat_id)
         if text == "/menu":
             return self.handle_menu_command(chat_id)
         if text == "/status":
@@ -1185,6 +1363,30 @@ class DryRunTelegramClient:
         print(f"[DRY-RUN Telegram] sendMessage (chat={chat_id}, msg_id={msg_id}):\n{text}{extra}\n")
         return {"ok": True, "result": {"message_id": msg_id, "chat": {"id": chat_id}, "text": text}}
 
+    def send_voice(
+        self,
+        chat_id: int | str,
+        voice: str | bytes | pathlib.Path,
+        caption: str | None = None,
+        reply_to_message_id: int | None = None,
+        reply_markup: dict | None = None,
+    ) -> dict:
+        msg_id = self.next_msg_id
+        self.next_msg_id += 1
+        voice_desc = f"{len(voice)} bytes" if isinstance(voice, bytes) else str(voice)
+        cap_str = f" caption={caption!r}" if caption else ""
+        extra = f"\n[keyboard: {reply_markup}]" if reply_markup else ""
+        print(f"[DRY-RUN Telegram] sendVoice (chat={chat_id}, msg_id={msg_id}, voice={voice_desc}){cap_str}:{extra}\n")
+        return {
+            "ok": True,
+            "result": {
+                "message_id": msg_id,
+                "chat": {"id": chat_id},
+                "voice": {"file_id": "dry_run_voice"},
+                "caption": caption,
+            },
+        }
+
     def edit_message_text(self, chat_id: int | str, message_id: int, text: str,
                            reply_markup: dict | None = None) -> dict:
         extra = f"\n[keyboard: {reply_markup}]" if reply_markup else ""
@@ -1260,6 +1462,10 @@ def main() -> None:
                         help="File path to store the alerts-stream cursor (default: derived from --cursor-file)")
     parser.add_argument("--no-alert-push", action="store_true", default=os.getenv("NO_ALERT_PUSH") == "1",
                         help="Disable proactively pushing new watchdog alerts to --chat-id")
+    parser.add_argument("--voice", action="store_true", default=os.getenv("TELEGRAM_VOICE") == "1",
+                        help="Enable spoken voice replies feature for this tenant")
+    parser.add_argument("--tts-voice", default=os.getenv("TTS_VOICE", "en-US-AvaNeural"),
+                        help="Default edge-tts voice for spoken replies (e.g. en-US-AvaNeural)")
 
     args = parser.parse_args()
 
@@ -1279,8 +1485,15 @@ def main() -> None:
     else:
         telegram = TelegramClient(bot_token=args.bot_token)
 
-    bot = TelegramBot(flock_client=flock, telegram_client=telegram, cursor_store=cursor_store,
-                       target_agent=args.agent, allowed_chat_id=args.chat_id or None)
+    bot = TelegramBot(
+        flock_client=flock,
+        telegram_client=telegram,
+        cursor_store=cursor_store,
+        target_agent=args.agent,
+        allowed_chat_id=args.chat_id or None,
+        default_tts_voice=args.tts_voice or None,
+        voice_feature_enabled=args.voice,
+    )
 
     # ⚠ Called once here, unconditionally, before any mode below runs — not
     # per-branch. container/entrypoint.sh forks this process and the api door
@@ -1308,7 +1521,14 @@ def main() -> None:
             # cursor_store (--cursor-file) is entirely ReplyPusher's now — the
             # mailbox cursor it used to track for handle_user_prompt's old
             # wait loop moved here wholesale when that loop was removed.
-            reply_pusher = ReplyPusher(flock, telegram, args.chat_id, cursor_store)
+            reply_pusher = ReplyPusher(
+                flock,
+                telegram,
+                args.chat_id,
+                cursor_store,
+                tts_voice=args.tts_voice or None,
+                voice_enabled_fn=bot.is_voice_enabled,
+            )
             threading.Thread(target=reply_pusher.run, daemon=True, name="reply-pusher").start()
             if not args.no_alert_push:
                 alerts_cursor_file = args.alerts_cursor_file or _sibling_path(args.cursor_file, "alerts")

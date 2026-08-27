@@ -51,6 +51,9 @@ def parse_args():
     parser.add_argument("--local-provider", default="n", help="Point any agent at local provider? [y/N]")
     parser.add_argument("--api", default="y", help="Start REST API door? [y/N]")
     parser.add_argument("--telegram", default="n", help="Run Telegram bot? [y/N]")
+    parser.add_argument("--telegram-token", default="", help="Telegram Bot Token")
+    parser.add_argument("--telegram-chat-id", default="", help="Telegram Chat ID")
+    parser.add_argument("--telegram-voice", default="n", help="Enable spoken voice replies? [y/N]")
     parser.add_argument("--publish-api", default="y", help="Reach REST API from outside container? [y/N]")
     parser.add_argument("--api-port", default="8080", help="Host port for REST API")
     parser.add_argument("--publish-session", default="y", help="Reach session console from outside container? [Y/n]")
@@ -103,6 +106,8 @@ def build_expected_prompts(args):
     if is_yes(args.telegram, default=False):
         pairs.append((r"Telegram Bot Token", getattr(args, "telegram_token", "")))
         pairs.append((r"Telegram Chat ID", getattr(args, "telegram_chat_id", "")))
+        if getattr(args, "telegram_token", "") and getattr(args, "telegram_chat_id", ""):
+            pairs.append((r"Enable spoken voice replies\?", getattr(args, "telegram_voice", "n")))
 
     api_enabled = is_yes(args.api, default=False) or is_yes(args.telegram, default=False)
 

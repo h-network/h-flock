@@ -27,6 +27,7 @@ def test_compose_yaml_has_no_ports_key():
     assert 'SESSION_HOST: "${SESSION_HOST:-}"' in content
     assert 'TELEGRAM_BOT_TOKEN: "${TELEGRAM_BOT_TOKEN:-}"' in content
     assert 'TELEGRAM_CHAT_ID: "${TELEGRAM_CHAT_ID:-}"' in content
+    assert 'TELEGRAM_VOICE: "${TELEGRAM_VOICE:-0}"' in content
 
 
 def test_gitignore_contains_compose_ports_yaml():
@@ -91,6 +92,7 @@ def test_setup_splits_api_start_and_publish_questions():
     assert "Run the Telegram bot in this tenant? [y/N]" in content
     assert "Telegram Bot Token" in content
     assert "Telegram Chat ID" in content
+    assert "Enable spoken voice replies?" in content
     assert "container/compose.ports.yaml" in content
     assert "container/flock-compose.sh" in content
 

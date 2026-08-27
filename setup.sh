@@ -268,7 +268,7 @@ free_port() {
 
 echo
 echo
-API_ENABLED=0; API_PORT=""; API_PUBLISH=0; TELEGRAM=0
+API_ENABLED=0; API_PORT=""; API_PUBLISH=0; TELEGRAM=0; TELEGRAM_VOICE=0
 TELEGRAM_BOT_TOKEN=""; TELEGRAM_CHAT_ID=""
 read -rp "Start the REST API door inside the tenant? [y/N]: " WANT_API
 if check_bool "$WANT_API" "n"; then API_ENABLED=1; fi
@@ -281,6 +281,7 @@ if check_bool "$WANT_TG" "n"; then
     fi
     existing_tg_token="$(grep -s '^TELEGRAM_BOT_TOKEN=' container/.env 2>/dev/null | cut -d= -f2- || true)"
     existing_tg_chat="$(grep -s '^TELEGRAM_CHAT_ID=' container/.env 2>/dev/null | cut -d= -f2- || true)"
+    existing_tg_voice="$(grep -s '^TELEGRAM_VOICE=' container/.env 2>/dev/null | cut -d= -f2- || true)"
     if [ -n "$existing_tg_token" ]; then
         read -rsp "  Telegram Bot Token [keep existing]: " TG_TOKEN; echo
     else
@@ -299,11 +300,19 @@ if check_bool "$WANT_TG" "n"; then
         TELEGRAM=1
         TELEGRAM_BOT_TOKEN="$TG_TOKEN"
         TELEGRAM_CHAT_ID="$TG_CHAT"
+        if [ "$existing_tg_voice" = "1" ]; then
+            read -rp "  Enable spoken voice replies? [Y/n]: " WANT_VOICE
+            if check_bool "$WANT_VOICE" "y"; then TELEGRAM_VOICE=1; else TELEGRAM_VOICE=0; fi
+        else
+            read -rp "  Enable spoken voice replies? [y/N]: " WANT_VOICE
+            if check_bool "$WANT_VOICE" "n"; then TELEGRAM_VOICE=1; else TELEGRAM_VOICE=0; fi
+        fi
     else
         echo "  ⚠ Both Telegram Bot Token and Chat ID are required — Telegram bot is not enabled."
         TELEGRAM=0
         TELEGRAM_BOT_TOKEN=""
         TELEGRAM_CHAT_ID=""
+        TELEGRAM_VOICE=0
     fi
 fi
 
@@ -478,6 +487,7 @@ TOKEN="$(grep -s '^API_TOKEN=' container/.env | cut -d= -f2)"
     fi
     [ -n "$TELEGRAM_BOT_TOKEN" ] && echo "TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN}"
     [ -n "$TELEGRAM_CHAT_ID" ] && echo "TELEGRAM_CHAT_ID=${TELEGRAM_CHAT_ID}"
+    [ "$TELEGRAM_VOICE" = "1" ] && echo "TELEGRAM_VOICE=1"
     [ "${#CLI_MAP[@]}"     -gt 0 ] && echo "AGENT_CLIS=$(IFS=,; echo "${CLI_MAP[*]}")"
     [ "${#PROFILE_MAP[@]}" -gt 0 ] && echo "AGENT_PROFILES=$(IFS=,; echo "${PROFILE_MAP[*]}")"
     if [ "${#PROVIDER_MAP[@]}" -gt 0 ]; then
@@ -587,7 +597,9 @@ else
     echo "  session  enabled inside tenant (not published to host)"
 fi
 if [ "$TELEGRAM" = "1" ]; then
-    echo "  telegram bot running in tenant (chat id: ${TELEGRAM_CHAT_ID})"
+    voice_suffix=""
+    [ "$TELEGRAM_VOICE" = "1" ] && voice_suffix=" (voice replies enabled)"
+    echo "  telegram bot running in tenant (chat id: ${TELEGRAM_CHAT_ID})${voice_suffix}"
 fi
 echo "  attach   docker exec -it -e TMUX_TMPDIR=/home/ubuntu/.flock/tmux $CONTAINER tmux attach -t ${TENANT}"
 if [ -n "$TLS_CERT_CONTAINER" ]; then

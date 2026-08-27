@@ -9,8 +9,9 @@ from pathlib import Path
 
 from clients.telegram import bot
 from clients.telegram.bot import (
-    AlertPusher, CursorStore, FlockClient, ReplyPusher, TelegramBot,
-    render_alert, render_reply, _parse_sse_events,
+    AlertPusher, CursorStore, DryRunTelegramClient, FlockClient, ReplyPusher,
+    TelegramBot, TelegramClient, render_alert, render_reply,
+    synthesize_speech, _parse_sse_events,
 )
 
 
@@ -98,15 +99,28 @@ class DummyFlockClient:
 class DummyTelegramClient:
     def __init__(self):
         self.sent_messages = []
+        self.sent_voices = []
         self.edited_messages = []
         self.chat_actions = []
         self.answered_callbacks = []
         self.commands_set = []
 
     def send_message(self, chat_id, text, reply_to_message_id=None, reply_markup=None):
-        msg_id = len(self.sent_messages) + 1
+        msg_id = len(self.sent_messages) + len(self.sent_voices) + 1
         entry = {"chat_id": chat_id, "text": text, "message_id": msg_id, "reply_markup": reply_markup}
         self.sent_messages.append(entry)
+        return {"ok": True, "result": entry}
+
+    def send_voice(self, chat_id, voice, caption=None, reply_to_message_id=None, reply_markup=None):
+        msg_id = len(self.sent_messages) + len(self.sent_voices) + 1
+        entry = {
+            "chat_id": chat_id,
+            "voice": voice,
+            "caption": caption,
+            "message_id": msg_id,
+            "reply_markup": reply_markup,
+        }
+        self.sent_voices.append(entry)
         return {"ok": True, "result": entry}
 
     def edit_message_text(self, chat_id, message_id, text, reply_markup=None):
@@ -1100,4 +1114,256 @@ def test_poll_messages_forever_yields_and_advances_cursor():
         assert False, "expected _Stop to propagate"
     except _Stop:
         pass
+
+
+def test_synthesize_speech_empty_text_raises_value_error():
+    try:
+        synthesize_speech("   ", "en-US-AvaNeural")
+        assert False, "expected ValueError"
+    except ValueError:
+        pass
+
+
+def test_synthesize_speech_failure_cleans_up_and_raises(monkeypatch, tmp_path):
+    class FakeCommunicate:
+        def __init__(self, text, voice):
+            pass
+
+        async def save(self, path):
+            Path(path).write_bytes(b"broken")
+            raise RuntimeError("network down")
+
+    monkeypatch.setattr(bot.edge_tts, "Communicate", FakeCommunicate)
+
+    out_file = tmp_path / "test.mp3"
+    try:
+        synthesize_speech("hello", "en-US-AvaNeural", output_path=out_file)
+        assert False, "expected RuntimeError"
+    except RuntimeError as exc:
+        assert "network down" in str(exc)
+        assert not out_file.exists()
+
+
+def test_synthesize_speech_success(monkeypatch, tmp_path):
+    class FakeCommunicate:
+        def __init__(self, text, voice):
+            self.text = text
+            self.voice = voice
+
+        async def save(self, path):
+            Path(path).write_bytes(f"audio:{self.voice}:{self.text}".encode("utf-8"))
+
+    monkeypatch.setattr(bot.edge_tts, "Communicate", FakeCommunicate)
+
+    out_file = tmp_path / "voice.mp3"
+    res_path = synthesize_speech("hello world", "en-US-AvaNeural", output_path=out_file)
+    assert Path(res_path).exists()
+    assert Path(res_path).read_bytes() == b"audio:en-US-AvaNeural:hello world"
+
+
+def test_telegram_client_send_voice_multipart(monkeypatch):
+    client = TelegramClient(bot_token="fake-token")
+    captured = {}
+
+    def fake_urlopen(req, timeout=60):
+        captured["url"] = req.full_url
+        captured["headers"] = dict(req.headers)
+        captured["data"] = req.data
+        class FakeResp:
+            def __enter__(self):
+                return self
+            def __exit__(self, *args):
+                pass
+            def read(self):
+                return b'{"ok": true, "result": {"message_id": 42}}'
+        return FakeResp()
+
+    monkeypatch.setattr(bot.urllib.request, "urlopen", fake_urlopen)
+
+    res = client.send_voice(
+        chat_id=12345,
+        voice=b"MP3_DATA_BYTES",
+        caption="Voice caption",
+        reply_to_message_id=99,
+        reply_markup={"inline_keyboard": []},
+    )
+
+    assert res.get("ok") is True
+    assert captured["url"] == "https://api.telegram.org/botfake-token/sendVoice"
+    content_type = captured["headers"]["Content-type"]
+    assert "multipart/form-data; boundary=" in content_type
+    body = captured["data"].decode("utf-8", errors="replace")
+    assert 'name="chat_id"\r\n\r\n12345' in body
+    assert 'name="caption"\r\n\r\nVoice caption' in body
+    assert 'name="reply_to_message_id"\r\n\r\n99' in body
+    assert 'name="voice"; filename="voice.mp3"' in body
+    assert "MP3_DATA_BYTES" in body
+
+
+def test_dry_run_telegram_client_send_voice(capsys):
+    client = DryRunTelegramClient()
+    res = client.send_voice(12345, b"RAW_BYTES", caption="dry voice test")
+    assert res.get("ok") is True
+    assert res["result"]["caption"] == "dry voice test"
+    out = capsys.readouterr().out
+    assert "[DRY-RUN Telegram] sendVoice" in out
+    assert "chat=12345" in out
+    assert "caption='dry voice test'" in out
+
+
+def test_reply_pusher_voice_reply_success(monkeypatch):
+    with tempfile.TemporaryDirectory() as tmpdir:
+        flock = DummyFlockClient()
+        telegram = DummyTelegramClient()
+        store = CursorStore(str(Path(tmpdir) / "cursor.json"))
+        pusher = ReplyPusher(
+            flock,
+            telegram,
+            chat_id=999,
+            cursor_store=store,
+            tts_voice="en-US-AvaNeural",
+            voice_enabled=True,
+        )
+
+        saved_files = []
+
+        def fake_synthesize(text, voice="en-US-AvaNeural", output_path=None):
+            assert text == "architect: spoken reply"
+            assert voice == "en-US-AvaNeural"
+            p = Path(tmpdir) / "voice_out.mp3"
+            p.write_bytes(b"spoken audio")
+            saved_files.append(p)
+            return str(p)
+
+        monkeypatch.setattr(bot, "synthesize_speech", fake_synthesize)
+
+        messages = [
+            {"l2": {"source": "architect"}, "payload": {"text": "spoken reply"}, "cursor": "20-0"},
+        ]
+
+        def fake_stream(after=None):
+            yield from messages
+
+        pusher.run(stream_fn=fake_stream)
+
+        assert len(telegram.sent_voices) == 1
+        assert telegram.sent_voices[0]["chat_id"] == 999
+        assert telegram.sent_voices[0]["caption"] == "architect: spoken reply"
+        assert telegram.sent_messages == []
+        assert store.load() == "20-0"
+        assert not saved_files[0].exists()
+
+
+def test_reply_pusher_per_message_voice_override(monkeypatch):
+    with tempfile.TemporaryDirectory() as tmpdir:
+        flock = DummyFlockClient()
+        telegram = DummyTelegramClient()
+        store = CursorStore(str(Path(tmpdir) / "cursor.json"))
+        pusher = ReplyPusher(
+            flock,
+            telegram,
+            chat_id=999,
+            cursor_store=store,
+            tts_voice="default-voice",
+            voice_enabled=True,
+        )
+
+        synthesized_voices = []
+
+        def fake_synthesize(text, voice="en-US-AvaNeural", output_path=None):
+            synthesized_voices.append(voice)
+            p = Path(tmpdir) / "voice.mp3"
+            p.write_bytes(b"audio")
+            return str(p)
+
+        monkeypatch.setattr(bot, "synthesize_speech", fake_synthesize)
+
+        messages = [
+            {"l2": {"source": "architect"}, "payload": {"text": "custom voice", "voice": "custom-override-voice"}, "cursor": "22-0"},
+        ]
+
+        def fake_stream(after=None):
+            yield from messages
+
+        pusher.run(stream_fn=fake_stream)
+        assert synthesized_voices == ["custom-override-voice"]
+
+
+def test_telegram_bot_voice_feature_flag_disabled_by_default():
+    flock = DummyFlockClient()
+    telegram = DummyTelegramClient()
+    store = CursorStore()
+    bot_instance = TelegramBot(
+        flock_client=flock,
+        telegram_client=telegram,
+        cursor_store=store,
+        target_agent="architect",
+        allowed_chat_id=12345,
+        voice_feature_enabled=False,
+    )
+
+    assert not bot_instance.is_voice_enabled(12345)
+    kb = bot_instance._sticky_keyboard(12345)
+    labels = [btn["text"] for row in kb["keyboard"] for btn in row]
+    assert "🔇 Voice: OFF" not in labels
+    assert "🔊 Voice: ON" not in labels
+
+    reply = bot_instance.handle_voice_toggle(12345)
+    assert "Voice replies are not enabled for this tenant" in reply
+    assert not bot_instance.is_voice_enabled(12345)
+
+
+def test_telegram_bot_voice_toggle_and_menu_when_feature_enabled():
+    flock = DummyFlockClient()
+    telegram = DummyTelegramClient()
+    store = CursorStore()
+    bot_instance = TelegramBot(
+        flock_client=flock,
+        telegram_client=telegram,
+        cursor_store=store,
+        target_agent="architect",
+        allowed_chat_id=12345,
+        default_tts_voice="en-US-AvaNeural",
+        voice_feature_enabled=True,
+    )
+
+    assert not bot_instance.is_voice_enabled(12345)
+    assert bot_instance._voice_label(12345) == "🔇 Voice: OFF"
+    kb = bot_instance._sticky_keyboard(12345)
+    labels = [btn["text"] for row in kb["keyboard"] for btn in row]
+    assert "🔇 Voice: OFF" in labels
+
+    # Toggle ON via handle_voice_toggle
+    reply = bot_instance.handle_voice_toggle(12345)
+    assert "🔊 Voice replies enabled" in reply
+    assert "en-US-AvaNeural" in reply
+    assert bot_instance.is_voice_enabled(12345)
+    assert bot_instance._voice_label(12345) == "🔊 Voice: ON"
+
+    # Toggle OFF via text message "/voice"
+    reply = bot_instance.handle_text_message(12345, "/voice")
+    assert "🔇 Voice replies disabled" in reply
+    assert not bot_instance.is_voice_enabled(12345)
+
+    # Toggle ON via button text "🔇 Voice: OFF"
+    reply = bot_instance.handle_text_message(12345, "🔇 Voice: OFF")
+    assert "🔊 Voice replies enabled" in reply
+    assert bot_instance.is_voice_enabled(12345)
+
+    # Toggle OFF via callback query "vt"
+    bot_instance.handle_callback_query(12345, "cb_1", "vt")
+    assert not bot_instance.is_voice_enabled(12345)
+
+
+def test_telegram_bot_enrol_registers_voice_command():
+    flock = DummyFlockClient()
+    telegram = DummyTelegramClient()
+    store = CursorStore()
+    bot_instance = TelegramBot(flock_client=flock, telegram_client=telegram, cursor_store=store)
+    assert bot_instance.enrol() is True
+    assert len(telegram.commands_set) == 1
+    cmds = {c["command"]: c["description"] for c in telegram.commands_set[0]}
+    assert "menu" in cmds
+    assert "status" in cmds
+    assert "voice" in cmds
 
