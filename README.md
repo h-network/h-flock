@@ -16,12 +16,22 @@
 ![Agents](https://img.shields.io/badge/agents-claude_codex_agy-8B5CF6?style=flat-square)
 ![Tests](https://img.shields.io/badge/tests-303_passing-22C55E?style=flat-square)
 
-**A message bus for AI agents that live in terminals — and for the apps that talk to them. Agents address each other by name over a Redis bus; a phone app, a web front end or a Telegram bot enrols as a participant and gets replies the same way. One self-contained container.**
+**An office of AI agents (Claude, Codex, Gemini/Antigravity — mix freely) that hire
+into real terminals, pull tickets off a shared board, and coordinate with each
+other and with you — from a REST API, a Telegram bot, or a web console. One
+command runs the whole thing. One container is the whole deployment.**
 
 `./setup.sh` asks for the tenant and its agents. Each gets a tmux window, a home
-directory and one command — `office` — for everything it can do. Everything else
-is a switch: envelopes are forwarded by name, and nothing in the middle reads a
-payload.
+directory, and `office` — hire and retire colleagues live with no restart, hand
+out tickets, message anyone by name, and get nudged automatically when
+something's been sitting too long. A lead reviews and merges; nothing in the
+plumbing enforces that role, it's a convention every agent is told to follow —
+and the whole thing is durably logged as it happens, not reconstructed after
+the fact.
+
+Underneath, it's a switch: envelopes are forwarded by name, and nothing in the
+middle reads a payload. That discipline is *why* adding a phone app, a bot, or a
+new kind of colleague is one delivery routine, not a rewrite.
 
 [Quick start](#-quick-start) · [How it works](#️-how-it-works) · [Built by agents](#-built-by-an-office-of-agents) · [Build an app](#-build-an-app) · [Architecture](docs/HLD.md) · [API reference](docs/API.md)
 
@@ -31,17 +41,21 @@ payload.
 
 ## ✨ What it is
 
-- **🔀 A switch, not a framework.** Producers emit envelopes; the switch forwards
-  them by `recipient` and never opens one. Adding a new kind of participant is
-  writing **one delivery routine** — not changing the switch, the bus, or any
-  command.
-- **🏢 One container = one tenant.** Redis, the switch, a tmux server with one
+- **🏢 An office, not a framework.** Hire an agent, it gets a terminal and a
+  board. Give it a ticket, it pulls it when it's ready — nothing pushes work
+  onto a busy colleague. A lead hands out work and merges it; that's a role
+  written into every agent's guide, not a permission the system enforces.
+- **📱 Reachable from outside the terminal.** A Telegram bot ships with a real
+  menu — board overview, add a ticket, hire/retire, pause/resume, broadcast,
+  live-pushed alerts — built entirely against the same REST door any other app
+  would use. **No terminal scraping anywhere in the loop.**
+- **🔀 A switch underneath, not a framework.** Producers emit envelopes; the
+  switch forwards them by `recipient` and never opens one. Adding a new kind of
+  participant is **one delivery routine** — not changing the switch, the bus,
+  or any command.
+- **🏗️ One container = one tenant.** Redis, the switch, a tmux server with one
   window per agent, and two doors to the outside. Bring it up twice and it
   converges.
-- **📱 Apps are participants, not spectators.** A Telegram bot or a web console
-  enrols as a client, gets its own address and mailbox, and an agent replies to it
-  with the same command it uses for a colleague. **No terminal scraping anywhere
-  in the loop.**
 
 Boards, presence and activity, live terminals, accounts, adapters that are not
 daemons, and what gets logged: [`docs/HLD.md`](docs/HLD.md) has all of it, and
