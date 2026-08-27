@@ -1,4 +1,4 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 360" width="1200" height="360" role="img" aria-label="h-flock — a message bus for agents that live in terminals">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 360" width="1200" height="360" role="img" aria-label="h-flock — an office of AI agents that hire into real terminals and coordinate with each other and with you">
   <defs>
     <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
       <stop offset="0" stop-color="#0C1220"/>
@@ -24,7 +24,7 @@
 
   <!-- wordmark + tagline -->
   <text x="164" y="112" font-family="'Segoe UI', Helvetica, Arial, sans-serif" font-size="58" font-weight="800" fill="#F8FAFC">h-flock</text>
-  <text x="166" y="152" font-family="'Segoe UI', Helvetica, Arial, sans-serif" font-size="22" fill="#8FA8B0">A message bus for agents that live in terminals &#183; one container, one tenant</text>
+  <text x="166" y="152" font-family="'Segoe UI', Helvetica, Arial, sans-serif" font-size="22" fill="#8FA8B0">An office of AI agents in real terminals &#183; reachable by REST or Telegram</text>
 
   <!-- motif: any kind of participant on the same switch -->
   <g font-family="ui-monospace, 'SF Mono', Menlo, Consolas, monospace" font-size="15" font-weight="600">
