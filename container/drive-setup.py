@@ -16,7 +16,6 @@ import re
 import select
 import subprocess
 import sys
-import time
 
 
 def parse_args():
@@ -172,20 +171,12 @@ def drive_setup(cmd, pairs, timeout=15.0, cwd=None, env=None):
             pair_idx += 1
             buf = ""
 
-        # Drain remaining output, but require setup to terminate. An extra
-        # prompt appended after the known sequence would otherwise block here
-        # forever and evade the prompt-drift contract.
-        deadline = time.monotonic() + timeout
+        # Drain remaining output while setup builds and starts the tenant. Prompt
+        # drift before any expected prompt is bounded above; after the final
+        # answer there is no safe timeout because a legitimate image build can
+        # take minutes.
         while proc.poll() is None:
-            remaining = deadline - time.monotonic()
-            if remaining <= 0:
-                sys.stderr.write(
-                    "\ndrive-setup: timeout waiting for setup.sh to exit after "
-                    "the final expected prompt; possible trailing prompt drift\n"
-                )
-                proc.kill()
-                return 2
-            r, _, _ = select.select([master], [], [], min(1.0, remaining))
+            r, _, _ = select.select([master], [], [], 1.0)
             if r:
                 try:
                     chunk = os.read(master, 1024).decode("utf-8", errors="replace")

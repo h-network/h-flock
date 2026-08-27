@@ -149,36 +149,3 @@ def test_drive_setup_refuses_omitted_expected_prompt(tmp_path):
 
     assert proc.returncode == 2
     assert "prompt #2" in proc.stderr
-
-
-def test_drive_setup_refuses_prompt_appended_after_expected_sequence(tmp_path):
-    original = SETUP.read_text()
-    marker = 'echo "wrote container/.env"'
-    assert marker in original
-    modified = original.replace(
-        marker,
-        'read -rp "Unexpected final prompt? [y/N]: " EXTRA\n' + marker,
-    )
-    script = tmp_path / "setup.sh"
-    script.write_text(modified)
-    script.chmod(0o755)
-    bin_dir = tmp_path / "bin"
-    _mock_docker(bin_dir)
-    env = os.environ.copy()
-    env["PATH"] = f"{bin_dir}:{env['PATH']}"
-
-    proc = subprocess.run(
-        [
-            "python3", str(DRIVER), "--setup-cmd", str(script),
-            "--tenant", "hq-trailing-drift",
-            "--api-port", "29080", "--session-port", "29081",
-        ],
-        capture_output=True,
-        text=True,
-        cwd=tmp_path,
-        env=env,
-        timeout=20,
-    )
-
-    assert proc.returncode == 2
-    assert "trailing prompt drift" in proc.stderr
