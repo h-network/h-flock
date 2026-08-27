@@ -12,6 +12,26 @@ from flock.bus.envelope import advance_hop, header_record_fields, parse_for_swit
 from .retention import RetentionTrimmer
 from .windowlog import WindowLogTailer
 
+
+# Check every destination and append every copy in one Redis execution.  This
+# keeps both unicast admission and broadcast's all-or-none promise true while a
+# port is concurrently consuming ingress.
+_ADMIT_INGRESS = """
+-- flock ingress admission v1
+local limit = tonumber(ARGV[1])
+for index, key in ipairs(KEYS) do
+    local depth = redis.call('LLEN', key)
+    if depth >= limit then
+        return {0, index, depth}
+    end
+end
+local result = {1}
+for _, key in ipairs(KEYS) do
+    table.insert(result, redis.call('RPUSH', key, ARGV[2]))
+end
+return result
+"""
+
 # ⚠ activity, presence and verification are NOT here. They observe agents; the
 # watchdog owns them. What is left runs on the forwarding thread because it is
 # the switch's own housekeeping — the window spool it tails into its own stdout,
@@ -59,7 +79,6 @@ class Switch:
     def _dead_letter_full(
         self, sender: str, destination: str, raw, envelope: dict, depth: int
     ) -> None:
-        self.r.rpop(prefix(self.pod, self.tenant, destination, "ingress"))
         self.r.rpush(prefix(self.pod, self.tenant, sender, "dead"), raw)
         log_record(
             "switch",
@@ -70,9 +89,23 @@ class Switch:
             destination=destination,
             reason=(
                 f"ingress full for destination {destination!r}: "
-                f"depth {depth} exceeds INGRESS_MAX {self.ingress_max}"
+                f"depth {depth} has reached INGRESS_MAX {self.ingress_max}"
             ),
         )
+
+    def _admit(self, destinations: list[str], raw) -> tuple[bool, int, int]:
+        """Atomically admit all copies, or none; return rejection locus."""
+        keys = [
+            prefix(self.pod, self.tenant, agent, "ingress")
+            for agent in destinations
+        ]
+        result = self.r.eval(
+            _ADMIT_INGRESS, len(keys), *keys, self.ingress_max, raw
+        )
+        admitted = bool(result[0])
+        if admitted:
+            return True, -1, -1
+        return False, int(result[1]) - 1, int(result[2])
 
     @staticmethod
     def _kick(agent: str, envelope: dict) -> None:
@@ -155,25 +188,22 @@ class Switch:
         destination = envelope["l2"]["destination"]
         if destination == "all":
             recipients = sorted(self._agents() - {sender})
-            pipe = self.r.pipeline()
-            for agent in recipients:
-                pipe.rpush(prefix(self.pod, self.tenant, agent, "ingress"), raw)
+            if not recipients:
+                emit("switch", "forwarded", envelope, count=0)
+                return True
             try:
-                depths = pipe.execute()
+                admitted, _, depth = self._admit(recipients, raw)
             except Exception as exc:
                 emit(
                     "switch", "forward_unknown", envelope,
                     f"broadcast ingress write outcome UNKNOWN after {exc}",
                 )
                 raise
-            accepted = []
-            for agent, depth in zip(recipients, depths):
-                if depth > self.ingress_max:
-                    self._dead_letter_full(sender, agent, raw, envelope, depth)
-                else:
-                    accepted.append(agent)
-            emit("switch", "forwarded", envelope, count=len(accepted))
-            for agent in accepted:
+            if not admitted:
+                self._dead_letter_full(sender, "all", raw, envelope, depth)
+                return True
+            emit("switch", "forwarded", envelope, count=len(recipients))
+            for agent in recipients:
                 self._kick(agent, envelope)
             return True
         if not is_member(self.r, pod=self.pod, tenant=self.tenant, agent=destination):
@@ -181,14 +211,14 @@ class Switch:
             emit("switch", "dead_lettered", envelope, "destination is not in tenant roster")
             return True
         try:
-            depth = self.r.rpush(prefix(self.pod, self.tenant, destination, "ingress"), raw)
+            admitted, _, depth = self._admit([destination], raw)
         except Exception as exc:
             emit(
                 "switch", "forward_unknown", envelope,
                 f"ingress write outcome UNKNOWN after {exc}",
             )
             raise
-        if depth > self.ingress_max:
+        if not admitted:
             self._dead_letter_full(sender, destination, raw, envelope, depth)
             return True
         emit("switch", "forwarded", envelope)

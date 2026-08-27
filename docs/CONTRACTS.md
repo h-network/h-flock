@@ -292,6 +292,14 @@ The six successful-unicast custody records are a **set, not a sequence**. Join t
 before it emits `sent`, so a fast switch can emit `popped` before the source
 emits `sent` even though custody is correct.
 
+**Ingress admission is atomically count-bounded by `INGRESS_MAX`.** The switch
+checks capacity and appends in one Lua execution; it never rolls an over-limit
+append back with a later `RPOP`. Unicast admits its one copy or dead-letters it.
+A raw broadcast is all-or-none across its selected recipients: if any ingress is
+at the bound, none receive the frame, the sender retains one dead-letter with
+`destination: "all"`, and no recipient is kicked. A successful broadcast emits
+one `forwarded` with `count=N`.
+
 Events, in custody order (not guaranteed log or timestamp order):
 
 ```

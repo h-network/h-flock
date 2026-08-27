@@ -614,6 +614,19 @@ class FakeRespRedis:
             return fault
         self.calls.append(("eval", script, numkeys, keys_and_args))
         args = list(keys_and_args)
+        if "flock ingress admission v1" in script:
+            keys = args[:numkeys]
+            limit = int(args[numkeys])
+            raw = args[numkeys + 1]
+            for index, key in enumerate(keys, start=1):
+                depth = len(self.lists.get(key, []))
+                if depth >= limit:
+                    return [0, index, depth]
+            result = [1]
+            for key in keys:
+                self.lists.setdefault(key, []).append(raw)
+                result.append(len(self.lists[key]))
+            return result
         if numkeys == 2 and len(args) == 5:
             cause_key, roster_key, correlation_id, agent, agent_port_type = args
             self.values[cause_key] = correlation_id
