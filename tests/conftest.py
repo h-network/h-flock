@@ -627,6 +627,13 @@ class FakeRespRedis:
                 self.lists.setdefault(key, []).append(raw)
                 result.append(len(self.lists[key]))
             return result
+        if "flock ingress drain all v1" in script:
+            key = args[0]
+            lst = self.lists.get(key, [])
+            items = list(lst)
+            if key in self.lists:
+                del self.lists[key]
+            return items
         if numkeys == 2 and len(args) == 5:
             cause_key, roster_key, correlation_id, agent, agent_port_type = args
             self.values[cause_key] = correlation_id

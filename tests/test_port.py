@@ -8,7 +8,7 @@ import sys
 import tempfile
 import pytest
 from unittest.mock import patch, MagicMock
-from flock.port.openers import add_ticket_opener, message_opener, command_opener, get_tmux_windows
+from flock.port.openers import add_ticket_opener, message_opener, messages_opener, command_opener, get_tmux_windows
 from flock.port.send import main as cli_main
 from flock.port.deliver import run_port
 from flock.bus import DeadLetter, build as build_envelope, encode, parse, prefix, receive
@@ -590,3 +590,177 @@ def test_no_marker_for_a_window_running_no_cli(mock_run_tmux, mock_list_windows)
     message_opener(r, pod="acme", tenant="hq", agent="bob", envelope=env, session_name="hq")
 
     assert "pod:acme:tenant:hq:agent:bob:pending.verify" not in r.streams
+
+
+@patch("flock.port.deliver.redis.Redis.from_url")
+@patch("flock.port.openers.list_windows")
+@patch("flock.tmux.ops.run_tmux")
+def test_port_batches_consecutive_messages_into_single_paste(mock_run_tmux, mock_list_windows, mock_redis_cls, capsys):
+    mock_r = FakeRespRedis()
+    mock_redis_cls.return_value = mock_r
+    mock_list_windows.return_value = {"alice", "bob", "carol"}
+    mock_run_tmux.return_value = (0, "", "")
+
+    mock_r.set("pod:acme:tenant:hq:agent:bob:launch", "claude")
+    roster_key = "pod:acme:tenant:hq:roster"
+    mock_r.hset(roster_key, "bob", "tmux")
+
+    ingress_key = "pod:acme:tenant:hq:agent:bob:ingress"
+    env1 = build_envelope(kind="Message", source="alice", destination="bob", payload={"text": "first message"})
+    env2 = build_envelope(kind="Message", source="carol", destination="bob", payload={"text": "second message"})
+    env3 = build_envelope(kind="Message", source="alice", destination="bob", payload={"text": "third message"})
+    mock_r.rpush(ingress_key, encode(env1), encode(env2), encode(env3))
+
+    run_port(agent="bob", pod="acme", tenant="hq", session_name="hq")
+
+    # Ingress drained
+    assert len(mock_r.lists.get(ingress_key, [])) == 0
+
+    # Exactly 1 paste cycle
+    load_buffer_calls = [call for call in mock_run_tmux.call_args_list if "load-buffer" in call[0]]
+    assert len(load_buffer_calls) == 1
+    input_data = load_buffer_calls[0][1].get("input_data", "")
+    assert input_data == (
+        "[message from alice] first message\n"
+        "[message from carol] second message\n"
+        "[message from alice] third message\n"
+    )
+
+    # 3 pending.verify markers
+    verify_key = "pod:acme:tenant:hq:agent:bob:pending.verify"
+    assert len(mock_r.streams.get(verify_key, [])) == 3
+    verify_ids = [fields["stream_id"] for _, fields in mock_r.streams[verify_key]]
+    assert verify_ids == [env1["stream_id"], env2["stream_id"], env3["stream_id"]]
+
+    # Custody records: 3 received, 3 opened
+    records = [json.loads(line) for line in capsys.readouterr().out.splitlines()]
+    assert [r["event"] for r in records] == ["received", "received", "received", "opened", "opened", "opened"]
+    assert [r["stream_id"] for r in records] == [
+        env1["stream_id"], env2["stream_id"], env3["stream_id"],
+        env1["stream_id"], env2["stream_id"], env3["stream_id"],
+    ]
+
+
+@patch("flock.port.deliver.redis.Redis.from_url")
+@patch("flock.port.openers.list_windows")
+@patch("flock.tmux.ops.run_tmux")
+def test_port_preserves_order_with_interleaved_commands_and_tickets(mock_run_tmux, mock_list_windows, mock_redis_cls, capsys):
+    mock_r = FakeRespRedis()
+    mock_redis_cls.return_value = mock_r
+    mock_list_windows.return_value = {"architect", "bob"}
+    mock_run_tmux.return_value = (0, "", "")
+
+    roster_key = "pod:acme:tenant:hq:roster"
+    mock_r.hset(roster_key, "bob", "tmux")
+
+    ingress_key = "pod:acme:tenant:hq:agent:bob:ingress"
+    msg1 = build_envelope(kind="Message", source="architect", destination="bob", payload={"text": "msg1"})
+    msg2 = build_envelope(kind="Message", source="architect", destination="bob", payload={"text": "msg2"})
+    cmd1 = build_envelope(kind="Command", source="architect", destination="bob", payload={"text": "echo running"})
+    msg3 = build_envelope(kind="Message", source="architect", destination="bob", payload={"text": "msg3"})
+    ticket1 = build_envelope(kind="AddTicket", source="architect", destination="bob", payload={"title": "ticket1"})
+    msg4 = build_envelope(kind="Message", source="architect", destination="bob", payload={"text": "msg4"})
+    msg5 = build_envelope(kind="Message", source="architect", destination="bob", payload={"text": "msg5"})
+
+    mock_r.rpush(ingress_key, encode(msg1), encode(msg2), encode(cmd1), encode(msg3), encode(ticket1), encode(msg4), encode(msg5))
+
+    run_port(agent="bob", pod="acme", tenant="hq", session_name="hq")
+
+    # Check load-buffer inputs in order
+    load_buffer_calls = [call for call in mock_run_tmux.call_args_list if "load-buffer" in call[0]]
+    assert len(load_buffer_calls) == 4
+    # Call 1: batched msg1 + msg2
+    assert load_buffer_calls[0][1]["input_data"] == "[message from architect] msg1\n[message from architect] msg2\n"
+    # Call 2: cmd1
+    assert load_buffer_calls[1][1]["input_data"] == "echo running\n"
+    # Call 3: msg3
+    assert load_buffer_calls[2][1]["input_data"] == "[message from architect] msg3\n"
+    # Call 4: batched msg4 + msg5
+    assert load_buffer_calls[3][1]["input_data"] == "[message from architect] msg4\n[message from architect] msg5\n"
+
+    # Check ticket written to tasks.todo
+    todo_key = "pod:acme:tenant:hq:agent:bob:tasks.todo"
+    assert len(mock_r.lists.get(todo_key, [])) == 1
+    assert json.loads(mock_r.lists[todo_key][0])["title"] == "ticket1"
+
+
+@patch("flock.port.deliver.redis.Redis.from_url")
+@patch("flock.port.openers.list_windows")
+def test_port_batch_missing_window_dead_letters_all_envelopes(mock_list_windows, mock_redis_cls, capsys):
+    mock_r = FakeRespRedis()
+    mock_redis_cls.return_value = mock_r
+    mock_list_windows.return_value = {"architect"}  # bob is missing
+
+    roster_key = "pod:acme:tenant:hq:roster"
+    mock_r.hset(roster_key, "bob", "tmux")
+
+    ingress_key = "pod:acme:tenant:hq:agent:bob:ingress"
+    msg1 = build_envelope(kind="Message", source="architect", destination="bob", payload={"text": "m1"})
+    msg2 = build_envelope(kind="Message", source="architect", destination="bob", payload={"text": "m2"})
+    mock_r.rpush(ingress_key, encode(msg1), encode(msg2))
+
+    run_port(agent="bob", pod="acme", tenant="hq", session_name="hq")
+
+    dead_key = "pod:acme:tenant:hq:agent:bob:dead"
+    assert len(mock_r.lists.get(dead_key, [])) == 2
+
+    records = [json.loads(line) for line in capsys.readouterr().out.splitlines()]
+    assert [r["event"] for r in records] == ["received", "received", "dead_lettered", "dead_lettered"]
+    assert all(r["reason"] == "window_missing" for r in records if r["event"] == "dead_lettered")
+
+
+@patch("flock.port.deliver.redis.Redis.from_url")
+@patch("flock.port.openers.list_windows")
+@patch("flock.tmux.ops.run_tmux")
+def test_port_burst_repro_twenty_envelopes_batched_cleanly(mock_run_tmux, mock_list_windows, mock_redis_cls, capsys):
+    """Reconstructs the BURSTD001/BURSTZ003 burst scenario:
+    20 envelopes sent simultaneously into an agent.
+    All 20 are drained in one atomic snapshot, combined into one physical paste,
+    recording 20 received, 20 opened, and 20 verify markers with zero duplicates."""
+    mock_r = FakeRespRedis()
+    mock_redis_cls.return_value = mock_r
+    mock_list_windows.return_value = {"architect", "bob"}
+    mock_run_tmux.return_value = (0, "", "")
+
+    mock_r.set("pod:acme:tenant:hq:agent:bob:launch", "claude")
+    roster_key = "pod:acme:tenant:hq:roster"
+    mock_r.hset(roster_key, "bob", "tmux")
+
+    ingress_key = "pod:acme:tenant:hq:agent:bob:ingress"
+    envelopes = [
+        build_envelope(
+            kind="Message",
+            source="architect",
+            destination="bob",
+            payload={"text": f"BURSTD{i:03d} body"},
+        )
+        for i in range(1, 21)
+    ]
+    for i, env in enumerate(envelopes, 1):
+        env["stream_id"] = f"{i:032x}"
+    mock_r.rpush(ingress_key, *[encode(e) for e in envelopes])
+
+    run_port(agent="bob", pod="acme", tenant="hq", session_name="hq")
+
+    # Ingress drained
+    assert len(mock_r.lists.get(ingress_key, [])) == 0
+
+    # Exactly 1 paste call
+    load_buffer_calls = [call for call in mock_run_tmux.call_args_list if "load-buffer" in call[0]]
+    assert len(load_buffer_calls) == 1
+    input_data = load_buffer_calls[0][1].get("input_data", "")
+    for i in range(1, 21):
+        assert f"[message from architect] BURSTD{i:03d} body\n" in input_data
+
+    # 20 verify markers
+    verify_key = "pod:acme:tenant:hq:agent:bob:pending.verify"
+    assert len(mock_r.streams.get(verify_key, [])) == 20
+    marker_stream_ids = [fields["stream_id"] for _, fields in mock_r.streams[verify_key]]
+    assert marker_stream_ids == [e["stream_id"] for e in envelopes]
+
+    # 20 received + 20 opened = 40 records
+    records = [json.loads(line) for line in capsys.readouterr().out.splitlines()]
+    received_events = [r for r in records if r["event"] == "received"]
+    opened_events = [r for r in records if r["event"] == "opened"]
+    assert len(received_events) == 20
+    assert len(opened_events) == 20

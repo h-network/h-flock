@@ -117,6 +117,14 @@ opener never writes the dead list or emits a terminal record itself. Registering
 one is how a kind becomes deliverable; `LLD-port-tmux` §3 is the tmux
 implementation of one.
 
+⚠ **Port burst batching**: When `flock.port` wakes up, it atomically drains all
+currently queued envelopes from the agent's ingress queue via an atomic Lua script
+(`_DRAIN_INGRESS`). Consecutive `Message`-kind envelopes are concatenated into ONE
+combined bracketed paste in arrival order, executed under a single lock acquisition.
+Non-`Message` kinds (`Command`, `AddTicket`) are executed individually in arrival
+order. Every drained envelope retains its full custody record chain (`received`,
+`pending.verify` / `delivery.markers`, and `opened` per `stream_id`).
+
 ### `flock.tmux` — the shared window surface
 
 Frozen for the same reason as the bus library: the `tmux` lane implements it and

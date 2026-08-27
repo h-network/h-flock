@@ -79,6 +79,47 @@ def mark_delivery_pending(
         pass
 
 
+def messages_opener(
+    r,
+    pod: str,
+    tenant: str,
+    agent: str,
+    envelopes: list[dict],
+    session_name: str,
+    socket: str | None = None,
+) -> None:
+    if not envelopes:
+        return
+
+    windows = list_windows(session_name, socket=socket)
+    if agent not in windows:
+        raise DeadLetter("window_missing")
+
+    blocks = []
+    for envelope in envelopes:
+        source = envelope.get("l2", {}).get("source", "unknown")
+        payload = envelope.get("payload", {})
+        text = payload.get("text", "") if isinstance(payload, dict) else str(payload)
+        blocks.append(f"[message from {source}] {text}\n")
+
+    combined_msg = "".join(blocks)
+
+    # ⚠ Mark BEFORE pasting. The CLI records its input the instant the text is
+    # submitted, so a marker written afterwards can carry a later timestamp than
+    # the very event meant to confirm it — a sub-second race the comparison then
+    # loses. Measured: six deliveries all landed and five read unverified.
+    #
+    # Marking first costs nothing if the paste fails: the delivery genuinely did
+    # not happen, and unverified is the right answer.
+    for envelope in envelopes:
+        stream_id = envelope.get("stream_id", "")
+        corr_id = envelope.get("correlation_id")
+        mark_delivery_pending(r, pod, tenant, agent, stream_id, correlation_id=corr_id)
+
+    primary_stream_id = envelopes[0].get("stream_id", "")
+    paste_text(session_name, agent, combined_msg, stream_id=primary_stream_id, socket=socket)
+
+
 def message_opener(
     r,
     pod: str,
@@ -88,26 +129,15 @@ def message_opener(
     session_name: str,
     socket: str | None = None,
 ) -> None:
-    stream_id = envelope.get("stream_id", "")
-    corr_id = envelope.get("correlation_id")
-    source = envelope.get("l2", {}).get("source", "unknown")
-    payload = envelope.get("payload", {})
-
-    windows = list_windows(session_name, socket=socket)
-    if agent not in windows:
-        raise DeadLetter("window_missing")
-
-    text = payload.get("text", "")
-    formatted_msg = f"[message from {source}] {text}\n"
-    # ⚠ Mark BEFORE pasting. The CLI records its input the instant the text is
-    # submitted, so a marker written afterwards can carry a later timestamp than
-    # the very event meant to confirm it — a sub-second race the comparison then
-    # loses. Measured: six deliveries all landed and five read unverified.
-    #
-    # Marking first costs nothing if the paste fails: the delivery genuinely did
-    # not happen, and unverified is the right answer.
-    mark_delivery_pending(r, pod, tenant, agent, stream_id, correlation_id=corr_id)
-    paste_text(session_name, agent, formatted_msg, stream_id=stream_id, socket=socket)
+    messages_opener(
+        r=r,
+        pod=pod,
+        tenant=tenant,
+        agent=agent,
+        envelopes=[envelope],
+        session_name=session_name,
+        socket=socket,
+    )
 
 
 def command_opener(

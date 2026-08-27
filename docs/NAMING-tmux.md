@@ -48,27 +48,26 @@ Tier A is documentation, B internal code, C Redis/environment, and D wire.
 
 | name | where it lives | kind | what it means, in one line | networking analogue, if any | tier |
 |---|---|---|---|---|---|
-| `port` | `src/flock/port/send.py:9`, `src/flock/port/deliver.py:165` | doc term | Names both outbound agent sending and inbound per-envelope delivery—opposite sides of the switch. | Two different NIC directions collapsed into one component name. | B |
+| `port` | `src/flock/port/send.py:9`, `src/flock/port/deliver.py:265` | doc term | Names both outbound agent sending and inbound per-envelope delivery—opposite sides of the switch. | Two different NIC directions collapsed into one component name. | B |
 | `send` CLI | `src/flock/port/send.py:5` | identifier | Agent-facing command that constructs an envelope and writes its own egress. | Transmit-side NIC operation. | B |
-| `run_port` | `src/flock/port/deliver.py:165` | identifier | Acquires per-agent serialization, delivers one ingress envelope, and exits. | Receive-side port service. | B |
-| `deliver_one` | `src/flock/port/deliver.py:76` | identifier | Dispatches one destination ingress item according to its port_type. | Frame delivery to a selected port type. | B |
-| `deliver_api` | `src/flock/port/deliver.py:25` | identifier | Moves one ingress envelope to an enrolled client's mailbox stream. | Delivery to a different port medium. | B |
-| `deliver_unroutable` | `src/flock/port/deliver.py:51` | identifier | Pops and dead-letters an envelope whose port_type has no implementation. | Unsupported-port drop. | B |
-| `opener` | `src/flock/port/deliver.py:148` | doc term | Kind-specific callable whose normal return means an envelope was opened. | Ethertype handler. | B |
-| `message_opener` | `src/flock/port/openers.py:76` | identifier | Terminal action selected for a `Message`. | Protocol handler. | B |
-| `command_opener` | `src/flock/port/openers.py:107` | identifier | Terminal action selected for a `Command`. | Protocol handler. | B |
-| `add_ticket_opener` | `src/flock/port/openers.py:138` | identifier | Board action selected for an `AddTicket`. | Protocol handler. | B |
+| `run_port` | `src/flock/port/deliver.py:265` | identifier | Acquires per-agent serialization, delivers one ingress envelope, and exits. | Receive-side port service. | B |
+| `deliver_one` | `src/flock/port/deliver.py:112` | identifier | Dispatches one destination ingress item according to its port_type. | Frame delivery to a selected port type. | B |
+| `deliver_api` | `src/flock/port/deliver.py:58` | identifier | Moves one ingress envelope to an enrolled client's mailbox stream. | Delivery to a different port medium. | B |
+| `deliver_unroutable` | `src/flock/port/deliver.py:88` | identifier | Pops and dead-letters an envelope whose port_type has no implementation. | Unsupported-port drop. | B |
+| `messages_opener` / `message_opener` | `src/flock/port/openers.py:82`, `src/flock/port/openers.py:119` | identifier | Terminal action selected for a `Message` (batched or single). | Protocol handler. | B |
+| `command_opener` | `src/flock/port/openers.py:144` | identifier | Terminal action selected for a `Command`. | Protocol handler. | B |
+| `add_ticket_opener` | `src/flock/port/openers.py:175` | identifier | Board action selected for an `AddTicket`. | Protocol handler. | B |
 | `opened` | `src/flock/bus/doors.py:143` | doc term | Terminal outcome meaning an opener completed, not proof a human/CLI consumed it. | Accepted by destination handler, not delivery acknowledgement. | A |
-| `delivering` | `src/flock/port/deliver.py:177` | redis key | Tenant hash serving as a per-agent mutual-exclusion/busy tag. | Per-port transmit lock. | C |
-| `paused` | `src/flock/port/deliver.py:84` | redis key | Marker that leaves ingress queued rather than opening it. | Administratively down port. | C |
-| `pending.verify` | `src/flock/port/openers.py:44` | redis key | Stream of pasted deliveries awaiting out-of-band activity judgment. | Delivery telemetry awaiting observation. | C |
-| `delivery.markers` | `src/flock/port/openers.py:45` | redis key | Bounded stream used to correlate later token usage heuristically with the delivery that prompted it. | Receive-side accounting join marker. | C |
+| `delivering` | `src/flock/port/deliver.py:277` | redis key | Tenant hash serving as a per-agent mutual-exclusion/busy tag. | Per-port transmit lock. | C |
+| `paused` | `src/flock/port/deliver.py:120` | redis key | Marker that leaves ingress queued rather than opening it. | Administratively down port. | C |
+| `pending.verify` | `src/flock/port/openers.py:50` | redis key | Stream of pasted deliveries awaiting out-of-band activity judgment. | Delivery telemetry awaiting observation. | C |
+| `delivery.markers` | `src/flock/port/openers.py:51` | redis key | Bounded stream used to correlate later token usage heuristically with the delivery that prompted it. | Receive-side accounting join marker. | C |
 | `VERIFY_AFTER_SECONDS` | `src/flock/watchdog/service.py:386` | env var | Minimum marker age before the watchdog judges delivery verification; defaults to 120 seconds. | Observation-window threshold. | C |
-| `VERIFIABLE_CLIS` | `src/flock/port/openers.py:15` | identifier | Allowlist of CLI implementations whose session files can confirm input. | Observable port types. | B |
-| `inbox` | `src/flock/port/deliver.py:32` | redis key | Resumable mailbox stream for a `port_type: api` participant. | Receive buffer on an application port. | C |
-| `dead` | `src/flock/port/deliver.py:63` | redis key | Retained list of envelopes that could not be opened. | Dead-letter/drop queue. | C |
-| `ingress` | `src/flock/port/deliver.py:59` | redis key | Recipient-side queue from which delivery pops. | Ingress queue. | C |
-| `_CatchAllDict` | `src/flock/port/deliver.py:10` | identifier | Mapping facade that makes every kind openable for API mailboxes. | Promiscuous protocol handler. | B |
+| `VERIFIABLE_CLIS` | `src/flock/port/openers.py:21` | identifier | Allowlist of CLI implementations whose session files can confirm input. | Observable port types. | B |
+| `inbox` | `src/flock/port/deliver.py:67` | redis key | Resumable mailbox stream for a `port_type: api` participant. | Receive buffer on an application port. | C |
+| `dead` | `src/flock/port/deliver.py:66` | redis key | Retained list of envelopes that could not be opened. | Dead-letter/drop queue. | C |
+| `ingress` | `src/flock/port/deliver.py:65` | redis key | Recipient-side queue from which delivery pops. | Ingress queue. | C |
+| `_CatchAllDict` | `src/flock/port/deliver.py:43` | identifier | Mapping facade that makes every kind openable for API mailboxes. | Promiscuous protocol handler. | B |
 
 ## `flock.control`
 

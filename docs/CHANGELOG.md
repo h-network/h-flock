@@ -11,6 +11,12 @@
 
 ---
 
+## 2026-08-27 — port snapshot-drains ingress atomically and batches consecutive Message deliveries into one paste
+
+`flock.port` now snapshot-drains all queued envelopes from an agent's ingress queue via an atomic Redis Lua script (`_DRAIN_INGRESS`) upon acquiring the delivering lock. Consecutive `Message`-kind envelopes are concatenated into ONE combined bracketed paste in arrival order (`[message from X] text\n` per block) under a single lock acquisition. Non-`Message` kinds (`Command`, `AddTicket`) remain unbatched and are executed individually in arrival order. Full custody record provenance (`received`, `opened`, `pending.verify` / `delivery.markers`) is preserved per `stream_id`.
+
+**What this made false:** that `flock.port` pops only a single envelope per invocation, requiring N sequential paste-and-Enter lock cycles for an N-envelope burst. That assumption allowed subsequent paste-Enter cycles to race a CLI still processing earlier input, producing duplicate submissions or coalesced/vanished turns (`BURSTD001` / `BURSTZ003` in TODO.md).
+
 ## 2026-08-27 — the watchdog can also message the lead for a ticket parked too long on `hold`
 
 Third rule in the doing/todo-duration family. Any ticket in an agent's
