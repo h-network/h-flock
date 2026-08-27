@@ -404,19 +404,22 @@ to check before assigning and hold work rather than repair.
 
 ⚠ **One exception exists, and it is scoped to the lead alone.** A ticket
 sitting in `doing` past `WATCHDOG_DOING_ALERT_SEC` (default 15 minutes,
-`LLD-watchdog` §2a), or a ticket sitting unpicked in `todo` past
-`WATCHDOG_TODO_ALERT_SEC` (default 5 minutes, `LLD-watchdog` §2b), is pasted
-straight into the lead's pane — `office send`'s path, not the alerts stream.
-Every reason above for never messaging an agent is about the *agent doing (or
-not yet doing) the work*: telling it something is wrong invites it to "fix"
-the report instead of the problem, and the paste itself would erase the
-evidence it just delivered. **None of that applies to the lead**, because the
-lead is not the thing being observed — the ticket's agent is. A message to the
-lead cannot reset the ticket's own silence timer, nor make an unpicked ticket
-look picked; only a message to the *named agent* could do either, and neither
-alert is ever sent there. So the "reports, never repairs" boundary holds
-exactly as before: the watchdog still does not tell the affected agent
-anything, still does not repair, and still only widens what a human can see.
+`LLD-watchdog` §2a), a ticket sitting unpicked in `todo` past
+`WATCHDOG_TODO_ALERT_SEC` (default 5 minutes, `LLD-watchdog` §2b), or a ticket
+parked on `hold` past `WATCHDOG_HOLD_ALERT_SEC` (default 60 minutes,
+`LLD-watchdog` §2c), is pasted straight into the lead's pane — `office
+send`'s path, not the alerts stream. Every reason above for never messaging an
+agent is about the *agent doing (or not yet doing, or having paused) the
+work*: telling it something is wrong invites it to "fix" the report instead of
+the problem, and the paste itself would erase the evidence it just delivered.
+**None of that applies to the lead**, because the lead is not the thing being
+observed — the ticket's agent is. A message to the lead cannot reset the
+ticket's own silence timer, make an unpicked ticket look picked, or make a
+held one look resumed; only a message to the *named agent* could do any of
+those, and none of the three alerts is ever sent there. So the "reports, never
+repairs" boundary holds exactly as before: the watchdog still does not tell
+the affected agent anything, still does not repair, and still only widens what
+a human can see.
 
 The reason it is the lead and not some other participant is the section right
 below, "Why there is a lead at all": `lead` is the one address in the roster

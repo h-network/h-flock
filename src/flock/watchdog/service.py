@@ -74,6 +74,7 @@ class Watchdog:
         credential_warn_days: int = 7,
         doing_alert_seconds: float = 900,
         todo_alert_seconds: float = 300,
+        hold_alert_seconds: float = 3600,
         home_root: str | Path = "/home/ubuntu",
     ):
         self.r = r
@@ -87,6 +88,7 @@ class Watchdog:
         self.credential_warn_days = credential_warn_days
         self.doing_alert_seconds = doing_alert_seconds
         self.todo_alert_seconds = todo_alert_seconds
+        self.hold_alert_seconds = hold_alert_seconds
         self.home_root = Path(home_root)
         self._reported_blocks: set[tuple[str, str, str]] = set()
 
@@ -385,6 +387,69 @@ class Watchdog:
             if stale:
                 self.r.hdel(state_key, *stale)
 
+    def _check_hold_duration(self, agents: list[str], now: datetime) -> None:
+        """Tell the lead directly when a ticket has sat on `hold` too long.
+
+        Third rule in the family, same delivery and dedup shape as
+        `_check_todo_duration` — `hold`, like `todo`, is not a one-ticket slot,
+        so `hold.alerted` is a HASH keyed by ticket id too.
+
+        The threshold is deliberately longer than `doing`'s or `todo`'s: a
+        hold is often a legitimate wait on something external, and the point
+        is not to nag an agent for parking work sensibly. It exists to force
+        a decision on a hold that has sat long enough to stop looking like a
+        wait and start looking like abandonment — at which point the ticket
+        probably belongs cancelled or deleted, not indefinitely held.
+        """
+        lead = self._lead()
+        if not lead:
+            return
+        for agent in agents:
+            state_key = prefix(self.pod, self.tenant, agent, "hold.alerted")
+            raw_tickets = self.r.lrange(prefix(self.pod, self.tenant, agent, "tasks.hold"), 0, -1)
+            present_ids = set()
+            for raw in raw_tickets:
+                try:
+                    ticket = json.loads(_text(raw))
+                except (TypeError, json.JSONDecodeError):
+                    continue
+                if not isinstance(ticket, dict) or not isinstance(ticket.get("title"), str):
+                    continue
+                ticket_id = ticket.get("id")
+                if not isinstance(ticket_id, str) or not ticket_id:
+                    continue
+                present_ids.add(ticket_id)
+                # A ticket held before `held_ts` existed (or by an older
+                # client) has nothing there yet; `office list`'s own
+                # `_ticket_age` falls back to `created_ts` for the same
+                # reason — "how long has this sat" over showing nothing.
+                held = _timestamp(ticket.get("held_ts")) or _timestamp(ticket.get("created_ts"))
+                if held is None:
+                    continue
+                hold_age = int((now - held).total_seconds())
+                if hold_age < self.hold_alert_seconds:
+                    continue
+
+                # Re-alert once per threshold crossing, same rule as the other two.
+                multiple = int(hold_age // self.hold_alert_seconds)
+                previous = _text(self.r.hget(state_key, ticket_id))
+                if previous is not None and previous.isdigit() and int(previous) >= multiple:
+                    continue
+
+                minutes = hold_age // 60
+                text = (
+                    f'[alert from watchdog] {agent} has had '
+                    f'"{ticket["title"]}" on hold for {minutes} min'
+                )
+                self._notify_lead(lead, text)
+                self.r.hset(state_key, ticket_id, str(multiple))
+
+            # A ticket taken off hold, cancelled or deleted leaves `hold` and
+            # its crossing count is no longer meaningful.
+            stale = {_text(field) for field in (self.r.hkeys(state_key) or [])} - present_ids
+            if stale:
+                self.r.hdel(state_key, *stale)
+
     def poll(self, *, now: datetime | None = None) -> None:
         now = (now or datetime.now(timezone.utc)).astimezone(timezone.utc)
         agents = self._agents()
@@ -409,6 +474,10 @@ class Watchdog:
             self._check_todo_duration(agents, now)
         except Exception as exc:
             self._error("todo_duration", exc)
+        try:
+            self._check_hold_duration(agents, now)
+        except Exception as exc:
+            self._error("hold_duration", exc)
 
     def _credential_accounts(self) -> list[tuple[str, str, Path]]:
         """Return each CLI account used by an enrolled terminal agent once."""
@@ -548,6 +617,7 @@ def main() -> None:
         credential_warn_days=int(os.environ.get("WATCHDOG_CREDENTIAL_WARN_DAYS", "7")),
         doing_alert_seconds=float(os.environ.get("WATCHDOG_DOING_ALERT_SEC", "900")),
         todo_alert_seconds=float(os.environ.get("WATCHDOG_TODO_ALERT_SEC", "300")),
+        hold_alert_seconds=float(os.environ.get("WATCHDOG_HOLD_ALERT_SEC", "3600")),
     )
     # ⚠ These three moved out of the switch's forwarding loop. They observe
     # agents — CLI transcripts, presence, whether a paste was followed by input

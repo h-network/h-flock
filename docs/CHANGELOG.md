@@ -11,6 +11,24 @@
 
 ---
 
+## 2026-08-27 — the watchdog can also message the lead for a ticket parked too long on `hold`
+
+Third rule in the doing/todo-duration family. Any ticket in an agent's
+`tasks.hold` past `WATCHDOG_HOLD_ALERT_SEC` (default 3600s/60m) now pastes
+`[alert from watchdog] <agent> has had "<title>" on hold for <N> min` into the
+tenant `lead`'s pane, via the same `_notify_lead` path the other two use.
+Threshold is deliberately an hour, not minutes — `hold` is often a legitimate
+external wait, and the rule exists to force a decision on one that has sat
+long enough to look like abandonment, not to nag ordinary short holds.
+
+**What this made false:** HLD §8c's and LLD-watchdog §4/§7 invariant 6's
+lead-only exception, previously worded to cover two rules, now covers three.
+
+New per-agent key `<prefix>:agent:<name>:hold.alerted`, a HASH keyed by
+ticket id (same shape as `todo.alerted`, for the same reason: `tasks.hold`
+is not a one-ticket slot). `held_ts` falls back to `created_ts` when absent,
+matching `office list`'s own `_ticket_age` precedent for `hold`.
+
 ## 2026-08-27 — entrypoint validates segment format upfront and reconciles custody log permissions
 
 `container/entrypoint.sh` now validates `POD`, `TENANT`, and `AGENTS` against segment rules (`^[a-z0-9][a-z0-9-]{0,62}$`, non-all-digits, non-reserved) before starting Redis, failing fast with a clear error if invalid names (e.g. uppercase letters) are configured. Additionally, `entrypoint.sh` reconciles ownership and permissions on `FLOCK_CUSTODY_FILE` and its parent directory at startup (repairing permissions carried over from `cp -r` / cloned deployments or root mounts) and fails fast if the custody file is unwritable.
