@@ -109,7 +109,7 @@ def test_drive_setup_against_real_setup_sh(tmp_path):
 
 
 def test_drive_setup_aborts_on_prompt_drift(tmp_path):
-    """When setup.sh inserts an unexpected prompt, drive-setup.py fails immediately with mismatch."""
+    """An inserted prompt is recognized and refused without waiting for timeout."""
     bin_dir = tmp_path / "bin"
     _mock_docker(bin_dir)
 
@@ -131,8 +131,9 @@ def test_drive_setup_aborts_on_prompt_drift(tmp_path):
         "--tenant", "hq-drift",
     ]
     proc = subprocess.run(cmd, capture_output=True, text=True, cwd=tmp_path, env=env)
-    assert proc.returncode != 0
-    assert "timeout" in proc.stderr.lower() or "failed matching prompt" in proc.stderr.lower() or "unexpected" in proc.stderr.lower()
+    assert proc.returncode == 2
+    assert "unexpected prompt before prompt #1" in proc.stderr
+    assert "Extra unexpected prompt? [y/N]:" in proc.stderr
 
 
 def test_drive_setup_refuses_omitted_expected_prompt(tmp_path):
@@ -149,3 +150,39 @@ def test_drive_setup_refuses_omitted_expected_prompt(tmp_path):
 
     assert proc.returncode == 2
     assert "prompt #2" in proc.stderr
+
+
+def test_drive_setup_refuses_unexpected_trailing_prompt(tmp_path):
+    bin_dir = tmp_path / "bin"
+    _mock_docker(bin_dir)
+    env = os.environ.copy()
+    env["PATH"] = f"{bin_dir}:{env['PATH']}"
+
+    marker = 'echo "wrote container/.env"'
+    original = SETUP.read_text()
+    assert marker in original
+    modified = original.replace(
+        marker,
+        'read -rp "Unexpected final choice? [y/N]: " EXTRA\n' + marker,
+    )
+    script = tmp_path / "setup.sh"
+    script.write_text(modified)
+    script.chmod(0o755)
+    shutil.copytree(ROOT / "container", tmp_path / "container")
+
+    proc = subprocess.run(
+        [
+            "python3", str(DRIVER), "--setup-cmd", str(script),
+            "--tenant", "hq-trailing-drift",
+            "--api-port", "29080", "--session-port", "29081",
+        ],
+        capture_output=True,
+        text=True,
+        cwd=tmp_path,
+        env=env,
+        timeout=10,
+    )
+
+    assert proc.returncode == 2
+    assert "unexpected trailing prompt" in proc.stderr
+    assert "Unexpected final choice? [y/N]:" in proc.stderr
