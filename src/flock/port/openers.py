@@ -148,6 +148,12 @@ def add_ticket_opener(
     source = envelope.get("l2", {}).get("source", "unknown")
     payload = envelope.get("payload", {})
 
+    def _related(source_dict) -> list[str]:
+        # Stored, never validated: a related id may live on another agent's
+        # board entirely, and this opener has no cross-board lookup.
+        raw = source_dict.get("related") if isinstance(source_dict, dict) else None
+        return [value for value in raw if isinstance(value, str)] if isinstance(raw, list) else []
+
     if isinstance(payload, dict) and "v" in payload and "id" in payload:
         ticket_obj = payload
     elif isinstance(payload, dict) and "id" in payload:
@@ -163,6 +169,9 @@ def add_ticket_opener(
             "done_ts": payload.get("done_ts", ""),
             "priority": payload.get("priority", "normal"),
         }
+        related = _related(payload)
+        if related:
+            ticket_obj["related"] = related
     else:
         title = payload.get("title", "") if isinstance(payload, dict) else str(payload)
         description = payload.get("description", "") if isinstance(payload, dict) else ""
@@ -181,6 +190,9 @@ def add_ticket_opener(
             "done_ts": "",
             "priority": priority,
         }
+        related = _related(payload)
+        if related:
+            ticket_obj["related"] = related
 
     todo_key = prefix(pod, tenant, agent=agent, resource="tasks.todo")
     try:

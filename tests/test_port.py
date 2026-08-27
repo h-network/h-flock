@@ -180,6 +180,48 @@ def test_add_ticket_opener_writes_v1_ticket(mock_run_tmux, mock_list_windows):
 
 
 @patch("flock.port.openers.list_windows")
+@patch("flock.tmux.ops.run_tmux")
+def test_add_ticket_opener_stores_related_and_drops_non_strings(mock_run_tmux, mock_list_windows):
+    mock_list_windows.return_value = {"architect", "backend"}
+    mock_run_tmux.return_value = (0, "", "")
+
+    r = FakeRespRedis()
+    env = build_envelope(
+        kind="AddTicket",
+        source="architect",
+        destination="backend",
+        payload={"title": "follow-up", "related": ["abc12345", "def67890", 42, None]},
+    )
+
+    add_ticket_opener(r, pod="acme", tenant="hq", agent="backend", envelope=env, session_name="hq")
+
+    todo_key = "pod:acme:tenant:hq:agent:backend:tasks.todo"
+    ticket_data = json.loads(r.lists[todo_key][0])
+    assert ticket_data["related"] == ["abc12345", "def67890"]
+
+
+@patch("flock.port.openers.list_windows")
+@patch("flock.tmux.ops.run_tmux")
+def test_add_ticket_opener_omits_related_when_absent(mock_run_tmux, mock_list_windows):
+    mock_list_windows.return_value = {"architect", "backend"}
+    mock_run_tmux.return_value = (0, "", "")
+
+    r = FakeRespRedis()
+    env = build_envelope(
+        kind="AddTicket",
+        source="architect",
+        destination="backend",
+        payload={"title": "no relations"},
+    )
+
+    add_ticket_opener(r, pod="acme", tenant="hq", agent="backend", envelope=env, session_name="hq")
+
+    todo_key = "pod:acme:tenant:hq:agent:backend:tasks.todo"
+    ticket_data = json.loads(r.lists[todo_key][0])
+    assert "related" not in ticket_data
+
+
+@patch("flock.port.openers.list_windows")
 def test_add_ticket_opener_writes_when_window_is_missing(mock_list_windows, capsys):
     mock_list_windows.return_value = {"architect"}
     r = FakeRespRedis()
