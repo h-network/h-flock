@@ -636,6 +636,21 @@ front end and a Telegram wrapper are each a roster row and a mailbox — nothing
 else. `StopAgent` on one removes the row and **purges the client's classified
 identity state**, retaining its mailbox and other data and touching no tmux.
 
+⚠ **`hmac_secret`/`kid`/`revoke_kid` only apply to `port_type: "api"`.** The
+secret is client-generated and handed to control in the same `StartAgent`,
+never minted server-side — `StartAgent` is fire-and-forget with no
+synchronous return path (`LLD-bus-and-switch` §3.3), so control has nothing
+to hand a generated secret back over. Stored in the clear in
+`agent:<name>:hmac-keys` (a hash keyed by `kid`): HMAC verification needs the
+same secret on both sides, so a stored digest could never reproduce a
+matching signature. Enforced only at `flock.api` when the door is published
+(`LLD-api` §3, §6) — loopback-only, nothing reads this state at all. A
+repeated `StartAgent` with a new `kid` **adds** a key rather than replacing
+one, so an old and new key validate concurrently during rotation;
+`revoke_kid` removes one explicitly. `StopAgent`'s generic `AGENT_STATE_RESOURCES`
+purge covers `hmac-keys` the same as every other per-agent state resource —
+no special-cased teardown.
+
 ⚠ **Clients are hidden from an agent's *view*, not from its inbox.** Precisely:
 
 - `office peers` and `office broadcast` select `port_type == "tmux"`, so a client is in

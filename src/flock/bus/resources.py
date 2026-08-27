@@ -24,6 +24,7 @@ AGENT_STATE_RESOURCES = frozenset(
         "usage.attributed",
         "tags",
         "resume",
+        "hmac-keys",
     }
 )
 

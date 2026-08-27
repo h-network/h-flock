@@ -86,6 +86,56 @@ A POST request can specify `"as": "<client>"` to declare its source identity.
 `as` is validated against the roster — it must name an enrolled agent with port_type `api`.
 When omitted, `source` defaults to `"api"`.
 
+⚠ **Loopback-only, that declaration is all it is.** The container is the trust
+boundary there, and the shared `API_TOKEN` is what everyone inside it already
+holds — a signature would authenticate a claim nobody needed to forge
+(`docs/TODO.md` "security: what is left after build 36"). **Published**
+(`API_PUBLISHED=1`, set by `entrypoint.sh` when the door has a host mapping —
+`LLD-container` §3.1) that stops being true: a caller with the token is no
+longer necessarily a colleague sharing the container. When published, using
+`"as"` also requires `"kid"` and `"sig"`:
+
+```json
+POST /agents/policy/envelopes
+{"kind": "MessageReceived", "payload": {...}, "as": "telegram",
+ "kid": "telegram-2026-08", "sig": "<hex hmac-sha256>"}
+```
+
+`sig` is HMAC-SHA256, keyed by the secret registered for `(as, kid)`, over the
+JSON envelope with `sig` itself removed and the remaining keys canonicalised
+(`sort_keys=True, separators=(",", ":")`) — `kid` is covered by the signature,
+so a valid signature cannot be replayed under a different declared key. A
+missing or non-verifying signature is `401 Unauthorized`. Requests that omit
+`"as"` (the default `"api"` identity) are unaffected either way — this closes
+the specific gap named in `docs/TODO.md`, not a general requirement to sign
+every request.
+
+**Provisioning a key is self-service, not server-minted.** `StartAgent` is
+fire-and-forget (§4 below) — control has no synchronous channel to hand a
+generated secret back to whoever asked. So the enrolling client generates its
+own secret and includes it in the same `StartAgent` it already sends to
+enrol (`clients/telegram/bot.py` does this today):
+
+```json
+{"kind": "StartAgent",
+ "payload": {"agent": "telegram", "port_type": "api",
+             "hmac_secret": "<32+ bytes, client-generated>", "kid": "telegram-2026-08"}}
+```
+
+Stored in the clear in Redis (`agent:<name>:hmac-keys`, a hash keyed by
+`kid`) — not hashed. HMAC verification recomputes the MAC from the same
+secret on both sides; a stored digest could never reproduce a matching
+signature, so this is inherent to symmetric HMAC, not a shortcut. `kid`/
+`hmac_secret` are optional on every `StartAgent`: loopback-only clients never
+need to supply them, and nothing about enrolment changes if they don't.
+
+**Rotation is explicit add/revoke, not a timer.** A repeated `StartAgent`
+with a new `kid`+`hmac_secret` adds a key alongside any existing ones — both
+validate concurrently, which is the overlap window. `"revoke_kid": "<kid>"`
+on the same kind removes one. Both can be sent together to rotate in one
+call. `StopAgent` purges the whole `hmac-keys` hash for that client, same as
+every other per-agent state resource.
+
 ⚠ **Payload size limit:** Envelopes submitted to `POST /agents/{agent}/envelopes` are bounded at **1 MB (1,048,576 bytes)**. Envelopes exceeding 1 MB are rejected immediately with HTTP `422 Unprocessable Content`.
 
 ⚠ **The api must not know what kinds exist.** It builds an envelope and writes
@@ -171,6 +221,22 @@ nothing sets the variable and the bind is the exposure. See `LLD-container` §3.
 
 ⚠ **Operator Action Log vs Direct API Token Traffic**: The web console server maintains `audit.jsonl` as an **Operator Action Log** recording operations performed through the web proxy. Requests hitting `flock.api` directly using an `API_TOKEN` bypass the web proxy and do not appear in `audit.jsonl`; direct API envelope submissions are tracked in bus/port stdout logs and agent activity streams (`GET /agents/{agent}/activity`).
 
+⚠ **`API_PUBLISHED`**: set to `1` by `entrypoint.sh`, not read from `container/.env`
+directly. `API_BIND` cannot carry this signal — the image hardcodes it to
+`0.0.0.0` (`container/Dockerfile`), so it is always non-loopback *inside* the
+container whether or not the door has a host mapping, the same fact §6's
+`FLOCK_ALLOW_PLAINTEXT` paragraph already describes for TLS. `entrypoint.sh`
+computes "published" once, from `API_HOST`, at the same point it judges TLS,
+and exports the answer rather than making the process re-derive it from a bind
+that cannot tell it. Loopback-only tenants never see it set: per-client HMAC
+(§3) and CORS below are both off entirely, unconditionally, in that case.
+
+⚠ **CORS**: added only when `API_PUBLISHED=1`, and only for origins listed in
+`API_CORS_ORIGINS` (comma-separated). Unset or empty — including the entire
+loopback-only default — allows no origin; a published door does not get a
+wildcard by default, the operator names each one. `GET` and `POST` only,
+`Authorization` and `Content-Type` headers.
+
 ## 7. Return path & deferred items
 
 **Handing a reply back to the client that caused it — resolved in Build 12.** Of the
@@ -197,7 +263,13 @@ the switch design (`LLD-bus-and-switch` §1).
 terminal output and keystrokes are a different transport on a different port,
 and nothing about the REST surface is designed around them.
 
-**Per-client identity.** One shared token now (with `as` validated against the roster).
+**Per-client identity — resolved for the published case.** One shared bearer
+token still gates the door either way. Loopback-only, `as` remains a
+declaration checked against the roster, same as always — the container is the
+trust boundary and a signature would authenticate a claim nobody needed to
+forge. Published, `as` additionally requires a per-client HMAC (`kid`/`sig`,
+§3) verified against a secret the client supplied at enrolment — see §3 for
+provisioning and rotation.
 
 **TLS — resolved in Build 36.** Configured via `API_TLS_CERT` and `API_TLS_KEY`. A non-loopback `API_BIND` without TLS configured refuses to serve.
 

@@ -93,6 +93,7 @@ Authorization: Bearer <API_TOKEN>
 ```
 
 - **Shared Token Security:** The API token is shared per tenant. Declared application names (e.g. `as: "telegram"`) are validated against the enrolled roster.
+- **Published Door:** once the door is reachable outside the container (`API_PUBLISH=1` at setup), a declared `as` additionally requires a per-client HMAC signature — see [Per-Client Signatures](#per-client-signatures-published-door-only). Loopback-only, nothing here changes.
 - **Unauthorized Requests:** Omitting the token or providing an incorrect token returns `401 Unauthorized`:
 
 ```json
@@ -450,6 +451,50 @@ Communication between participants can be governed by export and import policy t
 }
 ```
 
+### Per-Client Signatures (published door only)
+
+On a loopback-only door, `as` is a declaration checked against the roster —
+the container is the trust boundary and nothing more is asked of it. Once the
+door is published (`API_PUBLISH=1` at setup, surfaced to the process as
+`API_PUBLISHED`), a caller with the shared bearer token is no longer
+necessarily a colleague inside that boundary, so using `"as"` additionally
+requires `"kid"` and `"sig"`:
+
+```json
+{
+  "kind": "Message",
+  "payload": {"text": "hello backend"},
+  "as": "telegram",
+  "kid": "telegram-2026-08",
+  "sig": "3f9c...  (hex hmac-sha256)"
+}
+```
+
+`sig` is `HMAC-SHA256(secret, canonical_json)`, where `secret` is the value
+registered for `(as, kid)` via `StartAgent` (see above) and `canonical_json`
+is the request body with the `sig` field itself removed, serialised as
+`json.dumps(body, sort_keys=True, separators=(",", ":"))`. `kid` is part of
+the signed body, so a captured signature cannot be replayed under a
+different `kid`.
+
+Requests without `"as"` (the default `"api"` source) are unaffected on both
+loopback-only and published doors — this only closes the specific gap where a
+caller declares itself to *be* a named client without proving it.
+
+**Invalid Signature Error Response (`401 Unauthorized`, published only):**
+```json
+{
+  "detail": "invalid or missing signature for 'as' client"
+}
+```
+
+### CORS (published door only)
+
+Loopback-only, no CORS headers are added at all. Published, cross-origin
+browser requests are allowed only for origins listed in `API_CORS_ORIGINS`
+(comma-separated) at setup — unset or empty means no origin is allowed, there
+is no wildcard default once the door leaves the container.
+
 ---
 
 ### Agent & Application Lifecycle
@@ -457,10 +502,12 @@ Communication between participants can be governed by export and import policy t
 Lifecycle commands are sent as envelopes addressed to the `host` agent: `POST /agents/host/envelopes`.
 
 Lifecycle payloads have a fixed vocabulary. `StartAgent` accepts `agent`,
-`port_type`, `cli`, `profile`, `provider`, `export`, and `import`; `StopAgent`, `PauseAgent`, and
-`ResumeAgent` accept only `agent`. An omitted optional key keeps its documented
-default, but any unknown key is refused with HTTP 422 and named in the error.
-This makes misspellings loud instead of silently selecting a default.
+`port_type`, `cli`, `profile`, `provider`, `export`, `import`, `resume`, and —
+for `port_type: "api"` only — `hmac_secret`, `kid`, and `revoke_kid` (see
+below); `StopAgent`, `PauseAgent`, and `ResumeAgent` accept only `agent`. An
+omitted optional key keeps its documented default, but any unknown key is
+refused with HTTP 422 and named in the error. This makes misspellings loud
+instead of silently selecting a default.
 
 #### Enrol Application Client (`StartAgent` with `port_type: api`)
 
@@ -488,6 +535,15 @@ Registers an external application client without creating a terminal window or s
 | `port_type` | string | `"api"` for external applications; `"tmux"` for terminal agents. |
 | `export` | array of strings | *(Optional)* Policy tags this agent is permitted to send to. |
 | `import` | array of strings | *(Optional)* Policy tags this agent accepts incoming messages for. |
+| `hmac_secret` | string | *(Optional, `port_type: "api"` only)* Client-generated secret, 16+ characters, paired with `kid`. Required only if this client will ever use `"as"` on a **published** door — see [Per-Client Signatures](#per-client-signatures-published-door-only) below. Ignored (has no effect) on a loopback-only door. |
+| `kid` | string | *(Optional)* Key identifier for `hmac_secret`, segment-shaped (e.g. `telegram-2026-08`). Required together with `hmac_secret`. |
+| `revoke_kid` | string | *(Optional)* Removes one previously-registered key by `kid`. Can be sent alongside a new `hmac_secret`/`kid` in the same request to rotate in one call. |
+
+Enrolling with `hmac_secret`/`kid` is additive: a repeated `StartAgent` with a
+new `kid` adds a key without removing an older one, so both validate during a
+rotation's overlap window — remove the old one explicitly with `revoke_kid`
+when the rotation is done. `StopAgent` removes every registered key for that
+client.
 
 #### Enrol Terminal Agent (`StartAgent` with `port_type: tmux`)
 

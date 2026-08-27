@@ -127,6 +127,15 @@ Outside a container nobody has judged anything, the variable is unset, and the
 door's own bind check is the right one. **The rule generalises:** a check
 belongs where the decision is made, not where its consequence lands.
 
+⚠ **The same generalisation applies to `API_PUBLISHED`.** The api door's
+per-client HMAC enforcement and CORS (`LLD-api` §3, §6) are gated on
+"published", and `API_BIND` cannot answer that question for the same reason
+it cannot answer the TLS one — it is hardcoded `0.0.0.0` in the image. So
+`entrypoint.sh` exports `API_PUBLISHED=1` at the exact point it already
+computes "published" for the api door, right beside where it decides
+`FLOCK_ALLOW_PLAINTEXT`. Loopback-only tenants never see it set, and both
+features are off entirely in that case — not merely permissive.
+
 ### 3.2 Certificates arrive before the doors start
 
 TLS certificates follow the credential rule — **never baked into the image,

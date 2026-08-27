@@ -1,4 +1,5 @@
 import asyncio
+import hashlib
 import hmac
 import ipaddress
 import json
@@ -9,6 +10,7 @@ from typing import Any
 
 import redis
 from fastapi import Depends, FastAPI, HTTPException, Query, Request, status
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.openapi.docs import get_redoc_html, get_swagger_ui_html
 from fastapi.openapi.utils import get_openapi
 from fastapi.responses import HTMLResponse, StreamingResponse
@@ -30,9 +32,12 @@ class Settings:
     api_port: int = 8080
     api_tls_cert: str | None = None
     api_tls_key: str | None = None
+    api_published: bool = False
+    api_cors_origins: tuple[str, ...] = ()
 
     @classmethod
     def from_env(cls) -> "Settings":
+        origins = os.getenv("API_CORS_ORIGINS", "")
         return cls(
             pod=os.environ["POD"],
             tenant=os.environ["TENANT"],
@@ -42,6 +47,8 @@ class Settings:
             api_port=int(os.getenv("API_PORT", "8080")),
             api_tls_cert=os.getenv("API_TLS_CERT") or None,
             api_tls_key=os.getenv("API_TLS_KEY") or None,
+            api_published=os.getenv("API_PUBLISHED") == "1",
+            api_cors_origins=tuple(o.strip() for o in origins.split(",") if o.strip()),
         )
 
     def validate(self) -> None:
@@ -96,6 +103,47 @@ def _decode_entry(value: Any) -> Any:
         except (json.JSONDecodeError, TypeError):
             return value
     return value
+
+
+def _canonical_envelope(envelope: dict[str, Any]) -> bytes:
+    """The exact bytes a client must HMAC to sign a request.
+
+    Excludes `sig` itself (it cannot sign itself); everything else, including
+    `kid`, is covered so a valid signature cannot be replayed under a
+    different declared key.
+    """
+    signable = {key: value for key, value in envelope.items() if key != "sig"}
+    return json.dumps(signable, sort_keys=True, separators=(",", ":")).encode("utf-8")
+
+
+def _verify_client_signature(
+    client: Any,
+    *,
+    pod: str,
+    tenant: str,
+    as_client: str,
+    kid: Any,
+    sig: Any,
+    envelope: dict[str, Any],
+) -> bool:
+    if not isinstance(kid, str) or not kid or not isinstance(sig, str) or not sig:
+        return False
+    try:
+        hmac_keys_key = prefix(pod, tenant, as_client, "hmac-keys")
+    except KeyError:
+        return False
+    raw_record = client.hget(hmac_keys_key, kid)
+    if not raw_record:
+        return False
+    try:
+        record = json.loads(_decode(raw_record))
+        secret = record["secret"]
+    except (json.JSONDecodeError, TypeError, KeyError):
+        return False
+    if not isinstance(secret, str):
+        return False
+    expected = hmac.new(secret.encode("utf-8"), _canonical_envelope(envelope), hashlib.sha256).hexdigest()
+    return hmac.compare_digest(expected, sig)
 
 
 def _render_restdoc_html(app: FastAPI) -> str:
@@ -543,6 +591,20 @@ def create_app(*, settings: Settings | None = None, redis_client: Any = None) ->
     app.state.redis = client
     app.state.settings = settings
 
+    if settings.api_published and settings.api_cors_origins:
+        # Loopback-only never adds this middleware at all — the container is
+        # the trust boundary there and CORS has nothing to say about it
+        # (docs/TODO.md "security: what is left after build 36"). Published
+        # with no origins configured means no browser origin is allowed,
+        # deliberately: the operator opts in per origin rather than getting a
+        # wildcard by default once the door leaves the container.
+        app.add_middleware(
+            CORSMiddleware,
+            allow_origins=list(settings.api_cors_origins),
+            allow_methods=["GET", "POST"],
+            allow_headers=["Authorization", "Content-Type"],
+        )
+
     @app.get("/openapi.json", include_in_schema=False)
     def openapi() -> Any:
         return get_openapi(title=app.title, version="0.1.0", routes=app.routes)
@@ -633,6 +695,24 @@ def create_app(*, settings: Settings | None = None, redis_client: Any = None) ->
                     detail="invalid 'as' client: must be an enrolled client with port_type 'api'",
                 ) from exc
             source = as_client
+            if settings.api_published and not _verify_client_signature(
+                client,
+                pod=settings.pod,
+                tenant=settings.tenant,
+                as_client=as_client,
+                kid=envelope.get("kid"),
+                sig=envelope.get("sig"),
+                envelope=envelope,
+            ):
+                # Loopback-only never reaches here (api_published is only set
+                # by entrypoint.sh once the door is published). Unscoped `as`
+                # (the "api" default identity, no 'as' at all) is unaffected —
+                # this only closes the gap named in docs/TODO.md: a caller
+                # declaring it IS a specific enrolled client.
+                raise HTTPException(
+                    status_code=status.HTTP_401_UNAUTHORIZED,
+                    detail="invalid or missing signature for 'as' client",
+                )
         try:
             payload_str = json.dumps(envelope)
         except (TypeError, ValueError):
@@ -642,7 +722,7 @@ def create_app(*, settings: Settings | None = None, redis_client: Any = None) ->
                 status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
                 detail="envelope payload exceeds maximum size limit of 1MB",
             )
-        if "text" in envelope and set(envelope) <= {"text", "as"}:
+        if "text" in envelope and set(envelope) <= {"text", "as", "kid", "sig"}:
             kind = "Message"
             payload = {"text": envelope["text"]}
         else:

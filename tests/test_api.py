@@ -1,10 +1,13 @@
 from conftest import FakeRedis, FakePipeline
 import asyncio
+import hashlib
+import hmac as hmac_lib
 import json
 
 import pytest
 from flock.api import Settings, create_app
 from flock.api import app as api_module
+from flock.bus import prefix
 
 
 
@@ -244,6 +247,88 @@ def test_non_loopback_bind_with_tls_succeeds():
     assert app is not None
 
 
+def _request_headers(app, method, path, *, token=None, origin=None):
+    """Like `request`, but returns response headers too (for CORS assertions)."""
+    sent = []
+    headers = [(b"content-type", b"application/json")]
+    if token is not None:
+        headers.append((b"authorization", f"Bearer {token}".encode()))
+    if origin is not None:
+        headers.append((b"origin", origin.encode()))
+    received = False
+
+    async def receive():
+        nonlocal received
+        if received:
+            return {"type": "http.disconnect"}
+        received = True
+        return {"type": "http.request", "body": b"", "more_body": False}
+
+    async def send(message):
+        sent.append(message)
+
+    scope = {
+        "type": "http",
+        "asgi": {"version": "3.0"},
+        "http_version": "1.1",
+        "method": method,
+        "scheme": "http",
+        "path": path,
+        "raw_path": path.encode(),
+        "query_string": b"",
+        "headers": headers,
+        "client": ("127.0.0.1", 1234),
+        "server": ("127.0.0.1", 80),
+        "root_path": "",
+    }
+    asyncio.run(app(scope, receive, send))
+    start = next(message for message in sent if message["type"] == "http.response.start")
+    response_headers = {k.decode(): v.decode() for k, v in start["headers"]}
+    return start["status"], response_headers
+
+
+def test_cors_header_absent_when_not_published():
+    app = create_app(
+        settings=Settings(pod="test", tenant="office", api_token="secret"),
+        redis_client=FakeRedis(),
+    )
+    _, headers = _request_headers(app, "GET", "/health", token="secret", origin="https://example.com")
+    assert "access-control-allow-origin" not in headers
+
+
+def test_cors_header_absent_when_published_with_no_origins_configured():
+    app = create_app(
+        settings=Settings(pod="test", tenant="office", api_token="secret", api_published=True),
+        redis_client=FakeRedis(),
+    )
+    _, headers = _request_headers(app, "GET", "/health", token="secret", origin="https://example.com")
+    assert "access-control-allow-origin" not in headers
+
+
+def test_cors_header_present_for_configured_origin_when_published():
+    app = create_app(
+        settings=Settings(
+            pod="test", tenant="office", api_token="secret",
+            api_published=True, api_cors_origins=("https://example.com",),
+        ),
+        redis_client=FakeRedis(),
+    )
+    _, headers = _request_headers(app, "GET", "/health", token="secret", origin="https://example.com")
+    assert headers["access-control-allow-origin"] == "https://example.com"
+
+
+def test_cors_header_absent_for_unconfigured_origin_when_published():
+    app = create_app(
+        settings=Settings(
+            pod="test", tenant="office", api_token="secret",
+            api_published=True, api_cors_origins=("https://example.com",),
+        ),
+        redis_client=FakeRedis(),
+    )
+    _, headers = _request_headers(app, "GET", "/health", token="secret", origin="https://evil.example")
+    assert "access-control-allow-origin" not in headers
+
+
 def test_reply_collection_endpoint_is_not_exposed(client):
     app, _ = client
     assert request(app, "GET", "/messages/correlation", token="secret")[0] == 404
@@ -292,6 +377,110 @@ def test_post_envelope_with_invalid_as_client_rejected(client):
         body={"text": "hello", "as": "unknown"},
     )
     assert status_code_unknown == 422
+
+
+def _sign(secret, envelope):
+    signable = {key: value for key, value in envelope.items() if key != "sig"}
+    canonical = json.dumps(signable, sort_keys=True, separators=(",", ":")).encode("utf-8")
+    return hmac_lib.new(secret.encode("utf-8"), canonical, hashlib.sha256).hexdigest()
+
+
+def _published_client(monkeypatch):
+    redis = FakeRedis()
+    monkeypatch.setattr(api_module, "members", lambda *_args, **_kwargs: {b"telegram", b"alice"})
+    app = create_app(
+        settings=Settings(pod="test", tenant="office", api_token="secret", api_published=True),
+        redis_client=redis,
+    )
+    return app, redis
+
+
+def test_published_as_without_signature_rejected(monkeypatch):
+    app, _ = _published_client(monkeypatch)
+    status_code, body = request(
+        app, "POST", "/agents/alice/envelopes", token="secret", body={"text": "hi", "as": "telegram"},
+    )
+    assert status_code == 401
+    assert "signature" in body["detail"]
+
+
+def test_published_as_with_wrong_signature_rejected(monkeypatch):
+    app, redis = _published_client(monkeypatch)
+    hmac_keys_key = prefix("test", "office", "telegram", "hmac-keys")
+    redis.hashes[hmac_keys_key] = {
+        "telegram-2026-08": json.dumps({"secret": "correct-horse-battery-staple", "created_ts": 1.0})
+    }
+    status_code, body = request(
+        app, "POST", "/agents/alice/envelopes", token="secret",
+        body={"text": "hi", "as": "telegram", "kid": "telegram-2026-08", "sig": "wrong"},
+    )
+    assert status_code == 401
+    assert "signature" in body["detail"]
+
+
+def test_published_as_with_unknown_kid_rejected(monkeypatch):
+    app, redis = _published_client(monkeypatch)
+    hmac_keys_key = prefix("test", "office", "telegram", "hmac-keys")
+    redis.hashes[hmac_keys_key] = {
+        "telegram-2026-08": json.dumps({"secret": "correct-horse-battery-staple", "created_ts": 1.0})
+    }
+    envelope = {"text": "hi", "as": "telegram", "kid": "telegram-2026-07"}
+    envelope["sig"] = _sign("correct-horse-battery-staple", envelope)
+    status_code, body = request(app, "POST", "/agents/alice/envelopes", token="secret", body=envelope)
+    assert status_code == 401
+
+
+def test_published_as_with_valid_signature_accepted(monkeypatch):
+    app, redis = _published_client(monkeypatch)
+    hmac_keys_key = prefix("test", "office", "telegram", "hmac-keys")
+    secret = "correct-horse-battery-staple"
+    redis.hashes[hmac_keys_key] = {
+        "telegram-2026-08": json.dumps({"secret": secret, "created_ts": 1.0})
+    }
+    sent = {}
+    monkeypatch.setattr(api_module, "send", lambda _redis, **kwargs: sent.update(kwargs) or "stream-1")
+    envelope = {"text": "hi", "as": "telegram", "kid": "telegram-2026-08"}
+    envelope["sig"] = _sign(secret, envelope)
+    status_code, body = request(app, "POST", "/agents/alice/envelopes", token="secret", body=envelope)
+    assert status_code == 202
+    assert sent["source"] == "telegram"
+
+
+def test_published_signature_cannot_be_replayed_under_a_different_kid(monkeypatch):
+    """The kid itself is covered by the signed material (app.py `_canonical_envelope`)."""
+    app, redis = _published_client(monkeypatch)
+    hmac_keys_key = prefix("test", "office", "telegram", "hmac-keys")
+    secret = "correct-horse-battery-staple"
+    redis.hashes[hmac_keys_key] = {
+        "telegram-2026-08": json.dumps({"secret": secret, "created_ts": 1.0}),
+        "telegram-2026-09": json.dumps({"secret": secret, "created_ts": 2.0}),
+    }
+    envelope = {"text": "hi", "as": "telegram", "kid": "telegram-2026-08"}
+    envelope["sig"] = _sign(secret, envelope)
+    # Same signature, presented under a different kid — must not verify.
+    forged = dict(envelope, kid="telegram-2026-09")
+    status_code, body = request(app, "POST", "/agents/alice/envelopes", token="secret", body=forged)
+    assert status_code == 401
+
+
+def test_published_without_as_is_unaffected(monkeypatch):
+    app, _ = _published_client(monkeypatch)
+    sent = {}
+    monkeypatch.setattr(api_module, "send", lambda _redis, **kwargs: sent.update(kwargs) or "stream-1")
+    status_code, _ = request(app, "POST", "/agents/alice/envelopes", token="secret", body={"text": "hi"})
+    assert status_code == 202
+    assert sent["source"] == "api"
+
+
+def test_not_published_as_is_unaffected_even_without_signature(client, monkeypatch):
+    app, _ = client
+    sent = {}
+    monkeypatch.setattr(api_module, "send", lambda _redis, **kwargs: sent.update(kwargs) or "stream-1")
+    status_code, _ = request(
+        app, "POST", "/agents/alice/envelopes", token="secret", body={"text": "hi", "as": "telegram"},
+    )
+    assert status_code == 202
+    assert sent["source"] == "telegram"
 
 
 def test_get_messages_for_api_client(client):
