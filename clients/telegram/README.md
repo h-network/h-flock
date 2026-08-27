@@ -31,7 +31,7 @@ A Telegram bot client that talks to an **h-flock** tenant over HTTP, allowing a 
 | `ALERTS_CURSOR_FILE` | derived from `CURSOR_FILE` | Path to store the alerts-stream cursor, kept separate from the mailbox cursor |
 | `NO_ALERT_PUSH` | unset | Set to `1` to disable live alert push even when `TELEGRAM_CHAT_ID` is set |
 | `TELEGRAM_VOICE` | `0` | Set to `1` to enable the spoken TTS voice replies feature in this tenant |
-| `TTS_VOICE` | `en-US-AvaNeural` | Default Microsoft neural TTS voice for spoken replies (e.g. `en-US-AvaNeural`) via `edge-tts` |
+| `TTS_VOICE` | `en-GB-RyanNeural` | Default Microsoft neural TTS voice for spoken replies (e.g. `en-GB-RyanNeural`) via `edge-tts` |
 
 ### Running in Dry-Run Mode (Without Telegram Token)
 
@@ -56,7 +56,7 @@ python3 clients/telegram/bot.py \
   --cursor-file cursor.json \
   --agent architect \
   --voice \
-  --tts-voice en-US-AvaNeural \
+  --tts-voice en-GB-RyanNeural \
   --dry-run \
   --prompt "can you check the auth change?"
 ```
