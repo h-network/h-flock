@@ -16,6 +16,7 @@ import re
 import select
 import subprocess
 import sys
+import time
 
 
 def parse_args():
@@ -129,13 +130,11 @@ def drive_setup(cmd, pairs, timeout=15.0, cwd=None, env=None):
             matched = False
             while not matched:
                 if proc.poll() is not None:
-                    if proc.returncode == 0:
-                        return 0
                     sys.stderr.write(
                         f"\ndrive-setup: setup.sh exited with code {proc.returncode} before prompt #{pair_idx+1}: {expected_pattern!r}\n"
                     )
                     sys.stderr.write(f"Buffer before exit:\n{buf}\n")
-                    sys.exit(proc.returncode)
+                    return proc.returncode or 2
 
                 r, _, _ = select.select([master], [], [], timeout)
                 if not r:
@@ -144,7 +143,7 @@ def drive_setup(cmd, pairs, timeout=15.0, cwd=None, env=None):
                     )
                     sys.stderr.write(f"Buffer at timeout:\n{buf}\n")
                     proc.kill()
-                    sys.exit(2)
+                    return 2
 
                 try:
                     chunk = os.read(master, 1024).decode("utf-8", errors="replace")
@@ -162,22 +161,31 @@ def drive_setup(cmd, pairs, timeout=15.0, cwd=None, env=None):
                     matched = True
 
             if not matched:
-                if proc.poll() is not None and proc.returncode == 0:
-                    return 0
                 sys.stderr.write(
                     f"\ndrive-setup: failed matching prompt #{pair_idx+1}: {expected_pattern!r}\n"
                 )
                 sys.stderr.write(f"Buffer:\n{buf}\n")
-                sys.exit(2)
+                return 2
 
             # Send answer
             os.write(master, (answer + "\n").encode("utf-8"))
             pair_idx += 1
             buf = ""
 
-        # Drain remaining output
+        # Drain remaining output, but require setup to terminate. An extra
+        # prompt appended after the known sequence would otherwise block here
+        # forever and evade the prompt-drift contract.
+        deadline = time.monotonic() + timeout
         while proc.poll() is None:
-            r, _, _ = select.select([master], [], [], 1.0)
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                sys.stderr.write(
+                    "\ndrive-setup: timeout waiting for setup.sh to exit after "
+                    "the final expected prompt; possible trailing prompt drift\n"
+                )
+                proc.kill()
+                return 2
+            r, _, _ = select.select([master], [], [], min(1.0, remaining))
             if r:
                 try:
                     chunk = os.read(master, 1024).decode("utf-8", errors="replace")

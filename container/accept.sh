@@ -343,6 +343,10 @@ fi
 
 step "install — driving setup.sh as a person would"
 declare -f flock_image_line >/dev/null && flock_image_line
+# Keep the live acceptance run's delivery-verification gates short. Production
+# defaults to 120 seconds; the core suite proves the mechanism, not that tuning.
+export VERIFY_AFTER_SECONDS=5
+
 # ⚠ PROMPT-AWARE DRIVER. Rather than feeding answers positionally through a
 # blind printf pipe — where an added prompt shifts every later answer by one —
 # drive-setup.py matches each expected prompt regex before answering. An unmapped,
