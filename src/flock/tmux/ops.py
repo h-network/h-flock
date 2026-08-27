@@ -1,5 +1,6 @@
 import json
 import os
+from pathlib import Path
 
 from flock.bus.logging import log_record
 import subprocess
@@ -349,6 +350,91 @@ def window_env(
                 env_vars.append(f"AGENT_PROVIDER_SMALL_MODEL={provider['small_model']}")
     return env_vars
 
+
+def has_session_history(
+    agent: str,
+    cli: str,
+    profile: str | None = None,
+    home_root: str | Path | None = None,
+) -> bool:
+    """Return True if prior session history exists for the given agent/CLI/profile."""
+    home = Path(home_root) if home_root is not None else Path(os.environ.get("HOME", "/home/ubuntu"))
+    suffix = f"-{profile}" if profile else ""
+    cwd = f"/workdir/{agent}"
+
+    if cli == "claude":
+        project_dir = home / f".claude{suffix}" / "projects" / cwd.replace("/", "-")
+        if not project_dir.is_dir():
+            return False
+        for p in project_dir.glob("*.jsonl"):
+            try:
+                if p.is_file() and p.stat().st_size > 0:
+                    return True
+            except OSError:
+                continue
+        return False
+
+    elif cli == "codex":
+        sessions_dir = home / f".codex{suffix}" / "sessions"
+        if not sessions_dir.is_dir():
+            return False
+        for p in sessions_dir.glob("**/rollout-*.jsonl"):
+            if not p.is_file():
+                continue
+            try:
+                with p.open("rb") as f:
+                    raw = f.readline()
+                record = json.loads(raw)
+                payload = record.get("payload") if isinstance(record, dict) else None
+                if (
+                    record.get("type") == "session_meta"
+                    and isinstance(payload, dict)
+                    and payload.get("cwd") == cwd
+                ):
+                    return True
+            except (OSError, UnicodeDecodeError, json.JSONDecodeError):
+                continue
+        return False
+
+    elif cli == "agy":
+        history_file = home / ".gemini" / "antigravity-cli" / "history.jsonl"
+        if not history_file.is_file():
+            return False
+        try:
+            with history_file.open("r", encoding="utf-8") as f:
+                for line in f:
+                    line = line.strip()
+                    if not line:
+                        continue
+                    try:
+                        record = json.loads(line)
+                        if isinstance(record, dict) and record.get("workspace") == cwd:
+                            return True
+                    except json.JSONDecodeError:
+                        continue
+        except OSError:
+            return False
+        return False
+
+    return False
+
+
+def start_agent_command(
+    cli: str,
+    resume: bool = False,
+) -> list[str]:
+    """Construct the startAgent argv list for the given CLI and resume mode."""
+    if not resume:
+        return ["startAgent", cli]
+
+    if cli == "claude":
+        return ["startAgent", "claude", "--resume"]
+    elif cli == "codex":
+        return ["startAgent", "codex", "resume", "--last"]
+    elif cli == "agy":
+        return ["startAgent", "agy", "--continue"]
+    else:
+        return ["startAgent", cli, "--resume"]
 
 
 def _seed_profile_dirs(profile: str | None) -> None:

@@ -219,8 +219,8 @@ the same sentence as §1 from a different angle.
 | `Message` | `tmux` | `[message from …] <text>` into the window |
 | `Command` | `tmux` | pasted bare — **it executes** |
 | `AddTicket` | `tmux` | writes a ticket to that agent's board, and **pastes nothing** |
-| `StartAgent` | `control` | enrols: roster row, and for a tmux agent a home, window and CLI |
-| `StopAgent` | `control` | reverses whatever `StartAgent` created for that port_type |
+| `StartAgent` | `control` | enrols: roster row, and for a tmux agent a home, window and CLI (auto-resumes prior session history if present) |
+| `StopAgent` | `control` | reverses whatever `StartAgent` created for that port_type (retaining workdir and CLI session history) |
 | `PauseAgent` | `control` | stops the CLI, keeps the agent, its queues and its board |
 | `ResumeAgent` | `control` | starts the CLI again and drains what queued while it was paused |
 
@@ -228,9 +228,12 @@ the same sentence as §1 from a different angle.
 not decide which kinds are interesting — the same rule that stops the switch
 reading payloads. A client filters on `kind` itself.
 
-⚠ **Pause is not retire.** `PauseAgent` leaves the roster row, the queues and the
-board intact; envelopes keep arriving and wait. `StopAgent` removes the agent.
-Confusing the two loses work.
+⚠ **Pause is not retire, and retire is not forget.** `PauseAgent` leaves the
+roster row, the queues and the board intact; envelopes keep arriving and wait.
+`StopAgent` removes the agent from the roster, purges identity keys, and kills
+its tmux window — but retains `/workdir/<name>` and prior CLI session files.
+Re-hiring a previously-retired name auto-resumes its most recent session history
+unless explicitly instructed otherwise (`--fresh`).
 
 ### Broadcast: two different things with one word
 

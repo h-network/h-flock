@@ -23,6 +23,7 @@ AGENT_STATE_RESOURCES = frozenset(
         "usage.requests",
         "usage.attributed",
         "tags",
+        "resume",
     }
 )
 

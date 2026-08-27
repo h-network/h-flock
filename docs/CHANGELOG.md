@@ -11,6 +11,12 @@
 
 ---
 
+## 2026-08-27 — StartAgent and office hire auto-resume prior CLI session history on re-hiring
+
+Re-hiring a previously retired agent name now auto-detects existing CLI session history for that agent's working directory (`has_session_history`), launching the new window with the CLI's native resume command (`startAgent claude --resume`, `startAgent codex resume --last`, `startAgent agy --continue`) to reattach to the most recent conversation context. `StartAgent` accepts an optional `resume: bool` payload field (`office hire <agent> --resume` / `--fresh`) to explicitly force resumption or start clean. `StopAgent` continues to preserve the filesystem and prior session logs.
+
+**What this made false:** that re-hiring an agent name whose window had been retired always started a brand new CLI session from scratch, losing prior conversational context and history.
+
 ## 2026-08-27 — port snapshot-drains ingress atomically and batches consecutive Message deliveries into one paste
 
 `flock.port` now snapshot-drains all queued envelopes from an agent's ingress queue via an atomic Redis Lua script (`_DRAIN_INGRESS`) upon acquiring the delivering lock. Consecutive `Message`-kind envelopes are concatenated into ONE combined bracketed paste in arrival order (`[message from X] text\n` per block) under a single lock acquisition. Non-`Message` kinds (`Command`, `AddTicket`) remain unbatched and are executed individually in arrival order. Full custody record provenance (`received`, `opened`, `pending.verify` / `delivery.markers`) is preserved per `stream_id`.

@@ -90,6 +90,11 @@ class TmuxHost:
             return None
         return raw.decode() if isinstance(raw, bytes) else str(raw)
 
+    def get_agent_resume(self, r: redis.Redis, agent: str) -> str | None:
+        key = prefix(self.pod, self.tenant, agent=agent, resource="resume")
+        val = r.get(key)
+        return val.decode() if isinstance(val, bytes) else (str(val) if val is not None else None)
+
     def log_window_created(self, r: redis.Redis, agent: str) -> None:
         log_record(
             "tmuxhost", "window_created", destination=agent,
@@ -104,6 +109,7 @@ class TmuxHost:
         profile: str | None = None,
         lead: str | None = None,
         provider: dict | None = None,
+        resume: bool | None = None,
     ) -> None:
         ret, stdout, stderr = tmux_ops.run_tmux("has-session", "-t", self.session_name, socket=self.socket)
         if ret != 0:
@@ -120,7 +126,14 @@ class TmuxHost:
 
             if initial_window != "__init__":
                 write_agent_guide(cwd, initial_window, self.tenant, lead=lead, profile=profile)
-                cmd_args = ["startAgent", cli] if cli else ["bash", "-il"]
+                if cli:
+                    if resume is None:
+                        should_resume = tmux_ops.has_session_history(initial_window, cli, profile=profile)
+                    else:
+                        should_resume = resume
+                    cmd_args = tmux_ops.start_agent_command(cli, resume=should_resume)
+                else:
+                    cmd_args = ["bash", "-il"]
                 cmd.extend(
                     window_env(
                         initial_window, tenant=self.tenant, cwd=cwd, profile=profile, provider=provider
@@ -151,6 +164,7 @@ class TmuxHost:
         cwd: str | None = None,
         lead: str | None = None,
         provider: dict | None = None,
+        resume: bool | None = None,
     ) -> bool:
         cwd = cwd or f"/workdir/{agent_name}"
         env_args = window_env(agent_name, tenant=self.tenant, cwd=cwd, profile=profile, provider=provider)
@@ -158,7 +172,11 @@ class TmuxHost:
         # ⚠ Not written here — tmux_ops.create_window below writes it for every
         # caller, and writing it twice is what dropped the lead sentence.
         if cli:
-            command = env_args + ["startAgent", cli]
+            if resume is None:
+                should_resume = tmux_ops.has_session_history(agent_name, cli, profile=profile)
+            else:
+                should_resume = resume
+            command = env_args + tmux_ops.start_agent_command(cli, resume=should_resume)
         else:
             command = env_args + ["bash", "-il"]
 
@@ -193,6 +211,8 @@ class TmuxHost:
         first_cli = self.get_agent_cli(r, first_agent) if first_agent != "__init__" else None
         first_profile = self.get_agent_profile(r, first_agent) if first_agent != "__init__" else None
         first_provider = self.get_agent_provider(r, first_agent) if first_agent != "__init__" else None
+        first_resume_raw = self.get_agent_resume(r, first_agent) if first_agent != "__init__" else None
+        first_resume = True if first_resume_raw == "1" else (False if first_resume_raw == "0" else None)
 
         self.ensure_server_and_session(
             r,
@@ -201,6 +221,7 @@ class TmuxHost:
             profile=first_profile,
             lead=lead,
             provider=first_provider,
+            resume=first_resume,
         )
 
         existing_windows = self.get_windows()
@@ -211,7 +232,11 @@ class TmuxHost:
                 cli = self.get_agent_cli(r, agent)
                 profile = self.get_agent_profile(r, agent)
                 provider = self.get_agent_provider(r, agent)
-                self.create_window(r, agent, cli=cli, profile=profile, lead=lead, provider=provider)
+                resume_raw = self.get_agent_resume(r, agent)
+                resume = True if resume_raw == "1" else (False if resume_raw == "0" else None)
+                self.create_window(
+                    r, agent, cli=cli, profile=profile, lead=lead, provider=provider, resume=resume
+                )
 
         # A cause marker beside an already-present window did not cause that
         # window. Consume it without attaching it to a later crash recovery.
