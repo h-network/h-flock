@@ -11,6 +11,21 @@
 
 ---
 
+## 2026-08-27 — ingress admission is atomic and broadcast is all-or-none
+
+`INGRESS_MAX` is now enforced by one Lua check-and-append operation. Unicast
+either appends its frame or dead-letters it without modifying the destination
+ingress. Raw broadcast checks all selected ingresses and appends every copy only
+when every recipient has capacity.
+
+**What was false:** that the old `RPUSH` followed by compensating `RPOP` safely
+enforced the bound. A port could consume between those commands, letting the new
+frame through while `RPOP` discarded an older legitimate frame. It was also
+false that broadcast's transactional push plus per-recipient rollback was an
+atomic all-or-none fan-out: a full recipient was dropped while other copies
+were delivered. A congested broadcast now delivers zero copies, records one
+sender-side dead-letter for destination `all`, and kicks nobody.
+
 ## 2026-08-26 — the watchdog can also message the lead for an unpicked `todo` ticket
 
 Same family, same day as the `doing`-duration alert below. Any ticket sitting
@@ -72,7 +87,6 @@ over-subscribed, under-used, or silently inheriting `default`.
 `configured accounts: unknown` and falls back to the profiles it can observe
 from agents' own `profile` keys, rather than failing closed — the same
 permissive-on-absence precedent as `bus/policy.py`.
-
 ## 2026-08-22 — the custody log outlives the container
 
 **Build 79.** `FLOCK_CUSTODY_FILE` is a byte copy of every record reaching

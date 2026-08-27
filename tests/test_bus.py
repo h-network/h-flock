@@ -1,4 +1,4 @@
-from conftest import FakeRedis, FakePipeline
+from conftest import FakeRedis
 import json
 import io
 import unittest
@@ -227,7 +227,7 @@ class DoorsAndRouterTest(unittest.TestCase):
         )
         output = io.StringIO()
         with (
-            patch.object(self.r, "rpush", side_effect=ConnectionError("redis down")),
+            patch.object(self.r, "eval", side_effect=ConnectionError("redis down")),
             redirect_stdout(output),
             self.assertRaisesRegex(ConnectionError, "redis down"),
         ):
@@ -413,7 +413,7 @@ class DoorsAndRouterTest(unittest.TestCase):
         records = [json.loads(line) for line in output.getvalue().splitlines()]
         self.assertEqual([record["event"] for record in records], ["popped", "dead_lettered"])
         self.assertEqual(records[-1]["destination"], "bob")
-        self.assertIn("depth 3 exceeds INGRESS_MAX 2", records[-1]["reason"])
+        self.assertIn("depth 2 has reached INGRESS_MAX 2", records[-1]["reason"])
 
     def test_ingress_at_bound_after_push_still_forwards_and_kicks(self):
         ingress = prefix("acme", "hq", "bob", "ingress")
@@ -642,12 +642,6 @@ class DoorsAndRouterTest(unittest.TestCase):
         )
 
     def test_broadcast_ingress_write_exception_is_unknown(self):
-        class ReplyLostPipeline(FakePipeline):
-            def execute(self):
-                for key, value in self.commands:
-                    self.r.rpush(key, value)
-                raise ConnectionError("reply lost after broadcast writes")
-
         send(
             self.r,
             pod="acme",
@@ -656,7 +650,7 @@ class DoorsAndRouterTest(unittest.TestCase):
             destination="all",
             payload={"text": "ambiguous fanout"},
         )
-        self.r.pipeline = lambda: ReplyLostPipeline(self.r)
+        self.r.fails_on["eval"] = ConnectionError("reply lost after broadcast writes")
 
         output = io.StringIO()
         with redirect_stdout(output), self.assertRaisesRegex(
@@ -673,7 +667,7 @@ class DoorsAndRouterTest(unittest.TestCase):
         self.assertNotIn("forwarded", [record["event"] for record in records])
         self.popen.assert_not_called()
 
-    def test_broadcast_dead_letters_only_full_recipient_and_does_not_kick_it(self):
+    def test_broadcast_is_all_or_none_when_one_recipient_is_full(self):
         bob_ingress = prefix("acme", "hq", "bob", "ingress")
         self.r.rpush(bob_ingress, "bob is full")
         send(
@@ -692,17 +686,26 @@ class DoorsAndRouterTest(unittest.TestCase):
             )
 
         self.assertEqual(self.r.lists[bob_ingress], ["bob is full"])
-        for agent in ("carol",):
-            self.assertEqual(
-                len(self.r.lists[prefix("acme", "hq", agent, "ingress")]), 1
-            )
-        kicked = [call.args[0][1] for call in self.popen.call_args_list]
-        self.assertEqual(kicked, ["carol"])
+        self.assertNotIn(prefix("acme", "hq", "carol", "ingress"), self.r.lists)
+        self.popen.assert_not_called()
         records = [json.loads(line) for line in output.getvalue().splitlines()]
         rejected = next(record for record in records if record["event"] == "dead_lettered")
-        forwarded = next(record for record in records if record["event"] == "forwarded")
-        self.assertEqual(rejected["destination"], "bob")
-        self.assertEqual(forwarded["count"], 1)
+        self.assertEqual(rejected["destination"], "all")
+        self.assertNotIn("forwarded", [record["event"] for record in records])
+
+    def test_atomic_admission_has_no_rpush_rpop_interleaving_seam(self):
+        ingress = prefix("acme", "hq", "bob", "ingress")
+        self.r.rpush(ingress, "older legitimate envelope")
+        send(
+            self.r, pod="acme", tenant="hq", source="alice", destination="bob",
+            payload={"text": "must be refused"},
+        )
+
+        with patch.object(self.r, "rpop", side_effect=AssertionError("rollback used")):
+            Switch(self.r, pod="acme", tenant="hq", ingress_max=1).step()
+
+        self.assertEqual(self.r.lists[ingress], ["older legitimate envelope"])
+        self.assertEqual(len(self.r.lists[prefix("acme", "hq", "alice", "dead")]), 1)
 
     def test_broadcast_to_one_agent_is_successful_noop(self):
         self.r.hashes[self.roster] = {"alice": "tmux"}

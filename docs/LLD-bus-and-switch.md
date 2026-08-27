@@ -707,12 +707,20 @@ what is left, and reserving it costs one entry in a list that already exists.
 The separate port-stamping rule below may rewrite a mismatched `source`
 before either unicast or broadcast forwarding; no other field is changed.
 
-The fan-out is one pop and *n* pushes in a transactional Redis pipeline. The
-pushes therefore execute atomically: every selected ingress receives its copy
-or none does. This is stronger than the transport's fire-and-forget promise and
-costs no extra protocol; callers must still not infer acknowledgement or retry
-from it. Two switch log records still, not *n*: the outcome is a single
-`forwarded` carrying `count`. One pop, one outcome, as §4 requires.
+The fan-out is one pop and one Lua admission operation over *n* ingress keys.
+The script first checks every depth against `INGRESS_MAX`, then pushes every
+copy only if all recipients have capacity. A full recipient therefore rejects
+the whole broadcast: no ingress receives a copy, the original frame is parked
+once under the sender's dead list with `destination: "all"`, and no port is
+kicked. The check and pushes are one atomic Redis execution, so a consuming port
+cannot open a check-then-write or write-then-rollback race. This is stronger
+than the transport's fire-and-forget promise; callers must still not infer an
+acknowledgement or retry from it. A successful outcome is one `forwarded` record
+carrying `count=N`, not *n* records. One pop, one outcome, as §4 requires.
+
+Unicast uses the same admission operation with one key. At capacity it appends
+nothing and parks the frame under the sender; it never appends and compensates
+with `RPOP`. The bound remains a count of queued envelopes rather than bytes.
 
 A broadcast into a tenant of one is *n* = 0 — a successful broadcast to nobody,
 not a dead-letter. There was no unresolvable destination; there was simply no one
