@@ -147,8 +147,10 @@ non-interactive shell, add
 `/Applications/Docker.app/Contents/Resources/bin`.
 
 ⚠ **The REST API door is OFF unless you ask for it.** It is the widest surface a
-tenant has — one shared bearer token, and `as` on a post is a declaration rather
-than a credential — and agents reach each other over the bus without it. Set
+tenant has — one shared bearer token — and agents reach each other over the bus
+without it. Loopback-only, `as` on a post is a declaration rather than a
+credential; publish the door (`API_PUBLISH=1`) and it isn't — a per-client HMAC
+is required to post `as` a specific enrolled client (`docs/API.md`). Set
 `API_ENABLED=1` in `container/.env`, or answer yes at the prompt.
 
 ⚠ **The Telegram bot is a CLIENT of that door, not a door of its own.**

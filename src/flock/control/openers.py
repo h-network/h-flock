@@ -1,6 +1,7 @@
 """Openers for agent lifecycle control envelopes."""
 
 import json
+import time
 from collections.abc import Callable
 from functools import wraps
 
@@ -17,8 +18,12 @@ from flock.bus import (
 _STARTABLE_VABS = {"tmux", "api"}
 _FIXED_PARTICIPANTS = {"api", "host"}
 _START_AGENT_KEYS = frozenset(
-    {"agent", "port_type", "cli", "profile", "provider", "export", "import", "resume"}
+    {
+        "agent", "port_type", "cli", "profile", "provider", "export", "import", "resume",
+        "hmac_secret", "kid", "revoke_kid",
+    }
 )
+_MIN_HMAC_SECRET_LEN = 16
 _TARGET_ONLY_KEYS = frozenset({"agent"})
 
 _PUBLISH_WINDOW_CAUSE_LUA = """
@@ -169,9 +174,48 @@ def start_agent(
     if agent_port_type not in _STARTABLE_VABS:
         raise ValueError("StartAgent payload.port_type must be 'tmux' or 'api'")
 
+    hmac_secret = payload.get("hmac_secret")
+    kid = payload.get("kid")
+    revoke_kid = payload.get("revoke_kid")
+    if (hmac_secret is None) != (kid is None):
+        raise ValueError("StartAgent payload.hmac_secret and payload.kid must be supplied together")
+    if kid is not None and not (isinstance(kid, str) and SEGMENT_REGEX.fullmatch(kid)):
+        raise ValueError("StartAgent payload.kid must be a segment string")
+    if hmac_secret is not None and not (
+        isinstance(hmac_secret, str) and len(hmac_secret) >= _MIN_HMAC_SECRET_LEN
+    ):
+        raise ValueError(
+            f"StartAgent payload.hmac_secret must be a string of at least {_MIN_HMAC_SECRET_LEN} characters"
+        )
+    if revoke_kid is not None and not (isinstance(revoke_kid, str) and SEGMENT_REGEX.fullmatch(revoke_kid)):
+        raise ValueError("StartAgent payload.revoke_kid must be a segment string")
+    if agent_port_type != "api" and (kid is not None or revoke_kid is not None):
+        raise ValueError("StartAgent payload.hmac_secret/kid/revoke_kid only apply to port_type 'api'")
+
     roster_key = prefix(pod, tenant, resource="roster")
     committed: list[str] = []
     if agent_port_type == "api":
+        # Both self-supplied: the enrolling client generates its own secret and
+        # hands it to control, rather than control minting one it has no
+        # synchronous channel to hand back over (StartAgent is fire-and-forget,
+        # LLD-api §6). HMAC verification needs the same secret on both sides to
+        # recompute the MAC, so it is stored in the clear here, not hashed —
+        # unlike a password hash, a digest of the secret could never reproduce
+        # a matching signature.
+        hmac_keys_key = prefix(pod, tenant, agent=agent, resource="hmac-keys")
+        if revoke_kid is not None:
+            _write_desired(
+                committed, f"hmac key {revoke_kid!r} revoked", "hmac key revoke",
+                lambda: r.hdel(hmac_keys_key, revoke_kid),
+            )
+        if kid is not None:
+            key_record = json.dumps(
+                {"secret": hmac_secret, "created_ts": time.time()}, separators=(",", ":")
+            )
+            _write_desired(
+                committed, f"hmac key {kid!r} published", "hmac key publish",
+                lambda: r.hset(hmac_keys_key, kid, key_record),
+            )
         if policy_supplied:
             policy_key = tags_key(pod, tenant, agent)
             _write_desired(

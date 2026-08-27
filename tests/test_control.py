@@ -247,6 +247,129 @@ def test_start_agent_publishes_policy_before_roster_visibility():
     ]
 
 
+def test_start_agent_hmac_secret_and_kid_publishes_key_before_roster():
+    events = []
+    start_agent(
+        RecordingRedis(events),
+        pod="acme",
+        tenant="hq",
+        envelope={
+            "payload": {
+                "agent": "telegram",
+                "port_type": "api",
+                "hmac_secret": "a" * 32,
+                "kid": "telegram-2026-08",
+            }
+        },
+        replace_window=lambda agent: events.append(("replace_window", agent)),
+    )
+    hmac_keys_key = prefix("acme", "hq", "telegram", "hmac-keys")
+    assert events[0][:3] == ("hset", hmac_keys_key, "telegram-2026-08")
+    record = json.loads(events[0][3])
+    assert record["secret"] == "a" * 32
+    assert isinstance(record["created_ts"], float)
+    assert events[1] == ("hset", prefix("acme", "hq", resource="roster"), "telegram", "api")
+
+
+def test_start_agent_hmac_secret_and_kid_must_be_paired():
+    with pytest.raises(ValueError, match="hmac_secret and payload.kid must be supplied together"):
+        start_agent(
+            RecordingRedis([]),
+            pod="acme",
+            tenant="hq",
+            envelope={"payload": {"agent": "telegram", "port_type": "api", "kid": "telegram-2026-08"}},
+            replace_window=lambda agent: None,
+        )
+    with pytest.raises(ValueError, match="hmac_secret and payload.kid must be supplied together"):
+        start_agent(
+            RecordingRedis([]),
+            pod="acme",
+            tenant="hq",
+            envelope={"payload": {"agent": "telegram", "port_type": "api", "hmac_secret": "a" * 32}},
+            replace_window=lambda agent: None,
+        )
+
+
+def test_start_agent_hmac_secret_too_short_rejected():
+    with pytest.raises(ValueError, match="at least 16 characters"):
+        start_agent(
+            RecordingRedis([]),
+            pod="acme",
+            tenant="hq",
+            envelope={
+                "payload": {
+                    "agent": "telegram", "port_type": "api", "hmac_secret": "short", "kid": "k1",
+                }
+            },
+            replace_window=lambda agent: None,
+        )
+
+
+def test_start_agent_hmac_kid_rejected_for_non_segment_string():
+    with pytest.raises(ValueError, match="payload.kid must be a segment string"):
+        start_agent(
+            RecordingRedis([]),
+            pod="acme",
+            tenant="hq",
+            envelope={
+                "payload": {
+                    "agent": "telegram", "port_type": "api",
+                    "hmac_secret": "a" * 32, "kid": "Not_Valid!",
+                }
+            },
+            replace_window=lambda agent: None,
+        )
+
+
+def test_start_agent_hmac_fields_rejected_for_tmux_port_type():
+    with pytest.raises(ValueError, match="only apply to port_type 'api'"):
+        start_agent(
+            RecordingRedis([]),
+            pod="acme",
+            tenant="hq",
+            envelope={"payload": {"agent": "dave", "hmac_secret": "a" * 32, "kid": "k1"}},
+            replace_window=lambda agent: None,
+        )
+
+
+def test_start_agent_revoke_kid_removes_key():
+    events = []
+    start_agent(
+        RecordingRedis(events),
+        pod="acme",
+        tenant="hq",
+        envelope={"payload": {"agent": "telegram", "port_type": "api", "revoke_kid": "old-kid"}},
+        replace_window=lambda agent: events.append(("replace_window", agent)),
+    )
+    hmac_keys_key = prefix("acme", "hq", "telegram", "hmac-keys")
+    assert events == [
+        ("hdel", hmac_keys_key, "old-kid"),
+        ("hset", prefix("acme", "hq", resource="roster"), "telegram", "api"),
+    ]
+
+
+def test_start_agent_revoke_and_add_kid_together_rotates_in_one_call():
+    events = []
+    start_agent(
+        RecordingRedis(events),
+        pod="acme",
+        tenant="hq",
+        envelope={
+            "payload": {
+                "agent": "telegram",
+                "port_type": "api",
+                "revoke_kid": "telegram-2026-07",
+                "hmac_secret": "b" * 32,
+                "kid": "telegram-2026-08",
+            }
+        },
+        replace_window=lambda agent: events.append(("replace_window", agent)),
+    )
+    hmac_keys_key = prefix("acme", "hq", "telegram", "hmac-keys")
+    assert events[0] == ("hdel", hmac_keys_key, "telegram-2026-07")
+    assert events[1][:3] == ("hset", hmac_keys_key, "telegram-2026-08")
+
+
 @pytest.mark.parametrize("side", ["export", "import"])
 def test_start_agent_rejects_invalid_policy_before_mutation(side):
     events = []

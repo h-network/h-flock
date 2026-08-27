@@ -168,6 +168,14 @@ for door in API SESSION; do
   [ "$door" = "API" ] && [ "${API_ENABLED:-0}" = "0" ] && continue
   eval "published=\"\${${door}_HOST:-}\""
   [ -z "$published" ] && continue
+  # The api door's per-client HMAC/CORS enforcement (LLD-api §6) is judged
+  # against the same fact this loop already computes: API_HOST set at all,
+  # not just non-loopback — a loopback-published door is still reachable by
+  # anything on the docker host, not only the container. Told to the process
+  # the same way FLOCK_ALLOW_PLAINTEXT is: exported here, not re-derived
+  # in-container, because API_BIND is hardcoded 0.0.0.0 in the image
+  # (Dockerfile) and cannot tell the process whether it was published.
+  [ "$door" = "API" ] && export API_PUBLISHED=1
   eval "cert=\"\${${door}_TLS_CERT:-}\""
   eval "key=\"\${${door}_TLS_KEY:-}\""
   [ "$door" = "SESSION" ] && [ -z "$cert" ] && cert="${API_TLS_CERT:-}" && key="${API_TLS_KEY:-}"
