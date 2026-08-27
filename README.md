@@ -178,6 +178,53 @@ flow. `setup.sh` asks for them by name, then assigns by defaults-plus-exceptions
 Secrets travel by `docker cp` from `container/home/`, never baked into the image
 and never a volume.
 
+### Cloning or relocating a tenant
+
+To clone or migrate an existing deployment without interactive re-authentication
+across vendor login flows, use `seed-home.sh`'s `out`/`in` mechanism as a
+migration path:
+
+1. **On the SOURCE tenant:** pull real, currently-logged-in credential files out
+   of the running container into `container/home/` on the host:
+   ```bash
+   ./container/seed-home.sh out <source-container-name>
+   ```
+2. **Copy the repository** (`cp -r` or your preferred transfer method) to the
+   new location.
+3. **Edit `container/.env`** for the new deployment (`CLAUDE_OAUTH_TOKEN_<PROFILE>`,
+   `TENANT`, `POD`, `AGENTS`, `API_TOKEN`, etc.).
+   > ⚠ **Naming rules:** `TENANT` and `POD` must be lowercase alphanumeric and
+   > hyphens (1–63 chars, starting with a letter or digit, not all-digits, and
+   > not reserved words like `pod`, `tenant`, `agent`, or `all`). The entrypoint
+   > validates these upfront and fails fast with a clear error message instead of
+   > crash-looping.
+4. **Bring the new container up.** Both paths are supported:
+   - **Interactive:** `./setup.sh` (prompts and generates `.env` for you — not
+     needed if `container/.env` is already configured).
+   - **Manual:**
+     ```bash
+     docker compose -p h-flock-<tenant> --env-file container/.env -f container/compose.yaml up -d
+     ```
+     ⚠ **Always pass `-p` explicitly with a real project name.** Omitting `-p`
+     defaults Docker Compose's project name to the current directory name (e.g.
+     `container`), producing confusing container names like `container-tenant-1`
+     instead of `h-flock-<tenant>-tenant-1`.
+5. **Seed the credentials into the new tenant:**
+   ```bash
+   ./container/seed-home.sh in <the-real-container-name>
+   ```
+   *(Note: `seed-home.sh` defaults to guessing `h-flock-${TENANT}-tenant-1`, which
+   only matches if you used `-p h-flock-<tenant>` consistently; pass the actual
+   container name explicitly otherwise.)*
+6. **Verify the login status:**
+   ```bash
+   ./container/seed-home.sh check <the-real-container-name>
+   ```
+
+**End state:** assuming the source tenant was logged in and step 1 ran cleanly,
+all three CLIs (`claude`, `codex`, `agy`) start authenticated in the new tenant
+with zero interactive browser re-authentication flows required.
+
 ### Your own model
 
 An agent can run against a **local inference server** instead of a vendor
