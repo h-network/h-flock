@@ -138,10 +138,10 @@ pane message to.
 
 ## 2b. Todo-duration: the same alert for a ticket nobody has taken yet
 
-A third rule, same family as §2a and added alongside it: any ticket in an
-agent's `tasks.todo` whose `created_ts` is at least `WATCHDOG_TODO_ALERT_SEC`
-old (default `300`, 5 minutes) is reported to the lead the same way — direct
-pane message, not the alerts stream, board-only trigger.
+Second rule in the family, same shape as §2a: any ticket in an agent's
+`tasks.todo` whose `created_ts` is at least `WATCHDOG_TODO_ALERT_SEC` old
+(default `300`, 5 minutes) is reported to the lead the same way — direct pane
+message, not the alerts stream, board-only trigger.
 
 ⚠ **Presence-independent for a different reason than §2a's.** §2a's ticket is
 already `doing`, so an agent could be `working`, `idle` or silent and the rule
@@ -169,6 +169,46 @@ never be evaluated again.
 Delivery reuses the exact mechanism §2a introduced (`_notify_lead`): same
 envelope build, same direct write to the lead's `ingress`, same
 `flock.port <lead>` kick, same silent no-op when there is no `tmux` lead.
+
+## 2c. Hold-duration: the same alert for a ticket parked too long
+
+Third rule in the family, same shape as §2b: any ticket in an agent's
+`tasks.hold` whose `held_ts` is at least `WATCHDOG_HOLD_ALERT_SEC` old
+(default `3600`, 60 minutes) is reported to the lead — direct pane message,
+board-only trigger, presence-independent for the same reason as §2b: a held
+ticket has no work in progress to have a presence opinion about.
+
+⚠ **The threshold is an hour, not minutes, on purpose.** `hold` is often a
+deliberate, legitimate wait on something external — it is not itself a
+problem the way an unpicked `todo` ticket or a stalled `doing` ticket is. The
+rule is not "nag whenever something is parked"; it is "force a decision once a
+park has gone on long enough to stop looking like a wait and start looking
+like abandonment." A ticket that genuinely needs to stay parked past that
+point is a signal the ticket itself is wrong, not that the alert should keep
+tolerating it — the right response is usually `cancel` or `delete`, not
+silence.
+
+```
+[alert from watchdog] <agent> has had "<ticket title>" on hold for <N> min
+```
+
+`<N>` is `hold_age_s // 60`.
+
+**`held_ts` falls back to `created_ts` when absent**, the same fallback
+`office list`'s own `_ticket_age` uses (`office/cli.py`) — a ticket held by an
+older client, or before `held_ts` existed, has nothing else to measure age
+from. Using `created_ts` there is an approximation (it also counts time spent
+in `todo`/`doing` before the hold), not a precise hold duration, but it is
+closer to the truth than refusing to report at all.
+
+**State is a HASH, keyed by ticket id, same reasoning as `todo.alerted`**:
+`tasks.hold` is not a one-ticket slot either, so
+`<prefix>:agent:<name>:hold.alerted` tracks each held ticket's crossing count
+independently and drops entries for tickets that leave `hold` (resumed,
+cancelled or deleted), the same pruning §2b's `todo.alerted` does.
+
+Delivery reuses `_notify_lead` unchanged — same envelope, same direct
+`ingress` write, same kick, same silent no-op with no `tmux` lead.
 
 ## 3. `blocked`: a retained delivery verdict
 
@@ -260,8 +300,9 @@ Alert records are facts, not diagnoses. Their common fields are `v`, `ts` and
 `kind`; the remaining fields are specific to `stalled`, `blocked`, or
 `credential` as shown in this document.
 
-⚠ **§2a and §2b are the exception, and it is to the lead only.** Both share
-one delivery mechanism (`_notify_lead`) and the same scope. HLD §8c works out
+⚠ **§2a, §2b and §2c are the exception, and it is to the lead only.** All
+three share one delivery mechanism (`_notify_lead`) and the same scope. HLD
+§8c works out
 why the lead does not re-create the symptom-clearing problem above:
 the lead is the one participant in this fabric that a human's own judgment is
 meant to reach through, per HLD §8c's "why there is a lead at all" — a title
@@ -332,6 +373,7 @@ agents.
 | `WATCHDOG_CREDENTIAL_WARN_DAYS` | `7` | refresh-token warning horizon |
 | `WATCHDOG_DOING_ALERT_SEC` | `900` | age at which §2a messages the lead directly, and the re-alert period thereafter |
 | `WATCHDOG_TODO_ALERT_SEC` | `300` | age at which §2b messages the lead directly, and the re-alert period thereafter |
+| `WATCHDOG_HOLD_ALERT_SEC` | `3600` | age at which §2c messages the lead directly, and the re-alert period thereafter |
 
 `REDIS_URL`, `POD` and `TENANT` identify the tenant. `TMUX_SESSION` defaults to
 the tenant name; `TMUX_SOCKET` selects an explicit tmux socket when present.
@@ -351,13 +393,13 @@ the tenant name; `TMUX_SOCKET` selects an explicit tmux socket when present.
    reviewing build 77 — the move updated eight docs for the file *paths* and
    missed the sentence about *ownership*.
 5. `blocked` is a limited delivery-verification verdict, not a diagnosis.
-6. ⚠ **AMENDED — §2a and §2b are the exception.** Every `stalled`, `blocked`
-   and `credential` alert still goes only to the Redis Stream and container
-   log, never into any agent's ingress queue. §2a's doing-duration message and
-   §2b's todo-duration message are the exception, and it is narrower than "an
-   agent's ingress queue" in general: both are addressed only to whichever
-   participant is currently the tenant's `lead` (HLD §8c), never to the agent
-   the ticket names, and never to any other peer. If there is no lead, or the
-   lead is not `tmux`, neither rule falls back to any other participant — they
-   send nothing.
+6. ⚠ **AMENDED — §2a, §2b and §2c are the exception.** Every `stalled`,
+   `blocked` and `credential` alert still goes only to the Redis Stream and
+   container log, never into any agent's ingress queue. §2a's doing-duration,
+   §2b's todo-duration and §2c's hold-duration messages are the exception, and
+   it is narrower than "an agent's ingress queue" in general: all three are
+   addressed only to whichever participant is currently the tenant's `lead`
+   (HLD §8c), never to the agent the ticket names, and never to any other
+   peer. If there is no lead, or the lead is not `tmux`, none of the three
+   fall back to any other participant — they send nothing.
 7. No terminal content is captured or parsed.

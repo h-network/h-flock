@@ -452,6 +452,166 @@ def test_todo_duration_does_nothing_without_a_configured_lead(monkeypatch):
     assert _key("architect", "ingress") not in r.lists
 
 
+def _hold_agent(r, agent="sme-2", *, held="2026-08-09T13:00:00Z", ticket_id="ticket-1", title="wait on the vendor reply", append=False, created=None):
+    entry = {"id": ticket_id, "title": title}
+    if held is not None:
+        entry["held_ts"] = held
+    if created is not None:
+        entry["created_ts"] = created
+    key = _key(agent, "tasks.hold")
+    if append:
+        r.lists.setdefault(key, []).append(json.dumps(entry))
+    else:
+        r.lists[key] = [json.dumps(entry)]
+
+
+def test_hold_duration_messages_the_lead_directly_not_the_alerts_stream(monkeypatch):
+    r = WatchRedis()
+    _hold_agent(r)
+    _lead(r)
+    kicks = []
+    monkeypatch.setattr(service, "run_tmux", _quiet_windows())
+    monkeypatch.setattr(service.subprocess, "Popen", lambda args: kicks.append(args))
+
+    _watchdog(r).poll(now=NOW)
+
+    assert prefix("acme", "hq", resource="alerts") not in r.streams
+    ingress = r.lists[_key("architect", "ingress")]
+    assert len(ingress) == 1
+    envelope = parse(ingress[0])
+    assert envelope["l2"]["source"] == "watchdog"
+    assert envelope["l2"]["destination"] == "architect"
+    assert envelope["payload"]["text"] == (
+        '[alert from watchdog] sme-2 has had '
+        '"wait on the vendor reply" on hold for 60 min'
+    )
+    assert kicks == [["flock.port", "architect"]]
+
+
+def test_hold_duration_does_not_fire_before_sixty_minutes(monkeypatch):
+    r = WatchRedis()
+    _hold_agent(r, held="2026-08-09T13:01:00Z")  # 3540s old, under the 3600s default
+    _lead(r)
+    monkeypatch.setattr(service, "run_tmux", _quiet_windows())
+    monkeypatch.setattr(service.subprocess, "Popen", lambda args: (_ for _ in ()).throw(AssertionError("should not kick")))
+
+    _watchdog(r).poll(now=NOW)
+
+    assert _key("architect", "ingress") not in r.lists
+
+
+def test_hold_duration_falls_back_to_created_ts_when_held_ts_is_missing(monkeypatch):
+    """Same precedent as office/cli.py's own `_ticket_age` for `hold`."""
+    r = WatchRedis()
+    _hold_agent(r, held=None, created="2026-08-09T13:00:00Z")
+    _lead(r)
+    kicks = []
+    monkeypatch.setattr(service, "run_tmux", _quiet_windows())
+    monkeypatch.setattr(service.subprocess, "Popen", lambda args: kicks.append(args))
+
+    _watchdog(r).poll(now=NOW)
+
+    assert len(kicks) == 1
+
+
+def test_hold_duration_does_not_repeat_within_the_same_threshold_crossing(monkeypatch):
+    r = WatchRedis()
+    _hold_agent(r)
+    _lead(r)
+    kicks = []
+    monkeypatch.setattr(service, "run_tmux", _quiet_windows())
+    monkeypatch.setattr(service.subprocess, "Popen", lambda args: kicks.append(args))
+    watchdog = _watchdog(r)
+
+    watchdog.poll(now=NOW)
+    watchdog.poll(now=NOW)
+    from datetime import timedelta
+    watchdog.poll(now=NOW + timedelta(seconds=60))
+
+    assert len(kicks) == 1
+    assert len(r.lists[_key("architect", "ingress")]) == 1
+
+
+def test_hold_duration_re_alerts_at_the_next_threshold_crossing(monkeypatch):
+    from datetime import timedelta
+
+    r = WatchRedis()
+    _hold_agent(r)
+    _lead(r)
+    kicks = []
+    watchdog = _watchdog(r)
+
+    monkeypatch.setattr(service, "run_tmux", _quiet_windows(NOW))
+    monkeypatch.setattr(service.subprocess, "Popen", lambda args: kicks.append(args))
+    watchdog.poll(now=NOW)
+    assert len(kicks) == 1
+
+    later = NOW + timedelta(seconds=3600)
+    monkeypatch.setattr(service, "run_tmux", _quiet_windows(later))
+    watchdog.poll(now=later)
+    assert len(kicks) == 2
+    envelope = parse(r.lists[_key("architect", "ingress")][-1])
+    assert "120 min" in envelope["payload"]["text"]
+
+
+def test_hold_duration_different_ticket_resets_and_re_alerts(monkeypatch):
+    r = WatchRedis()
+    _hold_agent(r)
+    _lead(r)
+    kicks = []
+    watchdog = _watchdog(r)
+    monkeypatch.setattr(service, "run_tmux", _quiet_windows())
+    monkeypatch.setattr(service.subprocess, "Popen", lambda args: kicks.append(args))
+    watchdog.poll(now=NOW)
+    assert len(kicks) == 1
+
+    _hold_agent(r, held="2026-08-09T13:00:00Z", ticket_id="ticket-2", title="wait on the other vendor")
+    watchdog.poll(now=NOW)
+    assert len(kicks) == 2
+
+
+def test_hold_duration_tracks_each_held_ticket_independently(monkeypatch):
+    r = WatchRedis()
+    _hold_agent(r, held="2026-08-09T13:00:00Z", ticket_id="ticket-1", title="old enough")
+    _hold_agent(r, held="2026-08-09T13:30:00Z", ticket_id="ticket-2", title="too new", append=True)
+    _lead(r)
+    kicks = []
+    monkeypatch.setattr(service, "run_tmux", _quiet_windows())
+    monkeypatch.setattr(service.subprocess, "Popen", lambda args: kicks.append(args))
+
+    _watchdog(r).poll(now=NOW)
+
+    assert len(kicks) == 1
+    envelope = parse(r.lists[_key("architect", "ingress")][-1])
+    assert "old enough" in envelope["payload"]["text"]
+
+
+def test_hold_duration_drops_state_for_a_ticket_no_longer_on_hold(monkeypatch):
+    r = WatchRedis()
+    _hold_agent(r)
+    _lead(r)
+    monkeypatch.setattr(service, "run_tmux", _quiet_windows())
+    monkeypatch.setattr(service.subprocess, "Popen", lambda args: None)
+    watchdog = _watchdog(r)
+    watchdog.poll(now=NOW)
+    assert r.hashes[_key("sme-2", "hold.alerted")] == {"ticket-1": "1"}
+
+    r.lists[_key("sme-2", "tasks.hold")] = []  # resumed, cancelled, or deleted
+    watchdog.poll(now=NOW)
+    assert r.hashes[_key("sme-2", "hold.alerted")] == {}
+
+
+def test_hold_duration_does_nothing_without_a_configured_lead(monkeypatch):
+    r = WatchRedis()
+    _hold_agent(r)
+    monkeypatch.setattr(service, "run_tmux", _quiet_windows())
+    monkeypatch.setattr(service.subprocess, "Popen", lambda args: (_ for _ in ()).throw(AssertionError("should not kick")))
+
+    _watchdog(r).poll(now=NOW)
+
+    assert _key("architect", "ingress") not in r.lists
+
+
 def test_credentials_warn_on_claude_refresh_expiry_and_codex_is_unknown(tmp_path, capsys):
     r = WatchRedis()
     r.values[_key("architect", "launch")] = "claude"
