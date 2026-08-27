@@ -1,6 +1,6 @@
 <div align="center">
 
-<img src="docs/assets/banner.svg" alt="h-flock — a message bus for agents that live in terminals" width="860">
+<img src="docs/assets/banner.svg" alt="h-flock — an office of AI agents that hire into real terminals and coordinate with each other and with you" width="860">
 
 <br/>
 
