@@ -18,6 +18,25 @@ import subprocess
 import sys
 
 
+_ANSI_ESCAPE = re.compile(r"\x1b\[[0-?]*[ -/]*[@-~]")
+_PROMPT_END = re.compile(r"(?:\[[^\r\n]*\]\s*)?[:?]\s*$")
+
+
+def terminal_prompt_line(output):
+    """Return the current unterminated prompt-shaped terminal line, if any.
+
+    Bash ``read -p`` writes a prompt without a newline and then blocks. Build
+    output is allowed to take arbitrarily long; newline-terminated output is
+    therefore never classified as a prompt. Carriage returns and ANSI display
+    controls are discarded before inspecting only the current terminal line.
+    """
+    visible = _ANSI_ESCAPE.sub("", output)
+    line = re.split(r"[\r\n]", visible)[-1]
+    if line.strip() and _PROMPT_END.search(line):
+        return line
+    return None
+
+
 def parse_args():
     parser = argparse.ArgumentParser(description="Prompt-aware driver for setup.sh")
     parser.add_argument("--setup-cmd", default="./setup.sh", help="Path to setup.sh script")
@@ -158,6 +177,14 @@ def drive_setup(cmd, pairs, timeout=15.0, cwd=None, env=None):
 
                 if re.search(expected_pattern, buf):
                     matched = True
+                else:
+                    unexpected = terminal_prompt_line(buf)
+                    if unexpected is not None:
+                        sys.stderr.write(
+                            f"\ndrive-setup: unexpected prompt before prompt "
+                            f"#{pair_idx+1} {expected_pattern!r}: {unexpected!r}\n"
+                        )
+                        return 2
 
             if not matched:
                 sys.stderr.write(
@@ -175,6 +202,7 @@ def drive_setup(cmd, pairs, timeout=15.0, cwd=None, env=None):
         # drift before any expected prompt is bounded above; after the final
         # answer there is no safe timeout because a legitimate image build can
         # take minutes.
+        buf = ""
         while proc.poll() is None:
             r, _, _ = select.select([master], [], [], 1.0)
             if r:
@@ -182,6 +210,14 @@ def drive_setup(cmd, pairs, timeout=15.0, cwd=None, env=None):
                     chunk = os.read(master, 1024).decode("utf-8", errors="replace")
                     sys.stdout.write(chunk)
                     sys.stdout.flush()
+                    buf += chunk
+                    unexpected = terminal_prompt_line(buf)
+                    if unexpected is not None:
+                        sys.stderr.write(
+                            f"\ndrive-setup: unexpected trailing prompt after "
+                            f"the final scripted answer: {unexpected!r}\n"
+                        )
+                        return 2
                 except OSError:
                     break
 
