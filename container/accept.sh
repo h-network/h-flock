@@ -343,48 +343,24 @@ fi
 
 step "install — driving setup.sh as a person would"
 declare -f flock_image_line >/dev/null && flock_image_line
-# ⚠ POSITIONAL. One answer per prompt, in setup.sh's order:
-#   pod · tenant · 2 agents · their names · no extra accounts · no provider
-#   · OPEN THE API DOOR (yes — this harness drives it) · no Telegram
-#   · api host port · session host port
-#   · reachable from another machine · no certificate · no self-signed
-#
-# ⚠ The four middle answers were added 2026-08-20. The prompts changed and this
-# string did not, which is the breakage the header above predicts — and it is
-# api's "atomic edge and consumer landing" rule: an edge knob changed without
-# its consumers in the same commit leaves the repo broken.
-# ⚠ A SHORT VERIFICATION WINDOW, ON PURPOSE. The failure simulator proves the
-# fabric still CATCHES a wedged agent, and no verdict can exist until a marker is
-# older than this. Production is 120s, which would make each of the four cases
-# wait out two minutes. What is under test is the detection, not the tuning
-# value — that is measured separately in BUILD-81's live arm.
-# ⚠ It also exercises the knob end to end. `Dockerfile:119` shadowed this exact
-# variable and two lanes' fixes never reached a running tenant.
+# Keep the live acceptance run's delivery-verification gates short. Production
+# defaults to 120 seconds; the core suite proves the mechanism, not that tuning.
 export VERIFY_AFTER_SECONDS=5
 
-rm -f container/.env
-# ⚠ POSITIONAL, AND setup.sh's PROMPT ORDER IS PART OF THIS FILE'S CONTRACT.
-# Two answers were inserted on 2026-08-23 when "Default CLI" and "any agents
-# differing" moved OUT of the accounts branch so a single-account tenant can
-# still choose codex or agy. Both are blank here: claude for everyone, no
-# exceptions. Adding a prompt to setup.sh without adding an answer here shifts
-# every later field and the tenant comes up configured as something nobody asked
-# for — which is why the answers are listed one per line below.
-#
-#   acme        pod                     n     more than one account?
-#   $TENANT     tenant                  ""    OAuth token -> none, log in later
-#   2           how many agents         ""    default CLI  -> claude
-#   architect   agent #1                ""    any agents differing -> none
-#   sme-2       agent #2                n     local model provider?
-#                                       y     open the REST API door?
-#                                       n     telegram?
-#   $API_PORT   api host port           $SESSION_PORT  session host port
-#   y           reach from elsewhere    ""    tls cert path -> more choices
-#   n           generate self-signed?
-printf 'acme\n%s\n2\narchitect\nsme-2\nn\n\n\n\nn\ny\nn\n%s\n%s\ny\n\nn\n' \
-  "$TENANT" "$API_PORT" "$SESSION_PORT" | ./setup.sh \
-  > >(grep -E "healthy|error|Error|NEEDS LOGIN|logged in|wrote container/.env|not enabled" | head -10) 2>&1
-SETUP_RC="${PIPESTATUS[1]}"
+# ⚠ PROMPT-AWARE DRIVER. Rather than feeding answers positionally through a
+# blind printf pipe — where an added prompt shifts every later answer by one —
+# drive-setup.py matches each expected prompt regex before answering. An unmapped,
+# reordered or missing prompt fails immediately with a loud mismatch error.
+python3 container/drive-setup.py \
+  --tenant "$TENANT" \
+  --api-port "$API_PORT" \
+  --session-port "$SESSION_PORT" \
+  --publish-api y \
+  --publish-session y \
+  --remote y \
+  --self-signed n \
+  | grep -E "healthy|error|Error|NEEDS LOGIN|logged in|wrote container/.env|not enabled" | head -10
+SETUP_RC="${PIPESTATUS[0]}"
 # setup.sh is the operation that creates the project. Record ownership only
 # after Docker confirms that this run brought its container into existence.
 if [ -n "$(docker ps -aq --filter "label=com.docker.compose.project=$PROJECT" 2>/dev/null | head -1)" ]; then

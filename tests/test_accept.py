@@ -9,7 +9,7 @@ import time
 
 
 def _executable(path: Path, body: str) -> None:
-    path.write_text(textwrap.dedent(body))
+    path.write_text(textwrap.dedent(body).lstrip())
     path.chmod(0o755)
 
 
@@ -20,11 +20,28 @@ def test_keep_transfers_console_ownership_without_credentials_in_argv(tmp_path):
     tools = root / "tools"
     tools.mkdir()
     shutil.copy2("container/accept.sh", root / "container" / "accept.sh")
+    shutil.copy2("container/drive-setup.py", root / "container" / "drive-setup.py")
 
     _executable(
         root / "setup.sh",
         """
         #!/usr/bin/env bash
+        prompts=(
+          "Pod name" "Tenant name" "How many agents?" "Agent #1 name"
+          "Agent #2 name" "Use more than one account in this tenant?"
+          "OAuth token for 'default'" "Default CLI (claude/codex/agy)"
+          "Any agents differing from that?"
+          "Point any agent at a local model provider?"
+          "Start the REST API door inside the tenant?"
+          "Run the Telegram bot in this tenant?"
+          "Reach the REST API from outside the container"
+          "Host port for the REST API"
+          "Reach the session console from outside the container"
+          "Host port for the session console"
+          "Reach published doors from another machine"
+          "Path to a TLS certificate" "Generate a self-signed certificate?"
+        )
+        for prompt in "${prompts[@]}"; do read -rp "$prompt: " answer; done
         touch created
         cat > container/.env <<EOF
         API_ENABLED=1

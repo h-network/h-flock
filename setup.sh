@@ -7,6 +7,15 @@ cd "$(dirname "${BASH_SOURCE[0]}")"
 
 command -v docker >/dev/null 2>&1 || { echo "error: docker is required" >&2; exit 1; }
 slug() { echo "$1" | tr '[:upper:]' '[:lower:]' | tr ' ' '-'; }
+check_bool() {
+    local val="$1" def="$2"
+    val="${val:-$def}"
+    case "$val" in
+        [Yy]|[Yy][Ee][Ss]) return 0 ;;
+        [Nn]|[Nn][Oo])    return 1 ;;
+        *) echo "error: expected yes or no, got '$val'" >&2; exit 2 ;;
+    esac
+}
 
 echo "=== h-flock :: new tenant ==="
 
@@ -75,8 +84,7 @@ ask_token() {
 TOKEN_VARS=""
 
 read -rp "Use more than one account in this tenant? [y/N]: " USE_PROFILES
-case "$USE_PROFILES" in
-  [Yy]*)
+if check_bool "$USE_PROFILES" "n"; then
     read -rp "  How many accounts? [2]: " NP; NP="${NP:-2}"
     [[ "$NP" =~ ^[1-9][0-9]*$ ]] || { echo "  error: expected a positive number" >&2; exit 2; }
     for i in $(seq 1 "$NP"); do
@@ -86,12 +94,10 @@ case "$USE_PROFILES" in
         PROFILES+=("$P")
         ask_token "$P"
     done
-    ;;
-  *)
+else
     # One account still has a name — `default` — and still wants a token.
     ask_token default
-    ;;
-esac
+fi
 
 DEF_CLI=claude
 # ⚠ No associative arrays. macOS ships bash 3.2 and `declare -A` is a syntax
@@ -151,7 +157,7 @@ done
 # credential check does not apply to it.
 PROVIDER_MAP=(); LOCAL_URL=""; LOCAL_MODEL=""; LOCAL_TOKEN="local"
 read -rp "Point any agent at a local model provider? [y/N]: " USE_PROVIDER
-if [[ "${USE_PROVIDER:-n}" =~ ^[Yy] ]]; then
+if check_bool "$USE_PROVIDER" "n"; then
     # ⚠ No default. There is no sensible one — an address here was this
     # developer's own box, which is meaningless on anyone else's network.
     # The kind decides the usual port and, more importantly, whether claude can
@@ -261,77 +267,72 @@ free_port() {
 }
 
 echo
+echo
 API_ENABLED=0; API_PORT=""; API_PUBLISH=0; TELEGRAM=0
 TELEGRAM_BOT_TOKEN=""; TELEGRAM_CHAT_ID=""
 read -rp "Start the REST API door inside the tenant? [y/N]: " WANT_API
-case "${WANT_API:-n}" in y|Y) API_ENABLED=1 ;; esac
+if check_bool "$WANT_API" "n"; then API_ENABLED=1; fi
 
 read -rp "Run the Telegram bot in this tenant? [y/N]: " WANT_TG
-case "${WANT_TG:-n}" in
-    y|Y)
-        if [ "$API_ENABLED" = "0" ]; then
-            echo "  (the Telegram bot talks to the REST API, so that service is enabled inside the container)"
-            API_ENABLED=1
-        fi
-        existing_tg_token="$(grep -s '^TELEGRAM_BOT_TOKEN=' container/.env 2>/dev/null | cut -d= -f2- || true)"
-        existing_tg_chat="$(grep -s '^TELEGRAM_CHAT_ID=' container/.env 2>/dev/null | cut -d= -f2- || true)"
-        if [ -n "$existing_tg_token" ]; then
-            read -rsp "  Telegram Bot Token [keep existing]: " TG_TOKEN; echo
-        else
-            read -rsp "  Telegram Bot Token (required, blank to skip): " TG_TOKEN; echo
-        fi
-        [ -n "$TG_TOKEN" ] || TG_TOKEN="$existing_tg_token"
+if check_bool "$WANT_TG" "n"; then
+    if [ "$API_ENABLED" = "0" ]; then
+        echo "  (the Telegram bot talks to the REST API, so that service is enabled inside the container)"
+        API_ENABLED=1
+    fi
+    existing_tg_token="$(grep -s '^TELEGRAM_BOT_TOKEN=' container/.env 2>/dev/null | cut -d= -f2- || true)"
+    existing_tg_chat="$(grep -s '^TELEGRAM_CHAT_ID=' container/.env 2>/dev/null | cut -d= -f2- || true)"
+    if [ -n "$existing_tg_token" ]; then
+        read -rsp "  Telegram Bot Token [keep existing]: " TG_TOKEN; echo
+    else
+        read -rsp "  Telegram Bot Token (required, blank to skip): " TG_TOKEN; echo
+    fi
+    [ -n "$TG_TOKEN" ] || TG_TOKEN="$existing_tg_token"
 
-        if [ -n "$existing_tg_chat" ]; then
-            read -rp "  Telegram Chat ID [$existing_tg_chat]: " TG_CHAT
-        else
-            read -rp "  Telegram Chat ID (required, blank to skip): " TG_CHAT
-        fi
-        [ -n "$TG_CHAT" ] || TG_CHAT="$existing_tg_chat"
+    if [ -n "$existing_tg_chat" ]; then
+        read -rp "  Telegram Chat ID [$existing_tg_chat]: " TG_CHAT
+    else
+        read -rp "  Telegram Chat ID (required, blank to skip): " TG_CHAT
+    fi
+    [ -n "$TG_CHAT" ] || TG_CHAT="$existing_tg_chat"
 
-        if [ -n "$TG_TOKEN" ] && [ -n "$TG_CHAT" ]; then
-            TELEGRAM=1
-            TELEGRAM_BOT_TOKEN="$TG_TOKEN"
-            TELEGRAM_CHAT_ID="$TG_CHAT"
-        else
-            echo "  ⚠ Both Telegram Bot Token and Chat ID are required — Telegram bot is not enabled."
-            TELEGRAM=0
-            TELEGRAM_BOT_TOKEN=""
-            TELEGRAM_CHAT_ID=""
-        fi
-        ;;
-esac
+    if [ -n "$TG_TOKEN" ] && [ -n "$TG_CHAT" ]; then
+        TELEGRAM=1
+        TELEGRAM_BOT_TOKEN="$TG_TOKEN"
+        TELEGRAM_CHAT_ID="$TG_CHAT"
+    else
+        echo "  ⚠ Both Telegram Bot Token and Chat ID are required — Telegram bot is not enabled."
+        TELEGRAM=0
+        TELEGRAM_BOT_TOKEN=""
+        TELEGRAM_CHAT_ID=""
+    fi
+fi
 
 if [ "$API_ENABLED" = "1" ]; then
     read -rp "Reach the REST API from outside the container (0.0.0.0, every host interface)? [y/N]: " WANT_PUB_API
-    case "${WANT_PUB_API:-n}" in
-        y|Y)
-            API_PUBLISH=1
-            DEF_API="$(free_port 8080)"
-            read -rp "  Host port for the REST API [${DEF_API}]: " API_PORT
-            API_PORT="${API_PORT:-$DEF_API}"
-            ;;
-        *)
-            API_PUBLISH=0
-            API_PORT=""
-            ;;
-    esac
+    if check_bool "$WANT_PUB_API" "n"; then
+        API_PUBLISH=1
+        DEF_API="$(free_port 8080)"
+        read -rp "  Host port for the REST API [${DEF_API}]: " API_PORT
+        API_PORT="${API_PORT:-$DEF_API}"
+        [[ "$API_PORT" =~ ^[1-9][0-9]*$ ]] || { echo "error: expected a valid port number, got '$API_PORT'" >&2; exit 2; }
+    else
+        API_PUBLISH=0
+        API_PORT=""
+    fi
 fi
 
 SESSION_PUBLISH=0; SESSION_PORT=""
 read -rp "Reach the session console from outside the container (0.0.0.0, every host interface)? [Y/n]: " WANT_PUB_SESSION
-case "${WANT_PUB_SESSION:-y}" in
-    n|N)
-        SESSION_PUBLISH=0
-        SESSION_PORT=""
-        ;;
-    *)
-        SESSION_PUBLISH=1
-        DEF_SESSION="$(free_port 8081)"
-        read -rp "  Host port for the session console [${DEF_SESSION}]: " SESSION_PORT
-        SESSION_PORT="${SESSION_PORT:-$DEF_SESSION}"
-        ;;
-esac
+if check_bool "$WANT_PUB_SESSION" "y"; then
+    SESSION_PUBLISH=1
+    DEF_SESSION="$(free_port 8081)"
+    read -rp "  Host port for the session console [${DEF_SESSION}]: " SESSION_PORT
+    SESSION_PORT="${SESSION_PORT:-$DEF_SESSION}"
+    [[ "$SESSION_PORT" =~ ^[1-9][0-9]*$ ]] || { echo "error: expected a valid port number, got '$SESSION_PORT'" >&2; exit 2; }
+else
+    SESSION_PUBLISH=0
+    SESSION_PORT=""
+fi
 
 for pair in "api:${API_PORT}" "session:${SESSION_PORT}"; do
     name="${pair%%:*}"; port="${pair#*:}"
@@ -354,9 +355,7 @@ API_HOST=""; SESSION_HOST=""
 if [ "$API_PUBLISH" = "1" ] || [ "$SESSION_PUBLISH" = "1" ]; then
     echo
     read -rp "Reach published doors from another machine (bind 0.0.0.0 instead of 127.0.0.1)? [Y/n]: " REMOTE
-    if [ "${REMOTE:-y}" = "n" ] || [ "${REMOTE:-y}" = "N" ]; then
-        DOOR_HOST="127.0.0.1"   # published to this host only; plaintext never leaves it
-    else
+    if check_bool "$REMOTE" "y"; then
         DOOR_HOST="0.0.0.0"
         read -rp "  Path to a TLS certificate (blank for more choices): " TLS_CERT_HOST
         if [ -n "$TLS_CERT_HOST" ]; then
@@ -366,7 +365,7 @@ if [ "$API_PUBLISH" = "1" ] || [ "$SESSION_PUBLISH" = "1" ]; then
             [ -f "$TLS_KEY_HOST" ] || { echo "  error: TLS key not found: $TLS_KEY_HOST" >&2; exit 2; }
         else
             read -rp "  Generate a self-signed certificate? [y/N]: " SELF_SIGNED
-            if [[ "${SELF_SIGNED:-n}" =~ ^[Yy] ]]; then
+            if check_bool "$SELF_SIGNED" "n"; then
                 command -v openssl >/dev/null 2>&1 || { echo "  error: openssl is required to generate a certificate" >&2; exit 2; }
                 echo "  ⚠ Self-signed TLS encrypts traffic, but clients that verify certificates"
                 echo "    will reject it unless they are explicitly configured to trust it."
@@ -386,6 +385,8 @@ if [ "$API_PUBLISH" = "1" ] || [ "$SESSION_PUBLISH" = "1" ]; then
                 ALLOW_PLAINTEXT=1
             fi
         fi
+    else
+        DOOR_HOST="127.0.0.1"   # published to this host only; plaintext never leaves it
     fi
 fi
 
