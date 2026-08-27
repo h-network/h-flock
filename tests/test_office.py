@@ -524,6 +524,31 @@ def test_add_sends_envelope_and_never_writes_recipient_board(office_env, monkeyp
     assert office_env.moves == []
 
 
+def test_add_related_parses_dedupes_and_omits_when_absent(office_env, monkeypatch):
+    calls = []
+    monkeypatch.setattr(cli, "send", lambda r, **kwargs: calls.append(kwargs) or "assignment-stream")
+    cli.main([
+        "add", "-a", "backend", "-t", "follow-up", "-d", "brief",
+        "--related", "a1,b2, a1 ,,c3",
+    ])
+    assert calls[0]["payload"]["related"] == ["a1", "b2", "c3"]
+
+    calls.clear()
+    cli.main(["add", "-a", "backend", "-t", "no relations", "-d", "brief"])
+    assert "related" not in calls[0]["payload"]
+
+
+def test_list_shows_related_as_id_prefixes(office_env, capsys):
+    office_env.lists = {
+        _task("frontend", "todo"): [
+            b'{"id":"a1a1a1a1","title":"follow-up","related":["b2b2b2b2","c3c3c3c3",42,null]}'
+        ],
+    }
+    cli.main(["list"])
+    output = capsys.readouterr().out
+    assert "a1a1a1a1  follow-up  rel:b2b2b2b2,c3c3c3c3" in output
+
+
 def test_clone_to_all_fetches_once_then_resets_every_origin(office_env, monkeypatch, tmp_path, capsys):
     office_env.roster["worker"] = "tmux"
     workdir = tmp_path / "workdir"

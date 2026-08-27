@@ -426,6 +426,11 @@ def _ticket(raw, *, state: str) -> dict:
     }
     if ticket.get("priority") is not None:
         normalized["priority"] = ticket["priority"]
+    raw_related = ticket.get("related")
+    if isinstance(raw_related, list):
+        related = [value for value in raw_related if isinstance(value, str)]
+        if related:
+            normalized["related"] = related
     return normalized
 
 
@@ -486,6 +491,9 @@ def _ticket_line(ticket: dict, *, state: str, now: datetime) -> str:
     priority = ticket.get("priority")
     if priority:
         line += f"  p:{priority}"
+    related = ticket.get("related")
+    if related:
+        line += f"  rel:{','.join(item[:8] for item in related)}"
     age = _ticket_age(ticket, state=state, now=now)
     if age:
         line += f"  age:{age}"
@@ -606,12 +614,19 @@ def _add_command(argv: list[str]) -> None:
     parser.add_argument("-t", "--title", required=True, metavar="TITLE")
     parser.add_argument("-d", "--description", required=True, metavar="DESCRIPTION")
     parser.add_argument("-p", "--priority", metavar="PRIORITY")
+    parser.add_argument("-r", "--related", metavar="ID[,ID...]",
+                         help="ticket ids this one references — stored, never validated "
+                              "(a related ticket may live on another agent's board)")
     args = parser.parse_args(argv)
 
     r, pod, tenant, source = _context()
     if not is_member(r, pod=pod, tenant=tenant, agent=args.agent):
         raise OfficeError(f"unknown destination agent {args.agent!r}")
     payload = {"title": args.title, "description": args.description, "priority": args.priority}
+    if args.related:
+        related = list(dict.fromkeys(value.strip() for value in args.related.split(",") if value.strip()))
+        if related:
+            payload["related"] = related
     stream_id = send(
         r,
         pod=pod,

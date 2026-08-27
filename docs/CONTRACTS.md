@@ -599,7 +599,7 @@ the api validates.
 | `StopAgent` | `control` | `{"agent": "networking"}` | removes roster row, purges identity state, kills window inline (tmuxhost cleans up on reconcile) |
 | `PauseAgent` | `control` | `{"agent": "networking"}` | marks paused in Redis and interrupts CLI |
 | `ResumeAgent` | `control` | `{"agent": "networking"}` | clears pause in Redis, resumes CLI, kicks pending ingress |
-| `AddTicket` | `tmux` | `{"title", "description", "priority"}` | writes a ticket to that agent's `tasks.todo` — and **pastes nothing** |
+| `AddTicket` | `tmux` | `{"title", "description", "priority", "related"}` | writes a ticket to that agent's `tasks.todo` — and **pastes nothing** |
 
 ⚠ **`AssignTask` is gone.** It was the old name for `AddTicket`, kept as an alias
 "for one build" in build 11 and removed in build 23 — four builds later. Sending
@@ -800,22 +800,31 @@ now, by `office add` and the `AddTicket` opener, and **the shape is pinned
 here**:
 
 ```
-  v           int     schema version, 1
-  id          str     the ticket id
-  title       str     one line
-  description str     "" when absent
-  created_by  str     who raised it
-  status      str     todo | doing | done | hold | cancelled
-  created_ts  str     ISO-8601 UTC
-  started_ts  str?    null until taken
-  done_ts     str?    null until done
-  priority    str?    present only when set
+  v           int      schema version, 1
+  id          str      the ticket id
+  title       str      one line
+  description str      "" when absent
+  created_by  str      who raised it
+  status      str      todo | doing | done | hold | cancelled
+  created_ts  str      ISO-8601 UTC
+  started_ts  str?     null until taken
+  done_ts     str?     null until done
+  held_ts     str?     null until held; not cleared by a later take
+  priority    str?     present only when set
+  related     [str]?   present only when non-empty; ticket ids, unvalidated
 ```
 
 ⚠ **`created_by` is whatever the writer supplied** — the envelope's `source`
 for an `AddTicket`, the caller for `office add`. Nothing resolves or verifies it,
 for the same reason `source` itself is unverified (`HLD` invariant 2). An
 earlier draft claimed the bus resolved it; it does not.
+
+⚠ **`related` names other ticket ids and nothing looks them up.** Set with
+`office add --related <id>[,<id>...]`, stored by the `AddTicket` opener as a
+list of strings and by nothing else — a related id may name a ticket on a
+different agent's board entirely, or nothing at all, and neither `add` nor
+`list` ever reads another board to check. It is a structural stand-in for
+writing "see ticket &lt;id&gt;" in a description, not a cross-board join.
 
 So the api parses each entry as JSON and returns an object. `status`,
 `started_ts` and `id` are structured fields anything may read.
