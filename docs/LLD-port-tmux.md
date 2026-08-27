@@ -57,9 +57,11 @@ kicks off delivery for that agent.
 The agent is not involved and its state is irrelevant — an idle agent is the
 normal case, and it has no way to know anything arrived.
 
-**The port is not a daemon.** It is invoked, it delivers **one envelope**, and
-it exits. Nothing sits blocked on a queue, no connection is held per agent,
-and an office of idle agents costs nothing at all. The alternative — a
+**The port is not a daemon.** It is invoked, atomically snapshot-drains
+whatever is currently queued on that destination's ingress queue (via a Redis
+Lua script), batches consecutive `Message` envelopes into a single bracketed
+paste, and exits. Nothing sits blocked on a queue, no connection is held per
+agent, and an office of idle agents costs nothing at all. The alternative — a
 long-running consumer per agent, popping eagerly — **moves the backlog into
 process memory**: delivery takes hundreds of milliseconds, arrivals are not rate
 limited, so a loop draining as fast as it can buffers unboundedly in RAM,
@@ -71,24 +73,28 @@ number anything can read. This deployment deliberately disables Redis
 persistence, so the backlog does not survive a tenant restart
 (`LLD-container` §7).
 
-**One delivery per agent at a time, and this is the one thing the kick does not
-give for free.** The number of adapters running for backend is the number of kicks
-the switch fired, so two envelopes arriving close together start two of them.
-For tmux windows, tmux calls interleave against one window:
+**One delivery per agent at a time, with opportunistic burst batching.** When the
+port runs for an agent, it acquires a busy tag in Redis (`delivering`) via `HSETNX`
+to serialize concurrent delivery processes. Upon acquiring the lock, it performs an
+**atomic snapshot-drain** of the agent's ingress queue (`LRANGE 0 -1` and `DEL` in
+a single Lua script).
 
-```
-  A: paste-buffer -t hq:frontend      "[message from backend] …"
-  B: paste-buffer -t hq:frontend      "[message from systems] …"   appended
-  A: send-keys Enter             submits both lines as one input
-  B: send-keys Enter             submits an empty prompt
-```
-
-`send-keys` targets a window, not a delivery, so nothing separates them. A busy
-tag in Redis serialises them: a port kicked for an agent that is already
-being delivered to **waits for the tag to clear, then delivers its own
-envelope**. It does not exit, and nothing drains a backlog on another kick's
-behalf. See `LLD-bus-and-switch` §3.3 for the tag, and for why a crash leaves it
-set on purpose.
+- **No fixed time window**: This is an opportunistic snapshot-drain (whatever is
+  in the queue at the exact moment the port reads it), not a "collect for N ms"
+  buffer. A normal sequential pair of messages with any real gap between them will
+  not batch; only genuine near-simultaneous bursts (envelopes arriving while a
+  previous delivery held the lock or during port initialization) batch into one
+  paste.
+- **Message batching**: Consecutive `Message`-kind envelopes are concatenated
+  into ONE combined bracketed paste (`[message from X] text\n` per block, in
+  arrival order), requiring only a single lock-acquire/paste/lock-release cycle.
+- **Commands and Tickets**: Executable `Command` envelopes and `AddTicket`
+  mutations are never batched into message blocks; they are executed individually
+  in strict arrival order.
+- **Per-envelope custody**: Batching is purely a terminal-layer optimization and
+  is invisible to the custody chain. Every drained envelope emits its own
+  `received` record, writes its own `pending.verify` and `delivery.markers`
+  stream entries, and emits its own `opened` record upon successful paste.
 
 Deliveries for *different* agents are independent and overlap freely. A wedged
 window blocks only its own agent.
@@ -113,9 +119,18 @@ For a tmux message, the rendered line names the sender:
   [message from backend] can you review the auth change?
 ```
 
+When multiple `Message` envelopes are drained together during a burst, their
+rendered lines are concatenated into one combined block in arrival order:
+
+```
+  [message from backend] can you review the auth change?
+  [message from systems] deployment complete on staging
+```
+
 That prefix is the entire reply mechanism. The agent reads a name and replies
 with `office send -a <name> <message>` — nothing routes a reply, and nothing
-needs to.
+needs to. Combining multiple burst messages into one paste preserves all
+content and sender attributions while avoiding back-to-back paste races.
 
 ### `Command` — text to run, not text to read
 
