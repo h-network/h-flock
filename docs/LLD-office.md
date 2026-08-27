@@ -63,7 +63,7 @@ is. This is what makes "no agent writes another agent's keys" (`HLD` invariant
 3) hold structurally rather than by convention — the command has no argument
 that could name someone else's identity to write as.
 
-⚠ **`main()` scopes `FLOCK_LOG_QUIET` to its own run** (`cli.py:854`), setting
+⚠ **`main()` scopes `FLOCK_LOG_QUIET` to its own run** (`cli.py:885`), setting
 it before dispatch and restoring whatever it found afterward. `office` runs
 inside an agent's own pane, so bus telemetry it would otherwise print
 (`sent`, `send_refused`, …) is a signpost the agent does not need and, once,
@@ -100,7 +100,7 @@ opener decide (`cli.py:323`, `_control_command`) — `hire` creates the name,
 so checking would be backwards for it, and the others let one dead-letter
 reason live in one place rather than two.
 
-⚠ **`send` and `add` do check** (`is_member`, `cli.py:140`, `:581`) before
+⚠ **`send` and `add` do check** (`is_member`, `cli.py:140`, `:612`) before
 building the envelope, because sending to an unenrolled name is always a
 mistake for those two, never a lifecycle transition.
 
@@ -174,22 +174,29 @@ the ticket shape and the seven commands' edges around it.**
 `_ticket()` (`cli.py:402`) normalizes whatever JSON sits in a list entry into:
 
 ```
-{v, id, title, description, created_by, status, created_ts, started_ts, done_ts, [priority]}
+{v, id, title, description, created_by, status, created_ts, started_ts, done_ts, held_ts, [priority]}
 ```
 
 Reading is defensive by construction: a non-dict, a missing `id`, or a
 non-string `title` all raise `OfficeError` rather than propagate a malformed
-board entry into a command that assumes a shape. `_serialized()` (`cli.py:431`)
+board entry into a command that assumes a shape. `_serialized()` (`cli.py:432`)
 writes it back with `separators=(",", ":")` — compact, not pretty-printed,
 because it is a Redis list entry, not a file for a human to read directly.
 
+⚠ **`held_ts`, set by `hold` (`cli.py:574`), is the youngest of the four
+timestamps.** `started_ts` is not reusable for "how long has this been on
+hold": `take` overwrites it unconditionally on every take, including a retake
+out of `hold`, so it means "since last taken", not "since parked". A ticket
+held before this field existed carries none — `list` falls back to
+`created_ts` for those rather than showing nothing (§6d).
+
 ### 6b. Selecting a ticket
 
-`_select()` (`cli.py:441`) is shared by `take` (with an id), `done`, `cancel`,
+`_select()` (`cli.py:442`) is shared by `take` (with an id), `done`, `cancel`,
 `hold` and `delete`. With no reference it requires exactly one match — zero is
 "you have no open task", more than one is "specify an id". With a reference it
 matches by **id prefix**, refusing an empty match set and an ambiguous one
-(more than one ticket sharing that prefix) by name. `_remove()` (`cli.py:457`)
+(more than one ticket sharing that prefix) by name. `_remove()` (`cli.py:458`)
 does the `LREM` and raises if it removed nothing — the entry changed under the
 command mid-run, which reads as "try again" rather than a silent no-op.
 
@@ -198,11 +205,11 @@ command mid-run, which reads as "try again" rather than a silent no-op.
 | command | states it reads from | states it writes to | notes |
 |---|---|---|---|
 | `add` | — | destination's `todo` (via `AddTicket`) | the one cross-agent write; §3 above |
-| `list` | all four, `-a`/`--all` for every `tmux` agent | — | prints id-prefix + title only; `-a` adds a per-agent heading |
-| `take` | `todo`, `hold` (by id) | `doing` | refuses when `doing` is non-empty (`cli.py:504`) — checked, not emergent; no id pops FIFO from `todo` |
+| `list` | all four, `-a`/`--all` for every `tmux` agent | — | id-prefix, title, priority and state-scoped age (§6d); `-a` adds a per-agent heading |
+| `take` | `todo`, `hold` (by id) | `doing` | refuses when `doing` is non-empty (`cli.py:535`) — checked, not emergent; no id pops FIFO from `todo` |
 | `done` | `doing` | `done`, `status: "done"` | |
-| `cancel` | `doing` | `done`, `status: "cancelled"` | shares `_finish_command` with `done` (`cli.py:527`) |
-| `hold` | `doing` | `hold`, `status: "hold"` | `started_ts` stays; `done_ts` is never set |
+| `cancel` | `doing` | `done`, `status: "cancelled"` | shares `_finish_command` with `done` (`cli.py:557`) |
+| `hold` | `doing` | `hold`, `status: "hold"`, `held_ts` | `started_ts` stays as "last taken"; `done_ts` is never set |
 | `delete` | any of the four | — | permanent; requires an id, no "your one open task" default |
 
 ⚠ **`take` with an explicit id can pull from `hold`, not just `todo`.** That is
@@ -216,19 +223,61 @@ own failure so history can never break the mutation it is recording
 - `record_task_event()` (`flock.bus.logging`) appends one JSONL line to
   `TASK_RECORD` (default `~/.flock/tasks.jsonl`) — `event`, `id`, `title`,
   `agent`, `actor`, `timestamp`.
-- `_log_task()` (`cli.py:462`) calls `log_record("office", event, …)`, which
+- `_log_task()` (`cli.py:463`) calls `log_record("office", event, …)`, which
   reaches the window log the switch tails, same as the bus telemetry §2
   silences from the pane.
+
+### 6d. What `list` shows beyond id and title
+
+The default line was `<id8>  <title>` and nothing else — `priority`,
+`created_ts`, `started_ts`, `done_ts` all existed on the ticket and none of
+them were visible without `office take` or a direct Redis read, which does not
+scale to `list --all` across a whole tenant. `_ticket_line()` (`cli.py:484`)
+appends, when present, `p:<priority>` and `age:<duration>`, formatted by the
+same `_age()` (`cli.py:252`) `status` already uses for "last activity N ago" —
+one duration vocabulary across both commands rather than two.
+
+**No existing consumer parses the old shape** — checked before changing it:
+`office`'s own guide text quotes `office list` only as a one-line description
+(`tmux/ops.py:112`), no `container/scenarios/*.sh` or `accept.sh` greps its
+output, and the one test that pins the format
+(`test_list_prints_short_ids_and_titles_for_all_four_lists`) asserts substrings
+like `"a1  next" in output`, not an exact line — so appending fields is safe
+and the default output stays what it was, extended rather than replaced. No
+`--json`/`-v` flag was added because there was nothing to keep backward
+compatible with.
+
+**"Age" means one thing, consistently: time in the state the line is printed
+under**, not a duration score (`_AGE_FIELD`, `cli.py:471`):
+
+| state | timestamp | why |
+|---|---|---|
+| `todo` | `created_ts` | how long it has waited, untouched |
+| `doing` | `started_ts` | how long work has been in progress — matches `status`'s task column |
+| `hold` | `held_ts` | how long it has been parked (§6a) |
+| `done` | `done_ts` | how long ago it finished |
+
+⚠ **`done`'s total cycle time (`created_ts` → `done_ts`) was considered and
+rejected.** It is a genuinely useful number, but it means something different
+from the other three — "how long did this take" rather than "how long has it
+sat here" — and mixing the two under one unlabelled `age:` would need a second
+label to stay honest. One consistent meaning across all four states was worth
+more than the extra metric; a cycle-time view is a `created_ts`/`done_ts` diff
+away for anyone building one.
+
+A ticket missing its state's timestamp (a pre-existing entry from before this
+shipped, or a hand-written test fixture) prints with no `age:` segment at all
+rather than a placeholder — same defensive-by-omission style as `priority`.
 
 ## 7. `cloneToAll` / `clone-to-all`
 
 The filesystem-shaped exception (`LLD-bus-and-switch` §7): no envelope, no
-board, just `git`. `_clone_agents()` (`cli.py:606`) selects live `tmux`
+board, just `git`. `_clone_agents()` (`cli.py:637`) selects live `tmux`
 participants — `-a a,b` narrows to a comma-separated subset, validated against
 that set; omitted means all of them. It fetches the upstream **once** into
 whichever target agent clones first, clones every remaining target from that
 local copy, and points **every** clone's `origin` at the supplied URL rather
-than at the local source (`cli.py:649`, `:624`) — so the network cost is paid
+than at the local source (`cli.py:680`, `:655`) — so the network cost is paid
 once but no agent ends up with another agent's workspace as its remote.
 Existing target directories are skipped outright; a failed clone's partial
 directory is removed (`shutil.rmtree`) so a retry does not read "already has
@@ -236,7 +285,7 @@ it" from debris. `--dry-run` performs no writes and reports what would happen.
 `api` and `control` participants have no `/workdir` and are never targets.
 
 Also reachable as the bare `cloneToAll` on `PATH` (`clone_to_all_main`,
-`cli.py:871`), which delegates to `office cloneToAll` rather than
+`cli.py:902`), which delegates to `office cloneToAll` rather than
 reimplementing it — a second copy existed for two days in 2026-08-19..21,
 dropped this cleanup, and left directories every later run misread as done.
 
@@ -260,7 +309,7 @@ Full record shape, correlation and pricing edge cases are `CONTRACTS.md` §5's
 ## 9. Errors and output
 
 Every command-level failure is `OfficeError` (`cli.py:45`), a `ValueError`
-subclass carrying a user-facing message. `_run()` (`cli.py:886`) is the single
+subclass carrying a user-facing message. `_run()` (`cli.py:917`) is the single
 catch point: it prints `office: error: <message>` to stderr and exits 1.
 Nothing below that boundary prints its own error text or exits directly —
 argument parsing errors are the one exception, going through `argparse`'s own
