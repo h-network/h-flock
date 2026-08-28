@@ -332,9 +332,9 @@ worker failures do not pay that cost.
 container (AOF `appendfsync everysec` for durable boards and streams, with
 transport queues purged at boot via `purge_transport`).
 
-**More than one tenant per host.** Several containers is the obvious answer and
-needs no design; what needs design is them reaching each other, which is
-cross-tenant routing and already deferred.
+**Cross-tenant routing.** More than one tenant per host is built: tenant-scoped
+state and per-tenant Compose projects run several isolated tenant containers
+from one clone. What remains deferred is those tenants reaching one another.
 
 ## 8. What this is not
 
