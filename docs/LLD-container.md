@@ -256,16 +256,30 @@ A real init runs as PID 1 so orphaned processes — the children agent CLIs spaw
 and abandon — are reaped instead of accumulating as zombies. That is a container
 concern and it is solved here rather than in any module.
 
-Beyond that: if a module exits, the container exits, and the restart policy
-brings the tenant back. This is deliberately blunt for a skeleton — no
-per-process supervision inside, no partial states to reason about. A tenant is
-either up or it is not.
+Each core service — Redis, tmux host, switch, watchdog, api and session — has an
+independent restart loop with a one-second delay. A service exit is recorded,
+only that service is restarted, and the entrypoint stays alive; it does not kill
+the other services, the tmux server or agent windows. The modules already owe
+their callers idempotent startup and reconnection, so recovery remains local to
+the failed service.
+
+`SIGINT` or `SIGTERM` to the entrypoint is different: it is an actual container
+stop. The shutdown path signals every supervisor, each supervisor forwards the
+signal to its current child, and the entrypoint waits for them before exiting.
+Docker's `unless-stopped` policy remains a last resort for an entrypoint or
+container failure, not the normal service restart mechanism.
+
+⚠ **Redis is supervised by the same policy.** Its AOF restores durable and
+ephemeral keys after a Redis-only process failure; the transport purge in §5 is
+a *container boot* boundary and does not run on an in-place Redis restart. That
+distinction is material: if Redis loses an acknowledged `LPOP` but retains the
+older `RPUSH`, the switch can see that transport entry again after reconnecting.
+The boot-time purge protects at-most-once delivery across a container restart;
+a Redis-only crash does not have that stronger boundary. Closing that gap would
+require coordinating the still-running switch with Redis recovery, which this
+independent policy deliberately does not do.
 
 ## 7. Deferred
-
-**Per-module supervision.** Restarting one module without the tenant is a real
-thing to want eventually, and needs a supervisor inside the container. Not for
-the first build, where "restart the tenant" is an acceptable answer.
 
 **Cross-tenant persistence.** Redis persistence is enabled locally within the
 container (AOF `appendfsync everysec` for durable boards and streams, with

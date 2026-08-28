@@ -61,7 +61,8 @@ RUN mkdir -p /etc/flock \
  && chown -R ubuntu:ubuntu /home/ubuntu/.claude /home/ubuntu/.codex /app/container /app/clients /etc/flock
 
 COPY container/entrypoint.sh /usr/local/bin/entrypoint.sh
-RUN chmod +x /usr/local/bin/entrypoint.sh
+COPY container/supervise-service.sh /usr/local/bin/supervise-service.sh
+RUN chmod +x /usr/local/bin/entrypoint.sh /usr/local/bin/supervise-service.sh
 
 # agy shows three first-run gates — a colour-scheme picker, a pre-checked
 # consent to send interaction data to Google, and a workspace-trust prompt — and

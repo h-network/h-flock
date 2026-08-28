@@ -126,10 +126,10 @@ chmod 700 "$TMUX_TMPDIR"
 pids=()
 start() {
   local name="$1"; shift
-  "$@" &
+  /usr/local/bin/supervise-service.sh "$name" "$@" &
   local pid=$!
   pids+=("$pid")
-  jlog "{\"module\":\"container\",\"writer\":\"container\",\"event\":\"started\",\"reason\":\"$name pid=$pid\"}"
+  jlog "{\"module\":\"container\",\"writer\":\"container\",\"event\":\"supervisor_started\",\"service\":\"$name\",\"pid\":$pid}"
 }
 
 start_client() {
@@ -144,12 +144,14 @@ start_client() {
   jlog "{\"module\":\"container\",\"writer\":\"container\",\"event\":\"started\",\"reason\":\"client $name pid=$pid\"}"
 }
 
-# If a module exits, the tenant exits and the restart policy brings it back.
-# Deliberately blunt for a skeleton — no partial states to reason about (§6).
+# A real container stop still tears down every independent supervisor. Each
+# supervisor forwards TERM to its current child before exiting.
 shutdown() {
   local code=$?
+  trap - EXIT INT TERM
   jlog "{\"module\":\"container\",\"writer\":\"container\",\"event\":\"stopped\",\"reason\":\"exit=$code\"}"
   kill "${pids[@]}" 2>/dev/null || true
+  wait "${pids[@]}" 2>/dev/null || true
   exit "$code"
 }
 trap shutdown EXIT INT TERM
@@ -472,4 +474,6 @@ if [ -n "${TELEGRAM_BOT_TOKEN:-}" ]; then
   fi
 fi
 
-wait -n "${pids[@]}"
+# Supervisors restart their own child forever. Waiting for all of them keeps the
+# entrypoint alive without making any one service's exit a container-wide event.
+wait "${pids[@]}"

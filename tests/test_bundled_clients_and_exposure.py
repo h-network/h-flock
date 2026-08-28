@@ -69,7 +69,7 @@ def test_entrypoint_starts_telegram_client_when_configured():
     script = ENTRYPOINT.read_text(encoding="utf-8")
     assert "start_client telegram" in script
     assert "TELEGRAM_BOT_TOKEN" in script
-    assert 'wait -n "${pids[@]}"' in script
+    assert 'wait "${pids[@]}"' in script
 
 
 def test_entrypoint_skips_telegram_client_when_api_disabled():

@@ -83,8 +83,8 @@ services:
       TELEGRAM_BOT_TOKEN: "${TELEGRAM_BOT_TOKEN:-}"
       TELEGRAM_CHAT_ID: "${TELEGRAM_CHAT_ID:-}"
       TELEGRAM_VOICE: "${TELEGRAM_VOICE:-0}"
-    # A tenant is either up or it is not; if a module exits the container exits
-    # and this brings it back (LLD-container §6).
+    # Core services restart independently inside the tenant. This is the last
+    # resort for an entrypoint or container failure (LLD-container §6).
     restart: unless-stopped
     init: false  # tini is PID 1 from the image's own ENTRYPOINT
     healthcheck:

@@ -204,10 +204,11 @@ the same line to the durable mounted custody log (`FLOCK_CUSTODY_FILE`).
 tmux restarts nothing. A window whose process exits stays dead; a server that
 dies takes every pane with it.
 
-So supervision lives **above** this module — a service manager or the
-container's restart policy. What this module owes that supervisor is
-idempotence: bringing the host up when it is already up must be a no-op, and
-reconciliation must converge rather than duplicate.
+So supervision lives **above** this module — the container entrypoint gives the
+tmux host its own restart loop without restarting peer services. What this
+module owes that supervisor is idempotence: bringing the host up when it is
+already up must be a no-op, and reconciliation must converge rather than
+duplicate.
 
 Two consequences for anything downstream:
 
