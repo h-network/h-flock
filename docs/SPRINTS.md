@@ -312,9 +312,14 @@ instrument this sprint measures with, forcing an order inside the sprint. Not
 changing it means the contract can be re-measured against the suite as it
 stands.
 
-⚠ **The only sprint that needs the performance host.** Fold *local model:
-long-context behaviour unknown* into the same trip — nothing says what a local
-agent does when it fills its window, and that needs the same machine.
+⚠ **The only sprint that needs the performance host.**
+
+⚠ **CORRECTED — do not fold in *local model: long-context behaviour unknown*
+as this section previously said.** `TODO.md` closed that row **DECIDED
+2026-08-26, not pursuing** — behaviour varies too much per model to
+generalise into an h-flock-level claim, three days after this file's last
+full re-check (2026-08-23) and never reflected back here. This sprint is the
+broadcast ACL and the six-record re-measurement only.
 
 ---
 
@@ -346,17 +351,27 @@ that.
 
 ## Sprint 7 — coordination between agents
 
-**Rows:** *the task board has no push* · *an agent cannot tell what its peers
-are* · *`correlation_id` is invisible to agents*
+**Rows:** *the task board has no push (partially addressed)* ·
+~~*an agent cannot tell what its peers are*~~ · *`correlation_id` is invisible
+to agents*
+
+⚠ **CORRECTED — one row shipped, one is half-closed, since this section was
+last written.** `TODO.md:81` marks *an agent cannot tell what its peers are*
+**SHIPPED in build 108** (`office peers -v`) — it is not open work. `TODO.md:79`
+marks *the task board has no push* **partially addressed 2026-08-27**:
+watchdog's unpicked-ticket alert now surfaces a ticket sitting unnoticed in
+`todo`, so "assignment delivers itself" is done for the notification half;
+message-budget bookkeeping and per-participant phase tickets are still
+untouched.
 
 Everything here was asked for by the agents themselves after a live multi-party
 run, which is the reason to trust the list.
 
 | | |
 |---|---|
-| board | a ticket lands with **no notification**, so the guide instructs a manual doorbell after every assignment and a lead hand-counts message budgets. Assignment should deliver itself |
-| peers | `office peers` returns names. Nothing says which framework a peer runs — and the three differ in what they can do, what they can be pointed at, and whether they can be priced at all |
-| threads | the fabric mints and propagates `correlation_id` through every custody stage; it is the join key the whole custody log is built on. `office send` neither shows it nor accepts one, so a thread is reconstructible from the log and not from the interface an agent uses |
+| board | **half-open.** A ticket used to land with no notification at all; `docs/LLD-watchdog.md` §2b now alerts the lead when one sits unpicked. What remains: the lead still hand-counts message budgets, and phase work still has no per-participant ticket |
+| ~~peers~~ | **closed, build 108.** `office peers -v` reports framework, profile and current task per peer, built from keys the display already reads |
+| threads | the fabric mints and propagates `correlation_id` through every custody stage; it is the join key the whole custody log is built on. `office send` neither shows it nor accepts one, so a thread is reconstructible from the log and not from the interface an agent uses. ⚠ **Sharper as of `TODO.md:83`**: `bus/doors.py:43`'s `send()` returns only a stream id, so the first task isn't a CLI flag, it's widening that single choke point's return — both `office send` and the api door gain it from one change |
 
 ---
 
@@ -412,13 +427,21 @@ Today's builds and acceptance runs opened six rows that no sprint above covers.
 **Re-slot them before picking sprint 4** — three of them are consequences of
 sprint 2 and belong next to it, not at the bottom of a list:
 
-- `tmuxhost` should emit the control confirmation — the half of *a hire leaves no
-  record* that build 91 does **not** close
+⚠ **CORRECTED — two of the six are closed, not open.** ~~`tmuxhost` should
+emit the control confirmation~~ shipped in build 103 (`TODO.md:55`), joining
+`window_created` to its cause. ~~`office status` says `unknown` for an agy
+agent~~ was answered 2026-08-27 (`TODO.md:62`): presence was not genuinely
+underivable, `ActivityTailer` now tails agy's `history.jsonl`, and the only
+remaining gap is deploy-lag rolling the fix out to this tenant's own running
+processes, not a design question. Struck through below rather than removed,
+so the "re-slot" instruction isn't read as still applying to them.
+
+- ~~`tmuxhost` should emit the control confirmation~~ — **shipped, build 103**
 - control desired-state writes are not atomic, so a partial hire is possible
 - a revoked OAuth token is invisible to the watchdog
 - acceptance never exercises `office usage` or `office status`
 - codex `rate_limits` has never been seen working live
-- `office status` says `unknown` for an agy agent
+- ~~`office status` says `unknown` for an agy agent~~ — **answered, 2026-08-27**
 
 ---
 
@@ -426,13 +449,13 @@ sprint 2 and belong next to it, not at the bottom of a list:
 
 | | |
 |---|---|
-| **profile logins** | a person has to sit at a browser. Not buildable |
+| **profile logins** | ⚠ **softened, `TODO.md:25`: DECIDED 2026-08-26, not solved but settled.** A person still has to sit at a browser once — but a minted `CLAUDE_OAUTH_TOKEN_<PROFILE>` (claude) or a persisted `seed-home.sh out`/`in` credential (codex, agy) means that happens at most once per account, not once per rebuild. Not buildable as a zero-human-step flow; the "once per rebuild" cost it originally named is gone |
 | **the console cannot reach TLS doors** | real, ~30 lines, and `clients/` is closed to development. Recorded, not scheduled |
 | **not ours: the model and the CLI** | listed so nobody hunts an h-flock bug when they see it |
 | **the permission mode lives only in argv** | probably closed by the base image, and the original trigger was never reproduced, so there is nothing to test a fix against |
 | **a naming review** | ⚠ **must come after sprints 1, 2 and 7**, or it reviews vocabulary that is about to move. What was already inventoried lived in `BUILD-45-naming-inventory.md` and `BUILD-49-vocabulary.md`, both deleted from the tree in `6dd3f1f` along with the other disposable build docs — recover them from git history (`git show 6dd3f1f~1:docs/BUILD-45-naming-inventory.md`, `...BUILD-49-vocabulary.md`) rather than re-inventorying from scratch when this is unblocked |
 | **a `gateway` participant** and **cross-tenant is designed twice** | ⚠ **one decision, not two rows, and it is the operator's.** Gateway-as-participant or switch-branch — only one can be built, and Sprint 6's cross-tenant half is blocked behind it |
-| **no acceptance seat**, **every sign-off signed by its own author** | arrangements, not code. Recorded so they are chosen rather than drifted into, and h-flock sets an office up — it does not direct how agents work |
+| ~~**no acceptance seat**, **every sign-off signed by its own author**~~ | **both resolved, 2026-08-23** — `TODO.md:67` and `:69`: the acceptance seat exists (this row is filed by it) and the verifier-is-assigned-by-the-architect arrangement is set. Kept struck through rather than dropped, since the point ("arrangements, not code — h-flock sets an office up, it does not direct how agents work") is still the right framing for how these got decided |
 
 ⚠ **The closed audit findings are in no sprint, deliberately.** A
 finding is a claim until it is checked against the tree, and a previous auditor
