@@ -104,6 +104,19 @@ own (narrower) argparse surface, per office-sme:
   is dynamic** — it shows the chat's current target and updates the moment it
   changes, the one part of the keyboard that isn't a fixed constant (see
   `TelegramBot._sticky_keyboard`).
+- **`@agent message text`** — a one-off override, not a persistent-target
+  change: `@sme-2 can you check this?` reaches `sme-2` for that one message
+  only, and the very next plain message still goes to whatever 🎯 Message
+  agent has set. Deliberately anchored to the *start* of the text — an
+  `@word` anywhere else in the message is ordinary content, not a second
+  routing directive (Slack-style inline mentions notify; this one redirects
+  the whole message, so unlike Slack it needs to be unambiguous about what
+  it applies to). The name is validated against the same shape ➕ Hire
+  enforces and the live roster (`_tmux_agents()`) before sending — an
+  unknown name, a reserved word, or a real but non-tmux client (`telegram`
+  itself, `host`) is refused with a plain-text error rather than silently
+  dead-lettered. `@agent` with nothing after it prompts for a body instead
+  of sending an empty message.
 - **➕ Hire** — name (validated client-side against the same rule
   `clients/web/ui/lifecycle.js` uses: lowercase/digits/hyphens, not all
   digits, not a reserved word), then optional profile, then optional
