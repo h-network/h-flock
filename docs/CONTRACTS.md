@@ -121,9 +121,10 @@ implementation of one.
 currently queued envelopes from the agent's ingress queue via an atomic Lua script
 (`_DRAIN_INGRESS`). Consecutive `Message`-kind envelopes are concatenated into ONE
 combined bracketed paste in arrival order, executed under a single lock acquisition.
-Non-`Message` kinds (`Command`, `AddTicket`) are executed individually in arrival
-order. Every drained envelope retains its full custody record chain (`received`,
-`pending.verify` / `delivery.markers`, and `opened` per `stream_id`).
+Non-`Message` kinds (`Command`, `AddTicket`, `Attachment`) are executed
+individually in arrival order. Every drained envelope retains its own
+`received` and terminal record per `stream_id`; kinds that paste also retain
+their own `pending.verify` / `delivery.markers` entries.
 
 ### `flock.tmux` — the shared window surface
 
@@ -596,18 +597,127 @@ bus does not validate payloads (`LLD-bus-and-switch` §5).
 
 `kind` is opaque to the switch and read only by an opener (`LLD-bus-and-switch`
 §5). The table below is therefore an agreement between whoever *sends* a kind
-and whoever *opens* it — never a bus concern, and never something the switch or
-the api validates.
+and whoever *opens* it — never a bus concern. The api does not use this table as
+a whitelist; `Attachment` is the one named exception for kind-aware size and
+shape admission, described below.
 
 | `kind` | port_type that opens it | Payload | Does |
 |---|---|---|---|
 | `Message` | `tmux` | `{"text": "..."}` | pastes `[message from <source>] <text>` |
 | `Command` | `tmux` | `{"text": "..."}` | pastes `<text>` **bare** — it executes |
+| `Attachment` | `tmux` | `{"filename", "mime_type", "content_base64", "caption"?}` | writes decoded bytes into the recipient's workspace, then pastes an inert attributed notice naming the file |
 | `StartAgent` | `control` | `{"agent": "networking", "cli": "claude", "port_type": "tmux", "resume": true}` | publishes desired launch state, enrols (tmuxhost reconciles window and CLI, auto-resuming history) |
 | `StopAgent` | `control` | `{"agent": "networking"}` | removes roster row, purges identity state, kills window inline (tmuxhost cleans up on reconcile) |
 | `PauseAgent` | `control` | `{"agent": "networking"}` | marks paused in Redis and interrupts CLI |
 | `ResumeAgent` | `control` | `{"agent": "networking"}` | clears pause in Redis, resumes CLI, kicks pending ingress |
 | `AddTicket` | `tmux` | `{"title", "description", "priority", "related"}` | writes a ticket to that agent's `tasks.todo` — and **pastes nothing** |
+
+### `Attachment` — file bytes on the bus
+
+An attachment is a first-class envelope, not a path shared out of band:
+
+```json
+{
+  "kind": "Attachment",
+  "payload": {
+    "filename": "diagram.png",
+    "mime_type": "image/png",
+    "content_base64": "iVBORw0KGgo...",
+    "caption": "current topology"
+  }
+}
+```
+
+The payload is a closed shape: the first three fields are required and
+`caption` is optional; no other field is accepted. `filename`, `mime_type` and
+`content_base64` are strings. `caption`, when present, is a string. There is no
+declared byte count — the strictly decoded content is authoritative — and no
+sender-selected destination path.
+
+`content_base64` is RFC 4648 standard base64 with padding, decoded with strict
+alphabet validation. URL-safe base64 and whitespace in the encoded value are
+rejected. The decoded file is at most **10,485,760 bytes (10 MiB)**. A producer
+should reject an oversize file before encoding it; the tmux opener repeats the
+strict decode and decoded-size check because a direct bus caller can bypass the
+api or `office`.
+
+`filename` is a non-empty UTF-8 basename of at most 255 UTF-8 bytes. It may not
+be `.` or `..`, contain `/`, `\\`, NUL, another ASCII control character, or
+U+007F. `mime_type` is at most 255 ASCII bytes and matches
+`^[A-Za-z0-9][A-Za-z0-9!#$&^_.+-]*/[A-Za-z0-9][A-Za-z0-9!#$&^_.+-]*$` — no
+parameters, whitespace, controls or wildcards. It is sender-asserted metadata,
+not content detection, and a receiver must not execute or automatically open a
+file based on it. `caption` is at most 65,536 UTF-8 bytes. Its text is untrusted
+in exactly the same way as a `Message` body.
+
+The api chooses between two admission constants only after extracting `kind`:
+
+- `DEFAULT_ENVELOPE_MAX_BYTES = 1_048_576`: every non-`Attachment` request
+  keeps the existing maximum of **1,048,576 serialized JSON bytes (1 MiB)**,
+  including unknown kinds;
+- `ATTACHMENT_MAX_BYTES = 10_485_760`: the strictly decoded file content is at
+  most **10,485,760 bytes (10 MiB)**.
+
+`Attachment` uses the closed schema and field bounds above. Before decoding,
+`content_base64` is bounded by the value derived from `ATTACHMENT_MAX_BYTES`
+(`4 * ceil(10,485,760 / 3)` = **13,981,016 ASCII bytes**); after strict
+decoding, `ATTACHMENT_MAX_BYTES` is checked again.
+
+The first two values are the only policy size constants. The encoded bound is
+derived, not independently configured, so it cannot drift from the raw limit.
+
+This is a deliberately narrow exception to "the api does not know what kinds
+exist." The api recognizes one kind to apply resource admission and validate
+the data needed to measure it; it still does not reject any unknown kind or
+claim that a destination can open one. `Message`, `Command`, lifecycle kinds
+and future unknown kinds all remain under the ordinary 1 MiB limit.
+
+A tmux opener creates
+`/workdir/<recipient>/attachments/<stream_id>/`, writes the decoded content to a
+temporary file there, and atomically renames it to the validated `filename`.
+The stream-id directory makes file placement on a same-envelope replay
+idempotent and prevents two same-named attachments from colliding. A failed
+write removes its temporary file. Only after the rename does it paste this
+Message-style inert notice (with the second line omitted when there is no
+caption):
+
+```text
+[attachment from <source>] saved to <absolute-path> (<mime_type>, <decoded-byte-count> bytes)
+[attachment caption] <caption>
+```
+
+It writes the normal
+`pending.verify`/`delivery.markers` entries after the durable file write and
+before that paste. The envelope is opened only when both the file write and
+notice paste succeed; validation, decode or filesystem failure raises
+`DeadLetter` and nothing is pasted.
+
+An api port keeps its existing catch-all behavior: it stores the complete
+envelope, including `content_base64`, unchanged in the client's mailbox. The
+client validates and decodes the same payload contract. An attachment is never
+combined into a Message burst. `office send-file` and first-party interfaces
+expose attachments as unicast only.
+
+The agent-facing command is:
+
+```text
+office send-file -a <destination> <path> [--caption <text>] [--mime-type <type>]
+```
+
+It refuses `destination: all`, requires a regular file, uses the path's basename
+as `filename`, rejects it if that name is not valid above, and checks
+`ATTACHMENT_MAX_BYTES` before reading and encoding the content. `--mime-type`
+must satisfy the same grammar; when omitted, the command guesses from the
+filename and falls back to `application/octet-stream`. It prints the accepted
+raw byte count alongside the normal stream ID so the caller can confirm which
+file was enqueued. It does not promise delivery.
+
+⚠ **The raw protocol can still address an `Attachment` to `all`.** The switch
+cannot forbid that without opening the opaque body, so it fans the encoded
+envelope out like every other broadcast. Base64 adds roughly one third and
+Redis holds queue/mailbox copies per recipient; a near-limit broadcast can
+therefore amplify memory sharply. This is accepted inside the trusted tenant,
+not hidden by the unicast-only first-party surfaces.
 
 ⚠ **`AssignTask` is gone.** It was the old name for `AddTicket`, kept as an alias
 "for one build" in build 11 and removed in build 23 — four builds later. Sending
