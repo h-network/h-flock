@@ -19,6 +19,7 @@ BASE = {
     "TMUX_TMPDIR": "/tmp/test-tmux-publish",
 }
 REFUSAL = "published on '0.0.0.0' without TLS"
+REDIS_STARTED = '"event":"critical_service_started","service":"redis","pid":'
 
 
 def _run(**overrides):
@@ -54,7 +55,7 @@ def test_each_door_is_judged_separately():
 
 def test_refusal_happens_before_anything_starts():
     proc = _run(API_ENABLED="1", API_HOST="0.0.0.0")
-    assert "redis pid" not in proc.stdout
+    assert REDIS_STARTED not in proc.stdout
 
 
 def test_disabled_api_door_is_not_judged():
@@ -77,18 +78,18 @@ def test_disabled_api_door_says_so():
 def test_acknowledged_plaintext_starts():
     proc = _run(API_HOST="0.0.0.0", ALLOW_PLAINTEXT_PUBLISH="1")
     assert REFUSAL not in proc.stderr
-    assert "redis pid" in proc.stdout
+    assert REDIS_STARTED in proc.stdout
 
 
 def test_tls_configured_starts():
     proc = _run(API_HOST="0.0.0.0", SESSION_HOST="0.0.0.0",
                 API_TLS_CERT="/cert.pem", API_TLS_KEY="/key.pem")
     assert REFUSAL not in proc.stderr
-    assert "redis pid" in proc.stdout
+    assert REDIS_STARTED in proc.stdout
 
 
 def test_unpublished_container_starts():
     """No API_HOST at all is `docker run` with no -p — published nowhere."""
     proc = _run()
     assert REFUSAL not in proc.stderr
-    assert "redis pid" in proc.stdout
+    assert REDIS_STARTED in proc.stdout
