@@ -319,6 +319,53 @@ _RESERVED_AGENT_NAMES = {"all", "pod", "tenant", "agent"}
 
 _ALERT_ICONS = {"blocked": "⊘", "stalled": "⏳", "credential": "🔑"}
 
+# Telegram's own Bot API ceiling for getFile — a "photo" upload is always
+# recompressed by Telegram well under this, so it is cheap insurance rather
+# than an expected case, checked both against PhotoSize's own reported
+# file_size (before downloading anything) and the downloaded byte count
+# (in case that field was absent or wrong).
+TELEGRAM_MAX_FILE_BYTES = 20 * 1024 * 1024
+
+# Same shape as clients/web/server.py's _enforce_recordings_retention — age
+# cap first, then oldest-first eviction down to a total-size cap — reused
+# here because received photos accumulate under an agent's workdir with
+# nothing else pruning them, the identical problem recordings already
+# solved. Same numbers, since neither has a reason to differ yet.
+PHOTO_RETENTION_MAX_AGE_S = 7 * 86400
+PHOTO_RETENTION_MAX_BYTES = 100 * 1024 * 1024
+
+
+def _enforce_photo_retention(
+    photo_dir: pathlib.Path,
+    max_age_s: int = PHOTO_RETENTION_MAX_AGE_S,
+    total_max_bytes: int = PHOTO_RETENTION_MAX_BYTES,
+) -> None:
+    if not photo_dir.exists():
+        return
+    now = time.time()
+    files = []
+    total_size = 0
+    for p in photo_dir.iterdir():
+        if not p.is_file():
+            continue
+        try:
+            stat = p.stat()
+            if now - stat.st_mtime > max_age_s:
+                p.unlink(missing_ok=True)
+            else:
+                files.append((stat.st_mtime, stat.st_size, p))
+                total_size += stat.st_size
+        except OSError:
+            pass
+    files.sort(key=lambda item: item[0])  # oldest first
+    while total_size > total_max_bytes and files:
+        _, size, p = files.pop(0)
+        try:
+            p.unlink(missing_ok=True)
+            total_size -= size
+        except OSError:
+            pass
+
 # A leading "@name rest of message" — a one-off destination override for
 # just that one message, unlike 🎯 Message agent's handle_message_agent_pick
 # which changes the persistent chat_target_agent. Deliberately anchored to
@@ -596,6 +643,20 @@ class TelegramClient:
         except Exception as exc:
             logger.error(f"Telegram request failed: {exc}")
             return {"ok": False, "description": str(exc)}
+
+    def download_file(self, file_path: str) -> bytes | None:
+        """GET the raw bytes of a file already resolved via getFile's
+        `file_path` — a different base URL than every other call here
+        (`api.telegram.org/file/bot<token>/...`, not `.../bot<token>/<method>`),
+        Telegram's own split between the JSON API and file downloads."""
+        url = f"https://api.telegram.org/file/bot{self.bot_token}/{file_path}"
+        req = urllib.request.Request(url, method="GET")
+        try:
+            with urllib.request.urlopen(req, timeout=30) as resp:
+                return resp.read()
+        except Exception as exc:
+            logger.error(f"Telegram file download failed: {exc}")
+            return None
 
     def request_multipart(
         self,
@@ -1103,12 +1164,17 @@ class TelegramBot:
         pane_watch_refresh_s: float = 2.0,
         pane_watch_max_duration_s: float = 600.0,
         mini_app_url: str | None = None,
+        photo_dir_root: str = "/workdir",
     ):
         self.flock = flock_client
         self.telegram = telegram_client
         self.cursor_store = cursor_store
         self.target_agent = target_agent
         self.session_url = session_url or os.getenv("FLOCK_SESSION_URL", "")
+        # Where a received photo lands: <photo_dir_root>/<agent>/telegram-photos/
+        # (LLD-tmux-host §5 fixes /workdir/<agent> as an agent's home in
+        # production; overridable so tests don't write into a real one).
+        self.photo_dir_root = photo_dir_root
         # A public HTTPS URL for clients/web/mini.html — Telegram's own
         # requirement for a web_app button, not this codebase's. Unset means
         # no Mini App has been published for this tenant, so the button is
@@ -1531,26 +1597,138 @@ class TelegramBot:
             self.telegram.send_message(cid, text, reply_markup=self._sticky_keyboard(cid))
         return text
 
+    def _validate_mention_target(self, name: str) -> str | None:
+        """`None` if `name` is a valid, existing tmux agent an `@mention` may
+        route to; otherwise an error string ready to send back to the chat.
+        Checked against the same name shape `hire` enforces
+        (`_AGENT_NAME`/`_RESERVED_AGENT_NAMES`) and against the live roster
+        (`_tmux_agents()`, so a real but non-tmux client — `telegram` itself,
+        `host` — is refused the same as an unknown name, never silently
+        misrouted or dead-lettered onto a mailbox/queue that can't paste it
+        anywhere). Shared by the text `@mention` path (`handle_mention_prompt`)
+        and the photo path (`handle_photo_message`) — one place either kind
+        of `@mention` gets validated.
+        """
+        if not _AGENT_NAME.match(name) or name in _RESERVED_AGENT_NAMES or name not in self._tmux_agents():
+            return f"@{name} isn't a known agent to message. Use /menu to see who's enrolled."
+        return None
+
     def handle_mention_prompt(self, chat_id: int | str, name: str, rest: str) -> str:
-        """A leading "@name ..." — validated against the same name shape
-        `hire` enforces (`_AGENT_NAME`/`_RESERVED_AGENT_NAMES`) and against
-        the live roster (`_tmux_agents()`, so a real but non-tmux client —
-        `telegram` itself, `host` — is refused the same as an unknown name,
-        never silently misrouted or dead-lettered onto a mailbox/queue that
-        can't paste it anywhere). `chat_target_agent` is untouched: this is
-        a one-off for this message only, same target for the next plain one."""
+        """A leading "@name ..." — one-off destination override for this
+        message only; `chat_target_agent` is untouched, so the next plain
+        message still goes to whatever it was already set to."""
         cid = str(chat_id)
         if not rest:
             text = f"@{name} — nothing to send. Usage: @{name} your message"
             if self.telegram:
                 self.telegram.send_message(cid, text)
             return text
-        if not _AGENT_NAME.match(name) or name in _RESERVED_AGENT_NAMES or name not in self._tmux_agents():
-            text = f"@{name} isn't a known agent to message. Use /menu to see who's enrolled."
+        error = self._validate_mention_target(name)
+        if error:
             if self.telegram:
-                self.telegram.send_message(cid, text)
-            return text
+                self.telegram.send_message(cid, error)
+            return error
         return self.handle_user_prompt(cid, rest, agent_override=name)
+
+    def handle_photo_message(self, chat_id: int | str, photo_sizes: list[dict], caption: str) -> str:
+        """A photo update never carries `text` — `_dispatch_update`'s
+        text-only early return would otherwise silently drop it, which is
+        the bug this closes. Routes exactly like a text message: the
+        caption is the message body, and an `@mention` prefix on it
+        overrides the destination one-off, same as typed text
+        (`_parse_mention`/`_validate_mention_target` — no second routing
+        implementation). `photo_sizes[-1]` is Telegram's own convention for
+        "smallest to largest" — the best *compressed* version this bot ever
+        sees; a "photo" upload is always recompressed by Telegram itself,
+        full original quality is only available for a "document" upload,
+        out of scope here.
+
+        The photo is saved under the destination agent's own workdir
+        (`/workdir/<agent>/telegram-photos/`, not its root — identifiable
+        and prunable without touching anything the agent created itself)
+        and the agent is told where to look via a normal `Message` envelope
+        — claude/codex can already read an image from a path once they have
+        one, so this needed no new envelope kind or bus/switch change.
+        """
+        cid = str(chat_id)
+        caption = (caption or "").strip()
+        agent_override: str | None = None
+        body = caption
+        mention = _parse_mention(caption)
+        if mention is not None:
+            name, rest = mention
+            error = self._validate_mention_target(name)
+            if error:
+                if self.telegram:
+                    self.telegram.send_message(cid, error)
+                return error
+            agent_override = name
+            body = rest
+
+        agent = agent_override or self._target_for(cid)
+
+        if not photo_sizes:
+            return ""
+        largest = photo_sizes[-1]
+        file_id = largest.get("file_id")
+        if not file_id or not self.telegram:
+            return ""
+
+        code, presence_data = self.flock.get_presence(agent)
+        state = presence_data.get("presence", {}).get("state") if code == 200 else "unknown"
+        if state == "blocked":
+            reply = f"{agent} is not accepting messages right now"
+            self.telegram.send_message(cid, reply)
+            return reply
+
+        reported_size = largest.get("file_size")
+        if reported_size and reported_size > TELEGRAM_MAX_FILE_BYTES:
+            reply = "That photo is too large to fetch (Telegram's own 20MB bot download limit)."
+            self.telegram.send_message(cid, reply)
+            return reply
+
+        self.telegram.send_chat_action(cid)
+
+        info = self.telegram.request("getFile", {"file_id": file_id})
+        file_path = info.get("result", {}).get("file_path") if info.get("ok") else None
+        if not file_path:
+            reply = f"Couldn't fetch that photo from Telegram: {info.get('description', 'unknown error')}"
+            self.telegram.send_message(cid, reply)
+            return reply
+
+        data = self.telegram.download_file(file_path)
+        if not data:
+            reply = "Couldn't download that photo from Telegram."
+            self.telegram.send_message(cid, reply)
+            return reply
+        if len(data) > TELEGRAM_MAX_FILE_BYTES:
+            reply = "That photo is too large to save (Telegram's own 20MB bot download limit)."
+            self.telegram.send_message(cid, reply)
+            return reply
+
+        photo_dir = pathlib.Path(self.photo_dir_root) / agent / "telegram-photos"
+        try:
+            photo_dir.mkdir(parents=True, exist_ok=True)
+            dest = photo_dir / f"{int(time.time())}-{uuid.uuid4().hex[:8]}.jpg"
+            dest.write_bytes(data)
+            _enforce_photo_retention(photo_dir)
+        except OSError as exc:
+            reply = f"Failed to save photo for {agent}: {exc}"
+            self.telegram.send_message(cid, reply)
+            return reply
+
+        message_lines = [f"📷 Photo received: {dest}"]
+        if body:
+            message_lines.append(body)
+        code, resp = self.flock.send_message(agent, "\n".join(message_lines))
+        if code != 202:
+            reply = f"Saved the photo but failed to notify {agent}: {resp.get('detail', 'error')}"
+            self.telegram.send_message(cid, reply)
+            return reply
+
+        reply = f"✅ Photo saved and sent to {agent}."
+        self.telegram.send_message(cid, reply)
+        return reply
 
     # ── /watch — live-tail an agent's tmux pane ─────────────────────────────
     # One watch per chat (§2c, clients/telegram/README.md): picking a new
@@ -2075,6 +2253,12 @@ class TelegramBot:
         chat_id = str(msg["chat"]["id"])
         if not self._chat_allowed(chat_id):
             return
+
+        photo_sizes = msg.get("photo")
+        if photo_sizes:
+            self.handle_photo_message(chat_id, photo_sizes, msg.get("caption", ""))
+            return
+
         text = msg.get("text", "").strip()
         if not text:
             return
