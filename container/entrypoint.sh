@@ -124,12 +124,21 @@ mkdir -p "$TMUX_TMPDIR"
 chmod 700 "$TMUX_TMPDIR"
 
 pids=()
-start() {
+critical_pid=""
+start_critical() {
   local name="$1"; shift
   "$@" &
+  critical_pid=$!
+  pids+=("$critical_pid")
+  jlog "{\"module\":\"container\",\"writer\":\"container\",\"event\":\"critical_service_started\",\"service\":\"$name\",\"pid\":$critical_pid}"
+}
+
+start() {
+  local name="$1"; shift
+  /usr/local/bin/supervise-service.sh "$name" "$@" &
   local pid=$!
   pids+=("$pid")
-  jlog "{\"module\":\"container\",\"writer\":\"container\",\"event\":\"started\",\"reason\":\"$name pid=$pid\"}"
+  jlog "{\"module\":\"container\",\"writer\":\"container\",\"event\":\"supervisor_started\",\"service\":\"$name\",\"pid\":$pid}"
 }
 
 start_client() {
@@ -144,12 +153,14 @@ start_client() {
   jlog "{\"module\":\"container\",\"writer\":\"container\",\"event\":\"started\",\"reason\":\"client $name pid=$pid\"}"
 }
 
-# If a module exits, the tenant exits and the restart policy brings it back.
-# Deliberately blunt for a skeleton — no partial states to reason about (§6).
+# A real container stop still tears down every independent supervisor. Each
+# supervisor forwards TERM to its current child before exiting.
 shutdown() {
   local code=$?
+  trap - EXIT INT TERM
   jlog "{\"module\":\"container\",\"writer\":\"container\",\"event\":\"stopped\",\"reason\":\"exit=$code\"}"
   kill "${pids[@]}" 2>/dev/null || true
+  wait "${pids[@]}" 2>/dev/null || true
   exit "$code"
 }
 trap shutdown EXIT INT TERM
@@ -239,7 +250,7 @@ rcli() {
   fi
 }
 
-start redis "${redis_cmd[@]}"
+start_critical redis "${redis_cmd[@]}"
 redis_deadline=$((SECONDS + ${REDIS_READY_SECONDS:-30}))
 until [ "$(rcli ping 2>/dev/null)" = "PONG" ]; do
   if [ "$SECONDS" -ge "$redis_deadline" ]; then
@@ -472,4 +483,7 @@ if [ -n "${TELEGRAM_BOT_TOKEN:-}" ]; then
   fi
 fi
 
-wait -n "${pids[@]}"
+# Redis is deliberately the critical exception. Its exit ends the entrypoint so
+# the container restart path can purge transport before any switch reconnects.
+# Every other core service restarts behind its own independent supervisor.
+wait "$critical_pid"

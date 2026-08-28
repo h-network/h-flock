@@ -256,16 +256,28 @@ A real init runs as PID 1 so orphaned processes — the children agent CLIs spaw
 and abandon — are reaped instead of accumulating as zombies. That is a container
 concern and it is solved here rather than in any module.
 
-Beyond that: if a module exits, the container exits, and the restart policy
-brings the tenant back. This is deliberately blunt for a skeleton — no
-per-process supervision inside, no partial states to reason about. A tenant is
-either up or it is not.
+The tmux host, switch, watchdog, api and session each have an independent restart
+loop with a one-second delay. One of those service exits is recorded, only that
+service is restarted, and the entrypoint stays alive; it does not kill the other
+services, the tmux server or agent windows. The modules already owe their callers
+idempotent startup and reconnection, so recovery remains local to the failed
+service.
+
+`SIGINT` or `SIGTERM` to the entrypoint is different: it is an actual container
+stop. The shutdown path signals every supervisor, each supervisor forwards the
+signal to its current child, and the entrypoint waits for them before exiting.
+Docker's `unless-stopped` policy remains a last resort for an entrypoint or
+container failure, not the normal service restart mechanism.
+
+⚠ **Redis is the deliberate exception.** If Redis exits, the entrypoint exits
+and Docker restarts the whole tenant. That takes every peer service down, then
+runs the transport purge in §5 before any switch can reconnect. Treating Redis
+symmetrically would let its AOF restore an older `RPUSH` after losing a newer
+acknowledged `LPOP`, making duplicate delivery possible. Preserving the custody
+guarantee is worth a full restart for this foundational failure; local door or
+worker failures do not pay that cost.
 
 ## 7. Deferred
-
-**Per-module supervision.** Restarting one module without the tenant is a real
-thing to want eventually, and needs a supervisor inside the container. Not for
-the first build, where "restart the tenant" is an acceptable answer.
 
 **Cross-tenant persistence.** Redis persistence is enabled locally within the
 container (AOF `appendfsync everysec` for durable boards and streams, with
