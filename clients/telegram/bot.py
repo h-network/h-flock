@@ -601,6 +601,15 @@ class ReplyPusher:
                 if self.activity_finalizer_fn and source:
                     self.activity_finalizer_fn(self.chat_id, source)
 
+                if message.get("kind") == "Attachment":
+                    # ⚠ Not a text reply — the api stores this kind's mailbox
+                    # entry with content_base64 unchanged (docs/CONTRACTS.md),
+                    # and render_reply only ever reads payload.text, so
+                    # falling through to it here would render a useless
+                    # "<agent> sent a message" instead of delivering the file.
+                    self._push_attachment(message, source)
+                    continue
+
                 reply_text = render_reply(message, self.flock.app_name)
                 self.telegram.send_message(self.chat_id, reply_text)
                 is_voice = (
@@ -619,6 +628,34 @@ class ReplyPusher:
                         self.telegram.send_voice(self.chat_id, voice_file)
                     finally:
                         pathlib.Path(voice_file).unlink(missing_ok=True)
+
+    def _push_attachment(self, message: dict, source: str | None) -> None:
+        """The other direction of the Attachment feature (docs/CONTRACTS.md):
+        an agent's `office send-file` lands here as a mailbox entry with
+        `kind: "Attachment"`, decoded and forwarded via `sendDocument`.
+        Mirrors `handle_photo_message`'s rule for the receiving side — a
+        failure is reported back to the chat, never silently dropped."""
+        label = source or self.flock.app_name
+        payload = message.get("payload") if isinstance(message.get("payload"), dict) else {}
+        filename = payload.get("filename")
+        content_b64 = payload.get("content_base64")
+        if not filename or not content_b64:
+            self.telegram.send_message(self.chat_id, f"{label} sent an attachment, but it was missing required fields.")
+            return
+        try:
+            data = base64.b64decode(content_b64, validate=True)
+        except (ValueError, TypeError) as exc:
+            self.telegram.send_message(self.chat_id, f"{label} sent an attachment, but it couldn't be decoded: {exc}")
+            return
+        mime_type = payload.get("mime_type") or "application/octet-stream"
+        caption_field = payload.get("caption")
+        caption = f"from {label}" + (f": {caption_field}" if caption_field else "")
+        result = self.telegram.send_document(self.chat_id, filename, data, mime_type=mime_type, caption=caption)
+        if not result.get("ok"):
+            self.telegram.send_message(
+                self.chat_id,
+                f"Failed to deliver {label}'s attachment ({filename}): {result.get('description', 'unknown error')}",
+            )
 
 
 class TelegramClient:
@@ -735,6 +772,26 @@ class TelegramClient:
 
         files = {"voice": (filename, voice_data, "audio/mpeg")}
         return self.request_multipart("sendVoice", fields=fields, files=files)
+
+    def send_document(
+        self,
+        chat_id: int | str,
+        filename: str,
+        data: bytes,
+        mime_type: str = "application/octet-stream",
+        caption: str | None = None,
+    ) -> dict:
+        """Send file bytes via Telegram's sendDocument endpoint — the agent
+        -> Telegram direction of the Attachment feature (docs/CONTRACTS.md),
+        same multipart upload shape send_voice already uses."""
+        fields: dict = {"chat_id": chat_id}
+        if caption:
+            # Telegram's own caption limit (1024 chars) applies here
+            # regardless of the bus's much larger one (65,536 UTF-8 bytes,
+            # docs/CONTRACTS.md) — same truncation send_voice already does.
+            fields["caption"] = caption[:1024]
+        files = {"document": (filename, data, mime_type)}
+        return self.request_multipart("sendDocument", fields=fields, files=files)
 
     def send_message(
         self,
@@ -2353,6 +2410,28 @@ class DryRunTelegramClient:
                 "message_id": msg_id,
                 "chat": {"id": chat_id},
                 "voice": {"file_id": "dry_run_voice"},
+                "caption": caption,
+            },
+        }
+
+    def send_document(
+        self,
+        chat_id: int | str,
+        filename: str,
+        data: bytes,
+        mime_type: str = "application/octet-stream",
+        caption: str | None = None,
+    ) -> dict:
+        msg_id = self.next_msg_id
+        self.next_msg_id += 1
+        cap_str = f" caption={caption!r}" if caption else ""
+        print(f"[DRY-RUN Telegram] sendDocument (chat={chat_id}, msg_id={msg_id}, filename={filename}, {len(data)} bytes, mime_type={mime_type}){cap_str}\n")
+        return {
+            "ok": True,
+            "result": {
+                "message_id": msg_id,
+                "chat": {"id": chat_id},
+                "document": {"file_id": "dry_run_document", "file_name": filename},
                 "caption": caption,
             },
         }

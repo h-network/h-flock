@@ -358,6 +358,35 @@ at all).
 
 ---
 
+## 2f. Sending a File (the other direction)
+
+`office send-file` lets an agent send this bot a real file — `ReplyPusher`
+(§1) is what actually delivers it, since it already owns reading `telegram`'s
+mailbox. Until this shipped, an `Attachment`-kind mailbox entry hit
+`render_reply`, which only ever reads `payload.text` — absent on an
+`Attachment` payload — so it silently rendered as `"<agent> sent a message"`
+instead of the file ever reaching Telegram. `kind: "Attachment"` is now
+checked before falling through to the ordinary text-reply path at all.
+
+- **`content_base64` is decoded and forwarded via `sendDocument`**
+  (`TelegramClient.send_document`, same multipart shape `send_voice` already
+  used) — `filename` and `mime_type` come straight from the envelope
+  payload, `caption` is prefixed with the sending agent (`from <agent>: ...`,
+  or just `from <agent>` with none) the same way a text reply is prefixed
+  with its source.
+- **A failure is reported back to the chat, never silently dropped** —
+  missing `filename`/`content_base64`, a `content_base64` that fails strict
+  decoding, or Telegram's own `sendDocument` call failing (file too large,
+  rejected type, network error) all produce a plain-text error message in
+  the chat, mirroring the receiving side's rule (`handle_photo_message`)
+  rather than leaving the operator to wonder why nothing arrived.
+- **Telegram's own caption limit (1024 chars) is enforced client-side**,
+  same truncation `send_voice` already applies — smaller than the bus's own
+  65,536-UTF-8-byte cap (`docs/CONTRACTS.md`), so a long caption that's
+  perfectly valid on the bus still gets cut for Telegram specifically.
+
+---
+
 ## 3. Documentation Gaps in `docs/API.md`
 
 Built strictly against [`docs/API.md`](../../docs/API.md). The following gaps and ambiguities were encountered:

@@ -135,6 +135,8 @@ class DummyTelegramClient:
         self.downloaded_paths = []
         self.get_file_response = {"ok": True, "result": {"file_path": "photos/file_1.jpg"}}
         self.download_response = b"fake-jpeg-bytes"
+        self.sent_documents = []
+        self.send_document_response = {"ok": True}
 
     def send_message(self, chat_id, text, reply_to_message_id=None, reply_markup=None, **kwargs):
         msg_id = len(self.sent_messages) + len(self.sent_voices) + 1
@@ -159,6 +161,11 @@ class DummyTelegramClient:
         entry = {"chat_id": chat_id, "message_id": message_id, "text": text, "reply_markup": reply_markup, **kwargs}
         self.edited_messages.append(entry)
         return {"ok": True, "result": entry}
+
+    def send_document(self, chat_id, filename, data, mime_type="application/octet-stream", caption=None):
+        entry = {"chat_id": chat_id, "filename": filename, "data": data, "mime_type": mime_type, "caption": caption}
+        self.sent_documents.append(entry)
+        return self.send_document_response
 
     def send_chat_action(self, chat_id, action="typing"):
         self.chat_actions.append({"chat_id": chat_id, "action": action})
@@ -1437,6 +1444,107 @@ def test_reply_pusher_pushes_each_new_message_and_persists_cursor():
         assert telegram.sent_messages[0]["text"] == "architect: first"
         assert telegram.sent_messages[1]["text"] == "architect: second"
         assert store.load() == "11-0"
+
+
+def test_reply_pusher_delivers_an_attachment_via_send_document():
+    with tempfile.TemporaryDirectory() as tmpdir:
+        flock = DummyFlockClient()
+        telegram = DummyTelegramClient()
+        store = CursorStore(str(Path(tmpdir) / "cursor.json"))
+        pusher = ReplyPusher(flock, telegram, chat_id=999, cursor_store=store)
+
+        content = base64.b64encode(b"%PDF-fake-bytes").decode("ascii")
+        messages = [{
+            "kind": "Attachment",
+            "l2": {"source": "architect"},
+            "payload": {"filename": "report.pdf", "mime_type": "application/pdf", "content_base64": content, "caption": "Q3 numbers"},
+            "cursor": "10-0",
+        }]
+        pusher.run(stream_fn=lambda after=None: iter(messages))
+
+        assert len(telegram.sent_documents) == 1
+        sent = telegram.sent_documents[0]
+        assert sent["chat_id"] == 999
+        assert sent["filename"] == "report.pdf"
+        assert sent["data"] == b"%PDF-fake-bytes"
+        assert sent["mime_type"] == "application/pdf"
+        assert sent["caption"] == "from architect: Q3 numbers"
+        assert telegram.sent_messages == []  # no ordinary-reply fallback text
+
+
+def test_reply_pusher_attachment_caption_omits_colon_when_none_sent():
+    with tempfile.TemporaryDirectory() as tmpdir:
+        flock = DummyFlockClient()
+        telegram = DummyTelegramClient()
+        store = CursorStore(str(Path(tmpdir) / "cursor.json"))
+        pusher = ReplyPusher(flock, telegram, chat_id=999, cursor_store=store)
+
+        content = base64.b64encode(b"data").decode("ascii")
+        messages = [{
+            "kind": "Attachment",
+            "l2": {"source": "architect"},
+            "payload": {"filename": "notes.txt", "mime_type": "text/plain", "content_base64": content},
+            "cursor": "10-0",
+        }]
+        pusher.run(stream_fn=lambda after=None: iter(messages))
+        assert telegram.sent_documents[0]["caption"] == "from architect"
+
+
+def test_reply_pusher_reports_a_send_document_failure_instead_of_dropping_it():
+    with tempfile.TemporaryDirectory() as tmpdir:
+        flock = DummyFlockClient()
+        telegram = DummyTelegramClient()
+        telegram.send_document_response = {"ok": False, "description": "file too large"}
+        store = CursorStore(str(Path(tmpdir) / "cursor.json"))
+        pusher = ReplyPusher(flock, telegram, chat_id=999, cursor_store=store)
+
+        content = base64.b64encode(b"data").decode("ascii")
+        messages = [{
+            "kind": "Attachment",
+            "l2": {"source": "architect"},
+            "payload": {"filename": "big.bin", "mime_type": "application/octet-stream", "content_base64": content},
+            "cursor": "10-0",
+        }]
+        pusher.run(stream_fn=lambda after=None: iter(messages))
+        assert len(telegram.sent_messages) == 1
+        assert "Failed to deliver" in telegram.sent_messages[0]["text"]
+        assert "file too large" in telegram.sent_messages[0]["text"]
+
+
+def test_reply_pusher_reports_malformed_attachment_base64_without_crashing():
+    with tempfile.TemporaryDirectory() as tmpdir:
+        flock = DummyFlockClient()
+        telegram = DummyTelegramClient()
+        store = CursorStore(str(Path(tmpdir) / "cursor.json"))
+        pusher = ReplyPusher(flock, telegram, chat_id=999, cursor_store=store)
+
+        messages = [{
+            "kind": "Attachment",
+            "l2": {"source": "architect"},
+            "payload": {"filename": "x.bin", "mime_type": "application/octet-stream", "content_base64": "not-valid-base64!!"},
+            "cursor": "10-0",
+        }]
+        pusher.run(stream_fn=lambda after=None: iter(messages))  # must not raise
+        assert telegram.sent_documents == []
+        assert "couldn't be decoded" in telegram.sent_messages[0]["text"]
+
+
+def test_reply_pusher_reports_an_attachment_missing_required_fields():
+    with tempfile.TemporaryDirectory() as tmpdir:
+        flock = DummyFlockClient()
+        telegram = DummyTelegramClient()
+        store = CursorStore(str(Path(tmpdir) / "cursor.json"))
+        pusher = ReplyPusher(flock, telegram, chat_id=999, cursor_store=store)
+
+        messages = [{
+            "kind": "Attachment",
+            "l2": {"source": "architect"},
+            "payload": {"mime_type": "application/octet-stream"},  # no filename/content_base64
+            "cursor": "10-0",
+        }]
+        pusher.run(stream_fn=lambda after=None: iter(messages))
+        assert telegram.sent_documents == []
+        assert "missing required fields" in telegram.sent_messages[0]["text"]
 
 
 def test_reply_pusher_seeds_from_tail_on_first_run_not_from_history():
