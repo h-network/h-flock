@@ -1427,6 +1427,8 @@ class TelegramBot:
         agent, title = state["agent"], state["title"]
         description = state.get("description", "")
         del self.pending[cid]
+        if self.telegram:
+            self.telegram.send_chat_action(cid)
         code, resp = self.flock.add_ticket(agent, title, description, priority)
         if code == 202:
             text = f"✅ Ticket added to {agent}: {title} [{priority}]"
@@ -1463,6 +1465,8 @@ class TelegramBot:
         return text
 
     def handle_lifecycle_control(self, chat_id: int | str, kind: str, agent: str) -> str:
+        if self.telegram:
+            self.telegram.send_chat_action(chat_id)
         code, resp = self.flock.control_agent(kind, agent)
         verb = "paused" if kind == "PauseAgent" else "resumed"
         if code == 202:
@@ -1702,6 +1706,8 @@ class TelegramBot:
             provider = None if text.strip() == "-" else text.strip()
             name, profile = state["name"], state["profile"]
             del self.pending[cid]
+            if self.telegram:
+                self.telegram.send_chat_action(cid)
             code, resp = self.flock.hire_agent(name, profile=profile, provider=provider)
             if code == 202:
                 extras = ", ".join(f"{k} {v}" for k, v in (("profile", profile), ("provider", provider)) if v)
@@ -1720,6 +1726,8 @@ class TelegramBot:
                     self.telegram.send_message(cid, reply)
                 return reply  # stay open for retry, same as the web console's disabled-until-match button
             del self.pending[cid]
+            if self.telegram:
+                self.telegram.send_chat_action(cid)
             code, resp = self.flock.retire_agent(agent)
             if code == 202:
                 reply = f"✅ {agent} retired · queues and boards retained for a later re-hire."
@@ -1732,6 +1740,8 @@ class TelegramBot:
         if state["flow"] == "broadcast":
             message = text.strip()
             del self.pending[cid]
+            if self.telegram:
+                self.telegram.send_chat_action(cid)
             code, resp = self.flock.send_message("all", message)
             if code == 202:
                 reply = "📢 Broadcast sent."
@@ -1984,6 +1994,8 @@ class TelegramBot:
         """
         cid = str(chat_id)
         agent = agent_override or self._target_for(cid)
+        if self.telegram:
+            self.telegram.send_chat_action(cid)
         code, presence_data = self.flock.get_presence(agent)
         state = presence_data.get("presence", {}).get("state") if code == 200 else "unknown"
 
