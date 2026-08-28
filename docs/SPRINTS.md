@@ -12,6 +12,18 @@ once:
 3. **It fits in a merge.** Two sprints in flight, never three. An idle lane
    costs less than a wrong merge.
 
+⚠ **What this file does not cover, and why that's not a gap in it.** Only
+pre-identified **framework debt** — a row `TODO.md` already named, batched and
+sequenced against a test run — goes through a sprint. A live, operator-driven
+feature request that comes up in conversation is tracked through the ticket
+system directly, one ticket and one PR per request, and never gets a row
+here. That's a real, working split, not an oversight: framework debt needs
+the batching a sprint gives it (shared file cluster, shared test run); a
+one-off feature request doesn't, and forcing it through this file's cadence
+would only slow it down. **So a large batch of merges with no corresponding
+sprint row is expected, not a sign this file rotted** — check whether the
+work was ever a `TODO.md` row before treating its absence here as drift.
+
 ⚠ **Rows are claims about the tree, and they rot.** Every citation below was
 re-checked on 2026-08-23. Re-check before you start: this file was written from
 a tree that has since moved. The last reconciliation found **five** rows
