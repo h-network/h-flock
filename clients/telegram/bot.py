@@ -801,6 +801,22 @@ def _parse_int_overrides(spec: str) -> dict[str, int]:
     return result
 
 
+def _agent_picker_keyboard(
+    agents: list[str], callback_prefix: str, *, back_callback: str = "menu", columns: int = 3
+) -> dict:
+    """The inline keyboard every agent-picker (add ticket, lifecycle, message
+    target, watch) shows: one button per agent, `columns` to a row rather
+    than one-per-row — ten-plus enrolled agents made a single column a long
+    scroll (measured: an operator's own report). `◀ Back` always gets its
+    own row at the end, never folded into the grid, so it stays a single
+    predictable tap regardless of how many agents fill the rows above it.
+    """
+    cells = [{"text": agent, "callback_data": f"{callback_prefix}:{agent}"} for agent in agents]
+    rows = [cells[i : i + columns] for i in range(0, len(cells), columns)]
+    rows.append([{"text": "◀ Back", "callback_data": back_callback}])
+    return {"inline_keyboard": rows}
+
+
 def _derive_session_url(api_url: str, session_url: str = "") -> str:
     """Derive the session websocket URL (e.g. ws://localhost:8081/session)
     from --session-url or by replacing API URL port with 8081."""
@@ -1390,11 +1406,9 @@ class TelegramBot:
             if self.telegram:
                 self.telegram.send_message(chat_id, text)
             return text
-        buttons = [[{"text": agent, "callback_data": f"at:{agent}"}] for agent in agents]
-        buttons.append([{"text": "◀ Back", "callback_data": "menu"}])
         text = "Add a ticket — pick an agent:"
         if self.telegram:
-            self.telegram.send_message(chat_id, text, reply_markup={"inline_keyboard": buttons})
+            self.telegram.send_message(chat_id, text, reply_markup=_agent_picker_keyboard(agents, "at"))
         return text
 
     def handle_addticket_pick_agent(self, chat_id: int | str, agent: str) -> str:
@@ -1429,11 +1443,9 @@ class TelegramBot:
             if self.telegram:
                 self.telegram.send_message(chat_id, text)
             return text
-        buttons = [[{"text": agent, "callback_data": f"lc:{agent}"}] for agent in agents]
-        buttons.append([{"text": "◀ Back", "callback_data": "menu"}])
         text = "Lifecycle — pick an agent:"
         if self.telegram:
-            self.telegram.send_message(chat_id, text, reply_markup={"inline_keyboard": buttons})
+            self.telegram.send_message(chat_id, text, reply_markup=_agent_picker_keyboard(agents, "lc"))
         return text
 
     def handle_lifecycle_pick_agent(self, chat_id: int | str, agent: str) -> str:
@@ -1480,11 +1492,9 @@ class TelegramBot:
             if self.telegram:
                 self.telegram.send_message(chat_id, text)
             return text
-        buttons = [[{"text": agent, "callback_data": f"ta:{agent}"}] for agent in agents]
-        buttons.append([{"text": "◀ Back", "callback_data": "menu"}])
         text = f"Currently messaging {self._target_for(chat_id)} — pick a different agent:"
         if self.telegram:
-            self.telegram.send_message(chat_id, text, reply_markup={"inline_keyboard": buttons})
+            self.telegram.send_message(chat_id, text, reply_markup=_agent_picker_keyboard(agents, "ta"))
         return text
 
     def handle_message_agent_pick(self, chat_id: int | str, agent: str) -> str:
@@ -1531,11 +1541,9 @@ class TelegramBot:
             if self.telegram:
                 self.telegram.send_message(chat_id, text)
             return text
-        buttons = [[{"text": agent, "callback_data": f"wp:{agent}"}] for agent in agents]
-        buttons.append([{"text": "◀ Back", "callback_data": "menu"}])
         text = "Watch — pick an agent's live terminal:"
         if self.telegram:
-            self.telegram.send_message(chat_id, text, reply_markup={"inline_keyboard": buttons})
+            self.telegram.send_message(chat_id, text, reply_markup=_agent_picker_keyboard(agents, "wp"))
         return text
 
     def handle_watch_pick(self, chat_id: int | str, agent: str) -> str:
