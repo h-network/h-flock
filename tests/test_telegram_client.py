@@ -14,7 +14,7 @@ from clients.telegram.bot import (
     ActivityRender, AlertPusher, CursorStore, DryRunTelegramClient, FlockClient, PaneWatchRender,
     ReplyPusher, TelegramBot, TelegramClient, render_alert, render_reply,
     synthesize_speech, _parse_sse_events, _derive_session_url,
-    _parse_int_overrides, _pane_tail_window, _strip_ansi,
+    _is_transient_chrome_line, _parse_int_overrides, _pane_tail_window, _strip_ansi,
 )
 
 
@@ -1869,6 +1869,59 @@ def test_pane_tail_window_handles_a_pane_shorter_than_the_window():
 def test_pane_tail_window_rejects_a_span_not_wider_than_chrome():
     with pytest.raises(ValueError):
         _pane_tail_window(["a"], chrome_lines=4, tail_span=4)
+
+
+# ── transient chrome: spinner/update-banner lines, present only sometimes ──
+# Ticket 31e7ef18: leaked into the live-tail because they sit ABOVE the
+# fixed-position `chrome_lines` crop and are absent/present by CLI *state*,
+# not identity, so no line-count offset can reliably crop them.
+
+def test_is_transient_chrome_line_recognises_real_captured_lines():
+    # claude, measured live against a working pane
+    assert _is_transient_chrome_line("✻ Churned for 20s") is True
+    assert _is_transient_chrome_line("✻ Sautéed for 16s · done 11:21 AM") is True
+    assert _is_transient_chrome_line("✻ Worked for 6m 24s · done 11:27 AM") is True
+    assert _is_transient_chrome_line("✔ Update installed · Restart to update") is True
+    # codex, from the ticket's reported symptom
+    assert _is_transient_chrome_line("Boogieing... (17s · ↓ 639 tokens)") is True
+    assert _is_transient_chrome_line("   ") is True  # blank counts too
+
+
+def test_is_transient_chrome_line_does_not_eat_real_content():
+    assert _is_transient_chrome_line("Fixed the auth bug, tests are green now.") is False
+    # mentions a duration mid-sentence but is not a short spinner-shaped line
+    assert _is_transient_chrome_line(
+        "I'll wait for 5s before retrying, then report back with the result."
+    ) is False
+    assert _is_transient_chrome_line("Update the README before merging.") is False
+
+
+def test_pane_tail_window_strips_a_spinner_and_update_banner_above_the_structural_chrome():
+    lines = [
+        "real reply line one",
+        "real reply line two",
+        "✻ Churned for 20s",
+        "✔ Update installed · Restart to update",
+        "───",           # structural chrome starts here (chrome_lines=4)
+        "❯",
+        "───",
+        "bypass permissions on",
+    ]
+    window = _pane_tail_window(lines, chrome_lines=4, tail_span=12)
+    assert window == ["real reply line one", "real reply line two"]
+
+
+def test_pane_tail_window_strips_codex_style_spinner_line():
+    lines = [
+        "real reply",
+        "Boogieing... (17s · ↓ 639 tokens)",
+        "",
+        "───",
+        "› Ask Codex to do anything",
+        "  gpt-5.6-sol default · /workdir/bus",
+    ]
+    window = _pane_tail_window(lines, chrome_lines=3, tail_span=12)
+    assert window == ["real reply"]
 
 
 def test_parse_int_overrides():

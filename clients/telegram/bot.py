@@ -813,21 +813,55 @@ def _strip_ansi(text: str) -> str:
     return _ANSI_ESCAPE_RE.sub("", text)
 
 
+# ⚠ These target a second kind of chrome the fixed `chrome_lines` crop can't
+# reach: a CLI's own thinking-spinner and update-nag banner, which sit just
+# ABOVE the structural input box/hint rows `chrome_lines` already crops, and
+# are present or absent depending on CLI *state* (mid-turn, update shipped),
+# not CLI identity — a bug ticket caught this leaking on both claude
+# ("✻ Churned for 20s", "✔ Update installed · Restart to update") and codex
+# ("Boogieing… (17s · ↓ 639 tokens)") panes. Filtered by content rather than
+# a wider fixed crop because how many of these rows exist varies run to run;
+# a fixed offset would either still leak them some of the time or crop real
+# content away the rest of the time.
+_UPDATE_BANNER_RE = re.compile(r"update (?:installed|available)|restart to update", re.IGNORECASE)
+_TOKEN_COUNT_TAIL_RE = re.compile(r"\btokens?\)\s*$", re.IGNORECASE)
+_DONE_TIMESTAMP_RE = re.compile(r"\bdone\s+\d{1,2}:\d{2}\s*[AP]M\b", re.IGNORECASE)
+# claude's "<verb> for Ns[ Ns]" spinner line — anchored at the start and
+# length-capped so a genuine reply that merely *mentions* a duration
+# mid-sentence ("I'll wait for 5s before retrying, then...") isn't caught;
+# a spinner line is always short and has nothing before "<verb> for Ns".
+_ELAPSED_DURATION_RE = re.compile(r"^\s*(?:\S+\s+){1,2}for\s+\d+[ms](?:\s+\d+s)?\b", re.IGNORECASE)
+_TRANSIENT_STATUS_MAX_LEN = 60
+
+
+def _is_transient_chrome_line(line: str) -> bool:
+    stripped = line.strip()
+    if not stripped:
+        return True
+    if _UPDATE_BANNER_RE.search(stripped) or _TOKEN_COUNT_TAIL_RE.search(stripped):
+        return True
+    if len(stripped) > _TRANSIENT_STATUS_MAX_LEN:
+        return False
+    return bool(_DONE_TIMESTAMP_RE.search(stripped) or _ELAPSED_DURATION_RE.match(stripped))
+
+
 def _pane_tail_window(lines: list[str], *, chrome_lines: int, tail_span: int) -> list[str]:
     """The slice of `lines` a human actually wants to see: the last
     `tail_span` rows of the pane, minus the bottom `chrome_lines` (input box,
     shortcut hint, separators — present on claude/codex/agy alike, see
-    `clients/telegram/README.md` §2c), then trimmed of purely-blank rows at
-    either edge so a short reply doesn't render as mostly empty space.
+    `clients/telegram/README.md` §2c), then trimmed at either edge of blank
+    rows and of the transient spinner/update-banner chrome
+    `_is_transient_chrome_line` recognises, so a short reply doesn't render
+    as mostly empty space or a "thinking…" line mistaken for content.
     """
     if chrome_lines < 0 or tail_span <= chrome_lines:
         raise ValueError("tail_span must be greater than chrome_lines")
     end = len(lines) - chrome_lines
     start = max(0, len(lines) - tail_span)
     window = list(lines[start:end]) if end > start else []
-    while window and not window[0].strip():
+    while window and _is_transient_chrome_line(window[0]):
         window.pop(0)
-    while window and not window[-1].strip():
+    while window and _is_transient_chrome_line(window[-1]):
         window.pop()
     return window
 
@@ -1028,7 +1062,7 @@ class TelegramBot:
         session_url: str | None = None,
         pane_watch_chrome_default: int = 4,
         pane_watch_chrome_overrides: dict[str, int] | None = None,
-        pane_watch_tail_span: int = 10,
+        pane_watch_tail_span: int = 12,
         pane_watch_refresh_s: float = 2.0,
         pane_watch_max_duration_s: float = 600.0,
     ):
@@ -2149,8 +2183,8 @@ def main() -> None:
                              "the bot cannot see which CLI an agent runs (API.md has no such field), "
                              "and Claude/agy and Codex do not agree on chrome height (see README §2c)")
     parser.add_argument("--pane-watch-tail-lines", type=int,
-                        default=int(os.getenv("PANE_WATCH_TAIL_LINES", "10")),
-                        help="/watch: how many rows back from the bottom of the pane to look (default: 10)")
+                        default=int(os.getenv("PANE_WATCH_TAIL_LINES", "12")),
+                        help="/watch: how many rows back from the bottom of the pane to look (default: 12)")
     parser.add_argument("--pane-watch-refresh-seconds", type=float,
                         default=float(os.getenv("PANE_WATCH_REFRESH_SECONDS", "2.0")),
                         help="/watch: seconds between pane refreshes (default: 2.0)")
