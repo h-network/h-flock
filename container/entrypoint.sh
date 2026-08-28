@@ -202,7 +202,7 @@ except ValueError:
     echo "entrypoint: the $(echo "$door" | tr 'A-Z' 'a-z') door is published on '$published' without TLS." >&2
     echo "  The bearer token would cross the network in clear text. Either set" >&2
     echo "  ${door}_TLS_CERT and ${door}_TLS_KEY, or publish to 127.0.0.1 only," >&2
-    echo "  or set ALLOW_PLAINTEXT_PUBLISH=1 in container/.env to accept it." >&2
+    echo "  or set ALLOW_PLAINTEXT_PUBLISH=1 in this tenant's .env to accept it." >&2
     exit 1
   fi
 done

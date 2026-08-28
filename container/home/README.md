@@ -14,7 +14,7 @@ Everything here except this file is gitignored and never enters the image —
       .codex/auth.json
       .gemini/antigravity-cli/antigravity-oauth-token
 
-Nothing needs to be present. `seed-home.sh` copies whatever is here and skips
+Nothing needs to be present. `seed-home.sh --tenant NAME` copies whatever is here and skips
 what is not, so an office with no accounts still comes up — its agents just
 reach a login prompt.
 

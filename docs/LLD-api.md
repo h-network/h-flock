@@ -221,7 +221,7 @@ nothing sets the variable and the bind is the exposure. See `LLD-container` §3.
 
 ⚠ **Operator Action Log vs Direct API Token Traffic**: The web console server maintains `audit.jsonl` as an **Operator Action Log** recording operations performed through the web proxy. Requests hitting `flock.api` directly using an `API_TOKEN` bypass the web proxy and do not appear in `audit.jsonl`; direct API envelope submissions are tracked in bus/port stdout logs and agent activity streams (`GET /agents/{agent}/activity`).
 
-⚠ **`API_PUBLISHED`**: set to `1` by `entrypoint.sh`, not read from `container/.env`
+⚠ **`API_PUBLISHED`**: set to `1` by `entrypoint.sh`, not read from the tenant `.env`
 directly. `API_BIND` cannot carry this signal — the image hardcodes it to
 `0.0.0.0` (`container/Dockerfile`), so it is always non-loopback *inside* the
 container whether or not the door has a host mapping, the same fact §6's
@@ -282,4 +282,3 @@ provisioning and rotation.
  Not usage reporting — `office usage` is an operator CLI command that queries the
  tenant usage stream (`pod:<pod>:tenant:<tenant>:usage`) over Redis directly, not an
  HTTP REST endpoint on `flock.api`.
-

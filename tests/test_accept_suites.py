@@ -118,7 +118,9 @@ for p in "${prompts[@]}"; do
 done
 printf '%s\n' "${answers[@]}" >"$MATRIX_STATE/setup.answers"
 api_port="${answers[13]:-8080}"
-printf 'API_ENABLED=1\nAPI_PORT=%s\nAPI_TOKEN=matrix-token\n' "$api_port" >container/.env
+tenant="${answers[1]:-accept}"
+mkdir -p "tenants/$tenant"
+printf 'API_ENABLED=1\nAPI_PORT=%s\nAPI_TOKEN=matrix-token\n' "$api_port" >"tenants/$tenant/.env"
 touch "$MATRIX_STATE/created"
 printf 'healthy\n'
 """,

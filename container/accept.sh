@@ -221,6 +221,10 @@ if [ -n "$SCENARIO" ]; then
 fi
 PROJECT="h-flock-${TENANT}"
 CONTAINER="${PROJECT}-tenant-1"
+. container/flock-compose.sh
+flock_tenant_context "$TENANT" || exit $?
+TENANT_DIR_PREEXISTED=0
+[ -d "$TENANT_DIR" ] && TENANT_DIR_PREEXISTED=1
 FAILED=0
 SKIPPED=""
 CREATED_PROJECT=""
@@ -285,9 +289,9 @@ cleanup() {
   if [ "$KEEP" = "1" ]; then
     echo
     if [ -n "$CONSOLE_PID" ]; then
-      echo "kept: container=$CONTAINER; console_pid=$CONSOLE_PID (stop console: kill $CONSOLE_PID)"
+      echo "kept: container=$CONTAINER; console_pid=$CONSOLE_PID (stop console: kill $CONSOLE_PID); tenant_dir=$TENANT_DIR; attach=$TENANT_DIR/attach.sh"
     else
-      echo "kept: container=$CONTAINER; console=not-started"
+      echo "kept: container=$CONTAINER; console=not-started; tenant_dir=$TENANT_DIR; attach=$TENANT_DIR/attach.sh"
     fi
     return 0
   fi
@@ -296,17 +300,28 @@ cleanup() {
   # killed unrelated SSH shells whose command line happened to contain it.
   [ -n "$CONSOLE_PID" ] && kill "$CONSOLE_PID" 2>/dev/null || true
   # Never destroy a compose project that this invocation did not create.
-  . container/flock-compose.sh 2>/dev/null || true
-  flock_compose_args
-  [ "$CREATED_PROJECT" = "$PROJECT" ] && \
-    docker compose -p "$CREATED_PROJECT" --env-file container/.env \
+  flock_compose_args "$TENANT"
+  if [ "$CREATED_PROJECT" = "$PROJECT" ]; then
+    docker compose -p "$CREATED_PROJECT" --env-file "$TENANT_ENV_FILE" \
       "${FLOCK_COMPOSE_ARGS[@]}" down -v 2>&1 | tail -2
+  fi
+  if [ "$TENANT_DIR_PREEXISTED" = 0 ] && [ -d "$TENANT_DIR" ]; then
+    rm -rf -- "$TENANT_DIR"
+  fi
 }
 
 # This harness is destructive by design. Refuse the live office even if its
 # tenant name was supplied by reflex or leaked from the agent environment.
 if [ "${FORCE:-0}" != "1" ] && { [ "$PROJECT" = "${AGENT_OFFICE:-}" ] || [ "$TENANT" = "${AGENT_OFFICE:-}" ]; }; then
   echo "accept: refusing live office '${AGENT_OFFICE}' (set FORCE=1 only if destruction is intentional)" >&2
+  exit 2
+fi
+
+# This harness drives setup and therefore rewrites configuration. A stopped
+# tenant with no Docker resources is still owned state; do not mistake absence
+# from Docker for permission to overwrite its credentials.
+if [ "$TENANT_DIR_PREEXISTED" = 1 ]; then
+  echo "accept: refusing existing tenant config '$TENANT_DIR'; use a fresh --tenant" >&2
   exit 2
 fi
 
@@ -359,7 +374,7 @@ python3 container/drive-setup.py \
   --publish-session y \
   --remote y \
   --self-signed n \
-  | grep -E "healthy|error|Error|NEEDS LOGIN|logged in|wrote container/.env|not enabled" | head -10
+  | grep -E "healthy|error|Error|NEEDS LOGIN|logged in|wrote tenants/|not enabled" | head -10
 SETUP_RC="${PIPESTATUS[0]}"
 # setup.sh is the operation that creates the project. Record ownership only
 # after Docker confirms that this run brought its container into existence.
@@ -367,15 +382,15 @@ if [ -n "$(docker ps -aq --filter "label=com.docker.compose.project=$PROJECT" 2>
   CREATED_PROJECT="$PROJECT"
 fi
 [ "$SETUP_RC" = "0" ] || { record "install" "$SETUP_RC" "setup_failed"; exit "$FAILED"; }
-[ -f container/.env ] || { record "install" 1 "missing_env"; exit "$FAILED"; }
+[ -f "$TENANT_ENV_FILE" ] || { record "install" 1 "missing_env"; exit "$FAILED"; }
 
 # ⚠ The post-hoc port rewrite that used to live here is gone. setup.sh now ASKS
 # for the host ports, so they are answered above and the tenant comes up on them
 # first time — no sed, no second `up -d`. It also refuses a port already
 # listening, so a collision fails at the prompt rather than producing the
 # healthy-looking tenant nobody could reach that the old comment described.
-grep -q "^API_ENABLED=1" container/.env || { record "install" 1 "api_disabled"; exit "$FAILED"; }
-grep -q "^API_PORT=${API_PORT}\$" container/.env || { record "install" 1 "wrong_api_port"; exit "$FAILED"; }
+grep -q "^API_ENABLED=1" "$TENANT_ENV_FILE" || { record "install" 1 "api_disabled"; exit "$FAILED"; }
+grep -q "^API_PORT=${API_PORT}\$" "$TENANT_ENV_FILE" || { record "install" 1 "wrong_api_port"; exit "$FAILED"; }
 record "install" 0
 
 step "health"
@@ -395,7 +410,7 @@ step "plumbing check and failure simulator"
 # FORCE=1: these agents run CLIs, and the check pastes fixtures into panes. On a
 # disposable tenant that is what we want; the guard exists so it never happens
 # to somebody's office by reflex.
-FORCE=1 POD=acme TENANT="$TENANT" CONTAINER="$CONTAINER" bash container/plumbing-check.sh 2>&1 \
+FORCE=1 POD=acme CONTAINER="$CONTAINER" bash container/plumbing-check.sh --tenant "$TENANT" 2>&1 \
   | grep -E "^==|FAIL|PASS=|sim-blocked:"
 PLUMB="${PIPESTATUS[0]}"
 record "plumbing" "$PLUMB"
@@ -403,7 +418,7 @@ record "plumbing" "$PLUMB"
 if [ "$CONSOLE" = "1" ]; then
   step "console"
   SECRET="$(openssl rand -hex 8 2>/dev/null || echo acceptsecret)"
-  TOKEN="$(grep '^API_TOKEN=' container/.env | cut -d= -f2)"
+  TOKEN="$(grep '^API_TOKEN=' "$TENANT_ENV_FILE" | cut -d= -f2)"
   # server.py already reads these credentials from the environment. Keeping
   # them out of argv prevents ps and /proc/<pid>/cmdline exposing them for the
   # entire lifetime of a console retained by --keep.

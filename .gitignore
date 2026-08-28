@@ -7,6 +7,10 @@ __pycache__/
 build/
 dist/
 
+# Per-tenant deployment config and secrets are generated lazily by setup.sh.
+tenants/
+
+# Legacy locations remain ignored so an older checkout can be imported safely.
 container/.env
 container/compose.ports.yaml
 

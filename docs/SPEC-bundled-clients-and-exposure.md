@@ -35,7 +35,7 @@ on container-local `127.0.0.1:8080`.
 - Start the bot from the entrypoint **only when it is configured** — only when
   a token is present. A client that cannot work must not be started; a dry-run
   bot presented as running is the defect this fixes.
-- Its config lives in `container/.env` with everything else. One config location,
+- Its config lives in `tenants/<tenant>/.env` with everything else. One config location,
   not two.
 
 ⚠ A bundled client that fails must not take the tenant down. Log the reason and
@@ -74,7 +74,7 @@ When the operator answers yes:
 
 Blank for either means the bot is **not** enabled, said plainly at the prompt
 rather than discovered later. ⚠ The token is a credential: it goes to
-`container/.env`, is never echoed back, and never appears in a summary line.
+`tenants/<tenant>/.env`, is never echoed back, and never appears in a summary line.
 
 ## 3. Exposure becomes an explicit, separate question
 

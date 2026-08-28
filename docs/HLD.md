@@ -53,7 +53,7 @@ agent — several agents can share one and pay for exactly one interactive
 login; `default` is the account nobody named.
 
 `setup.sh` asks for the accounts a tenant will use and seeds each one's config
-directory (`container/seed-home.sh in|out|check`). Which account a given agent
+directory (`container/seed-home.sh --tenant NAME in|out|check`). Which account a given agent
 uses is a Redis key, `profile`, set by `StartAgent` / `office hire --profile`
 and validated against the configured registry; `flock.tmuxhost` turns it into
 that agent's window environment (`CLAUDE_CONFIG_DIR` / `CODEX_HOME`).

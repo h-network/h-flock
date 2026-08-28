@@ -19,12 +19,15 @@ fi
 RUN_ID="$(date +%s)-$$"; TENANT="bus102-${RUN_ID}"; PROJECT="h-flock-${TENANT}"
 CONTAINER="${PROJECT}-tenant-1"; WORK="${BUILD102_WORK:-/tmp/build102-${RUN_ID}}"; CREATED_PROJECT=""
 mkdir -p "$WORK"
+. container/flock-compose.sh
+flock_compose_args "$TENANT"
+mkdir -p "$TENANT_DIR"
 cleanup() {
   if [ "$CREATED_PROJECT" = "$PROJECT" ]; then
     echo "PARTIAL_CONTROL_TEARDOWN project=$CREATED_PROJECT"
-    . container/flock-compose.sh 2>/dev/null || true
-    flock_compose_args
-    docker compose -p "$CREATED_PROJECT" --env-file container/.env "${FLOCK_COMPOSE_ARGS[@]}" down -v >/dev/null
+    flock_compose_args "$TENANT"
+    docker compose -p "$CREATED_PROJECT" --env-file "$TENANT_ENV_FILE" "${FLOCK_COMPOSE_ARGS[@]}" down -v >/dev/null
+    rm -rf -- "$TENANT_DIR"
   fi
 }
 trap cleanup EXIT INT TERM
@@ -38,11 +41,9 @@ TOKEN="$(openssl rand -hex 16)"
   echo "FLOCK_ACCOUNTS=default"; echo "API_TOKEN=$TOKEN"; echo "API_ENABLED=0"
   echo "API_PORT=18200"; echo "SESSION_PORT=18201"; echo "API_HOST=127.0.0.1"; echo "SESSION_HOST=127.0.0.1"
   echo "VERIFY_AFTER_SECONDS=120"; echo "INGRESS_MAX=300"
-} > container/.env
-chmod 600 container/.env
-. container/flock-compose.sh 2>/dev/null || true
-flock_compose_args
-docker compose -p "$PROJECT" --env-file container/.env "${FLOCK_COMPOSE_ARGS[@]}" up -d ${BUILD_FLAG} >"$WORK/setup.log" 2>&1
+} > "$TENANT_ENV_FILE"
+chmod 600 "$TENANT_ENV_FILE"
+docker compose -p "$PROJECT" --env-file "$TENANT_ENV_FILE" "${FLOCK_COMPOSE_ARGS[@]}" up -d ${BUILD_FLAG} >"$WORK/setup.log" 2>&1
 up_rc=$?
 if [ -n "$({ docker ps -aq --filter "label=com.docker.compose.project=$PROJECT"; docker network ls -q --filter "label=com.docker.compose.project=$PROJECT"; docker volume ls -q --filter "label=com.docker.compose.project=$PROJECT"; } 2>/dev/null | head -1)" ]; then CREATED_PROJECT="$PROJECT"; fi
 if [ "$up_rc" -ne 0 ] || [ "$CREATED_PROJECT" != "$PROJECT" ]; then echo "REFUSED: disposable tenant creation failed rc=$up_rc" >&2; exit 2; fi

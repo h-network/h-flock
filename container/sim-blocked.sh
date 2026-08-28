@@ -8,22 +8,30 @@
 #   4. login_prompt_claude     (unauthenticated claude profile -> verify pass/caught check)
 #
 # Usage:
-#   bash container/sim-blocked.sh
+#   bash container/sim-blocked.sh --tenant NAME
 #
 set -uo pipefail
 
 _here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # ⚠ Hold anything already exported — sourcing .env would overwrite it. This is
 # the whole "TLS tenant" mystery: run against any tenant that is not the one in
-# container/.env, TENANT silently reverted to that file's value, every window
-# poll asked the wrong session, and tmux answered "can't find session: hq" into
+# the old shared container/.env, TENANT silently reverted to that file's value,
+# every window poll asked the wrong session, and tmux answered "can't find session: hq" into
 # a stream nobody was reading. The same bug was fixed in plumbing-check.sh and
 # missed here, which is why the failure looked like it was about TLS.
-_pod="${POD:-}"; _tenant="${TENANT:-}"
-[ -f "$_here/.env" ] && . "$_here/.env"
+_pod="${POD:-}"; _tenant="${TENANT:-}"; _container="${CONTAINER:-}"
+if [ "${1:-}" = "--tenant" ]; then
+  [ -n "${2:-}" ] || { echo "sim-blocked: --tenant requires a name" >&2; exit 2; }
+  _tenant="$2"; shift 2
+fi
+[ -n "$_tenant" ] || { echo "sim-blocked: --tenant NAME is required" >&2; exit 2; }
+. "$_here/flock-compose.sh"
+flock_tenant_context "$_tenant" || exit $?
+[ -f "$TENANT_ENV_FILE" ] || { echo "sim-blocked: no config at $TENANT_ENV_FILE" >&2; exit 2; }
+. "$TENANT_ENV_FILE"
 POD="${_pod:-${POD:-acme}}"
-TENANT="${_tenant:-${TENANT:-hq}}"
-C="${CONTAINER:-h-flock-${TENANT}-tenant-1}"
+TENANT="$_tenant"
+C="${_container:-$FLOCK_CONTAINER}"
 ROSTER="pod:$POD:tenant:$TENANT:roster"
 T=$(docker exec "$C" printenv API_TOKEN 2>/dev/null || true)
 [ -n "$T" ] || { echo "sim-blocked: container $C is not running" >&2; exit 1; }
