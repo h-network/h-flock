@@ -762,6 +762,24 @@ class ChatDict(dict):
         return super().setdefault(self._k(key), default)
 
 
+def _parse_int_overrides(spec: str) -> dict[str, int]:
+    """Parse "name=int,name2=int" — same exceptions-only shape as
+    entrypoint.sh's AGENT_CLIS/AGENT_PROFILES, here for per-agent pane-watch
+    chrome-height overrides (see PANE_WATCH_CHROME_OVERRIDES below)."""
+    result: dict[str, int] = {}
+    for pair in spec.split(","):
+        pair = pair.strip()
+        if not pair or "=" not in pair:
+            continue
+        name, _, value = pair.partition("=")
+        name = name.strip()
+        try:
+            result[name] = int(value.strip())
+        except ValueError:
+            continue
+    return result
+
+
 def _derive_session_url(api_url: str, session_url: str = "") -> str:
     """Derive the session websocket URL (e.g. ws://localhost:8081/session)
     from --session-url or by replacing API URL port with 8081."""
@@ -778,9 +796,119 @@ def _derive_session_url(api_url: str, session_url: str = "") -> str:
     return f"{scheme}://{host}:{port}/session"
 
 
+_ANSI_ESCAPE_RE = re.compile(r"\x1b\[[0-9;?]*[ -/]*[a-zA-Z]")
+
+
+def _strip_ansi(text: str) -> str:
+    """Drop cursor-movement/clear and SGR colour codes from a session-door
+    snapshot, leaving the plain text `capture-pane` rendered.
+
+    Session snapshots (`LLD-session.md` §3) are `\\x1b[2J\\x1b[H` + the
+    `capture-pane -e` lines (which carry colour SGR codes) + a cursor-position
+    escape. None of that survives into a Telegram message — a terminal's
+    color codes are noise there, not signal — and stripping is safe because
+    `capture-pane`'s own line breaks (joined with `\\n` by `control.py`) are
+    untouched by this regex.
+    """
+    return _ANSI_ESCAPE_RE.sub("", text)
+
+
+def _pane_tail_window(lines: list[str], *, chrome_lines: int, tail_span: int) -> list[str]:
+    """The slice of `lines` a human actually wants to see: the last
+    `tail_span` rows of the pane, minus the bottom `chrome_lines` (input box,
+    shortcut hint, separators — present on claude/codex/agy alike, see
+    `clients/telegram/README.md` §2c), then trimmed of purely-blank rows at
+    either edge so a short reply doesn't render as mostly empty space.
+    """
+    if chrome_lines < 0 or tail_span <= chrome_lines:
+        raise ValueError("tail_span must be greater than chrome_lines")
+    end = len(lines) - chrome_lines
+    start = max(0, len(lines) - tail_span)
+    window = list(lines[start:end]) if end > start else []
+    while window and not window[0].strip():
+        window.pop(0)
+    while window and not window[-1].strip():
+        window.pop()
+    return window
+
+
+class PaneWatchRender:
+    """One refreshing Telegram message showing a live slice of an agent's
+    tmux pane — the `/watch` counterpart to `ActivityRender`, holding pane
+    text instead of a structured event list. Same send-once-then-edit,
+    diff-skip, rate-limited flush shape, deliberately kept separate rather
+    than folded into `ActivityRender`: the two render entirely different
+    content and only accidentally share a flush loop.
+    """
+
+    MAX_LEN = 3800
+
+    def __init__(self, chat_id: int | str, agent: str) -> None:
+        self.chat_id = str(chat_id)
+        self.agent = agent
+        self.message_id: int | None = None
+        self.completed: bool = False
+        self.last_flush_ts: float = 0.0
+        self.last_rendered_text: str | None = None
+        self.lock = threading.Lock()
+
+    def render(self, pane_lines: list[str], *, footer: str | None = None) -> str:
+        header = f"👁 <b>Watching</b> (<code>{html.escape(self.agent)}</code>)"
+        body = html.escape("\n".join(pane_lines)) if pane_lines else "<i>(no content in this window yet)</i>"
+        lines = [header, "", f"<pre>{body}</pre>"]
+        if footer:
+            lines.append(footer)
+        text = "\n".join(lines)
+        if len(text) > self.MAX_LEN:
+            text = text[: self.MAX_LEN - 20] + "\n…[truncated]"
+        return text
+
+    def flush(
+        self,
+        telegram_client,
+        pane_lines: list[str],
+        *,
+        footer: str | None = None,
+        reply_markup: dict | None = None,
+        clear_markup: bool = False,
+        force: bool = False,
+    ) -> None:
+        if not telegram_client:
+            return
+        with self.lock:
+            now = time.time()
+            if not force and self.message_id is not None and not self.completed and (now - self.last_flush_ts < 1.5):
+                return
+        text = self.render(pane_lines, footer=footer)
+        with self.lock:
+            if self.message_id is not None and not force and text == self.last_rendered_text:
+                return
+            self.last_flush_ts = now
+
+        markup = {"inline_keyboard": []} if clear_markup else reply_markup
+        try:
+            if self.message_id is None:
+                resp = telegram_client.send_message(
+                    self.chat_id, text, parse_mode="HTML", disable_web_page_preview=True, reply_markup=markup,
+                )
+                msg_id = resp.get("result", {}).get("message_id") if isinstance(resp, dict) else None
+                with self.lock:
+                    self.message_id = msg_id
+                    self.last_rendered_text = text
+            else:
+                telegram_client.edit_message_text(
+                    self.chat_id, self.message_id, text, parse_mode="HTML",
+                    disable_web_page_preview=True, reply_markup=markup,
+                )
+                with self.lock:
+                    self.last_rendered_text = text
+        except Exception as exc:
+            logger.debug(f"PaneWatchRender flush failed (chat={self.chat_id}, msg={self.message_id}): {exc}")
+
+
 class ActivityRender:
     """Coalesces real-time agent execution events (input, tool, output)
-    and liveness pulses into a single live-updating Telegram message using editMessageText.
+    into a single live-updating Telegram message using editMessageText.
     """
 
     MAX_LEN = 3800
@@ -793,21 +921,15 @@ class ActivityRender:
         self.completed: bool = False
         self.last_flush_ts: float = 0.0
         self.last_rendered_text: str | None = None
-        self.liveness_ts: float | None = None
         self.lock = threading.Lock()
 
     def add_event(self, event: dict) -> None:
         with self.lock:
             self.events.append(event)
 
-    def touch_liveness(self, ts: float | None = None) -> None:
-        with self.lock:
-            self.liveness_ts = ts if ts is not None else time.time()
-
     def finalize(self) -> None:
         with self.lock:
             self.completed = True
-            self.liveness_ts = None
 
     def render(self) -> str:
         with self.lock:
@@ -842,12 +964,6 @@ class ActivityRender:
                     desc = html.escape(str(kind or "event"))
                 lines.append(f"{i}. {glyph} {desc}")
 
-            if not self.completed and self.liveness_ts is not None:
-                ago = max(0, int(time.time() - self.liveness_ts))
-                ago_str = f"{ago}s ago" if ago > 0 else "just now"
-                lines.append("")
-                lines.append(f"⏳ <i>still working… (updated {ago_str})</i>")
-
             text = "\n".join(lines)
             if len(text) > self.MAX_LEN:
                 text = text[: self.MAX_LEN - 20] + "\n…[truncated]"
@@ -858,7 +974,7 @@ class ActivityRender:
         if not telegram_client:
             return
         with self.lock:
-            if not self.events and self.message_id is None and self.liveness_ts is None:
+            if not self.events and self.message_id is None:
                 return
             now = time.time()
             if not force and self.message_id is not None and not self.completed and (now - self.last_flush_ts < 0.8):
@@ -910,6 +1026,11 @@ class TelegramBot:
         voice_feature_enabled: bool | None = None,
         no_activity_push: bool = False,
         session_url: str | None = None,
+        pane_watch_chrome_default: int = 4,
+        pane_watch_chrome_overrides: dict[str, int] | None = None,
+        pane_watch_tail_span: int = 10,
+        pane_watch_refresh_s: float = 2.0,
+        pane_watch_max_duration_s: float = 600.0,
     ):
         self.flock = flock_client
         self.telegram = telegram_client
@@ -947,6 +1068,15 @@ class TelegramBot:
             else bool(no_activity_push)
         )
         self.activity_renders: dict = ChatDict()
+        # `/watch` — one live-tail per chat. `_pane_watches` holds the
+        # running thread and its stop switch; a second /watch in the same
+        # chat replaces whatever it finds there rather than stacking (§2c).
+        self.pane_watch_chrome_default = pane_watch_chrome_default
+        self.pane_watch_chrome_overrides = dict(pane_watch_chrome_overrides or {})
+        self.pane_watch_tail_span = pane_watch_tail_span
+        self.pane_watch_refresh_s = pane_watch_refresh_s
+        self.pane_watch_max_duration_s = pane_watch_max_duration_s
+        self.pane_watches: dict = ChatDict()
 
     def is_voice_enabled(self, chat_id: int | str) -> bool:
         return self.voice_feature_enabled and self.chat_voice_enabled.get(str(chat_id), False)
@@ -1017,6 +1147,8 @@ class TelegramBot:
             res = self.telegram.set_my_commands([
                 {"command": "menu", "description": "Open the office menu (overview, tickets, agents, alerts)"},
                 {"command": "status", "description": f"Quick status check for {self.target_agent}"},
+                {"command": "watch", "description": "Live-tail an agent's tmux pane (/watch <agent>)"},
+                {"command": "unwatch", "description": "Stop this chat's active /watch"},
                 {"command": "voice", "description": "Toggle spoken voice replies (TTS)"},
             ])
             if not res.get("ok", True):
@@ -1079,6 +1211,7 @@ class TelegramBot:
         "📋 Overview": "ov",
         "🎫 Add ticket": "at",
         "⏯ Lifecycle": "lc",
+        "👁 Watch": "wa",
         "🔔 Alerts": "al",
         "➕ Hire": "hi",
         "📢 Broadcast": "bc",
@@ -1091,8 +1224,9 @@ class TelegramBot:
             last_row.append(self._voice_label(chat_id))
         layout = [
             ["📋 Overview", "🎫 Add ticket"],
-            ["⏯ Lifecycle", "🔔 Alerts"],
-            [target_label, "➕ Hire"],
+            ["⏯ Lifecycle", "👁 Watch"],
+            ["🔔 Alerts", "➕ Hire"],
+            [target_label],
             last_row,
         ]
         return {
@@ -1138,6 +1272,8 @@ class TelegramBot:
             return self.handle_hire_start(chat_id)
         if code == "ta":
             return self.handle_message_agent_start(chat_id)
+        if code == "wa":
+            return self.handle_watch_start(chat_id)
         if code == "bc":
             return self.handle_broadcast_start(chat_id)
         if code == "vt":
@@ -1307,6 +1443,76 @@ class TelegramBot:
             self.telegram.send_message(cid, text, reply_markup=self._sticky_keyboard(cid))
         return text
 
+    # ── /watch — live-tail an agent's tmux pane ─────────────────────────────
+    # One watch per chat (§2c, clients/telegram/README.md): picking a new
+    # agent, or a new /watch of the same one, replaces whatever is already
+    # running there rather than stacking watchers.
+
+    def handle_watch_start(self, chat_id: int | str) -> str:
+        agents = self._tmux_agents()
+        if not agents:
+            text = "No agents enrolled to watch."
+            if self.telegram:
+                self.telegram.send_message(chat_id, text)
+            return text
+        buttons = [[{"text": agent, "callback_data": f"wp:{agent}"}] for agent in agents]
+        buttons.append([{"text": "◀ Back", "callback_data": "menu"}])
+        text = "Watch — pick an agent's live terminal:"
+        if self.telegram:
+            self.telegram.send_message(chat_id, text, reply_markup={"inline_keyboard": buttons})
+        return text
+
+    def handle_watch_pick(self, chat_id: int | str, agent: str) -> str:
+        cid = str(chat_id)
+        if agent not in self._tmux_agents():
+            text = f"Unknown agent: {agent}"
+            if self.telegram:
+                self.telegram.send_message(cid, text)
+            return text
+        self._stop_pane_watch(cid)
+        render = PaneWatchRender(cid, agent)
+        stop_event = threading.Event()
+        thread = threading.Thread(
+            target=self._run_pane_watch,
+            args=(cid, agent, render, stop_event),
+            daemon=True,
+            name=f"pane-watch-{agent}",
+        )
+        self.pane_watches[cid] = {
+            "agent": agent, "stop_event": stop_event, "render": render, "thread": thread,
+        }
+        thread.start()
+        return f"👁 Watching {agent}…"
+
+    def _stop_pane_watch(self, chat_id: int | str) -> str | None:
+        """Signal any watch running in this chat to end. Does not join — the
+        watcher thread sends its own final message (§ below) and clears
+        itself out of `pane_watches` on the way out."""
+        state = self.pane_watches.get(str(chat_id))
+        if not state:
+            return None
+        state["stop_event"].set()
+        return state["agent"]
+
+    def handle_watch_stop(self, chat_id: int | str, agent: str) -> str:
+        """The inline "⏹ Stop watching" button on the live-tail message
+        itself. `answer_callback_query` (called generically for every
+        callback) is the only acknowledgement — the watched message updating
+        to its final state a moment later is the real feedback."""
+        state = self.pane_watches.get(str(chat_id))
+        if not state or state["agent"] != agent:
+            return ""
+        state["stop_event"].set()
+        return f"stopping watch on {agent}"
+
+    def handle_watch_stop_command(self, chat_id: int | str) -> str:
+        cid = str(chat_id)
+        agent = self._stop_pane_watch(cid)
+        text = f"⏹ Stopping watch on {agent}…" if agent else "No active watch in this chat."
+        if self.telegram:
+            self.telegram.send_message(cid, text)
+        return text
+
     def handle_hire_start(self, chat_id: int | str) -> str:
         cid = str(chat_id)
         self.pending[cid] = {"flow": "hire", "stage": "name"}
@@ -1456,8 +1662,12 @@ class TelegramBot:
     def handle_callback_query(self, chat_id: int | str, callback_id: str, data: str) -> str:
         if self.telegram:
             self.telegram.answer_callback_query(callback_id)
-        if data in ("menu", "ov", "at", "lc", "al", "hi", "ta", "vt"):
+        if data in ("menu", "ov", "at", "lc", "al", "hi", "ta", "vt", "wa"):
             return self._dispatch_menu_action(chat_id, data)
+        if data.startswith("wp:"):
+            return self.handle_watch_pick(chat_id, data[len("wp:"):])
+        if data.startswith("ws:"):
+            return self.handle_watch_stop(chat_id, data[len("ws:"):])
         if data.startswith("at:"):
             return self.handle_addticket_pick_agent(chat_id, data[len("at:"):])
         if data.startswith("lc:"):
@@ -1491,6 +1701,12 @@ class TelegramBot:
             return self.handle_menu_command(chat_id)
         if text == "/status":
             return self.handle_status_command(chat_id)
+        if text == "/watch":
+            return self.handle_watch_start(chat_id)
+        if text.startswith("/watch "):
+            return self.handle_watch_pick(chat_id, text[len("/watch "):].strip())
+        if text == "/unwatch":
+            return self.handle_watch_stop_command(chat_id)
         return self.handle_user_prompt(chat_id, text)
 
     def _get_activity_tail(self, agent: str) -> str | None:
@@ -1541,17 +1757,40 @@ class TelegramBot:
                 render.finalize()
                 render.flush(self.telegram, force=True)
 
-    def _watch_liveness(
+    _SNAPSHOT_PREFIX = "\x1b[2J\x1b[H"
+
+    def _run_pane_watch(
         self,
         chat_id: int | str,
         agent: str,
-        render: ActivityRender,
-        timeout_s: float = 300.0,
+        render: "PaneWatchRender",
+        stop_event: threading.Event,
         ws_connect_fn=None,
     ) -> None:
-        """Background thread taking ~5s snapshots of agent pane via session websocket."""
+        """Background thread behind `/watch`: connects the session door once,
+        and on a fixed cadence asks control.py for one fresh `capture-pane`
+        (`{"refresh": true}`, `LLD-session.md` §3) rather than reconstructing
+        a screen from the live `%output` diff stream — a client-side terminal
+        emulator is more machinery than a periodic snapshot needs. A snapshot
+        frame is recognised by the `\\x1b[2J\\x1b[H` clear-and-home prefix
+        every capture-pane snapshot starts with (LLD-session §3); anything
+        else received in between (an incremental live diff from the same
+        persistent subscription) is drained and discarded — we only ever
+        render a full fresh frame, never a partial one.
+        """
+        cid = str(chat_id)
+        reply_markup = {"inline_keyboard": [[{"text": "⏹ Stop watching", "callback_data": f"ws:{agent}"}]]}
+        chrome = self.pane_watch_chrome_overrides.get(agent, self.pane_watch_chrome_default)
+        tail_span = max(self.pane_watch_tail_span, chrome + 1)
+        start_time = time.time()
+        saw_working = False
+        stop_reason = "stopped by request"
+        last_window: list[str] = []
+
+        def window_from(data: str) -> list[str]:
+            return _pane_tail_window(_strip_ansi(data).split("\n"), chrome_lines=chrome, tail_span=tail_span)
+
         try:
-            start_time = time.time()
             base_url = getattr(self.flock, "base_url", "http://127.0.0.1:8080")
             token = getattr(self.flock, "token", "")
             ssl_ctx = getattr(self.flock, "ssl_context", None)
@@ -1564,32 +1803,67 @@ class TelegramBot:
             connect_fn = ws_connect_fn or _default_connect
 
             with connect_fn() as ws:
-                # Subscribe to target agent in read-only mode
-                ws.send(json.dumps({"subscribe": [agent], "mode": "read-only"}))
-                try:
-                    ws.recv(timeout=2.0)
-                except Exception:
-                    pass
+                while True:
+                    if stop_event.is_set():
+                        stop_reason = "stopped by request"
+                        break
+                    if time.time() - start_time > self.pane_watch_max_duration_s:
+                        stop_reason = f"stopped after {int(self.pane_watch_max_duration_s)}s (time limit)"
+                        break
 
-                while not render.completed and (time.time() - start_time <= timeout_s):
-                    try:
-                        msg = ws.recv(timeout=5.0)
-                        if msg is not None:
-                            while True:
-                                try:
-                                    ws.recv(timeout=0)
-                                except Exception:
-                                    break
-                            if not render.completed:
-                                render.touch_liveness()
-                                render.flush(self.telegram)
-                    except TimeoutError:
-                        pass
-                    except Exception as exc:
-                        logger.debug(f"Session websocket recv error for {agent}: {exc}")
+                    ws.send(json.dumps({"subscribe": [agent], "mode": "read-only", "refresh": True}))
+
+                    snapshot_text = None
+                    drain_deadline = time.time() + 5.0
+                    while time.time() < drain_deadline:
+                        try:
+                            msg = ws.recv(timeout=max(0.0, drain_deadline - time.time()))
+                        except TimeoutError:
+                            break
+                        if msg is None:
+                            break
+                        try:
+                            payload = json.loads(msg)
+                        except (json.JSONDecodeError, TypeError):
+                            continue
+                        data = payload.get("data")
+                        if payload.get("agent") != agent or not isinstance(data, str):
+                            continue
+                        if data.startswith(self._SNAPSHOT_PREFIX):
+                            snapshot_text = data
+                            break
+
+                    if snapshot_text is not None:
+                        last_window = window_from(snapshot_text)
+
+                    pcode, pdata = self.flock.get_presence(agent)
+                    state = pdata.get("presence", {}).get("state") if pcode == 200 else None
+                    if state == "working":
+                        saw_working = True
+                    elif state == "idle" and saw_working:
+                        stop_reason = f"stopped: {agent} went idle"
+                        render.flush(self.telegram, last_window, reply_markup=reply_markup)
+                        break
+
+                    render.flush(self.telegram, last_window, reply_markup=reply_markup)
+
+                    if stop_event.wait(self.pane_watch_refresh_s):
+                        stop_reason = "stopped by request"
                         break
         except Exception as exc:
-            logger.debug(f"Liveness watcher exception for {agent}: {exc}")
+            logger.debug(f"Pane watch exception for {agent}: {exc}")
+            stop_reason = "stopped: session connection lost"
+        finally:
+            render.completed = True
+            render.flush(
+                self.telegram, last_window,
+                footer=f"<i>⏹ {html.escape(stop_reason)}</i>",
+                clear_markup=True, force=True,
+            )
+            # Only clear this chat's slot if a newer /watch hasn't already
+            # replaced it — see handle_watch_pick.
+            if self.pane_watches.get(cid, {}).get("stop_event") is stop_event:
+                self.pane_watches.pop(cid, None)
 
     def finalize_activity(self, chat_id: int | str, agent: str) -> None:
         """Finalize and flush any live activity message for (chat_id, agent)."""
@@ -1627,7 +1901,7 @@ class TelegramBot:
                 self.telegram.send_message(cid, reply_text)
             return reply_text
 
-        # Start live activity watcher and liveness pulse if enabled
+        # Start live activity watcher if enabled
         if not self.no_activity_push and self.telegram:
             tail_cursor = self._get_activity_tail(agent)
             render = ActivityRender(cid, agent)
@@ -1645,14 +1919,6 @@ class TelegramBot:
                 name=f"activity-watcher-{agent}",
             )
             watcher.start()
-
-            liveness = threading.Thread(
-                target=self._watch_liveness,
-                args=(cid, agent, render),
-                daemon=True,
-                name=f"liveness-pulse-{agent}",
-            )
-            liveness.start()
 
         code, resp = self.flock.send_message(agent, text)
         if code != 202:
@@ -1875,6 +2141,22 @@ def main() -> None:
                         help=f"Default edge-tts voice for spoken replies (default: {DEFAULT_TTS_VOICE})")
     parser.add_argument("--session-url", default=os.getenv("FLOCK_SESSION_URL", ""),
                         help="h-flock Session WebSocket URL (default: derived from --api-url, port 8081)")
+    parser.add_argument("--pane-watch-chrome-default", type=int,
+                        default=int(os.getenv("PANE_WATCH_CHROME_DEFAULT", "4")),
+                        help="/watch: bottom pane rows to crop as UI chrome (input box, hints) (default: 4)")
+    parser.add_argument("--pane-watch-chrome-overrides", default=os.getenv("PANE_WATCH_CHROME_OVERRIDES", ""),
+                        help="/watch: per-agent chrome-row exceptions, \"agent=n,agent2=n\" — "
+                             "the bot cannot see which CLI an agent runs (API.md has no such field), "
+                             "and Claude/agy and Codex do not agree on chrome height (see README §2c)")
+    parser.add_argument("--pane-watch-tail-lines", type=int,
+                        default=int(os.getenv("PANE_WATCH_TAIL_LINES", "10")),
+                        help="/watch: how many rows back from the bottom of the pane to look (default: 10)")
+    parser.add_argument("--pane-watch-refresh-seconds", type=float,
+                        default=float(os.getenv("PANE_WATCH_REFRESH_SECONDS", "2.0")),
+                        help="/watch: seconds between pane refreshes (default: 2.0)")
+    parser.add_argument("--pane-watch-max-duration-seconds", type=float,
+                        default=float(os.getenv("PANE_WATCH_MAX_DURATION_SECONDS", "600")),
+                        help="/watch: auto-stop a forgotten watch after this many seconds (default: 600)")
 
     args = parser.parse_args()
 
@@ -1904,6 +2186,11 @@ def main() -> None:
         voice_feature_enabled=args.voice,
         no_activity_push=args.no_activity_push,
         session_url=args.session_url or None,
+        pane_watch_chrome_default=args.pane_watch_chrome_default,
+        pane_watch_chrome_overrides=_parse_int_overrides(args.pane_watch_chrome_overrides),
+        pane_watch_tail_span=args.pane_watch_tail_lines,
+        pane_watch_refresh_s=args.pane_watch_refresh_seconds,
+        pane_watch_max_duration_s=args.pane_watch_max_duration_seconds,
     )
 
     # ⚠ Called once here, unconditionally, before any mode below runs — not

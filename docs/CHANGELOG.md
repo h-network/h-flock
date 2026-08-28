@@ -11,6 +11,20 @@
 
 ---
 
+## 2026-08-28 — session door's subscribe message accepts `refresh: true`
+
+`{"subscribe": [...], "refresh": true}` on the `/session` WebSocket now
+re-runs `capture-pane` for every named agent, not only ones newly added to
+the subscription — a client polling pane *content* on its own schedule (the
+Telegram bot's `/watch` live-tail) gets a fresh snapshot without dropping and
+re-adding the subscription, which would risk losing a live `%output` diff in
+the gap. Omitting `refresh` (or `false`) is unchanged: resending an
+unchanged agent set is still a no-op.
+
+**What this made false:** that `{"subscribe": [...]}` was the only shape a
+client could send, and that requesting a fresh `capture-pane` mid-subscription
+required unsubscribing and resubscribing.
+
 ## 2026-08-27 — StartAgent and office hire auto-resume prior CLI session history on re-hiring
 
 Re-hiring a previously retired agent name now auto-detects existing CLI session history for that agent's working directory (`has_session_history`), launching the new window with the CLI's native resume command (`startAgent claude --resume`, `startAgent codex resume --last`, `startAgent agy --continue`) to reattach to the most recent conversation context. `StartAgent` accepts an optional `resume: bool` payload field (`office hire <agent> --resume` / `--fresh`) to explicitly force resumption or start clean. `StopAgent` continues to preserve the filesystem and prior session logs.

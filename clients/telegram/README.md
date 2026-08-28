@@ -11,7 +11,7 @@ A Telegram bot client that talks to an **h-flock** tenant over HTTP, allowing a 
   ⚠ **This replaced an earlier design that blocked inline** — `handle_user_prompt` used to poll-and-wait for a reply, unbounded, inside the same loop that read Telegram's `getUpdates`. One chat's unanswered prompt froze the *entire* bot, for every chat, until that one exchange resolved (measured live on the acceptance VM: the poller sat on one cursor for minutes while every message sent afterward went unread). Removed entirely rather than patched.
 - **`blocked` Visibility:** If `architect` is `blocked`, the bot immediately reports `"architect is not accepting messages right now"` instead of posting.
 - **Cursor Persistence:** `ReplyPusher` persists its mailbox cursor to disk (`cursor.json`) as it delivers each reply, and — like `AlertPusher` — seeds a fresh cursor store from the mailbox's current tail rather than replaying history on first run.
-- **Discoverable commands:** `/menu`, `/status`, and `/voice` are registered with Telegram itself via `setMyCommands` at enrol time, so they show up in the client's own `/` command picker instead of requiring the user to know and type them blind.
+- **Discoverable commands:** `/menu`, `/status`, `/watch`, `/unwatch`, and `/voice` are registered with Telegram itself via `setMyCommands` at enrol time, so they show up in the client's own `/` command picker instead of requiring the user to know and type them blind.
 - **Text-to-Speech (TTS) Voice Replies:** Spoken voice replies via Microsoft Edge's neural TTS voices (`edge-tts` package, PyPI) using Telegram's `sendVoice` endpoint. Declared dependency in `pyproject.toml`. Spoken voice replies are opt-in per tenant (`TELEGRAM_VOICE=1`, prompted during `setup.sh`) and opt-in per chat via `/voice` or the sticky menu toggle (voice-enabled chats receive both the full text reply and the spoken voice audio).
 - **Inbound messages are restricted to `--chat-id`/`TELEGRAM_CHAT_ID`.** Every real Telegram update funnels through `_dispatch_update`, which drops anything from a different chat *silently* — no reply, no answered callback query — so an unauthorized sender learns nothing, not even that a bot is listening. ⚠ **No configured chat_id refuses everything, not the reverse**: the menu now reaches hire/retire/pause/resume/broadcast, so "whoever messages first" stopped being an acceptable identity check the moment those landed. This only affects manual/ad-hoc runs without `--chat-id` — `setup.sh`'s normal flow requires both `TELEGRAM_BOT_TOKEN` and `TELEGRAM_CHAT_ID` before it enables the bot at all, so a real deployment always has one. CLI-driven one-shots (`--prompt`/`--status`/`--menu`, dry-run mode) call handlers directly and never go through this check — they're operator shell access, not untrusted network input.
 
@@ -31,9 +31,14 @@ A Telegram bot client that talks to an **h-flock** tenant over HTTP, allowing a 
 | `ALERTS_CURSOR_FILE` | derived from `CURSOR_FILE` | Path to store the alerts-stream cursor, kept separate from the mailbox cursor |
 | `NO_ALERT_PUSH` | unset | Set to `1` to disable live alert push even when `TELEGRAM_CHAT_ID` is set |
 | `NO_ACTIVITY_PUSH` | unset | Set to `1` to disable live-updating progress messages while agents execute tools |
-| `FLOCK_SESSION_URL` | derived from `FLOCK_API_URL` (`:8081`) | Base WebSocket URL for the Session door used for terminal diff liveness pulses |
+| `FLOCK_SESSION_URL` | derived from `FLOCK_API_URL` (`:8081`) | Base WebSocket URL for the Session door, used by `/watch` (§2c) |
 | `TELEGRAM_VOICE` | `0` | Set to `1` to enable the spoken TTS voice replies feature in this tenant |
 | `TTS_VOICE` | `en-GB-RyanNeural` | Default Microsoft neural TTS voice for spoken replies (e.g. `en-GB-RyanNeural`) via `edge-tts` |
+| `PANE_WATCH_CHROME_DEFAULT` | `4` | `/watch`: bottom pane rows cropped as UI chrome (input box, shortcut hint, separators) |
+| `PANE_WATCH_CHROME_OVERRIDES` | unset | `/watch`: per-agent chrome-row exceptions, `"agent=n,agent2=n"` — see §2c, Codex needs `5` |
+| `PANE_WATCH_TAIL_LINES` | `10` | `/watch`: how many rows back from the bottom of the pane to look before cropping chrome |
+| `PANE_WATCH_REFRESH_SECONDS` | `2.0` | `/watch`: seconds between pane refreshes |
+| `PANE_WATCH_MAX_DURATION_SECONDS` | `600` | `/watch`: auto-stop a forgotten watch after this many seconds |
 
 ### Running in Dry-Run Mode (Without Telegram Token)
 
@@ -60,6 +65,7 @@ python3 clients/telegram/bot.py \
   --agent architect \
   --voice \
   --tts-voice en-GB-RyanNeural \
+  --pane-watch-chrome-overrides "backend=5,frontend=5" \
   --dry-run \
   --prompt "can you check the auth change?"
 ```
@@ -192,10 +198,70 @@ When a user sends a prompt to an agent via Telegram, the bot starts an activity 
 ```
 
 - **Tool-Names Privacy Invariant:** Respects `HLD.md` §8 privacy boundaries — events carry tool names and lifecycle markers only, never arguments, parameters, file paths, or shell strings.
-- **Diff-Triggered Liveness Pulse:** Connects to the Session WebSocket door (`:8081`, `ws://HOST:8081/session`) in read-only mode to sample terminal activity every ~5s. When the agent is reasoning or producing terminal text without triggering a discrete tool call, an actual diff touches a liveness line (`⏳ still working… (updated 4s ago)`) without dumping raw ANSI terminal bytes. If the pane is idle (no diff), the edit call is skipped.
 - **In-Place Updates & Throttling:** Edits are throttled to at most ~1/sec to comply with Telegram rate limits, keeping total rendered characters well below Telegram's 4096 cap via sliding window truncation for long execution runs. Redundant edits with identical text are skipped.
-- **Completion & Coexistence with Replies:** When the agent finishes (when `ReplyPusher` delivers the reply from the mailbox), the activity message is finalized in place (`🛠 Activity (architect) · completed (4 steps)` with the liveness line cleanly removed), and the full final response (and voice note if enabled) is delivered as a fresh new message.
+- **Completion & Coexistence with Replies:** When the agent finishes (when `ReplyPusher` delivers the reply from the mailbox), the activity message is finalized in place (`🛠 Activity (architect) · completed (4 steps)`), and the full final response (and voice note if enabled) is delivered as a fresh new message.
 - **Disabling:** Disable live activity streaming by passing `--no-activity-push` or setting `NO_ACTIVITY_PUSH=1`.
+
+---
+
+## 2d. `/watch` — Live-Tail an Agent's Terminal (Rolling `editMessageText`)
+
+A clearer alternative to guessing what an agent is doing from tool names: one
+Telegram message showing an actual slice of the agent's tmux pane, refreshed
+in place. This **replaces** an earlier "diff-triggered liveness pulse" design
+(a `⏳ still working…` timestamp line bolted onto the activity message above)
+that operators found unclear — this shows the content itself instead.
+
+**Trigger.** Tap **👁 Watch** on the sticky menu (or send `/watch`) to pick an
+agent from an inline list, or send `/watch <agent>` directly. One watch runs
+per chat; starting a new one (any agent) replaces whatever was already
+running there. `/unwatch`, or the **⏹ Stop watching** button attached to the
+live message itself, ends it early.
+
+**Source.** Reuses the Session WebSocket door's existing capture-pane
+mechanism (`ws://HOST:8081/session`, `LLD-session.md` §2–3) — the bot has no
+local tmux access at all, by design (`HLD.md` §7: `:8081` is terminal bytes
+for a *person*, not a data path an app parses, except this one sanctioned
+"watching an agent work" case). Rather than reconstructing a screen
+client-side from the live `%output` diff stream, the bot asks for one fresh
+snapshot per refresh tick via a small session-door protocol addition —
+`{"subscribe": [agent], "mode": "read-only", "refresh": true}` — which
+re-runs `capture-pane` for an already-subscribed agent instead of requiring
+an unsubscribe/resubscribe round trip that would risk losing a live diff in
+the gap.
+
+**Content window.** Every `capture-pane` snapshot is up to the pane's full
+120×32 screen (`LLD-tmux-host.md` §3); most of that is either stale
+scrollback or the CLI's own input chrome, neither of which is "what the agent
+just said". The bot looks at the last `PANE_WATCH_TAIL_LINES` rows (default
+`10`) and crops the bottom `PANE_WATCH_CHROME_DEFAULT` rows (default `4`) —
+net, roughly rows `[bottom-10 .. bottom-4]` — then trims purely-blank rows
+from either edge of what's left.
+
+⚠ **Chrome height is not the same across claude/codex/agy, and the bot
+cannot ask which one an agent runs** (`GET /agents/{agent}` carries
+`port_type` and presence, never `cli` — only `office peers -v`'s
+`framework=<cli>` field reads that, from a Redis key (`resource: "launch"`)
+the api door does not expose). Measured against
+three live panes: claude and agy's Antigravity CLI both draw a 4-row bottom
+chrome (separator / input line / separator / hint), Codex draws 5 (separator
+/ blank / input box / footer status line). The default of `4` is correct for
+two of three; `PANE_WATCH_CHROME_OVERRIDES` (same `"name=value"` exceptions
+shape as `entrypoint.sh`'s `AGENT_CLIS`) lets an operator who knows which
+agents run Codex correct those by name rather than the bot guessing or
+mis-cropping silently.
+
+**Refresh & stop conditions.** Polls every `PANE_WATCH_REFRESH_SECONDS`
+(default `2.0`). Stops on any of: the **⏹ Stop watching** button or
+`/unwatch`; `PANE_WATCH_MAX_DURATION_SECONDS` elapsing (default `600`, a
+safety net against a forgotten watch); or the watched agent transitioning
+from `working` to `idle` presence (`GET /agents/{agent}`) — a transition, not
+a snapshot, so starting a watch on an already-idle agent doesn't end it
+immediately. On any stop, the message is edited once more with the
+last-known pane content plus a reason line, its **⏹ Stop watching** button
+removed, and it is not touched again — the final state is what's left
+behind, matching a normal Telegram message rather than one that looks
+perpetually "live" after the bot has moved on.
 
 ---
 

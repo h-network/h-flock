@@ -157,7 +157,9 @@ class ControlModeClient:
         self.pane_to_agent = pane_to_agent
         self.agent_to_pane = agent_to_pane
 
-    async def update_subscription(self, subscriber: Subscriber, agents: set[str]) -> list[str]:
+    async def update_subscription(
+        self, subscriber: Subscriber, agents: set[str], *, refresh: bool = False
+    ) -> list[str]:
         await self.ensure_connected()
         if agents - self.agent_to_pane.keys():
             await self.refresh_panes()
@@ -166,14 +168,22 @@ class ControlModeClient:
             return unknown
         removed = subscriber.agents - agents
         added = agents - subscriber.agents
+        # ⚠ `refresh` re-snapshots every requested agent, not just newly added
+        # ones — a client that wants a fresh capture-pane without dropping its
+        # live stream (a periodic pane-content poll rather than a resize or a
+        # reconnect) sends the same agent set again with refresh=true instead
+        # of unsubscribing and resubscribing, which would open a gap where a
+        # live %output could be missed between the two round trips.
+        to_snapshot = set(agents) if refresh else added
         for agent in removed:
             self._subscribers[agent].discard(subscriber)
         for agent in added:
-            subscriber.buffering[agent] = []
             self._subscribers[agent].add(subscriber)
+        for agent in to_snapshot:
+            subscriber.buffering[agent] = []
         subscriber.agents = set(agents)
 
-        for agent in sorted(added):
+        for agent in sorted(to_snapshot):
             pane = self.agent_to_pane[agent]
             # ⚠ The VISIBLE screen, not the scrollback. `-S -` dumps the whole
             # history, so a client wrote thousands of lines and then received
