@@ -1,5 +1,6 @@
 """Unit tests for the Telegram bot client (clients/telegram/bot.py)."""
 
+import base64
 import inspect
 import json
 import os
@@ -16,9 +17,9 @@ from clients.telegram.bot import (
     ActivityRender, AlertPusher, CursorStore, DryRunTelegramClient, FlockClient, PaneWatchRender,
     ReplyPusher, TelegramBot, TelegramClient, render_alert, render_reply,
     synthesize_speech, _parse_sse_events, _derive_session_url,
-    _agent_picker_keyboard, _enforce_photo_retention, _is_transient_chrome_line, _parse_int_overrides,
-    _parse_mention, _pane_tail_window, _strip_ansi, PHOTO_RETENTION_MAX_AGE_S, PHOTO_RETENTION_MAX_BYTES,
-    TELEGRAM_MAX_FILE_BYTES,
+    _agent_picker_keyboard, _is_transient_chrome_line, _parse_int_overrides,
+    _parse_mention, _pane_tail_window, _strip_ansi, _valid_attachment_filename, _valid_attachment_mime_type,
+    ATTACHMENT_MAX_BYTES, TELEGRAM_MAX_FILE_BYTES,
 )
 
 
@@ -39,6 +40,7 @@ class DummyFlockClient:
         self.hired = []
         self.retired = []
         self.sent_envelopes = []
+        self.sent_attachments = []
         self.alerts = []
         self.alerts_next_cursor = None
 
@@ -48,6 +50,14 @@ class DummyFlockClient:
     def send_message(self, destination, text):
         self.sent_envelopes.append({"destination": destination, "text": text})
         return 202, {"stream_id": "s2", "correlation_id": "c2"}
+
+    def send_attachment(self, destination, filename, mime_type, content_base64, caption=None):
+        entry = {
+            "destination": destination, "filename": filename, "mime_type": mime_type,
+            "content_base64": content_base64, "caption": caption,
+        }
+        self.sent_attachments.append(entry)
+        return 202, {"stream_id": "s3", "correlation_id": "c3"}
 
     def get_presence(self, agent):
         return 200, {
@@ -1036,33 +1046,25 @@ def test_mention_mid_sentence_is_not_routing_just_message_content():
         assert flock.sent_envelopes[-1]["text"] == "please check with @sme-2 first"
 
 
-# ── receiving a photo ────────────────────────────────────────────────────────
+# ── receiving a photo: sent on as a real Attachment envelope ────────────────
 
-def test_enforce_photo_retention_evicts_by_age_then_by_total_size(tmp_path):
-    old = tmp_path / "old.jpg"
-    old.write_bytes(b"x" * 10)
-    new = tmp_path / "new.jpg"
-    new.write_bytes(b"y" * 10)
-    old_time = time.time() - PHOTO_RETENTION_MAX_AGE_S - 10
-    os.utime(old, (old_time, old_time))
-
-    _enforce_photo_retention(tmp_path, max_age_s=PHOTO_RETENTION_MAX_AGE_S, total_max_bytes=PHOTO_RETENTION_MAX_BYTES)
-    assert not old.exists()
-    assert new.exists()
-
-    # now force size-based eviction: two recent files over a tiny cap
-    a = tmp_path / "a.jpg"
-    a.write_bytes(b"a" * 100)
-    time.sleep(0.01)
-    b = tmp_path / "b.jpg"
-    b.write_bytes(b"b" * 100)
-    _enforce_photo_retention(tmp_path, max_age_s=PHOTO_RETENTION_MAX_AGE_S, total_max_bytes=150)
-    # oldest-first: "a" (and possibly "new") go before "b", the most recent write
-    assert b.exists()
+def test_valid_attachment_filename():
+    assert _valid_attachment_filename("file_123.jpg") is True
+    assert _valid_attachment_filename("") is False
+    assert _valid_attachment_filename(".") is False
+    assert _valid_attachment_filename("..") is False
+    assert _valid_attachment_filename("a/b.jpg") is False
+    assert _valid_attachment_filename("a\\b.jpg") is False
+    assert _valid_attachment_filename("bad\x00name.jpg") is False
+    assert _valid_attachment_filename("x" * 256 + ".jpg") is False
 
 
-def test_enforce_photo_retention_on_a_missing_directory_is_a_no_op(tmp_path):
-    _enforce_photo_retention(tmp_path / "does-not-exist")
+def test_valid_attachment_mime_type():
+    assert _valid_attachment_mime_type("image/jpeg") is True
+    assert _valid_attachment_mime_type("") is False
+    assert _valid_attachment_mime_type("image/*") is False
+    assert _valid_attachment_mime_type("image/jpeg; q=1") is False
+    assert _valid_attachment_mime_type("bad type/jpeg") is False
 
 
 def test_dispatch_update_routes_a_photo_instead_of_silently_dropping_it(monkeypatch):
@@ -1084,88 +1086,120 @@ def test_dispatch_update_routes_a_photo_instead_of_silently_dropping_it(monkeypa
         assert calls == [("12345", [{"file_id": "small"}, {"file_id": "big", "file_size": 5}], "a photo")]
 
 
-def test_handle_photo_message_saves_and_notifies_the_persistent_target():
-    with tempfile.TemporaryDirectory() as tmpdir, tempfile.TemporaryDirectory() as workdir:
-        bot_instance, flock, telegram = _make_bot(tmpdir=tmpdir, photo_dir_root=workdir)
+def test_handle_photo_message_sends_an_attachment_envelope_to_the_persistent_target():
+    with tempfile.TemporaryDirectory() as tmpdir:
+        bot_instance, flock, telegram = _make_bot(tmpdir=tmpdir)
         photo_sizes = [{"file_id": "thumb", "file_size": 100}, {"file_id": "full", "file_size": 5000}]
 
         reply = bot_instance.handle_photo_message(12345, photo_sizes, "")
 
-        assert reply == "✅ Photo saved and sent to architect."
+        assert reply == "✅ Photo sent to architect."
         assert ("getFile", {"file_id": "full"}) in telegram.requests
         assert telegram.downloaded_paths == ["photos/file_1.jpg"]
-        saved = list(Path(workdir, "architect", "telegram-photos").glob("*.jpg"))
-        assert len(saved) == 1
-        assert saved[0].read_bytes() == b"fake-jpeg-bytes"
-        assert flock.sent_envelopes[-1]["destination"] == "architect"
-        assert str(saved[0]) in flock.sent_envelopes[-1]["text"]
+        assert len(flock.sent_attachments) == 1
+        sent = flock.sent_attachments[0]
+        assert sent["destination"] == "architect"
+        assert sent["filename"] == "file_1.jpg"
+        assert sent["mime_type"] == "image/jpeg"
+        assert base64.b64decode(sent["content_base64"]) == b"fake-jpeg-bytes"
+        assert sent["caption"] is None
+        assert flock.sent_envelopes == []  # no more Message fallback
+
+
+def test_handle_photo_message_maps_caption_to_the_envelope_caption_field():
+    with tempfile.TemporaryDirectory() as tmpdir:
+        bot_instance, flock, telegram = _make_bot(tmpdir=tmpdir)
+        bot_instance.handle_photo_message(12345, [{"file_id": "full"}], "a nice view")
+        assert flock.sent_attachments[0]["caption"] == "a nice view"
+
+
+def test_handle_photo_message_falls_back_to_a_generated_filename_when_telegrams_is_invalid():
+    with tempfile.TemporaryDirectory() as tmpdir:
+        bot_instance, flock, telegram = _make_bot(tmpdir=tmpdir)
+        telegram.get_file_response = {"ok": True, "result": {"file_path": "../evil.jpg"}}
+        bot_instance.handle_photo_message(12345, [{"file_id": "full"}], "")
+        filename = flock.sent_attachments[0]["filename"]
+        assert _valid_attachment_filename(filename)
+        assert filename.endswith(".jpg")
 
 
 def test_handle_photo_message_mention_routes_without_changing_the_persistent_target():
-    with tempfile.TemporaryDirectory() as tmpdir, tempfile.TemporaryDirectory() as workdir:
-        bot_instance, flock, telegram = _make_bot(tmpdir=tmpdir, photo_dir_root=workdir)
+    with tempfile.TemporaryDirectory() as tmpdir:
+        bot_instance, flock, telegram = _make_bot(tmpdir=tmpdir)
         photo_sizes = [{"file_id": "full"}]
 
         reply = bot_instance.handle_photo_message(12345, photo_sizes, "@sme-2 check this out")
 
-        assert reply == "✅ Photo saved and sent to sme-2."
-        assert flock.sent_envelopes[-1]["destination"] == "sme-2"
-        assert "check this out" in flock.sent_envelopes[-1]["text"]
-        assert (Path(workdir) / "architect").exists() is False  # only sme-2's dir was touched
+        assert reply == "✅ Photo sent to sme-2."
+        assert flock.sent_attachments[-1]["destination"] == "sme-2"
+        assert flock.sent_attachments[-1]["caption"] == "check this out"
         assert "12345" not in bot_instance.chat_target_agent
 
 
 def test_handle_photo_message_mention_to_unknown_agent_is_refused():
-    with tempfile.TemporaryDirectory() as tmpdir, tempfile.TemporaryDirectory() as workdir:
-        bot_instance, flock, telegram = _make_bot(tmpdir=tmpdir, photo_dir_root=workdir)
+    with tempfile.TemporaryDirectory() as tmpdir:
+        bot_instance, flock, telegram = _make_bot(tmpdir=tmpdir)
         reply = bot_instance.handle_photo_message(12345, [{"file_id": "full"}], "@nonexistent look")
         assert "isn't a known agent" in reply
-        assert flock.sent_envelopes == []
+        assert flock.sent_attachments == []
         assert telegram.requests == []  # never even attempted the download
 
 
 def test_handle_photo_message_respects_blocked_presence():
-    with tempfile.TemporaryDirectory() as tmpdir, tempfile.TemporaryDirectory() as workdir:
+    with tempfile.TemporaryDirectory() as tmpdir:
         flock = DummyFlockClient()
         flock.presence_state = "blocked"
-        bot_instance, flock, telegram = _make_bot(flock=flock, tmpdir=tmpdir, photo_dir_root=workdir)
+        bot_instance, flock, telegram = _make_bot(flock=flock, tmpdir=tmpdir)
         reply = bot_instance.handle_photo_message(12345, [{"file_id": "full"}], "")
         assert reply == "architect is not accepting messages right now"
-        assert flock.sent_envelopes == []
+        assert flock.sent_attachments == []
         assert telegram.requests == []
 
 
 def test_handle_photo_message_rejects_an_oversized_reported_file_size():
-    with tempfile.TemporaryDirectory() as tmpdir, tempfile.TemporaryDirectory() as workdir:
-        bot_instance, flock, telegram = _make_bot(tmpdir=tmpdir, photo_dir_root=workdir)
+    with tempfile.TemporaryDirectory() as tmpdir:
+        bot_instance, flock, telegram = _make_bot(tmpdir=tmpdir)
         photo_sizes = [{"file_id": "huge", "file_size": TELEGRAM_MAX_FILE_BYTES + 1}]
         reply = bot_instance.handle_photo_message(12345, photo_sizes, "")
         assert "too large" in reply
         assert telegram.requests == []  # rejected before ever calling getFile
-        assert flock.sent_envelopes == []
+        assert flock.sent_attachments == []
 
 
-def test_handle_photo_message_rejects_an_oversized_download_even_if_reported_size_was_missing():
-    with tempfile.TemporaryDirectory() as tmpdir, tempfile.TemporaryDirectory() as workdir:
-        bot_instance, flock, telegram = _make_bot(tmpdir=tmpdir, photo_dir_root=workdir)
-        telegram.download_response = b"x" * (TELEGRAM_MAX_FILE_BYTES + 1)
+def test_handle_photo_message_rejects_a_download_over_the_attachment_cap_even_under_telegrams_own_ceiling():
+    """The real gap flagged during the design pass: 10MB (Attachment) is
+    smaller than 20MB (Telegram's own getFile ceiling), so a file that
+    downloads fine must still be refused here."""
+    with tempfile.TemporaryDirectory() as tmpdir:
+        bot_instance, flock, telegram = _make_bot(tmpdir=tmpdir)
+        telegram.download_response = b"x" * (ATTACHMENT_MAX_BYTES + 1)
+        assert len(telegram.download_response) <= TELEGRAM_MAX_FILE_BYTES
         reply = bot_instance.handle_photo_message(12345, [{"file_id": "full"}], "")
         assert "too large" in reply
-        assert flock.sent_envelopes == []
+        assert flock.sent_attachments == []
 
 
 def test_handle_photo_message_reports_a_getfile_failure():
-    with tempfile.TemporaryDirectory() as tmpdir, tempfile.TemporaryDirectory() as workdir:
-        bot_instance, flock, telegram = _make_bot(tmpdir=tmpdir, photo_dir_root=workdir)
+    with tempfile.TemporaryDirectory() as tmpdir:
+        bot_instance, flock, telegram = _make_bot(tmpdir=tmpdir)
         telegram.get_file_response = {"ok": False, "description": "file expired"}
         reply = bot_instance.handle_photo_message(12345, [{"file_id": "full"}], "")
         assert "file expired" in reply
-        assert flock.sent_envelopes == []
+        assert flock.sent_attachments == []
+
+
+def test_handle_photo_message_reports_an_attachment_send_failure():
+    with tempfile.TemporaryDirectory() as tmpdir:
+        bot_instance, flock, telegram = _make_bot(tmpdir=tmpdir)
+        flock.send_attachment = lambda *a, **kw: (422, {"detail": "invalid attachment mime_type"})
+        reply = bot_instance.handle_photo_message(12345, [{"file_id": "full"}], "")
+        assert "Failed to send" in reply
+        assert "invalid attachment mime_type" in reply
 
 
 def test_handle_photo_message_shows_typing_before_the_download():
-    with tempfile.TemporaryDirectory() as tmpdir, tempfile.TemporaryDirectory() as workdir:
-        bot_instance, flock, telegram = _make_bot(tmpdir=tmpdir, photo_dir_root=workdir)
+    with tempfile.TemporaryDirectory() as tmpdir:
+        bot_instance, flock, telegram = _make_bot(tmpdir=tmpdir)
         bot_instance.handle_photo_message(12345, [{"file_id": "full"}], "")
         assert telegram.chat_actions == [{"chat_id": "12345", "action": "typing"}]
 
