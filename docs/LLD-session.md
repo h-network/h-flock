@@ -84,6 +84,8 @@ everything.
 
 **A subscriber gets a snapshot first, then the stream.** `capture-pane` (without `-S -`) captures the visible screen (not the full scrollback history), prefixed with clear-and-home (`\x1b[2J\x1b[H`), followed by the screen lines and cursor position restoration (`\x1b[{row};{col}H` queried via `display-message -p -t <pane> "#{cursor_y} #{cursor_x}"`), so row 1 of the client matches row 1 of the pane and live updates stay aligned without offset.
 
+⚠ **`{"subscribe": [...], "refresh": true}` re-snapshots every agent named in that message, not only newly-added ones.** A client polling pane *content* on its own schedule (the Telegram bot's live-tail, `clients/telegram/README.md` §2c) sends its already-subscribed agent again with `refresh: true` to get one more `capture-pane` without dropping and re-adding the subscription — which would open a gap where a live `%output` between the two calls is lost. Omitting `refresh` (or leaving it `false`) keeps the old behaviour: a resend of an unchanged agent set is a no-op.
+
 ⚠ `capture-pane` is used exclusively by this module to render visible terminal screen snapshots to human operators over the session door. Observation modules outside the session door (watchdog, switch, adapters) never execute `capture-pane`.
 
 ## 4. Writing: keystrokes

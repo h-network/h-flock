@@ -206,7 +206,10 @@ def create_app(
                     ):
                         await websocket.send_json({"error": "subscribe must be a list of agents"})
                         continue
-                    unknown = await controller.update_subscription(subscriber, set(requested))
+                    refresh = bool(message.get("refresh", False))
+                    unknown = await controller.update_subscription(
+                        subscriber, set(requested), refresh=refresh
+                    )
                     if unknown:
                         await websocket.send_json({"error": "unknown agents", "agents": unknown})
                         continue

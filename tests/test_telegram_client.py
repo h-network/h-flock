@@ -7,11 +7,14 @@ import tempfile
 import threading
 from pathlib import Path
 
+import pytest
+
 from clients.telegram import bot
 from clients.telegram.bot import (
-    ActivityRender, AlertPusher, CursorStore, DryRunTelegramClient, FlockClient, ReplyPusher,
-    TelegramBot, TelegramClient, render_alert, render_reply,
+    ActivityRender, AlertPusher, CursorStore, DryRunTelegramClient, FlockClient, PaneWatchRender,
+    ReplyPusher, TelegramBot, TelegramClient, render_alert, render_reply,
     synthesize_speech, _parse_sse_events, _derive_session_url,
+    _parse_int_overrides, _pane_tail_window, _strip_ansi,
 )
 
 
@@ -359,11 +362,13 @@ def test_handle_user_prompt_when_refused_by_policy():
 
 # ── inline menu ──────────────────────────────────────────────────────────────
 
-def _make_bot(flock=None, telegram=None, tmpdir=None, allowed_chat_id=None):
+def _make_bot(flock=None, telegram=None, tmpdir=None, allowed_chat_id=None, **kwargs):
     flock = flock or DummyFlockClient()
     telegram = telegram if telegram is not None else DummyTelegramClient()
     store = CursorStore(str(Path(tmpdir) / "cursor.json"))
-    bot_instance = TelegramBot(flock, telegram, store, target_agent="architect", allowed_chat_id=allowed_chat_id)
+    bot_instance = TelegramBot(
+        flock, telegram, store, target_agent="architect", allowed_chat_id=allowed_chat_id, **kwargs
+    )
     return bot_instance, flock, telegram
 
 
@@ -454,8 +459,9 @@ def test_menu_command_sends_sticky_keyboard():
         flat = [b["text"] for row in markup["keyboard"] for b in row]
         assert flat == [
             "📋 Overview", "🎫 Add ticket",
-            "⏯ Lifecycle", "🔔 Alerts",
-            "🎯 Message: architect", "➕ Hire",
+            "⏯ Lifecycle", "👁 Watch",
+            "🔔 Alerts", "➕ Hire",
+            "🎯 Message: architect",
             "📢 Broadcast",
         ]
         # every static label resolves to a dispatch code; the dynamic target
@@ -843,7 +849,7 @@ def test_callback_query_back_to_menu():
 
 
 def test_sticky_labels_cover_the_office_options():
-    assert set(TelegramBot.STICKY_LABELS.values()) == {"ov", "at", "lc", "al", "hi", "bc"}
+    assert set(TelegramBot.STICKY_LABELS.values()) == {"ov", "at", "lc", "wa", "al", "hi", "bc"}
 
 
 def test_sticky_keyboard_tap_dispatches_like_the_matching_inline_code():
@@ -1835,83 +1841,241 @@ def test_derive_session_url():
     assert _derive_session_url("http://127.0.0.1:8080", "https://custom:9999") == "wss://custom:9999/session"
 
 
-def test_activity_render_liveness_pulse():
-    render = ActivityRender(chat_id="123", agent="architect")
-    render.add_event({"kind": "input"})
-    assert "still working" not in render.render()
-
-    # Touch liveness
-    render.touch_liveness()
-    rendered = render.render()
-    assert "1. ⏳ 💬 <i>input received</i>" in rendered
-    assert "⏳ <i>still working… (updated just now)</i>" in rendered
-
-    # Finalize -> liveness line is removed
-    render.finalize()
-    finalized = render.render()
-    assert "still working" not in finalized
-    assert "completed (1 steps)" in finalized
+SNAPSHOT_PREFIX = "\x1b[2J\x1b[H"
 
 
-def test_telegram_bot_watch_liveness_pulse():
-    flock = DummyFlockClient()
+def test_strip_ansi_removes_clear_home_and_sgr_colours():
+    raw = "\x1b[2J\x1b[H\x1b[38;5;246mhello\x1b[39m\nworld\x1b[1;1H"
+    assert _strip_ansi(raw) == "hello\nworld"
+
+
+def test_pane_tail_window_crops_chrome_and_caps_lookback():
+    lines = [f"row{i}" for i in range(1, 21)]  # row1..row20, row20 = bottom
+    window = _pane_tail_window(lines, chrome_lines=4, tail_span=10)
+    # bottom-10 .. bottom-4, i.e. rows 11..16
+    assert window == ["row11", "row12", "row13", "row14", "row15", "row16"]
+
+
+def test_pane_tail_window_trims_blank_edges_but_keeps_the_source_bounds():
+    lines = ["a", "b", "c", "", "", "", "", ""]
+    window = _pane_tail_window(lines, chrome_lines=1, tail_span=8)
+    assert window == ["a", "b", "c"]
+
+
+def test_pane_tail_window_handles_a_pane_shorter_than_the_window():
+    assert _pane_tail_window(["one", "two"], chrome_lines=4, tail_span=10) == []
+
+
+def test_pane_tail_window_rejects_a_span_not_wider_than_chrome():
+    with pytest.raises(ValueError):
+        _pane_tail_window(["a"], chrome_lines=4, tail_span=4)
+
+
+def test_parse_int_overrides():
+    assert _parse_int_overrides("backend=5, frontend=5") == {"backend": 5, "frontend": 5}
+    assert _parse_int_overrides("") == {}
+    assert _parse_int_overrides("garbage,also=not-an-int,ok=3") == {"ok": 3}
+
+
+def test_pane_watch_render_diff_skip_and_rate_limit():
     telegram = DummyTelegramClient()
-    store = CursorStore()
-    bot_instance = TelegramBot(
-        flock_client=flock,
-        telegram_client=telegram,
-        cursor_store=store,
-        target_agent="architect",
-        allowed_chat_id=123,
-    )
-
-    render = ActivityRender(chat_id=123, agent="architect")
-    render.add_event({"kind": "input"})
-    render.flush(telegram)
+    render = PaneWatchRender(chat_id=123, agent="architect")
+    render.flush(telegram, ["hello"], force=True)
     assert len(telegram.sent_messages) == 1
-    # Reset last_flush_ts so immediate test calls aren't debounced
+
+    # Identical content, not forced: rate-limited/diff-skipped, no edit.
+    render.flush(telegram, ["hello"])
+    assert len(telegram.edited_messages) == 0
+
+    # Reset the throttle window and change content: one edit.
     render.last_flush_ts = 0.0
+    render.flush(telegram, ["hello", "world"])
+    assert len(telegram.edited_messages) == 1
+    assert "hello\nworld" in telegram.edited_messages[0]["text"]
 
-    sent_frames = []
-    received_count = 0
 
-    class FakeWS:
-        def __enter__(self):
-            return self
+def test_pane_watch_render_final_flush_clears_the_stop_button():
+    telegram = DummyTelegramClient()
+    render = PaneWatchRender(chat_id=123, agent="architect")
+    markup = {"inline_keyboard": [[{"text": "⏹ Stop watching", "callback_data": "ws:architect"}]]}
+    render.flush(telegram, ["hello"], reply_markup=markup, force=True)
+    assert telegram.sent_messages[0]["reply_markup"] == markup
 
-        def __exit__(self, *args):
-            pass
+    render.completed = True
+    render.flush(telegram, ["hello"], footer="<i>⏹ stopped</i>", clear_markup=True, force=True)
+    edited = telegram.edited_messages[-1]
+    assert edited["reply_markup"] == {"inline_keyboard": []}
+    assert "stopped" in edited["text"]
 
-        def send(self, data):
-            sent_frames.append(data)
 
-        def recv(self, timeout=None):
-            nonlocal received_count
-            if timeout == 2.0:
-                # Initial snapshot
-                return '{"agent": "architect", "data": "snapshot"}'
-            if timeout == 5.0:
-                received_count += 1
-                if received_count == 1:
-                    return '{"agent": "architect", "data": "new terminal bytes"}'
-                if received_count == 2:
-                    raise TimeoutError()
-                render.finalize()
-                return '{"agent": "architect", "data": "extra"}'
-            raise TimeoutError()
+class FakeWatchWS:
+    """A scripted session-door socket for `_run_pane_watch`: each `send`
+    (a subscribe/refresh request) is answered by the next canned frame list
+    in `frames_per_send` on the following `recv` calls. Once the script is
+    exhausted, a further `send` sets `stop_event` — so a test scripts exactly
+    N cycles by giving N frame lists and reading `.sent` for what happened,
+    without racing `_run_pane_watch`'s own stop_event.wait(refresh_s)."""
 
-    bot_instance._watch_liveness(
-        chat_id=123,
-        agent="architect",
-        render=render,
-        timeout_s=10.0,
-        ws_connect_fn=lambda: FakeWS(),
-    )
+    def __init__(self, frames_per_send, stop_event=None):
+        self.frames_per_send = list(frames_per_send)
+        self.sent = []
+        self._pending: list[str] = []
+        self._stop_event = stop_event
 
-    assert len(sent_frames) == 1
-    assert "subscribe" in sent_frames[0]
-    assert render.liveness_ts is None  # cleared on finalize
-    assert len(telegram.edited_messages) >= 1
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *args):
+        pass
+
+    def send(self, data):
+        self.sent.append(data)
+        if self.frames_per_send:
+            self._pending = list(self.frames_per_send.pop(0))
+        elif self._stop_event is not None:
+            self._stop_event.set()
+
+    def recv(self, timeout=None):
+        if self._pending:
+            return self._pending.pop(0)
+        raise TimeoutError()
+
+
+def test_run_pane_watch_renders_a_cropped_snapshot_and_sends_refresh_true():
+    with tempfile.TemporaryDirectory() as tmpdir:
+        bot_instance, flock, telegram = _make_bot(tmpdir=tmpdir, allowed_chat_id=123, pane_watch_refresh_s=0.0)
+        pane = "\n".join(f"row{i}" for i in range(1, 15))
+        stop_event = threading.Event()
+        ws = FakeWatchWS(
+            [[json.dumps({"agent": "architect", "data": SNAPSHOT_PREFIX + pane})]],
+            stop_event=stop_event,
+        )
+        render = PaneWatchRender(chat_id=123, agent="architect")
+
+        bot_instance._run_pane_watch(123, "architect", render, stop_event, ws_connect_fn=lambda: ws)
+
+        assert json.loads(ws.sent[0])["refresh"] is True
+        assert len(telegram.sent_messages) == 1
+        assert "row9" in telegram.sent_messages[0]["text"]  # within the default [-10:-4] window
+        assert "row14" not in telegram.sent_messages[0]["text"]  # cropped as chrome
+        assert render.completed is True
+        assert bot_instance.pane_watches.get("123") is None
+
+
+def test_run_pane_watch_ignores_incremental_diffs_between_snapshots():
+    with tempfile.TemporaryDirectory() as tmpdir:
+        bot_instance, flock, telegram = _make_bot(tmpdir=tmpdir, allowed_chat_id=123, pane_watch_refresh_s=0.0)
+        pane = "\n".join(f"row{i}" for i in range(1, 15))
+        stop_event = threading.Event()
+        ws = FakeWatchWS(
+            [[
+                json.dumps({"agent": "architect", "data": "not a snapshot, a live diff"}),
+                json.dumps({"agent": "architect", "data": SNAPSHOT_PREFIX + pane}),
+            ]],
+            stop_event=stop_event,
+        )
+        render = PaneWatchRender(chat_id=123, agent="architect")
+
+        bot_instance._run_pane_watch(123, "architect", render, stop_event, ws_connect_fn=lambda: ws)
+
+        assert "row9" in telegram.sent_messages[0]["text"]
+        assert "a live diff" not in telegram.sent_messages[0]["text"]
+
+
+def test_run_pane_watch_stops_on_working_to_idle_transition_not_on_initial_idle():
+    with tempfile.TemporaryDirectory() as tmpdir:
+        flock = DummyFlockClient()
+        flock.presence_state = "working"
+        bot_instance, flock, telegram = _make_bot(flock=flock, tmpdir=tmpdir, allowed_chat_id=123, pane_watch_refresh_s=0.0)
+        frame = [json.dumps({"agent": "architect", "data": SNAPSHOT_PREFIX + "hi"})]
+        ws = FakeWatchWS([frame, frame])
+        render = PaneWatchRender(chat_id=123, agent="architect")
+        stop_event = threading.Event()
+
+        calls = {"n": 0}
+        real_get_presence = flock.get_presence
+
+        def get_presence(agent):
+            calls["n"] += 1
+            if calls["n"] >= 2:
+                flock.presence_state = "idle"
+            return real_get_presence(agent)
+
+        flock.get_presence = get_presence
+
+        bot_instance._run_pane_watch(123, "architect", render, stop_event, ws_connect_fn=lambda: ws)
+
+        assert "went idle" in telegram.edited_messages[-1]["text"] or "went idle" in telegram.sent_messages[-1]["text"]
+        assert len(ws.sent) == 2  # ran a second cycle before stopping, not zero
+
+
+def test_run_pane_watch_stops_at_max_duration():
+    with tempfile.TemporaryDirectory() as tmpdir:
+        bot_instance, flock, telegram = _make_bot(tmpdir=tmpdir, allowed_chat_id=123, pane_watch_refresh_s=0.0)
+        bot_instance.pane_watch_max_duration_s = 0.0
+        frame = [json.dumps({"agent": "architect", "data": SNAPSHOT_PREFIX + "hi"})]
+        ws = FakeWatchWS([frame])
+        render = PaneWatchRender(chat_id=123, agent="architect")
+        stop_event = threading.Event()
+
+        bot_instance._run_pane_watch(123, "architect", render, stop_event, ws_connect_fn=lambda: ws)
+
+        text = telegram.sent_messages[-1]["text"] if not telegram.edited_messages else telegram.edited_messages[-1]["text"]
+        assert "time limit" in text
+
+
+def test_handle_watch_pick_rejects_an_unknown_agent():
+    with tempfile.TemporaryDirectory() as tmpdir:
+        bot_instance, flock, telegram = _make_bot(tmpdir=tmpdir, allowed_chat_id=123, pane_watch_refresh_s=0.0)
+        reply = bot_instance.handle_watch_pick(123, "nonexistent")
+        assert "Unknown agent" in reply
+        assert "123" not in bot_instance.pane_watches
+
+
+def test_handle_watch_pick_replaces_an_existing_watch_in_the_same_chat(monkeypatch):
+    with tempfile.TemporaryDirectory() as tmpdir:
+        bot_instance, flock, telegram = _make_bot(tmpdir=tmpdir, allowed_chat_id=123, pane_watch_refresh_s=0.0)
+        monkeypatch.setattr(bot_instance, "_run_pane_watch", lambda *a, **kw: None)
+        bot_instance.handle_watch_pick(123, "architect")
+        first_stop_event = bot_instance.pane_watches["123"]["stop_event"]
+        bot_instance.handle_watch_pick(123, "sme-2")
+        assert first_stop_event.is_set()
+        assert bot_instance.pane_watches["123"]["agent"] == "sme-2"
+
+
+def test_handle_watch_stop_command_with_no_active_watch():
+    with tempfile.TemporaryDirectory() as tmpdir:
+        bot_instance, flock, telegram = _make_bot(tmpdir=tmpdir, allowed_chat_id=123, pane_watch_refresh_s=0.0)
+        reply = bot_instance.handle_watch_stop_command(123)
+        assert "No active watch" in reply
+
+
+def test_handle_watch_stop_via_callback_matches_agent_and_sets_stop_event(monkeypatch):
+    with tempfile.TemporaryDirectory() as tmpdir:
+        bot_instance, flock, telegram = _make_bot(tmpdir=tmpdir, allowed_chat_id=123, pane_watch_refresh_s=0.0)
+        monkeypatch.setattr(bot_instance, "_run_pane_watch", lambda *a, **kw: None)
+        bot_instance.handle_watch_pick(123, "architect")
+        stop_event = bot_instance.pane_watches["123"]["stop_event"]
+        assert bot_instance.handle_watch_stop(123, "sme-2") == ""  # wrong agent: no-op
+        assert not stop_event.is_set()
+        bot_instance.handle_watch_stop(123, "architect")
+        assert stop_event.is_set()
+
+
+def test_watch_command_routes_through_text_and_callback(monkeypatch):
+    with tempfile.TemporaryDirectory() as tmpdir:
+        bot_instance, flock, telegram = _make_bot(tmpdir=tmpdir, allowed_chat_id=123, pane_watch_refresh_s=0.0)
+        monkeypatch.setattr(bot_instance, "_run_pane_watch", lambda *a, **kw: None)
+
+        reply = bot_instance.handle_text_message(123, "/watch architect")
+        assert "Watching architect" in reply
+
+        reply = bot_instance.handle_callback_query(123, "cb1", "wp:sme-2")
+        assert "Watching sme-2" in reply
+        assert bot_instance.pane_watches["123"]["agent"] == "sme-2"
+
+        reply = bot_instance.handle_text_message(123, "/watch")
+        assert "pick an agent" in reply.lower()
 
 
 

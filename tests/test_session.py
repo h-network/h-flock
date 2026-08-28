@@ -26,8 +26,8 @@ class FakeController:
     async def stop(self):
         pass
 
-    async def update_subscription(self, subscriber, agents):
-        self.subscribers.append((subscriber, set(agents)))
+    async def update_subscription(self, subscriber, agents, *, refresh=False):
+        self.subscribers.append((subscriber, set(agents), refresh))
         subscriber.agents = set(agents)
         for agent in sorted(agents):
             subscriber.queue.put_nowait({"agent": agent, "data": f"snapshot:{agent}"})
@@ -82,6 +82,41 @@ def test_snapshot_precedes_output_arriving_during_capture():
         {"agent": "alice", "data": "\x1b[2J\x1b[Hsnapshot\x1b[1;1H"},
         {"agent": "alice", "data": "live"},
     ]
+
+
+def test_refresh_resnapshots_an_already_subscribed_agent():
+    async def scenario():
+        controller = ControlModeClient("hq")
+        controller.pane_to_agent = {"%1": "alice"}
+        controller.agent_to_pane = {"alice": "%1"}
+
+        captures = 0
+
+        async def command(*args):
+            nonlocal captures
+            if args[0] == "display-message":
+                return ["0 0"]
+            captures += 1
+            return [f"frame-{captures}"]
+
+        controller.command = command
+        subscriber = Subscriber()
+        await controller.update_subscription(subscriber, {"alice"})
+        first = subscriber.queue.get_nowait()
+
+        # Same set, no refresh: nothing new — "added" is empty the second time.
+        await controller.update_subscription(subscriber, {"alice"})
+        assert subscriber.queue.empty()
+
+        # Same set, refresh=true: a fresh capture-pane is taken and published.
+        await controller.update_subscription(subscriber, {"alice"}, refresh=True)
+        second = subscriber.queue.get_nowait()
+        return first, second, captures
+
+    first, second, captures = asyncio.run(scenario())
+    assert first["data"] == "\x1b[2J\x1b[Hframe-1\x1b[1;1H"
+    assert second["data"] == "\x1b[2J\x1b[Hframe-2\x1b[1;1H"
+    assert captures == 2
 
 
 def test_keystrokes_are_hex_encoded_for_control_protocol():
@@ -173,6 +208,16 @@ def test_read_write_subscription_sends_input():
         ]
     )
     assert controller.sent == [("alice", "echo yes\n")]
+
+
+def test_subscribe_refresh_field_reaches_the_controller():
+    _, _, controller = websocket_exchange(
+        [
+            {"subscribe": ["alice"], "mode": "read-only"},
+            {"subscribe": ["alice"], "mode": "read-only", "refresh": True},
+        ]
+    )
+    assert [refresh for _, _, refresh in controller.subscribers] == [False, True]
 
 
 def test_bad_token_is_closed_before_accept():
