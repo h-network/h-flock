@@ -193,10 +193,10 @@ office send -a frontend …        the agent's own command, its only surface
    → opener                 tmux → paste · api → mailbox · control → act
 ```
 
-Five log records mark the path — `sent`, `popped`, `forwarded`, `received`,
-`opened` — so a lost envelope is locatable rather than merely absent. `sent` from
-an agent's own command reaches the log via a file the switch tails, because
-`office` runs in a window and its stdout is a pane.
+Six log records mark the path — `sent`, `popped`, `forwarded`, `kick_started`,
+`received`, `opened` — so a lost envelope is locatable rather than merely
+absent. `sent` from an agent's own command reaches the log via a file the switch
+tails, because `office` runs in a window and its stdout is a pane.
 
 ⚠ **No *agent* writes another agent's keys.** Not a queue, not a board, not a
 mailbox — it sends an envelope and the far edge writes its own. Build 12
@@ -365,11 +365,12 @@ marker and healthy deliveries read unverified. And the skip rule was a denylist
 whose activity cannot be tailed is skipped **by default**, not by having been
 remembered.
 
-### 8b. The switch's maintenance pass
+### 8b. Observation and maintenance passes
 
-The one daemon does more than forward. On a timer, for the whole tenant in one
-pass: tail session files into activity, sample presence, judge verify markers,
-tail the window log to stdout, and trim what would otherwise grow.
+The watchdog runs the filesystem observation work on its own timer: tail session
+files into activity, sample presence, and judge verify markers. The switch's
+separate maintenance pass tails the window log to stdout and trims what would
+otherwise grow.
 
 ⚠ **Cheap bounded reads only.** Anything that needs to *look* at a terminal is
 observation and belongs beside the system, not in it — the switch is the data

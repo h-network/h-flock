@@ -422,11 +422,12 @@ the separate watchdog process prevents a slow observation from stalling
 forwarding (`src/flock/watchdog/service.py:373-407`,
 `src/flock/switch/service.py:192-224`).
 
-1. **Tail session files.** For each Claude or Codex agent, the tailer reads only
-   bytes after the stored `activity.offset` in the newest session JSONL. It
-   appends privacy-reduced events to `<prefix>:activity`: `input`, `output`, or
-   `tool`, with a tool's **name only**. Arguments, paths and content have no
-   field in the event. The Stream is approximately capped at 1,000 entries.
+1. **Tail session files.** For each Claude, Codex or Antigravity agent, the
+   tailer reads only bytes after the stored `activity.offset` in the newest
+   session JSONL. It appends privacy-reduced events to `<prefix>:activity`:
+   `input`, `output`, or `tool`, with a tool's **name only**. Arguments, paths
+   and content have no field in the event. The Stream is approximately capped
+   at 1,000 entries.
    CLIs without a supported session format produce no feed. Usage records in
    the same supported transcripts are separately appended to the tenant
    `<prefix>:usage` Stream. A request ID is deduplicated in the agent's
@@ -456,11 +457,11 @@ forwarding (`src/flock/watchdog/service.py:373-407`,
    approximately-capped activity history to obtain one timestamp.
 3. **Judge delivery evidence.** Before pasting a `Message`, the tmux port
    appends a marker to `<prefix>:pending.verify` when the agent's launch CLI is
-   in the explicit `{claude, codex}` allowlist. The marker is written **before**
-   the paste: the CLI can record the resulting `input` in less time than a
-   post-paste write takes, making the event appear older than its marker and a
-   successful delivery look unverified. Measured live, that race misclassified
-   five of six messages.
+   in the explicit `{claude, codex, agy}` allowlist. The marker is written
+   **before** the paste: the CLI can record the resulting `input` in less time
+   than a post-paste write takes, making the event appear older than its marker
+   and a successful delivery look unverified. Measured live, that race
+   misclassified five of six messages.
 
    ⚠ **The allowlist is a capability claim, not a list of exceptions.** A CLI
    is marked only when the watchdog can tail its session format. The old rule
@@ -495,9 +496,9 @@ forwarding (`src/flock/watchdog/service.py:373-407`,
    It does not mean the CLI is stuck. Credential-free Claude and Codex were both
    measured at their login prompts, with prior activity making them judgeable;
    both deliveries were unverified and set `blocked`. By contrast, an agent
-   with no activity history receives no verdict at all. `agy` and bare shells
-   produce no verifiable activity, so their deliveries are never marked and
-   they cannot acquire this state.
+   with no activity history receives no verdict at all. Bare shells produce no
+   verifiable activity, so their deliveries are never marked and they cannot
+   acquire this state.
 
    ⚠ **An unverified delivery is surfaced and never re-pasted.** Verification
    distinguishes "later CLI activity was observed" from "no later activity was
@@ -547,10 +548,12 @@ the watchdog loop; switch housekeeping failure does not stop forwarding.
 observers write `activity`, `presence`, delivery verdicts and usage records; its
 alerting pass reads `presence` and `blocked`, board state, tmux window-activity
 metadata and credential files, then appends factual records to the tenant
-`<prefix>:alerts` Stream. It sends **no envelope**: alerts are for a human through
-the api's polling and SSE routes, never for the lead or another agent. Keeping
-keeping it out of the switch loop means a slow external observation cannot
-stall forwarding.
+`<prefix>:alerts` Stream. Ordinary watchdog alerts are for a human through the
+api's polling and SSE routes and do not notify an agent directly. The scoped
+exception is an overdue ticket in `doing`, `todo` or `hold`: the watchdog places
+a `Message` directly on the lead's ingress and kicks its port, as HLD §8c
+describes. Keeping it out of the switch loop means a slow external observation
+cannot stall forwarding.
 
 This is the bus-facing boundary, not the watchdog's complete design. Its
 three-signal stall rule, credential/account walk, cooldowns, alert shapes and
