@@ -374,12 +374,34 @@ checked before falling through to the ordinary text-reply path at all.
   payload, `caption` is prefixed with the sending agent (`from <agent>: ...`,
   or just `from <agent>` with none) the same way a text reply is prefixed
   with its source.
-- **A failure is reported back to the chat, never silently dropped** —
-  missing `filename`/`content_base64`, a `content_base64` that fails strict
-  decoding, or Telegram's own `sendDocument` call failing (file too large,
-  rejected type, network error) all produce a plain-text error message in
-  the chat, mirroring the receiving side's rule (`handle_photo_message`)
-  rather than leaving the operator to wonder why nothing arrived.
+- **The full validation contract is re-enforced here, not just "is there
+  something to send."** `docs/CONTRACTS.md` promises an api-type client
+  "validates and decodes the same payload contract" the api door and the
+  tmux opener do — the same defense-in-depth reasoning the opener's own
+  re-check is built on: this envelope already passed the api door once in
+  the normal flow, but a direct bus caller bypasses that door entirely and
+  would otherwise reach this code with no real validation at all. Checked,
+  reusing the same functions/constants the send side
+  (`handle_photo_message`) already defined rather than a second copy of the
+  rules:
+  - `filename` against the spec's basename rules (`_valid_attachment_filename`)
+  - `mime_type` against the spec's grammar and length (`_valid_attachment_mime_type`)
+    — a missing one is **rejected**, not defaulted to
+    `application/octet-stream`; it's one of the three required fields
+  - `caption`, when present, against the 65,536-UTF-8-byte cap
+    (`ATTACHMENT_MAX_CAPTION_BYTES`)
+  - the decoded byte count against `ATTACHMENT_MAX_BYTES` (10MB) — the
+    same cap the send side checks, here applied to what an agent sent in
+  - **the payload's closed shape** (`ATTACHMENT_ALLOWED_PAYLOAD_KEYS`) — an
+    envelope carrying any field beyond `filename`/`mime_type`/
+    `content_base64`/`caption` is rejected outright, matching "no other
+    field is accepted"
+- **A failure is reported back to the chat, never silently dropped** — any
+  rejection above, a `content_base64` that fails strict decoding, or
+  Telegram's own `sendDocument` call failing (file too large, rejected
+  type, network error) all produce a plain-text error message in the chat,
+  mirroring the receiving side's rule (`handle_photo_message`) rather than
+  leaving the operator to wonder why nothing arrived.
 - **Telegram's own caption limit (1024 chars) is enforced client-side**,
   same truncation `send_voice` already applies — smaller than the bus's own
   65,536-UTF-8-byte cap (`docs/CONTRACTS.md`), so a long caption that's

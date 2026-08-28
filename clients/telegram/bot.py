@@ -369,6 +369,16 @@ def _valid_attachment_filename(name: str) -> bool:
 def _valid_attachment_mime_type(value: str) -> bool:
     return bool(value) and len(value) <= 255 and bool(_ATTACHMENT_MIME_TYPE_RE.match(value))
 
+
+# caption: at most 65,536 UTF-8 bytes (docs/CONTRACTS.md).
+ATTACHMENT_MAX_CAPTION_BYTES = 65536
+
+# "The payload is a closed shape ... no other field is accepted"
+# (docs/CONTRACTS.md) — ReplyPusher._push_attachment enforces this the same
+# as the api door and the tmux opener do, since it runs on envelopes a
+# direct bus caller could have written with no api validation at all.
+ATTACHMENT_ALLOWED_PAYLOAD_KEYS = frozenset({"filename", "mime_type", "content_base64", "caption"})
+
 # A leading "@name rest of message" — a one-off destination override for
 # just that one message, unlike 🎯 Message agent's handle_message_agent_pick
 # which changes the persistent chat_target_agent. Deliberately anchored to
@@ -633,22 +643,64 @@ class ReplyPusher:
         """The other direction of the Attachment feature (docs/CONTRACTS.md):
         an agent's `office send-file` lands here as a mailbox entry with
         `kind: "Attachment"`, decoded and forwarded via `sendDocument`.
-        Mirrors `handle_photo_message`'s rule for the receiving side — a
-        failure is reported back to the chat, never silently dropped."""
+
+        ⚠ Re-validates the full contract independently, not just "is there
+        something to send" — `docs/CONTRACTS.md` promises an api-type client
+        "validates and decodes the same payload contract" the api door and
+        the tmux opener do, the same defense-in-depth reasoning the opener's
+        own re-check is built on: this envelope already passed the api
+        door's validation in the normal flow, but a direct bus caller
+        bypasses that door entirely and would otherwise reach this code
+        with no real validation at all. Closed schema, filename basename
+        rules, mime_type grammar, caption length and the decoded-size cap
+        are all checked — reuses `_valid_attachment_filename`/
+        `_valid_attachment_mime_type`/`ATTACHMENT_MAX_BYTES` from the send
+        side (`handle_photo_message`) rather than a second copy of the same
+        rules. A rejection is reported back to the chat, same as any other
+        failure here — never silently dropped.
+        """
         label = source or self.flock.app_name
+
+        def reject(reason: str) -> None:
+            self.telegram.send_message(self.chat_id, f"{label} sent an attachment, but it was rejected: {reason}.")
+
         payload = message.get("payload") if isinstance(message.get("payload"), dict) else {}
-        filename = payload.get("filename")
-        content_b64 = payload.get("content_base64")
-        if not filename or not content_b64:
-            self.telegram.send_message(self.chat_id, f"{label} sent an attachment, but it was missing required fields.")
+        extra_keys = sorted(set(payload.keys()) - ATTACHMENT_ALLOWED_PAYLOAD_KEYS)
+        if extra_keys:
+            reject(f"unexpected field(s) {', '.join(extra_keys)}")
             return
+
+        filename = payload.get("filename")
+        if not isinstance(filename, str) or not _valid_attachment_filename(filename):
+            reject("invalid or missing filename")
+            return
+
+        mime_type = payload.get("mime_type")
+        if not isinstance(mime_type, str) or not _valid_attachment_mime_type(mime_type):
+            reject("invalid or missing mime_type")
+            return
+
+        content_b64 = payload.get("content_base64")
+        if not isinstance(content_b64, str) or not content_b64:
+            reject("missing content_base64")
+            return
+
+        caption_field = payload.get("caption")
+        if caption_field is not None and (
+            not isinstance(caption_field, str) or len(caption_field.encode("utf-8")) > ATTACHMENT_MAX_CAPTION_BYTES
+        ):
+            reject("invalid caption")
+            return
+
         try:
             data = base64.b64decode(content_b64, validate=True)
         except (ValueError, TypeError) as exc:
-            self.telegram.send_message(self.chat_id, f"{label} sent an attachment, but it couldn't be decoded: {exc}")
+            reject(f"content_base64 failed strict decoding ({exc})")
             return
-        mime_type = payload.get("mime_type") or "application/octet-stream"
-        caption_field = payload.get("caption")
+        if len(data) > ATTACHMENT_MAX_BYTES:
+            reject("decoded content exceeds the 10MB attachment limit")
+            return
+
         caption = f"from {label}" + (f": {caption_field}" if caption_field else "")
         result = self.telegram.send_document(self.chat_id, filename, data, mime_type=mime_type, caption=caption)
         if not result.get("ok"):
