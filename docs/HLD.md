@@ -220,6 +220,7 @@ the same sentence as §1 from a different angle.
 | `Message` | `tmux` | `[message from …] <text>` into the window |
 | `Command` | `tmux` | pasted bare — **it executes** |
 | `AddTicket` | `tmux` | writes a ticket to that agent's board, and **pastes nothing** |
+| `Attachment` | `tmux` | writes decoded file bytes to recipient's workspace, then pastes an inert notice naming the file |
 | `StartAgent` | `control` | enrols: roster row, and for a tmux agent a home, window and CLI (auto-resumes prior session history if present) |
 | `StopAgent` | `control` | reverses whatever `StartAgent` created for that port_type (retaining workdir and CLI session history) |
 | `PauseAgent` | `control` | stops the CLI, keeps the agent, its queues and its board |
@@ -546,7 +547,9 @@ The short list that everything else assumes:
 4. **The switch reads roster fields, never values.** It cannot know a port_type.
 5. **Adapters do not exist between deliveries.**
 6. **The api does not validate `kind`** — which kinds are openable is a fact
-   about adapters, discovered at the far edge.
+   about adapters, discovered at the far edge. ⚠ **Attachment is the one named
+   exception** (`CONTRACTS` §6, `LLD-api` §3) for kind-aware size and shape admission
+   at the door, not a whitelist.
 7. **Nothing in the data path reads a terminal.** Delivery is `paste → Enter`,
    with no branching on what a pane says. **Observation may look, and may only
    report** — out-of-band, on its own schedule, never in the path an envelope
