@@ -68,7 +68,7 @@ keyspace scan, and agents holding nothing still appear.
 Build a `v=4` layered wire frame with the `destination` from the path, check tag-based policy, `send` it, return
 `202` with the `stream_id` and the `correlation_id`. A policy refusal or unrouted non-local destination returns `422 Unprocessable Content` synchronously before anything is enqueued.
 
-**The body carries `kind` and `payload`, and the api validates neither.**
+**The body carries `kind` and `payload`, and the api validates neither (with the one documented exception of `Attachment` resource admission).**
 
 ```json
 POST /agents/host/envelopes    {"kind": "StartAgent", "payload": {"agent": "networking"}}
