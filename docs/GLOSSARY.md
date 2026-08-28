@@ -251,9 +251,7 @@ A document contradicting itself is the exact defect build 44 was written to
 catch, and it sat here for a week in the one document whose job is to settle
 what words mean.
 
-✅ **All five are decided AND EXECUTED** (build 56). ⚠ This line previously read *"none are executed"*, contradicting the ✅ rows above it and the code — caught by `bus` and `tmux` independently. See
-`BUILD-49-vocabulary.md`, which is parked on
-`rename/vocabulary` until the new frame works.
+✅ **All five are decided AND EXECUTED** (build 56). ⚠ This line previously read *"none are executed"*, contradicting the ✅ rows above it and the code — caught by `bus` and `tmux` independently. The record of what was decided and why was `BUILD-49-vocabulary.md`, shipped in build 56 (merge `8dd3109`) and deleted from the tree in `6dd3f1f` along with the other disposable build docs — recover it from git history (`git show 6dd3f1f~1:docs/BUILD-49-vocabulary.md`) if the reasoning is needed.
 
 **The layer design these serve is in [`DESIGN-layers.md`](DESIGN-layers.md)** —
 switch and router, the three-and-two lookup split, RT as a set intersection, and

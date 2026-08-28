@@ -27,7 +27,8 @@ later sweep. `TODO.md` has been wrong four times in one day for exactly this.
 
 ⚠ **Merged 2026-08-23 at `1212fa7`**, verified by `tmux` (author NO), and confirmed
 live on h-lab by an acceptance run that exercises the three unquoted `office
-send` calls in `plumbing-check.sh` (`BUILD-89-results`). All three rows closed.
+send` calls in `plumbing-check.sh` (`BUILD-89-results`, deleted in `6dd3f1f`).
+All three rows closed.
 **The agent guide changed in the same merge** — it was still teaching the form
 the new parser rejects.
 
@@ -228,7 +229,8 @@ what the original row asked for and build 91 could only half-deliver.
 turns an asynchronous architecture into a gate, and window presence does not
 prove correct configuration.
 
-⚠ **The gap is 4.091 s, measured on a live tenant** (`BUILD-94-results`). Whatever
+⚠ **The gap is 4.091 s, measured on a live tenant** (`BUILD-94-results`, deleted
+in `6dd3f1f`). Whatever
 you build must tolerate it.
 
 ### Not in this sprint, and why
@@ -244,14 +246,40 @@ you build must tolerate it.
 
 ## Sprint 4 — alerts you can act on
 
-**Rows:** *an alert you can clear* · *credential alerts never clear* · *console
-conversation needs `--audit-log`*
-**Spec:** already written — `BUILD-38-durable.md` §1, §2, §4.
+**Rows:** *an alert you can clear* · ~~*credential alerts never clear*~~ ·
+*console conversation needs `--audit-log`*
 
-Clearing is keyed by **cursor**, one instance, so it can never become "mute this
-kind". Credential alerts were only ever tested firing: one was raised at
-`01:00:42Z`, the login completed at `01:07Z`, and nothing ever retracted it — so
-the console correctly rendered a fact that had been false for an hour.
+⚠ **The middle row is closed, not open.** `TODO.md:64` marks *credential
+alerts never clear* **DECIDED 2026-08-26, no code change** — only reachable
+for a file-based claude login, and a token-authenticated account skips the
+check entirely by design. §2 below is kept for its measurement, not as
+something this sprint still builds.
+
+**Spec** — inlined below (`BUILD-38-durable.md`, deleted in `6dd3f1f`;
+recovered from `6dd3f1f~1` so this sprint isn't blocked on git archaeology):
+
+**§1 — an alert you can clear.** Alerts are an append-only Redis stream and
+nothing acknowledges them today. `POST /alerts/{cursor}/clear` records that
+cursor in a set; `GET /alerts` and `/alerts/stream` omit cleared entries. ⚠
+**Key it by cursor, never by kind, agent or account** — a cursor identifies
+one instance, and anything coarser is the "mute this kind" this row is
+explicitly not building. Bound the set: the stream retains ~1000, so cleared
+cursors below the oldest surviving entry are dead weight. Clearing is
+**tenant-wide and durable** — it must survive a browser refresh. Document it
+in `API.md` next to `/alerts`.
+
+**§2 — credential alerts must clear themselves** (closed, see above — kept for
+the measurement). One alert, `status=absent`, was raised at `01:00:42Z`; login
+completed at `01:07Z`; nothing was ever emitted to retract it, so the console
+correctly rendered a fact that had been false for an hour. ⚠ **It was only
+ever tested firing** — whatever clears an alert, test the transition back too,
+a guard nobody has seen stop is half-built.
+
+**§4 — conversation history must not depend on `--audit-log`.**
+`clients/web/server.py:374` rebuilds the operator's own outbound messages by
+replaying the audit log; started without the flag, outbound history has no
+source and every refresh looks like data loss (agent replies survive, since
+those come from the mailbox).
 
 ⚠ **The console half skips silently without a playwright venv**, which is how
 acceptance ran green for weeks without ever exercising it. See
@@ -402,7 +430,7 @@ sprint 2 and belong next to it, not at the bottom of a list:
 | **the console cannot reach TLS doors** | real, ~30 lines, and `clients/` is closed to development. Recorded, not scheduled |
 | **not ours: the model and the CLI** | listed so nobody hunts an h-flock bug when they see it |
 | **the permission mode lives only in argv** | probably closed by the base image, and the original trigger was never reproduced, so there is nothing to test a fix against |
-| **a naming review** | ⚠ **must come after sprints 1, 2 and 7**, or it reviews vocabulary that is about to move. See `BUILD-45-naming-inventory.md` and `BUILD-49-vocabulary.md` for what has already been inventoried |
+| **a naming review** | ⚠ **must come after sprints 1, 2 and 7**, or it reviews vocabulary that is about to move. What was already inventoried lived in `BUILD-45-naming-inventory.md` and `BUILD-49-vocabulary.md`, both deleted from the tree in `6dd3f1f` along with the other disposable build docs — recover them from git history (`git show 6dd3f1f~1:docs/BUILD-45-naming-inventory.md`, `...BUILD-49-vocabulary.md`) rather than re-inventorying from scratch when this is unblocked |
 | **a `gateway` participant** and **cross-tenant is designed twice** | ⚠ **one decision, not two rows, and it is the operator's.** Gateway-as-participant or switch-branch — only one can be built, and Sprint 6's cross-tenant half is blocked behind it |
 | **no acceptance seat**, **every sign-off signed by its own author** | arrangements, not code. Recorded so they are chosen rather than drifted into, and h-flock sets an office up — it does not direct how agents work |
 
