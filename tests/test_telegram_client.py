@@ -80,7 +80,8 @@ class DummyFlockClient:
         for msg in self.messages_queue:
             if after is None or msg["cursor"] > after:
                 res.append(msg)
-        return 200, {"agent": self.app_name, "messages": res, "next_cursor": res[-1]["cursor"] if res else after}
+        batch = res[:limit]
+        return 200, {"agent": self.app_name, "messages": batch, "next_cursor": batch[-1]["cursor"] if batch else after}
 
     def get_alerts(self, after=None, limit=100):
         cursor = self.alerts_next_cursor
@@ -93,7 +94,8 @@ class DummyFlockClient:
         for evt in self.activity_queue:
             if after is None or evt["cursor"] > after:
                 res.append(evt)
-        return 200, {"agent": agent, "activity": res, "next_cursor": res[-1]["cursor"] if res else after}
+        batch = res[:limit]
+        return 200, {"agent": agent, "activity": batch, "next_cursor": batch[-1]["cursor"] if batch else after}
 
     def stream_activity(self, agent, after=None):
         for evt in self.activity_queue:
@@ -1766,5 +1768,56 @@ def test_telegram_bot_no_activity_push_flag():
     # Only "✅ Sent to architect." message is sent
     assert len(telegram.sent_messages) == 1
     assert telegram.sent_messages[0]["text"] == "✅ Sent to architect."
+
+
+def test_get_activity_tail_pagination_and_true_tail():
+    flock = DummyFlockClient()
+    telegram = DummyTelegramClient()
+    store = CursorStore()
+    bot_instance = TelegramBot(
+        flock_client=flock,
+        telegram_client=telegram,
+        cursor_store=store,
+    )
+
+    # 0 events -> returns None
+    assert bot_instance._get_activity_tail("architect") is None
+
+    # 550 events (more than 1, less than 1000)
+    flock.activity_queue = [
+        {"agent": "architect", "kind": "tool", "tool": "Bash", "cursor": f"{i}-0"}
+        for i in range(1, 551)
+    ]
+    # Must return the TRUE tail (550-0), NOT the first event (1-0)!
+    assert bot_instance._get_activity_tail("architect") == "550-0"
+
+    # 2500 events (spanning 3 pages of 1000)
+    flock.activity_queue = [
+        {"agent": "architect", "kind": "tool", "tool": "Bash", "cursor": f"{i:05d}-0"}
+        for i in range(1, 2501)
+    ]
+    assert bot_instance._get_activity_tail("architect") == "02500-0"
+
+
+def test_reply_pusher_seed_cursor_pagination():
+    flock = DummyFlockClient()
+    telegram = DummyTelegramClient()
+    store = CursorStore()
+    pusher = ReplyPusher(
+        flock=flock,
+        telegram=telegram,
+        chat_id=123,
+        cursor_store=store,
+    )
+
+    # 0 messages -> None
+    assert pusher._seed_cursor() is None
+
+    # 1500 messages (spanning 2 pages of 1000)
+    flock.messages_queue = [
+        {"cursor": f"{i:05d}-0", "payload": {"text": f"msg {i}"}}
+        for i in range(1, 1501)
+    ]
+    assert pusher._seed_cursor() == "01500-0"
 
 
