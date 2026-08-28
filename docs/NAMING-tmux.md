@@ -57,6 +57,7 @@ Tier A is documentation, B internal code, C Redis/environment, and D wire.
 | `messages_opener` / `message_opener` | `src/flock/port/openers.py:82`, `src/flock/port/openers.py:119` | identifier | Terminal action selected for a `Message` (batched or single). | Protocol handler. | B |
 | `command_opener` | `src/flock/port/openers.py:144` | identifier | Terminal action selected for a `Command`. | Protocol handler. | B |
 | `add_ticket_opener` | `src/flock/port/openers.py:175` | identifier | Board action selected for an `AddTicket`. | Protocol handler. | B |
+| `attachment_opener` | `src/flock/port/openers.py:284` | identifier | File write and inert notice action selected for an `Attachment`. | Protocol handler. | B |
 | `opened` | `src/flock/bus/doors.py:143` | doc term | Terminal outcome meaning an opener completed, not proof a human/CLI consumed it. | Accepted by destination handler, not delivery acknowledgement. | A |
 | `delivering` | `src/flock/port/deliver.py:277` | redis key | Tenant hash serving as a per-agent mutual-exclusion/busy tag. | Per-port transmit lock. | C |
 | `paused` | `src/flock/port/deliver.py:120` | redis key | Marker that leaves ingress queued rather than opening it. | Administratively down port. | C |

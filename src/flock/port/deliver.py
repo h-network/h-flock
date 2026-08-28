@@ -7,7 +7,7 @@ from flock.bus.doors import _emit_for_recipient
 from flock.bus.envelope import parse_for_switch
 # Minimal hand-rolled RESP client (flock.bus.resp.Redis), not redis-py, for fast transient process startup
 from flock.bus import resp as redis
-from .openers import add_ticket_opener, command_opener, message_opener, messages_opener
+from .openers import add_ticket_opener, attachment_opener, command_opener, message_opener, messages_opener
 
 
 _DRAIN_INGRESS = """
@@ -237,6 +237,27 @@ def deliver_one(
             elif kind == "AddTicket":
                 try:
                     add_ticket_opener(
+                        r=r,
+                        pod=pod,
+                        tenant=tenant,
+                        agent=agent,
+                        envelope=envelope,
+                        session_name=session_name,
+                        socket=socket,
+                    )
+                except DeadLetter as exc:
+                    r.rpush(dead_key, raw)
+                    _emit_for_recipient("port", "dead_lettered", envelope, agent, str(exc))
+                    continue
+                except Exception as exc:
+                    r.rpush(dead_key, raw)
+                    _emit_for_recipient("port", "dead_lettered", envelope, agent, f"opener failed: {exc}")
+                    continue
+                _emit_for_recipient("port", "opened", envelope, agent)
+
+            elif kind == "Attachment":
+                try:
+                    attachment_opener(
                         r=r,
                         pod=pod,
                         tenant=tenant,
