@@ -14,7 +14,7 @@ from clients.telegram.bot import (
     ActivityRender, AlertPusher, CursorStore, DryRunTelegramClient, FlockClient, PaneWatchRender,
     ReplyPusher, TelegramBot, TelegramClient, render_alert, render_reply,
     synthesize_speech, _parse_sse_events, _derive_session_url,
-    _is_transient_chrome_line, _parse_int_overrides, _pane_tail_window, _strip_ansi,
+    _is_transient_chrome_line, _parse_int_overrides, _parse_mention, _pane_tail_window, _strip_ansi,
 )
 
 
@@ -824,6 +824,87 @@ def test_message_agent_selection_is_per_chat():
 
         bot_instance.handle_text_message(222, "hello")
         assert telegram.sent_messages[-1]["text"] == "✅ Sent to architect."
+
+
+# ── @mention: one-off destination override ──────────────────────────────────
+
+def test_parse_mention_splits_name_and_rest_and_lowercases():
+    assert _parse_mention("@architect fix the auth bug") == ("architect", "fix the auth bug")
+    assert _parse_mention("@Backend") == ("backend", "")
+    assert _parse_mention("@sme-2   multi   space") == ("sme-2", "multi   space")
+
+
+def test_parse_mention_only_matches_a_leading_mention():
+    assert _parse_mention("check with @architect first") is None
+    assert _parse_mention("plain text") is None
+    assert _parse_mention("@ leading space, no name") is None
+
+
+def test_parse_mention_keeps_multiline_bodies_intact():
+    name, rest = _parse_mention("@architect line one\nline two")
+    assert name == "architect"
+    assert rest == "line one\nline two"
+
+
+def test_mention_routes_a_single_message_without_changing_the_persistent_target():
+    with tempfile.TemporaryDirectory() as tmpdir:
+        bot_instance, flock, telegram = _make_bot(tmpdir=tmpdir)
+        # persistent target starts as the default ("architect")
+        assert bot_instance._target_for(12345) == "architect"
+
+        reply = bot_instance.handle_text_message(12345, "@sme-2 can you check this?")
+        assert reply == "✅ Sent to sme-2."
+        assert flock.sent_envelopes[-1]["destination"] == "sme-2"
+
+        # one-off only: the persistent target for a later plain message is unchanged
+        assert bot_instance._target_for(12345) == "architect"
+        assert "12345" not in bot_instance.chat_target_agent
+        bot_instance.handle_text_message(12345, "and this one?")
+        assert telegram.sent_messages[-1]["text"] == "✅ Sent to architect."
+
+
+def test_mention_unknown_agent_errors_back_instead_of_misrouting():
+    with tempfile.TemporaryDirectory() as tmpdir:
+        bot_instance, flock, telegram = _make_bot(tmpdir=tmpdir)
+        reply = bot_instance.handle_text_message(12345, "@nonexistent hello")
+        assert "isn't a known agent" in reply
+        assert flock.sent_envelopes == []
+
+
+def test_mention_rejects_a_non_tmux_client_by_name():
+    with tempfile.TemporaryDirectory() as tmpdir:
+        flock = DummyFlockClient()
+        flock.roster["telegram"] = "api"
+        bot_instance, flock, telegram = _make_bot(flock=flock, tmpdir=tmpdir)
+        reply = bot_instance.handle_text_message(12345, "@telegram hello")
+        assert "isn't a known agent" in reply
+        assert flock.sent_envelopes == []
+
+
+def test_mention_rejects_a_reserved_name():
+    with tempfile.TemporaryDirectory() as tmpdir:
+        bot_instance, flock, telegram = _make_bot(tmpdir=tmpdir)
+        reply = bot_instance.handle_text_message(12345, "@all broadcast this")
+        assert "isn't a known agent" in reply
+        assert flock.sent_envelopes == []
+
+
+def test_mention_with_no_body_prompts_for_usage_instead_of_sending_empty():
+    with tempfile.TemporaryDirectory() as tmpdir:
+        bot_instance, flock, telegram = _make_bot(tmpdir=tmpdir)
+        reply = bot_instance.handle_text_message(12345, "@architect")
+        assert "nothing to send" in reply
+        assert flock.sent_envelopes == []
+
+
+def test_mention_mid_sentence_is_not_routing_just_message_content():
+    with tempfile.TemporaryDirectory() as tmpdir:
+        bot_instance, flock, telegram = _make_bot(tmpdir=tmpdir)
+        reply = bot_instance.handle_text_message(12345, "please check with @sme-2 first")
+        # not parsed as a mention: goes to the persistent target (architect) as-is
+        assert reply == "✅ Sent to architect."
+        assert flock.sent_envelopes[-1]["destination"] == "architect"
+        assert flock.sent_envelopes[-1]["text"] == "please check with @sme-2 first"
 
 
 def test_status_command_respects_per_chat_target():

@@ -319,6 +319,27 @@ _RESERVED_AGENT_NAMES = {"all", "pod", "tenant", "agent"}
 
 _ALERT_ICONS = {"blocked": "⊘", "stalled": "⏳", "credential": "🔑"}
 
+# A leading "@name rest of message" — a one-off destination override for
+# just that one message, unlike 🎯 Message agent's handle_message_agent_pick
+# which changes the persistent chat_target_agent. Deliberately anchored to
+# the START of the text only: an "@word" anywhere else in the message is
+# ordinary content, not a second routing directive — Slack-style inline
+# mentions notify, they don't redirect an entire message, and this one
+# does redirect, so it needs to be unambiguous about which text it applies
+# to. That also settles "what about multiple @mentions" without a separate
+# rule: only the first token position is ever inspected, so a later "@foo"
+# in the body is just text. The name is captured loosely and lowercased
+# (chat clients auto-capitalize) — handle_mention_prompt is what actually
+# validates it against `_AGENT_NAME`/the roster.
+_MENTION_RE = re.compile(r"^@([A-Za-z0-9-]{1,63})(?:[ \t]+(.*))?$", re.DOTALL)
+
+
+def _parse_mention(text: str) -> tuple[str, str] | None:
+    match = _MENTION_RE.match(text)
+    if not match:
+        return None
+    return match.group(1).lower(), (match.group(2) or "").strip()
+
 
 def render_alert(alert: dict) -> str:
     """One-line rendering of a GET /alerts entry, shared by the on-demand
@@ -1477,6 +1498,27 @@ class TelegramBot:
             self.telegram.send_message(cid, text, reply_markup=self._sticky_keyboard(cid))
         return text
 
+    def handle_mention_prompt(self, chat_id: int | str, name: str, rest: str) -> str:
+        """A leading "@name ..." — validated against the same name shape
+        `hire` enforces (`_AGENT_NAME`/`_RESERVED_AGENT_NAMES`) and against
+        the live roster (`_tmux_agents()`, so a real but non-tmux client —
+        `telegram` itself, `host` — is refused the same as an unknown name,
+        never silently misrouted or dead-lettered onto a mailbox/queue that
+        can't paste it anywhere). `chat_target_agent` is untouched: this is
+        a one-off for this message only, same target for the next plain one."""
+        cid = str(chat_id)
+        if not rest:
+            text = f"@{name} — nothing to send. Usage: @{name} your message"
+            if self.telegram:
+                self.telegram.send_message(cid, text)
+            return text
+        if not _AGENT_NAME.match(name) or name in _RESERVED_AGENT_NAMES or name not in self._tmux_agents():
+            text = f"@{name} isn't a known agent to message. Use /menu to see who's enrolled."
+            if self.telegram:
+                self.telegram.send_message(cid, text)
+            return text
+        return self.handle_user_prompt(cid, rest, agent_override=name)
+
     # ── /watch — live-tail an agent's tmux pane ─────────────────────────────
     # One watch per chat (§2c, clients/telegram/README.md): picking a new
     # agent, or a new /watch of the same one, replaces whatever is already
@@ -1741,6 +1783,10 @@ class TelegramBot:
             return self.handle_watch_pick(chat_id, text[len("/watch "):].strip())
         if text == "/unwatch":
             return self.handle_watch_stop_command(chat_id)
+        if text.startswith("@"):
+            mention = _parse_mention(text)
+            if mention is not None:
+                return self.handle_mention_prompt(chat_id, *mention)
         return self.handle_user_prompt(chat_id, text)
 
     def _get_activity_tail(self, agent: str) -> str | None:
@@ -1907,9 +1953,13 @@ class TelegramBot:
             render.finalize()
             render.flush(self.telegram, force=True)
 
-    def handle_user_prompt(self, chat_id: int | str, text: str) -> str:
+    def handle_user_prompt(
+        self, chat_id: int | str, text: str, *, agent_override: str | None = None
+    ) -> str:
         """Post `text` to this chat's target agent (§ 🎯 Message agent,
-        default target_agent/--agent) and return immediately.
+        default target_agent/--agent) and return immediately. `agent_override`
+        is handle_mention_prompt's one-off "@name ..." destination — used for
+        this call only, never written to `chat_target_agent`.
 
         ⚠ No wait, no reply capture here — that used to be a `while not
         completed` loop polling for target_agent's reply, unbounded, run
@@ -1925,7 +1975,7 @@ class TelegramBot:
         fire-and-forget model.
         """
         cid = str(chat_id)
-        agent = self._target_for(cid)
+        agent = agent_override or self._target_for(cid)
         code, presence_data = self.flock.get_presence(agent)
         state = presence_data.get("presence", {}).get("state") if code == 200 else "unknown"
 
