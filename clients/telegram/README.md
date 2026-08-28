@@ -303,6 +303,54 @@ perpetually "live" after the bot has moved on.
 
 ---
 
+## 2e. Receiving a Photo
+
+Sending a photo used to be silently dropped — `_dispatch_update` only ever
+looked at `message.text`, and a photo update carries `message.photo`/
+`message.caption` instead, so it fell through with no reply and no record
+anywhere. It now downloads the photo, saves it under the destination
+agent's own workdir, and sends a normal `Message` envelope naming the path
+— claude/codex can already read an image directly once they have a path to
+it, so this needed no new envelope kind and no bus/switch change.
+
+- **Routing is identical to a text message.** The caption is the message
+  body — the persistent chat target (🎯 Message agent) unless the caption
+  starts with `@agent`, which overrides the destination for this photo only,
+  exactly like [§2a's `@mention`](#2a-menu-a-pinned-keyboard-not-a-one-off-message) (same
+  validation, same "not a persistent change" rule). An unknown `@mention`
+  target is refused before any download is attempted.
+- **Largest available size**, `photo[-1]` — Telegram's own smallest-to-largest
+  ordering for the `PhotoSize` array. This is the best *compressed* copy the
+  bot ever sees: Telegram recompresses every "photo" upload itself, so full
+  original quality isn't available through this path at all (only a
+  "document" upload preserves it, a different message shape, not handled
+  here).
+- **Saved to `<agent-workdir>/telegram-photos/`**, not the agent's root —
+  identifiable and prunable without touching anything the agent created
+  itself. Retention mirrors `clients/web/server.py`'s own
+  `_enforce_recordings_retention` shape exactly (same problem: something
+  accumulates with nothing else pruning it) — age cap first
+  (`PHOTO_RETENTION_MAX_AGE_S`, 7 days), then oldest-first eviction down to
+  a total-size cap (`PHOTO_RETENTION_MAX_BYTES`, 100MB), run on every new
+  save rather than needing a separate maintenance pass.
+- **A defensive size check, twice** — against `PhotoSize`'s own reported
+  `file_size` before downloading anything, and again against the actual
+  downloaded byte count in case that field was absent or wrong — both
+  capped at Telegram's own `getFile` ceiling (`TELEGRAM_MAX_FILE_BYTES`,
+  20MB). In practice a "photo" upload is always well under this; it's cheap
+  insurance, not an expected case.
+- **`blocked` presence is checked before any download work happens** — same
+  as a text prompt, so a blocked agent doesn't cause a photo to be fetched
+  and saved for nothing.
+- A **Telegram album** (several photos sent together) arrives as *separate*
+  updates sharing a `media_group_id`, not one message with several photos —
+  this is handled without any special casing, one delivery per photo. The
+  port's own batching of consecutive `Message`-kind envelopes (build 92)
+  coalesces same-agent deliveries that land close together, so an album
+  reaching one agent shows up as one paste rather than N separate ones.
+
+---
+
 ## 3. Documentation Gaps in `docs/API.md`
 
 Built strictly against [`docs/API.md`](../../docs/API.md). The following gaps and ambiguities were encountered:
