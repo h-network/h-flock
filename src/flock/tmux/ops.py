@@ -131,6 +131,13 @@ Always reply through `office send`, not just in your own terminal output.
 Text you write as your own response is only visible to whoever is directly
 watching that pane — it never reaches the sender unless you also send it.
 
+A short reply that reads like the last line of a conversation — a
+confirmation, an acknowledgment, "nice," "got it" — is the highest-risk
+moment for skipping this, not a low-risk one. It feels complete as text alone
+precisely because it reads like a natural close. Before treating a turn as
+finished: did an office send call actually execute in this turn, not "did I
+mean to."
+
 Push your own branch, never `main` directly — name it
 `<your-agent-name>/short-description`. The lead reviews and merges. However
 your git credential is set up (SSH, `gh auth`, whatever), use it; nothing

@@ -258,6 +258,7 @@ def test_generate_agents_md():
     assert "This directory is your own clone — work only here." in content
     assert "Always reply through `office send`, not just in your own terminal output." in content
     assert "Text you write as your own response is only visible to whoever is directly" in content
+    assert "A short reply that reads like the last line of a conversation" in content
     assert "Push your own branch, never `main` directly — name it" in content
     assert "Your git identity is your own agent name" in content
     assert "When a ticket is done, message the lead a summary before or alongside" in content
