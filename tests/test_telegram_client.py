@@ -19,7 +19,7 @@ from clients.telegram.bot import (
     synthesize_speech, _parse_sse_events, _derive_session_url,
     _agent_picker_keyboard, _is_transient_chrome_line, _parse_int_overrides,
     _parse_mention, _pane_tail_window, _strip_ansi, _valid_attachment_filename, _valid_attachment_mime_type,
-    ATTACHMENT_MAX_BYTES, TELEGRAM_MAX_FILE_BYTES,
+    ATTACHMENT_ALLOWED_PAYLOAD_KEYS, ATTACHMENT_MAX_BYTES, ATTACHMENT_MAX_CAPTION_BYTES, TELEGRAM_MAX_FILE_BYTES,
 )
 
 
@@ -1526,7 +1526,8 @@ def test_reply_pusher_reports_malformed_attachment_base64_without_crashing():
         }]
         pusher.run(stream_fn=lambda after=None: iter(messages))  # must not raise
         assert telegram.sent_documents == []
-        assert "couldn't be decoded" in telegram.sent_messages[0]["text"]
+        assert "rejected" in telegram.sent_messages[0]["text"]
+        assert "strict decoding" in telegram.sent_messages[0]["text"]
 
 
 def test_reply_pusher_reports_an_attachment_missing_required_fields():
@@ -1544,7 +1545,118 @@ def test_reply_pusher_reports_an_attachment_missing_required_fields():
         }]
         pusher.run(stream_fn=lambda after=None: iter(messages))
         assert telegram.sent_documents == []
-        assert "missing required fields" in telegram.sent_messages[0]["text"]
+        assert "invalid or missing filename" in telegram.sent_messages[0]["text"]
+
+
+# ── the fuller validation contract (docs/CONTRACTS.md), not just "is there
+# something to send" ──────────────────────────────────────────────────────
+
+def _attachment_message(payload: dict) -> dict:
+    return {"kind": "Attachment", "l2": {"source": "architect"}, "payload": payload, "cursor": "10-0"}
+
+
+def test_attachment_allowed_payload_keys_matches_the_closed_schema():
+    assert ATTACHMENT_ALLOWED_PAYLOAD_KEYS == {"filename", "mime_type", "content_base64", "caption"}
+
+
+def test_reply_pusher_rejects_an_invalid_filename():
+    with tempfile.TemporaryDirectory() as tmpdir:
+        flock = DummyFlockClient()
+        telegram = DummyTelegramClient()
+        store = CursorStore(str(Path(tmpdir) / "cursor.json"))
+        pusher = ReplyPusher(flock, telegram, chat_id=999, cursor_store=store)
+        content = base64.b64encode(b"data").decode("ascii")
+
+        for bad_name in ("..", "a/b.txt", ""):
+            telegram.sent_messages.clear()
+            messages = [_attachment_message({"filename": bad_name, "mime_type": "text/plain", "content_base64": content})]
+            pusher.run(stream_fn=lambda after=None, m=messages: iter(m))
+            assert telegram.sent_documents == []
+            assert "invalid or missing filename" in telegram.sent_messages[0]["text"]
+
+
+def test_reply_pusher_rejects_an_invalid_mime_type():
+    with tempfile.TemporaryDirectory() as tmpdir:
+        flock = DummyFlockClient()
+        telegram = DummyTelegramClient()
+        store = CursorStore(str(Path(tmpdir) / "cursor.json"))
+        pusher = ReplyPusher(flock, telegram, chat_id=999, cursor_store=store)
+        content = base64.b64encode(b"data").decode("ascii")
+
+        messages = [_attachment_message({"filename": "x.txt", "mime_type": "text/*", "content_base64": content})]
+        pusher.run(stream_fn=lambda after=None: iter(messages))
+        assert telegram.sent_documents == []
+        assert "invalid or missing mime_type" in telegram.sent_messages[0]["text"]
+
+
+def test_reply_pusher_rejects_a_missing_mime_type_rather_than_defaulting_it():
+    """docs/CONTRACTS.md: mime_type is one of the three required fields --
+    a prior version of this code defaulted a missing one to
+    application/octet-stream instead of rejecting, which is not what the
+    contract promises."""
+    with tempfile.TemporaryDirectory() as tmpdir:
+        flock = DummyFlockClient()
+        telegram = DummyTelegramClient()
+        store = CursorStore(str(Path(tmpdir) / "cursor.json"))
+        pusher = ReplyPusher(flock, telegram, chat_id=999, cursor_store=store)
+        content = base64.b64encode(b"data").decode("ascii")
+
+        messages = [_attachment_message({"filename": "x.txt", "content_base64": content})]
+        pusher.run(stream_fn=lambda after=None: iter(messages))
+        assert telegram.sent_documents == []
+        assert "invalid or missing mime_type" in telegram.sent_messages[0]["text"]
+
+
+def test_reply_pusher_rejects_an_oversized_caption():
+    with tempfile.TemporaryDirectory() as tmpdir:
+        flock = DummyFlockClient()
+        telegram = DummyTelegramClient()
+        store = CursorStore(str(Path(tmpdir) / "cursor.json"))
+        pusher = ReplyPusher(flock, telegram, chat_id=999, cursor_store=store)
+        content = base64.b64encode(b"data").decode("ascii")
+
+        messages = [_attachment_message({
+            "filename": "x.txt", "mime_type": "text/plain", "content_base64": content,
+            "caption": "x" * (ATTACHMENT_MAX_CAPTION_BYTES + 1),
+        })]
+        pusher.run(stream_fn=lambda after=None: iter(messages))
+        assert telegram.sent_documents == []
+        assert "invalid caption" in telegram.sent_messages[0]["text"]
+
+
+def test_reply_pusher_rejects_decoded_content_over_the_attachment_cap():
+    with tempfile.TemporaryDirectory() as tmpdir:
+        flock = DummyFlockClient()
+        telegram = DummyTelegramClient()
+        store = CursorStore(str(Path(tmpdir) / "cursor.json"))
+        pusher = ReplyPusher(flock, telegram, chat_id=999, cursor_store=store)
+        content = base64.b64encode(b"x" * (ATTACHMENT_MAX_BYTES + 1)).decode("ascii")
+
+        messages = [_attachment_message({"filename": "x.bin", "mime_type": "application/octet-stream", "content_base64": content})]
+        pusher.run(stream_fn=lambda after=None: iter(messages))
+        assert telegram.sent_documents == []
+        assert "10MB attachment limit" in telegram.sent_messages[0]["text"]
+
+
+def test_reply_pusher_rejects_an_unexpected_payload_field():
+    """docs/CONTRACTS.md: "the payload is a closed shape ... no other field
+    is accepted" -- enforced here the same as the api door and the tmux
+    opener, since a direct bus caller bypasses the api door entirely."""
+    with tempfile.TemporaryDirectory() as tmpdir:
+        flock = DummyFlockClient()
+        telegram = DummyTelegramClient()
+        store = CursorStore(str(Path(tmpdir) / "cursor.json"))
+        pusher = ReplyPusher(flock, telegram, chat_id=999, cursor_store=store)
+        content = base64.b64encode(b"data").decode("ascii")
+
+        messages = [_attachment_message({
+            "filename": "x.txt", "mime_type": "text/plain", "content_base64": content,
+            "destination_path": "/etc/passwd",
+        })]
+        pusher.run(stream_fn=lambda after=None: iter(messages))
+        assert telegram.sent_documents == []
+        assert "unexpected field" in telegram.sent_messages[0]["text"]
+        assert "destination_path" in telegram.sent_messages[0]["text"]
 
 
 def test_reply_pusher_seeds_from_tail_on_first_run_not_from_history():
