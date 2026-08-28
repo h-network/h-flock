@@ -1,8 +1,11 @@
 """Focused office operations behind one collision-resistant command name."""
 
 import argparse
+import base64
 import json
+import mimetypes
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -18,8 +21,13 @@ from .pricing import calculate_cost, find_model_rates, load_pricing
 # this is unchanged, and an agent window still has no REDIS_URL to find.
 _REDIS_URL = os.environ.get("REDIS_URL", "redis://127.0.0.1:6379/0")
 _WORKDIR_ROOT = Path("/workdir")
+ATTACHMENT_MAX_BYTES = 10_485_760
+ATTACHMENT_MAX_CAPTION_BYTES = 65_536
+_MIME_TYPE_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9!#$&^_.+-]*/[A-Za-z0-9][A-Za-z0-9!#$&^_.+-]*$")
 _COMMANDS = (
     "send",
+    "send-file",
+    "sendFile",
     "broadcast",
     "peers",
     "profiles",
@@ -54,6 +62,8 @@ def _root_parser() -> argparse.ArgumentParser:
     subcommands = parser.add_subparsers(dest="command", metavar="COMMAND")
     descriptions = {
         "send": "send a message to one agent",
+        "send-file": "send a file attachment to one agent",
+        "sendFile": "send a file attachment to one agent",
         "broadcast": "send a message to every peer agent",
         "peers": "list peer agents",
         "profiles": "list configured accounts and their agents",
@@ -143,6 +153,137 @@ def _send_command(argv: list[str]) -> None:
         r, pod=pod, tenant=tenant, source=source, destination=args.agent, text=text
     )
     print(f"sent to {args.agent}: {len(text.encode('utf-8'))} bytes ({stream_id})")
+
+
+def _validate_filename(filename: str) -> None:
+    if not filename:
+        raise OfficeError("attachment filename cannot be empty")
+    try:
+        encoded = filename.encode("utf-8")
+    except UnicodeEncodeError as exc:
+        raise OfficeError(f"attachment filename {filename!r} is not valid UTF-8: {exc}") from exc
+    if len(encoded) > 255:
+        raise OfficeError(
+            f"attachment filename exceeds maximum length of 255 bytes ({len(encoded)} bytes)"
+        )
+    if filename in (".", ".."):
+        raise OfficeError(f"attachment filename cannot be {filename!r}")
+    for char in filename:
+        cp = ord(char)
+        if char in ("/", "\\") or cp < 32 or cp == 0x7F:
+            raise OfficeError(
+                f"attachment filename {filename!r} contains forbidden character {char!r}"
+            )
+
+
+def _validate_mime_type(mime_type: str) -> None:
+    try:
+        raw = mime_type.encode("ascii")
+    except UnicodeEncodeError as exc:
+        raise OfficeError(f"invalid mime-type {mime_type!r}: must be ASCII") from exc
+    if not raw or len(raw) > 255:
+        raise OfficeError(f"invalid mime-type {mime_type!r}: length must be 1-255 bytes")
+    if not _MIME_TYPE_RE.match(mime_type):
+        raise OfficeError(
+            f"invalid mime-type {mime_type!r}: must match type/subtype format"
+        )
+
+
+def _send_file_command(argv: list[str]) -> None:
+    parser = _operation_parser("send-file", "Send a file attachment to one agent.")
+    parser.add_argument("-a", "--agent", metavar="AGENT", help="destination agent")
+    parser.add_argument("path", type=Path, metavar="PATH", help="path to regular file")
+    parser.add_argument("--caption", metavar="TEXT", help="optional caption")
+    parser.add_argument(
+        "--mime-type", metavar="TYPE", help="MIME type (guessed from extension if omitted)"
+    )
+    args = parser.parse_args(argv)
+
+    if not args.agent:
+        raise OfficeError("office send-file requires -a <agent>")
+    if args.agent == "all":
+        raise OfficeError(
+            "office send-file does not support broadcast ('all'); attachments are unicast only"
+        )
+
+    path = args.path
+    if not path.exists():
+        raise OfficeError(f"attachment file does not exist: {str(path)!r}")
+    if not path.is_file():
+        raise OfficeError(f"attachment path {str(path)!r} is not a regular file")
+
+    try:
+        file_size = path.stat().st_size
+    except OSError as exc:
+        raise OfficeError(f"cannot stat attachment file {str(path)!r}: {exc}") from exc
+
+    if file_size > ATTACHMENT_MAX_BYTES:
+        raise OfficeError(
+            f"attachment file size ({file_size} bytes) exceeds maximum allowed size of {ATTACHMENT_MAX_BYTES} bytes"
+        )
+
+    filename = path.name
+    _validate_filename(filename)
+
+    if args.mime_type is not None:
+        _validate_mime_type(args.mime_type)
+        mime_type = args.mime_type
+    else:
+        guessed, _ = mimetypes.guess_type(filename)
+        if (
+            guessed
+            and _MIME_TYPE_RE.match(guessed)
+            and len(guessed.encode("ascii", errors="ignore")) <= 255
+        ):
+            mime_type = guessed
+        else:
+            mime_type = "application/octet-stream"
+
+    if args.caption is not None:
+        try:
+            caption_bytes = args.caption.encode("utf-8")
+        except UnicodeEncodeError as exc:
+            raise OfficeError(f"attachment caption is not valid UTF-8: {exc}") from exc
+        if len(caption_bytes) > ATTACHMENT_MAX_CAPTION_BYTES:
+            raise OfficeError(
+                f"attachment caption exceeds maximum length of {ATTACHMENT_MAX_CAPTION_BYTES} bytes ({len(caption_bytes)} bytes)"
+            )
+
+    try:
+        raw_bytes = path.read_bytes()
+    except OSError as exc:
+        raise OfficeError(f"cannot read attachment file {str(path)!r}: {exc}") from exc
+
+    if len(raw_bytes) > ATTACHMENT_MAX_BYTES:
+        raise OfficeError(
+            f"attachment file size ({len(raw_bytes)} bytes) exceeds maximum allowed size of {ATTACHMENT_MAX_BYTES} bytes"
+        )
+
+    content_base64 = base64.b64encode(raw_bytes).decode("ascii")
+
+    r, pod, tenant, source = _context()
+    if not is_member(r, pod=pod, tenant=tenant, agent=args.agent):
+        raise OfficeError(f"unknown destination agent {args.agent!r}")
+
+    payload = {
+        "filename": filename,
+        "mime_type": mime_type,
+        "content_base64": content_base64,
+    }
+    if args.caption is not None:
+        payload["caption"] = args.caption
+
+    stream_id = send(
+        r,
+        pod=pod,
+        tenant=tenant,
+        source=source,
+        destination=args.agent,
+        payload=payload,
+        kind="Attachment",
+        module="port",
+    )
+    print(f"sent to {args.agent}: {len(raw_bytes)} bytes ({stream_id})")
 
 
 def _broadcast_command(argv: list[str]) -> None:
@@ -970,6 +1111,8 @@ def _run(args: list[str]) -> None:
     try:
         if command == "send":
             _send_command(remainder)
+        elif command in ("send-file", "sendFile"):
+            _send_file_command(remainder)
         elif command == "broadcast":
             _broadcast_command(remainder)
         elif command == "peers":

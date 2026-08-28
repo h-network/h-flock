@@ -51,11 +51,11 @@ inside an agent's turn, so `flock.bus.resp` is a minimal hand-rolled RESP2
 client (`src/flock/bus/resp.py:1`) built for a one-shot connect-command-exit,
 not a library's general-purpose overhead. `_REDIS_URL` defaults to
 `redis://127.0.0.1:6379/0` and reads `REDIS_URL` for a tenant with a Redis
-password (`cli.py:19`).
+password (`cli.py:22`).
 
 ## 2. Identity, and how a command finds it
 
-Identity is never an argument. `_context()` (`cli.py:86`) reads `AGENT_NAME`
+Identity is never an argument. `_context()` (`cli.py:94`) reads `AGENT_NAME`
 (required — `OfficeError` if absent), `POD` and `TENANT` (both default
 `"default"`) straight from the window's environment, so the same binary
 writes the right egress and the right board keys without being told who it
@@ -63,7 +63,7 @@ is. This is what makes "no agent writes another agent's keys" (`HLD` invariant
 3) hold structurally rather than by convention — the command has no argument
 that could name someone else's identity to write as.
 
-⚠ **`main()` scopes `FLOCK_LOG_QUIET` to its own run** (`cli.py:910`), setting
+⚠ **`main()` scopes `FLOCK_LOG_QUIET` to its own run** (`cli.py:1075`), setting
 it before dispatch and restoring whatever it found afterward. `office` runs
 inside an agent's own pane, so bus telemetry it would otherwise print
 (`sent`, `send_refused`, …) is a signpost the agent does not need and, once,
@@ -80,7 +80,7 @@ reasoning about who can see or block what:
 
 | category | commands | mechanism |
 |---|---|---|
-| **bus send** — builds an envelope, writes the caller's own egress, the switch and a port do the rest | `send`, `broadcast`, `add`, `hire`, `letGo`/`let-go`, `pause`, `resume` | `flock.bus.send()` |
+| **bus send** — builds an envelope, writes the caller's own egress, the switch and a port do the rest | `send`, `send-file`/`sendFile`, `broadcast`, `add`, `hire`, `letGo`/`let-go`, `pause`, `resume` | `flock.bus.send()` |
 | **direct Redis, own keys** — reads or mutates keys under the caller's own `agent:<source>:*` prefix, no envelope, no switch, no port | `take`, `done`, `cancel`, `hold`, `delete` | `LPOP`/`RPUSH`/`LREM` on `tasks.*` |
 | **direct Redis, read-only** — point-in-time reads, no mutation | `peers`, `profiles`, `status`, `list`, `usage` | `HGETALL`/`LRANGE`/`GET`/`XRANGE` |
 | **filesystem, roster read only** | `cloneToAll`/`clone-to-all` | local `git clone`, no bus, no board |
@@ -96,31 +96,42 @@ permission.
 
 ⚠ **`hire`/`letGo`/`pause`/`resume` do not check the target agent exists
 first.** They build a control-kind envelope addressed to `host` and let its
-opener decide (`cli.py:324`, `_control_command`) — `hire` creates the name,
+opener decide (`cli.py:463`, `_control_command`) — `hire` creates the name,
 so checking would be backwards for it, and the others let one dead-letter
 reason live in one place rather than two.
 
-⚠ **`send` and `add` do check** (`is_member`, `cli.py:140`, `:633`) before
+⚠ **`send`, `send-file` and `add` do check** (`is_member`, `cli.py:148`, `:241`, `:772`) before
 building the envelope, because sending to an unenrolled name is always a
-mistake for those two, never a lifecycle transition.
+mistake for those, never a lifecycle transition.
 
-## 4. Messaging and directory: `send`, `broadcast`, `peers`, `profiles`
+## 4. Messaging and directory: `send`, `send-file`, `broadcast`, `peers`, `profiles`
 
-**`send`** (`cli.py:108`) takes exactly one payload source — positional text,
+**`send`** (`cli.py:116`) takes exactly one payload source — positional text,
 `--stdin`, or `--file <path>` — mutually exclusive, checked before any Redis
 call. `--stdin` refuses empty input; `--file` reads without shell
 interpretation. The body becomes `{"text": "<body>"}` under `kind: "Message"`
-(`_message`, `cli.py:95`). Full flag semantics — `--`, dash-leading bodies,
+(`_message`, `cli.py:103`). Full flag semantics — `--`, dash-leading bodies,
 the byte-count acknowledgement — are `CONTRACTS.md` §5's, not repeated here.
 
-**`broadcast`** (`cli.py:148`) is the one command still on
+**`send-file`** (alias **`sendFile`**, `cli.py:185`) sends an `Attachment`
+envelope to one agent (`office send-file -a <destination> <path> [--caption <text>] [--mime-type <type>]`).
+It requires `-a <destination>` (unicast only; `destination: all` is refused),
+validates that `<path>` is a regular file, checks `ATTACHMENT_MAX_BYTES` (10 MiB)
+before reading and encoding, validates the basename (`<=255` UTF-8 bytes, no
+slashes, control characters, or `.`/`..`), validates or guesses the MIME type
+(falling back to `application/octet-stream`), validates caption length (`<=65,536` UTF-8 bytes),
+and encodes the raw bytes into RFC 4648 standard base64 with padding. The acknowledgement
+prints the accepted raw byte count and stream ID (`sent to <destination>: <N> bytes (<stream_id>)`),
+matching `send`.
+
+**`broadcast`** (`cli.py:273`) is the one command still on
 `argparse.REMAINDER`: multi-word text is unquoted, deliberately unlike `send`
 (`CONTRACTS` §5). It resolves recipients client-side — every roster member
 except the caller with `port_type == "tmux"` — and sends one `Message` per
 recipient. This is the client-side filter `HLD` §6 contrasts with a raw
 `destination: "all"`, which reaches every roster row including `api` clients.
 
-**`peers`** (`cli.py:166`) lists the same `port_type == "tmux"`-minus-self set.
+**`peers`** (`cli.py:299`) lists the same `port_type == "tmux"`-minus-self set.
 Plain output is one line, comma-joined, with `(lead)` appended to whichever
 name matches the tenant's `lead` key (`prefix(pod, tenant, resource="lead")`,
 read live — not baked into any agent's guide). `-v` adds, per peer: `launch`
@@ -150,7 +161,7 @@ prints last, after either plain or verbose peer output) and is a no-op change
 to bare `office peers` and to `office peers -v` alone — both keep their pinned
 shapes exactly.
 
-**`profiles`** (`cli.py:199`) is the tenant-wide account audit `peers -v`
+**`profiles`** (`cli.py:350`) is the tenant-wide account audit `peers -v`
 cannot give: every configured account, which tmux agents are on it, which
 landed on `default` implicitly, and which roster members carry no account at
 all (`api`, `control`). The account/profile mechanism itself —
@@ -160,7 +171,7 @@ this command is a read over exactly those keys, nothing more.
 
 ## 5. Lifecycle: `hire`, `letGo`/`let-go`, `pause`, `resume`
 
-One shared implementation, `_control_command` (`cli.py:324`), keyed by a
+One shared implementation, `_control_command` (`cli.py:471`), keyed by a
 `{command: kind}` table (`hire → StartAgent`, `letGo → StopAgent`, `pause →
 PauseAgent`, `resume → ResumeAgent`). All four build a payload around
 `{"agent": <name>}` and send it to `host` — never act locally. What each kind
@@ -169,12 +180,12 @@ does once it lands is `control`'s opener, described in `CONTRACTS` §6 and
 
 `hire` alone carries extra validation, both client-side:
 
-- `--cli` is `choices=("claude", "codex", "agy")` (`cli.py:344`) — an accepted
+- `--cli` is `choices=("claude", "codex", "agy")` (`cli.py:491`) — an accepted
   typo used to reach `startAgent <typo>` inside the freshly created window,
   indistinguishable from a login prompt or a CLI with nothing to say yet. A
   typo now fails at the prompt instead.
 - `--profile` is checked against `available_profiles()` when the registry
-  exists (`cli.py:364`) — the same registry `profiles` reads — refusing with
+  exists (`cli.py:511`) — the same registry `profiles` reads — refusing with
   the list of configured accounts rather than dead-lettering one component
   away from where it was typed.
 
@@ -183,7 +194,7 @@ validates the same two fields again at the far edge (`CONTRACTS` §5), because
 the client and the fabric are different processes and the fabric is the one
 that must not trust what crossed the bus.
 
-`--resume`/`--fresh` are a mutually exclusive pair (`cli.py:355`), and neither
+`--resume`/`--fresh` are a mutually exclusive pair (`cli.py:502`), and neither
 is the client validating anything — they only decide whether `payload["resume"]`
 is present at all. Omitted (the default) means the fabric decides:
 `tmuxhost` auto-detects prior session history for that agent's workspace
@@ -204,7 +215,7 @@ the ticket shape and the seven commands' edges around it.**
 
 ### 6a. The ticket
 
-`_ticket()` (`cli.py:412`) normalizes whatever JSON sits in a list entry into:
+`_ticket()` (`cli.py:559`) normalizes whatever JSON sits in a list entry into:
 
 ```
 {v, id, title, description, created_by, status, created_ts, started_ts, done_ts, held_ts, [priority], [related]}
@@ -212,11 +223,11 @@ the ticket shape and the seven commands' edges around it.**
 
 Reading is defensive by construction: a non-dict, a missing `id`, or a
 non-string `title` all raise `OfficeError` rather than propagate a malformed
-board entry into a command that assumes a shape. `_serialized()` (`cli.py:447`)
+board entry into a command that assumes a shape. `_serialized()` (`cli.py:594`)
 writes it back with `separators=(",", ":")` — compact, not pretty-printed,
 because it is a Redis list entry, not a file for a human to read directly.
 
-⚠ **`held_ts`, set by `hold` (`cli.py:592`), is the youngest of the four
+⚠ **`held_ts`, set by `hold` (`cli.py:756`), is the youngest of the four
 timestamps.** `started_ts` is not reusable for "how long has this been on
 hold": `take` overwrites it unconditionally on every take, including a retake
 out of `hold`, so it means "since last taken", not "since parked". A ticket
@@ -224,7 +235,7 @@ held before this field existed carries none — `list` falls back to
 `created_ts` for those rather than showing nothing (§6d).
 
 ⚠ **`related` is a list of ticket ids, stored, never validated.** `office add
---related <id>[,<id>...]` (`cli.py:621`) splits on comma, strips, and dedupes
+--related <id>[,<id>...]` (`cli.py:785`) splits on comma, strips, and dedupes
 (`list(dict.fromkeys(...))`, the same pattern `_clone_agents` uses); the
 opener filters to strings and drops the key entirely when the result is
 empty, the same "absent means not set" convention as `priority`. **No
@@ -236,11 +247,11 @@ oversight: the whole point is a structural reference in place of "see ticket
 
 ### 6b. Selecting a ticket
 
-`_select()` (`cli.py:457`) is shared by `take` (with an id), `done`, `cancel`,
+`_select()` (`cli.py:604`) is shared by `take` (with an id), `done`, `cancel`,
 `hold` and `delete`. With no reference it requires exactly one match — zero is
 "you have no open task", more than one is "specify an id". With a reference it
 matches by **id prefix**, refusing an empty match set and an ambiguous one
-(more than one ticket sharing that prefix) by name. `_remove()` (`cli.py:473`)
+(more than one ticket sharing that prefix) by name. `_remove()` (`cli.py:620`)
 does the `LREM` and raises if it removed nothing — the entry changed under the
 command mid-run, which reads as "try again" rather than a silent no-op.
 
@@ -250,9 +261,9 @@ command mid-run, which reads as "try again" rather than a silent no-op.
 |---|---|---|---|
 | `add` | — | destination's `todo` (via `AddTicket`) | the one cross-agent write; §3 above; `--related` sets unvalidated ticket-id links |
 | `list` | all four, `-a`/`--all` for every `tmux` agent | — | id-prefix, title, priority, related ids and state-scoped age (§6d); `-a` adds a per-agent heading |
-| `take` | `todo`, `hold` (by id) | `doing` | refuses when `doing` is non-empty (`cli.py:553`) — checked, not emergent; no id pops FIFO from `todo` |
+| `take` | `todo`, `hold` (by id) | `doing` | refuses when `doing` is non-empty (`cli.py:718`) — checked, not emergent; no id pops FIFO from `todo` |
 | `done` | `doing` | `done`, `status: "done"` | |
-| `cancel` | `doing` | `done`, `status: "cancelled"` | shares `_finish_command` with `done` (`cli.py:575`) |
+| `cancel` | `doing` | `done`, `status: "cancelled"` | shares `_finish_command` with `done` (`cli.py:740`) |
 | `hold` | `doing` | `hold`, `status: "hold"`, `held_ts` | `started_ts` stays as "last taken"; `done_ts` is never set |
 | `delete` | any of the four | — | permanent; requires an id, no "your one open task" default |
 
@@ -267,7 +278,7 @@ own failure so history can never break the mutation it is recording
 - `record_task_event()` (`flock.bus.logging`) appends one JSONL line to
   `TASK_RECORD` (default `~/.flock/tasks.jsonl`) — `event`, `id`, `title`,
   `agent`, `actor`, `timestamp`.
-- `_log_task()` (`cli.py:478`) calls `log_record("office", event, …)`, which
+- `_log_task()` (`cli.py:625`) calls `log_record("office", event, …)`, which
   reaches the window log the switch tails, same as the bus telemetry §2
   silences from the pane.
 
@@ -276,10 +287,10 @@ own failure so history can never break the mutation it is recording
 The default line was `<id8>  <title>` and nothing else — `priority`,
 `created_ts`, `started_ts`, `done_ts` all existed on the ticket and none of
 them were visible without `office take` or a direct Redis read, which does not
-scale to `list --all` across a whole tenant. `_ticket_line()` (`cli.py:499`)
+scale to `list --all` across a whole tenant. `_ticket_line()` (`cli.py:646`)
 appends, when present, `p:<priority>`, `rel:<id8>,<id8>,…` and
 `age:<duration>` in that order — priority and relations are ticket metadata,
-age is timing, kept last. Age is formatted by the same `_age()` (`cli.py:252`)
+age is timing, kept last. Age is formatted by the same `_age()` (`cli.py:399`)
 `status` already uses for "last activity N ago" — one duration vocabulary
 across both commands rather than two. `rel:` truncates each related id to
 eight characters, the same prefix width as the ticket's own id column, so a
@@ -296,7 +307,7 @@ and the default output stays what it was, extended rather than replaced. No
 compatible with.
 
 **"Age" means one thing, consistently: time in the state the line is printed
-under**, not a duration score (`_AGE_FIELD`, `cli.py:486`):
+under**, not a duration score (`_AGE_FIELD`, `cli.py:633`):
 
 | state | timestamp | why |
 |---|---|---|
@@ -320,12 +331,12 @@ rather than a placeholder — same defensive-by-omission style as `priority`.
 ## 7. `cloneToAll` / `clone-to-all`
 
 The filesystem-shaped exception (`LLD-bus-and-switch` §7): no envelope, no
-board, just `git`. `_clone_agents()` (`cli.py:662`) selects live `tmux`
+board, just `git`. `_clone_agents()` (`cli.py:809`) selects live `tmux`
 participants — `-a a,b` narrows to a comma-separated subset, validated against
 that set; omitted means all of them. It fetches the upstream **once** into
 whichever target agent clones first, clones every remaining target from that
 local copy, and points **every** clone's `origin` at the supplied URL rather
-than at the local source (`cli.py:705`, `:680`) — so the network cost is paid
+than at the local source (`cli.py:852`, `:827`) — so the network cost is paid
 once but no agent ends up with another agent's workspace as its remote.
 Existing target directories are skipped outright; a failed clone's partial
 directory is removed (`shutil.rmtree`) so a retry does not read "already has
@@ -333,7 +344,7 @@ it" from debris. `--dry-run` performs no writes and reports what would happen.
 `api` and `control` participants have no `/workdir` and are never targets.
 
 Also reachable as the bare `cloneToAll` on `PATH` (`clone_to_all_main`,
-`cli.py:927`), which delegates to `office cloneToAll` rather than
+`cli.py:1093`), which delegates to `office cloneToAll` rather than
 reimplementing it — a second copy existed for two days in 2026-08-19..21,
 dropped this cleanup, and left directories every later run misread as done.
 
@@ -356,8 +367,8 @@ Full record shape, correlation and pricing edge cases are `CONTRACTS.md` §5's
 
 ## 9. Errors and output
 
-Every command-level failure is `OfficeError` (`cli.py:45`), a `ValueError`
-subclass carrying a user-facing message. `_run()` (`cli.py:942`) is the single
+Every command-level failure is `OfficeError` (`cli.py:53`), a `ValueError`
+subclass carrying a user-facing message. `_run()` (`cli.py:1107`) is the single
 catch point: it prints `office: error: <message>` to stderr and exits 1.
 Nothing below that boundary prints its own error text or exits directly —
 argument parsing errors are the one exception, going through `argparse`'s own

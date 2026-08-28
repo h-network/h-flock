@@ -1,3 +1,4 @@
+import base64
 from conftest import FakeRespRedis
 import ast
 import io
@@ -35,6 +36,8 @@ def test_root_help_lists_whole_surface_without_environment_or_redis(monkeypatch,
     output = capsys.readouterr().out
     for command in (
         "send",
+        "send-file",
+        "sendFile",
         "broadcast",
         "peers",
         "profiles",
@@ -59,7 +62,7 @@ def test_root_help_lists_whole_surface_without_environment_or_redis(monkeypatch,
 
 @pytest.mark.parametrize(
     "command",
-    ["send", "broadcast", "peers", "profiles", "status", "hire", "letGo", "let-go", "pause", "resume", "list", "take", "done", "cancel", "hold", "delete", "add", "cloneToAll", "clone-to-all"],
+    ["send", "send-file", "sendFile", "broadcast", "peers", "profiles", "status", "hire", "letGo", "let-go", "pause", "resume", "list", "take", "done", "cancel", "hold", "delete", "add", "cloneToAll", "clone-to-all"],
 )
 def test_every_subcommand_has_environment_free_help(monkeypatch, command):
     monkeypatch.delenv("AGENT_NAME", raising=False)
@@ -161,6 +164,184 @@ def test_send_double_dash_allows_literal_option_body(office_env, monkeypatch):
     cli.main(["send", "-a", "backend", "--", "--stdin"])
 
     assert calls[0]["payload"] == {"text": "--stdin"}
+
+
+def test_send_file_success_with_guessing_and_caption(office_env, monkeypatch, tmp_path, capsys):
+    img = tmp_path / "diagram.png"
+    img.write_bytes(b"\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR")
+    calls = []
+    monkeypatch.setattr(cli, "send", lambda r, **kwargs: calls.append(kwargs) or "stream-attach-1")
+
+    cli.main(["send-file", "-a", "backend", str(img), "--caption", "current topology"])
+
+    assert calls == [
+        {
+            "pod": "acme",
+            "tenant": "hq",
+            "source": "frontend",
+            "destination": "backend",
+            "payload": {
+                "filename": "diagram.png",
+                "mime_type": "image/png",
+                "content_base64": base64.b64encode(b"\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR").decode("ascii"),
+                "caption": "current topology",
+            },
+            "kind": "Attachment",
+            "module": "port",
+        }
+    ]
+    assert capsys.readouterr().out.strip() == f"sent to backend: {len(img.read_bytes())} bytes (stream-attach-1)"
+
+
+def test_send_file_success_without_caption_and_custom_mime(office_env, monkeypatch, tmp_path, capsys):
+    doc = tmp_path / "spec.custom"
+    doc.write_text("hello custom format", encoding="utf-8")
+    calls = []
+    monkeypatch.setattr(cli, "send", lambda r, **kwargs: calls.append(kwargs) or "stream-attach-2")
+
+    cli.main(["send-file", "-a", "backend", str(doc), "--mime-type", "application/x-custom+json"])
+
+    assert calls == [
+        {
+            "pod": "acme",
+            "tenant": "hq",
+            "source": "frontend",
+            "destination": "backend",
+            "payload": {
+                "filename": "spec.custom",
+                "mime_type": "application/x-custom+json",
+                "content_base64": base64.b64encode(b"hello custom format").decode("ascii"),
+            },
+            "kind": "Attachment",
+            "module": "port",
+        }
+    ]
+    assert "caption" not in calls[0]["payload"]
+    assert capsys.readouterr().out.strip() == "sent to backend: 19 bytes (stream-attach-2)"
+
+
+def test_send_file_fallback_mime_type_for_unknown_extension(office_env, monkeypatch, tmp_path):
+    blob = tmp_path / "raw.unknownext123"
+    blob.write_bytes(b"\x00\x01\x02")
+    calls = []
+    monkeypatch.setattr(cli, "send", lambda r, **kwargs: calls.append(kwargs) or "stream-attach-3")
+
+    cli.main(["send-file", "-a", "backend", str(blob)])
+
+    assert calls[0]["payload"]["mime_type"] == "application/octet-stream"
+
+
+@pytest.mark.parametrize("command", ["send-file", "sendFile"])
+def test_send_file_aliases_share_contract(office_env, monkeypatch, tmp_path, command):
+    f = tmp_path / "file.txt"
+    f.write_text("content", encoding="utf-8")
+    calls = []
+    monkeypatch.setattr(cli, "send", lambda r, **kwargs: calls.append(kwargs) or "stream-alias")
+
+    cli.main([command, "-a", "backend", str(f)])
+
+    assert calls[0]["kind"] == "Attachment"
+    assert calls[0]["payload"]["filename"] == "file.txt"
+
+
+def test_send_file_refuses_broadcast_all(office_env, monkeypatch, tmp_path, capsys):
+    f = tmp_path / "file.txt"
+    f.write_text("content", encoding="utf-8")
+    monkeypatch.setattr(cli, "send", lambda *args, **kwargs: pytest.fail("sent broadcast"))
+
+    with pytest.raises(SystemExit) as exc:
+        cli.main(["send-file", "-a", "all", str(f)])
+    assert exc.value.code == 1
+    assert "unicast only" in capsys.readouterr().err
+
+
+def test_send_file_refuses_missing_agent_or_unknown_agent(office_env, monkeypatch, tmp_path, capsys):
+    f = tmp_path / "file.txt"
+    f.write_text("content", encoding="utf-8")
+
+    with pytest.raises(SystemExit) as exc:
+        cli.main(["send-file", str(f)])
+    assert exc.value.code == 1
+    assert "requires -a <agent>" in capsys.readouterr().err
+
+    with pytest.raises(SystemExit) as exc:
+        cli.main(["send-file", "-a", "nonexistent", str(f)])
+    assert exc.value.code == 1
+    assert "unknown destination agent 'nonexistent'" in capsys.readouterr().err
+
+
+def test_send_file_refuses_non_existent_file_or_directory(office_env, tmp_path, capsys):
+    missing = tmp_path / "nonexistent.png"
+    with pytest.raises(SystemExit) as exc:
+        cli.main(["send-file", "-a", "backend", str(missing)])
+    assert exc.value.code == 1
+    assert "does not exist" in capsys.readouterr().err
+
+    directory = tmp_path / "somedir"
+    directory.mkdir()
+    with pytest.raises(SystemExit) as exc:
+        cli.main(["send-file", "-a", "backend", str(directory)])
+    assert exc.value.code == 1
+    assert "not a regular file" in capsys.readouterr().err
+
+
+def test_send_file_refuses_oversized_file_before_reading(office_env, monkeypatch, tmp_path, capsys):
+    f = tmp_path / "large.bin"
+    f.write_bytes(b"0123456789 extra")
+    monkeypatch.setattr(cli, "ATTACHMENT_MAX_BYTES", 10)
+
+    with pytest.raises(SystemExit) as exc:
+        cli.main(["send-file", "-a", "backend", str(f)])
+    assert exc.value.code == 1
+    assert "exceeds maximum allowed size of 10 bytes" in capsys.readouterr().err
+
+
+@pytest.mark.parametrize(
+    "bad_name,err_sub",
+    [
+        (".", "cannot be '.'"),
+        ("..", "cannot be '..'"),
+        ("a/b", "forbidden character"),
+        ("a\\b", "forbidden character"),
+        ("a\x00b", "forbidden character"),
+        ("a\x1fb", "forbidden character"),
+        ("a\x7fb", "forbidden character"),
+        ("x" * 256, "exceeds maximum length of 255 bytes"),
+    ],
+)
+def test_send_file_validates_filename(office_env, tmp_path, capsys, bad_name, err_sub):
+    with pytest.raises(cli.OfficeError) as exc:
+        cli._validate_filename(bad_name)
+    assert err_sub in str(exc.value)
+
+
+@pytest.mark.parametrize(
+    "bad_mime",
+    [
+        "image/png; charset=utf-8",
+        "image / png",
+        "invalid",
+        "image/\xff",
+        "x" * 256 + "/png",
+    ],
+)
+def test_send_file_validates_mime_type(office_env, tmp_path, capsys, bad_mime):
+    f = tmp_path / "test.png"
+    f.write_bytes(b"data")
+    with pytest.raises(SystemExit) as exc:
+        cli.main(["send-file", "-a", "backend", str(f), "--mime-type", bad_mime])
+    assert exc.value.code == 1
+    assert "invalid mime-type" in capsys.readouterr().err
+
+
+def test_send_file_validates_caption_length(office_env, tmp_path, capsys):
+    f = tmp_path / "test.png"
+    f.write_bytes(b"data")
+    huge_caption = "c" * (cli.ATTACHMENT_MAX_CAPTION_BYTES + 1)
+    with pytest.raises(SystemExit) as exc:
+        cli.main(["send-file", "-a", "backend", str(f), "--caption", huge_caption])
+    assert exc.value.code == 1
+    assert "attachment caption exceeds maximum length" in capsys.readouterr().err
 
 
 @pytest.mark.parametrize("command", ["letGo", "let-go"])
