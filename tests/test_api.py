@@ -1083,6 +1083,31 @@ def test_post_envelope_attachment_base64_strict_validation(client):
         assert res == 422
 
 
+def test_post_envelope_attachment_unpaired_surrogates_rejected(client):
+    app, _ = client
+    b64 = base64.b64encode(b"test").decode()
+
+    # Filename with unpaired surrogate
+    res, body = request(app, "POST", "/agents/alice/envelopes", token="secret",
+                        body={"kind": "Attachment", "payload": {"filename": "bad_\ud800_name.txt", "mime_type": "text/plain", "content_base64": b64}})
+    assert res == 422
+    assert "must be valid UTF-8" in body["detail"]
+
+    # Caption with unpaired surrogate
+    res, body = request(app, "POST", "/agents/alice/envelopes", token="secret",
+                        body={"kind": "Attachment", "payload": {"filename": "test.txt", "mime_type": "text/plain", "content_base64": b64, "caption": "bad_\ud800_caption"}})
+    assert res == 422
+    assert "must be valid UTF-8" in body["detail"]
+
+
+def test_restdoc_html_includes_attachment_and_qualified_notice(client):
+    app, _ = client
+    status_code, body = request(app, "GET", "/restdoc", token="secret")
+    assert status_code == 200
+    assert "Attachment" in body
+    assert "The API server does NOT validate <code>kind</code> or <code>payload</code> (with the one named exception of <code>Attachment</code>" in body
+
+
 
 
 
