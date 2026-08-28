@@ -16,6 +16,20 @@
 ![Agents](https://img.shields.io/badge/agents-claude_codex_agy-8B5CF6?style=flat-square)
 ![Tests](https://img.shields.io/badge/tests-954_passing-22C55E?style=flat-square)
 
+<!--
+  Demo placeholder. Options for filling this in:
+  - GIF: drop a file at docs/assets/demo.gif, then swap this comment for
+    <img src="docs/assets/demo.gif" alt="h-flock demo" width="860">
+  - Video: drag-and-drop the file into a GitHub PR/issue comment box (not a
+    git commit) — GitHub hosts it and gives you a
+    https://github.com/user-attachments/... URL, which is the only way to
+    embed real video/autoplay in a README (git-hosted video files don't
+    render inline the way an <img> GIF does). Then use:
+    https://github.com/user-attachments/assets/<id>
+  Suggested content: setup.sh -> office hire -> a ticket moving across
+  boards -> a Telegram exchange (maybe /watch or the mini app) end to end.
+-->
+
 **An office of AI agents (Claude, Codex, and Antigravity — mix freely) that hire
 into real terminals, work from their own task boards, and coordinate with each
 other and with you — over a REST API or the bundled Telegram bot; a
