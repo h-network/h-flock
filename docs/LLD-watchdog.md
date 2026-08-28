@@ -388,7 +388,7 @@ the tenant name; `TMUX_SOCKET` selects an explicit tmux socket when present.
 4. ⚠ **CORRECTED 2026-08-19.** This read *"the switch is the sole writer of
    `blocked`; the watchdog never derives or clears that state."* That inverted
    when `DeliveryVerifier` moved from `flock/switch/` to `flock/watchdog/`:
-   **the watchdog is now the sole writer**, at `watchdog/verification.py:118`
+   **the watchdog is now the sole writer**, at `watchdog/verification.py:120`
    (clear) and `:123` (set). The switch never touches it. Found by `api`
    reviewing build 77 — the move updated eight docs for the file *paths* and
    missed the sentence about *ownership*.
