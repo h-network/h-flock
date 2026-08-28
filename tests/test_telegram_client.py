@@ -1579,6 +1579,10 @@ def test_activity_render_flush_debouncing():
     assert len(client.edited_messages) == 1
     assert "<code>Bash</code>" in client.edited_messages[0]["text"]
 
+    # Redundant flush with identical text is skipped (even with force=True)
+    render.flush(client, force=True)
+    assert len(client.edited_messages) == 1
+
 
 def test_flock_client_stream_activity(monkeypatch):
     flock = FlockClient("http://fake:8080", "fake-token")

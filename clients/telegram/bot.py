@@ -775,6 +775,7 @@ class ActivityRender:
         self.message_id: int | None = None
         self.completed: bool = False
         self.last_flush_ts: float = 0.0
+        self.last_rendered_text: str | None = None
         self.lock = threading.Lock()
 
     def add_event(self, event: dict) -> None:
@@ -833,9 +834,13 @@ class ActivityRender:
             now = time.time()
             if not force and self.message_id is not None and not self.completed and (now - self.last_flush_ts < 0.8):
                 return
-            self.last_flush_ts = now
 
         text = self.render()
+        with self.lock:
+            if self.message_id is not None and text == self.last_rendered_text:
+                return
+            self.last_flush_ts = now
+
         try:
             if self.message_id is None:
                 resp = telegram_client.send_message(
@@ -847,6 +852,7 @@ class ActivityRender:
                 msg_id = resp.get("result", {}).get("message_id") if isinstance(resp, dict) else None
                 with self.lock:
                     self.message_id = msg_id
+                    self.last_rendered_text = text
             else:
                 telegram_client.edit_message_text(
                     self.chat_id,
@@ -855,6 +861,8 @@ class ActivityRender:
                     parse_mode="HTML",
                     disable_web_page_preview=True,
                 )
+                with self.lock:
+                    self.last_rendered_text = text
         except Exception as exc:
             logger.debug(f"ActivityRender flush failed (chat={self.chat_id}, msg={self.message_id}): {exc}")
 
