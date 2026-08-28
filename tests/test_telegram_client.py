@@ -11,13 +11,16 @@ from clients.telegram import bot
 from clients.telegram.bot import (
     ActivityRender, AlertPusher, CursorStore, DryRunTelegramClient, FlockClient, ReplyPusher,
     TelegramBot, TelegramClient, render_alert, render_reply,
-    synthesize_speech, _parse_sse_events,
+    synthesize_speech, _parse_sse_events, _derive_session_url,
 )
 
 
 class DummyFlockClient:
-    def __init__(self, app_name="telegram"):
+    def __init__(self, app_name="telegram", base_url="http://127.0.0.1:8080", token="dummy-token"):
         self.app_name = app_name
+        self.base_url = base_url
+        self.token = token
+        self.ssl_context = None
         self.presence_state = "idle"
         self.messages_queue = []
         self.activity_queue = []
@@ -1823,5 +1826,92 @@ def test_reply_pusher_seed_cursor_pagination():
         for i in range(1, 1501)
     ]
     assert pusher._seed_cursor() == "01500-0"
+
+
+def test_derive_session_url():
+    assert _derive_session_url("http://localhost:8080") == "ws://localhost:8081/session"
+    assert _derive_session_url("https://office.example.com:8080") == "wss://office.example.com:8081/session"
+    assert _derive_session_url("http://127.0.0.1:8080", "ws://custom:9999/session") == "ws://custom:9999/session"
+    assert _derive_session_url("http://127.0.0.1:8080", "https://custom:9999") == "wss://custom:9999/session"
+
+
+def test_activity_render_liveness_pulse():
+    render = ActivityRender(chat_id="123", agent="architect")
+    render.add_event({"kind": "input"})
+    assert "still working" not in render.render()
+
+    # Touch liveness
+    render.touch_liveness()
+    rendered = render.render()
+    assert "1. ⏳ 💬 <i>input received</i>" in rendered
+    assert "⏳ <i>still working… (updated just now)</i>" in rendered
+
+    # Finalize -> liveness line is removed
+    render.finalize()
+    finalized = render.render()
+    assert "still working" not in finalized
+    assert "completed (1 steps)" in finalized
+
+
+def test_telegram_bot_watch_liveness_pulse():
+    flock = DummyFlockClient()
+    telegram = DummyTelegramClient()
+    store = CursorStore()
+    bot_instance = TelegramBot(
+        flock_client=flock,
+        telegram_client=telegram,
+        cursor_store=store,
+        target_agent="architect",
+        allowed_chat_id=123,
+    )
+
+    render = ActivityRender(chat_id=123, agent="architect")
+    render.add_event({"kind": "input"})
+    render.flush(telegram)
+    assert len(telegram.sent_messages) == 1
+    # Reset last_flush_ts so immediate test calls aren't debounced
+    render.last_flush_ts = 0.0
+
+    sent_frames = []
+    received_count = 0
+
+    class FakeWS:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            pass
+
+        def send(self, data):
+            sent_frames.append(data)
+
+        def recv(self, timeout=None):
+            nonlocal received_count
+            if timeout == 2.0:
+                # Initial snapshot
+                return '{"agent": "architect", "data": "snapshot"}'
+            if timeout == 5.0:
+                received_count += 1
+                if received_count == 1:
+                    return '{"agent": "architect", "data": "new terminal bytes"}'
+                if received_count == 2:
+                    raise TimeoutError()
+                render.finalize()
+                return '{"agent": "architect", "data": "extra"}'
+            raise TimeoutError()
+
+    bot_instance._watch_liveness(
+        chat_id=123,
+        agent="architect",
+        render=render,
+        timeout_s=10.0,
+        ws_connect_fn=lambda: FakeWS(),
+    )
+
+    assert len(sent_frames) == 1
+    assert "subscribe" in sent_frames[0]
+    assert render.liveness_ts is None  # cleared on finalize
+    assert len(telegram.edited_messages) >= 1
+
 
 

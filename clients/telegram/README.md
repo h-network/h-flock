@@ -31,6 +31,7 @@ A Telegram bot client that talks to an **h-flock** tenant over HTTP, allowing a 
 | `ALERTS_CURSOR_FILE` | derived from `CURSOR_FILE` | Path to store the alerts-stream cursor, kept separate from the mailbox cursor |
 | `NO_ALERT_PUSH` | unset | Set to `1` to disable live alert push even when `TELEGRAM_CHAT_ID` is set |
 | `NO_ACTIVITY_PUSH` | unset | Set to `1` to disable live-updating progress messages while agents execute tools |
+| `FLOCK_SESSION_URL` | derived from `FLOCK_API_URL` (`:8081`) | Base WebSocket URL for the Session door used for terminal diff liveness pulses |
 | `TELEGRAM_VOICE` | `0` | Set to `1` to enable the spoken TTS voice replies feature in this tenant |
 | `TTS_VOICE` | `en-GB-RyanNeural` | Default Microsoft neural TTS voice for spoken replies (e.g. `en-GB-RyanNeural`) via `edge-tts` |
 
@@ -52,6 +53,7 @@ python3 clients/telegram/bot.py --api-token "$FLOCK_API_TOKEN" --prompt "can you
 ```bash
 python3 clients/telegram/bot.py \
   --api-url http://localhost:8080 \
+  --session-url ws://localhost:8081/session \
   --api-token "$FLOCK_API_TOKEN" \
   --bot-token "$TELEGRAM_BOT_TOKEN" \
   --cursor-file cursor.json \
@@ -185,11 +187,14 @@ When a user sends a prompt to an agent via Telegram, the bot starts an activity 
 2. ✓ Read
 3. ✓ Grep
 4. ⏳ Bash
+
+⏳ still working… (updated just now)
 ```
 
 - **Tool-Names Privacy Invariant:** Respects `HLD.md` §8 privacy boundaries — events carry tool names and lifecycle markers only, never arguments, parameters, file paths, or shell strings.
-- **In-Place Updates & Throttling:** Edits are throttled to at most ~1/sec to comply with Telegram rate limits, keeping total rendered characters well below Telegram's 4096 cap via sliding window truncation for long execution runs.
-- **Completion & Coexistence with Replies:** When the agent finishes (`output` event or when `ReplyPusher` delivers the reply from the mailbox), the activity message is finalized in place (`🛠 Activity (architect) · completed (4 steps)`), and the full final response (and voice note if enabled) is delivered as a fresh new message.
+- **Diff-Triggered Liveness Pulse:** Connects to the Session WebSocket door (`:8081`, `ws://HOST:8081/session`) in read-only mode to sample terminal activity every ~5s. When the agent is reasoning or producing terminal text without triggering a discrete tool call, an actual diff touches a liveness line (`⏳ still working… (updated 4s ago)`) without dumping raw ANSI terminal bytes. If the pane is idle (no diff), the edit call is skipped.
+- **In-Place Updates & Throttling:** Edits are throttled to at most ~1/sec to comply with Telegram rate limits, keeping total rendered characters well below Telegram's 4096 cap via sliding window truncation for long execution runs. Redundant edits with identical text are skipped.
+- **Completion & Coexistence with Replies:** When the agent finishes (when `ReplyPusher` delivers the reply from the mailbox), the activity message is finalized in place (`🛠 Activity (architect) · completed (4 steps)` with the liveness line cleanly removed), and the full final response (and voice note if enabled) is delivered as a fresh new message.
 - **Disabling:** Disable live activity streaming by passing `--no-activity-push` or setting `NO_ACTIVITY_PUSH=1`.
 
 ---
