@@ -1293,7 +1293,7 @@ class TelegramBot:
     def handle_voice_toggle(self, chat_id: int | str) -> str:
         cid = str(chat_id)
         if not self.voice_feature_enabled:
-            text = "Voice replies are not enabled for this tenant (set TELEGRAM_VOICE=1 in container/.env)."
+            text = "Voice replies are not enabled for this tenant (set TELEGRAM_VOICE=1 in tenants/<tenant>/.env)."
             if self.telegram:
                 self.telegram.send_message(cid, text)
             return text

@@ -21,6 +21,7 @@ def test_keep_transfers_console_ownership_without_credentials_in_argv(tmp_path):
     tools.mkdir()
     shutil.copy2("container/accept.sh", root / "container" / "accept.sh")
     shutil.copy2("container/drive-setup.py", root / "container" / "drive-setup.py")
+    shutil.copy2("container/flock-compose.sh", root / "container" / "flock-compose.sh")
 
     _executable(
         root / "setup.sh",
@@ -43,7 +44,8 @@ def test_keep_transfers_console_ownership_without_credentials_in_argv(tmp_path):
         )
         for prompt in "${prompts[@]}"; do read -rp "$prompt: " answer; done
         touch created
-        cat > container/.env <<EOF
+        mkdir -p tenants/keep-proof
+        cat > tenants/keep-proof/.env <<EOF
         API_ENABLED=1
         API_PORT=18080
         API_TOKEN=token-sentinel

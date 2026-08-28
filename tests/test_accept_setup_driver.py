@@ -29,11 +29,14 @@ def test_setup_bool_and_port_validation(tmp_path):
 
     env = os.environ.copy()
     env["PATH"] = f"{bin_dir}:{env['PATH']}"
+    shutil.copy2(SETUP, tmp_path / "setup.sh")
+    shutil.copytree(ROOT / "container", tmp_path / "container")
+    local_setup = tmp_path / "setup.sh"
 
     # 1. Invalid boolean string '18080' at 'Use more than one account' prompt
     bad_bool_input = "\n".join(["acme", "hq", "2", "architect", "sme-2", "18080"]) + "\n"
     proc = subprocess.run(
-        [str(SETUP)],
+        [str(local_setup)],
         input=bad_bool_input,
         text=True,
         capture_output=True,
@@ -62,7 +65,7 @@ def test_setup_bool_and_port_validation(tmp_path):
         "no",        # self-signed
     ]) + "\n"
     proc2 = subprocess.run(
-        [str(SETUP)],
+        [str(local_setup)],
         input=valid_input,
         text=True,
         capture_output=True,
@@ -98,14 +101,89 @@ def test_drive_setup_against_real_setup_sh(tmp_path):
     proc = subprocess.run(cmd, capture_output=True, text=True, cwd=tmp_path, env=env)
     assert proc.returncode == 0, f"drive-setup failed:\nSTDOUT:\n{proc.stdout}\nSTDERR:\n{proc.stderr}"
 
-    env_content = (tmp_path / "container/.env").read_text()
+    tenant_dir = tmp_path / "tenants/hq-test"
+    tenant_env = tenant_dir / ".env"
+    env_content = tenant_env.read_text()
+    assert tenant_env.stat().st_mode & 0o777 == 0o600
     assert "API_ENABLED=1" in env_content
     assert "API_PORT=19080" in env_content
     assert "SESSION_PORT=19081" in env_content
 
-    ports_content = (tmp_path / "container/compose.ports.yaml").read_text()
+    ports_content = (tenant_dir / "compose.ports.yaml").read_text()
     assert "0.0.0.0:19080:8080" in ports_content
     assert "0.0.0.0:19081:8081" in ports_content
+    attach = tenant_dir / "attach.sh"
+    assert attach.stat().st_mode & 0o111
+    assert 'flock_tenant_context "$(basename "$_tenant_dir")"' in attach.read_text()
+    assert 'tmux attach -t "$TENANT"' in attach.read_text()
+
+
+def test_setup_imports_only_matching_legacy_tenant(tmp_path):
+    bin_dir = tmp_path / "bin"
+    _mock_docker(bin_dir)
+    env = os.environ.copy()
+    env["PATH"] = f"{bin_dir}:{env['PATH']}"
+    shutil.copy2(SETUP, tmp_path / "setup.sh")
+    shutil.copytree(ROOT / "container", tmp_path / "container")
+
+    legacy = "POD=acme\nTENANT=legacy\nAPI_TOKEN=keep-me\n"
+    (tmp_path / "container/.env").write_text(legacy)
+    ports = "services:\n  tenant:\n    ports:\n      - 127.0.0.1:8080:8080\n"
+    (tmp_path / "container/compose.ports.yaml").write_text(ports)
+
+    # Import happens immediately after the tenant prompt; an invalid agent count
+    # stops before later setup work can rewrite the imported env.
+    matched = subprocess.run(
+        [str(tmp_path / "setup.sh")], input="acme\nlegacy\n0\n", text=True,
+        capture_output=True, cwd=tmp_path, env=env,
+    )
+    assert matched.returncode == 2
+    assert (tmp_path / "tenants/legacy/.env").read_text() == legacy
+    assert (tmp_path / "tenants/legacy/compose.ports.yaml").read_text() == ports
+    assert (tmp_path / "container/.env").read_text() == legacy
+
+    mismatched = subprocess.run(
+        [str(tmp_path / "setup.sh")], input="acme\nother\n0\n", text=True,
+        capture_output=True, cwd=tmp_path, env=env,
+    )
+    assert mismatched.returncode == 2
+    assert not (tmp_path / "tenants/other/.env").exists()
+    assert "belongs to 'legacy'; leaving it untouched" in mismatched.stderr
+
+
+def test_two_setup_runs_keep_tenant_config_isolated(tmp_path):
+    bin_dir = tmp_path / "bin"
+    _mock_docker(bin_dir)
+    env = os.environ.copy()
+    env["PATH"] = f"{bin_dir}:{env['PATH']}"
+    shutil.copy2(SETUP, tmp_path / "setup.sh")
+    shutil.copytree(ROOT / "container", tmp_path / "container")
+
+    def run(tenant: str, api_port: str, session_port: str):
+        return subprocess.run(
+            [
+                "python3", str(tmp_path / "container/drive-setup.py"),
+                "--setup-cmd", str(tmp_path / "setup.sh"),
+                "--tenant", tenant,
+                "--api-port", api_port,
+                "--session-port", session_port,
+                "--publish-api", "y", "--publish-session", "y",
+                "--remote", "y", "--self-signed", "n",
+            ],
+            capture_output=True, text=True, cwd=tmp_path, env=env,
+        )
+
+    first = run("first", "19180", "19181")
+    assert first.returncode == 0, first.stdout + first.stderr
+    first_env_before = (tmp_path / "tenants/first/.env").read_text()
+    first_ports_before = (tmp_path / "tenants/first/compose.ports.yaml").read_text()
+
+    second = run("second", "19280", "19281")
+    assert second.returncode == 0, second.stdout + second.stderr
+    assert (tmp_path / "tenants/first/.env").read_text() == first_env_before
+    assert (tmp_path / "tenants/first/compose.ports.yaml").read_text() == first_ports_before
+    assert "API_PORT=19280" in (tmp_path / "tenants/second/.env").read_text()
+    assert "19280:8080" in (tmp_path / "tenants/second/compose.ports.yaml").read_text()
 
 
 def test_drive_setup_aborts_on_prompt_drift(tmp_path):
@@ -158,7 +236,7 @@ def test_drive_setup_refuses_unexpected_trailing_prompt(tmp_path):
     env = os.environ.copy()
     env["PATH"] = f"{bin_dir}:{env['PATH']}"
 
-    marker = 'echo "wrote container/.env"'
+    marker = 'echo "wrote tenants/${TENANT}/.env and attach.sh"'
     original = SETUP.read_text()
     assert marker in original
     modified = original.replace(

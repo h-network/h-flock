@@ -28,11 +28,12 @@ def test_compose_yaml_has_no_ports_key():
     assert 'TELEGRAM_BOT_TOKEN: "${TELEGRAM_BOT_TOKEN:-}"' in content
     assert 'TELEGRAM_CHAT_ID: "${TELEGRAM_CHAT_ID:-}"' in content
     assert 'TELEGRAM_VOICE: "${TELEGRAM_VOICE:-0}"' in content
+    assert '${FLOCK_TENANT_ENV_FILE:?' in content
 
 
-def test_gitignore_contains_compose_ports_yaml():
+def test_gitignore_contains_tenant_state():
     content = GITIGNORE.read_text(encoding="utf-8")
-    assert "container/compose.ports.yaml" in content
+    assert "tenants/" in content
 
 
 def test_flock_compose_helper_logic(tmp_path):
@@ -40,12 +41,16 @@ def test_flock_compose_helper_logic(tmp_path):
     c_dir = tmp_path / "container"
     c_dir.mkdir()
     (c_dir / "compose.yaml").write_text("services:\n  tenant:\n    image: test\n")
+    tenant_dir = tmp_path / "tenants" / "hq"
+    tenant_dir.mkdir(parents=True)
     
     script = f"""#!/usr/bin/env bash
 set -e
+export FLOCK_REPO_ROOT="{tmp_path}"
 . "{FLOCK_COMPOSE}"
-flock_compose_args "{tmp_path}"
+flock_compose_args hq
 printf '%s\n' "${{FLOCK_COMPOSE_ARGS[@]}}"
+printf 'env=%s\n' "$TENANT_ENV_FILE"
 """
     run_file = tmp_path / "run.sh"
     run_file.write_text(script)
@@ -53,14 +58,15 @@ printf '%s\n' "${{FLOCK_COMPOSE_ARGS[@]}}"
     
     # 1. Without ports fragment
     out = subprocess.check_output([str(run_file)], text=True).splitlines()
-    assert out == ["-f", f"{tmp_path}/container/compose.yaml"]
+    assert out == ["-f", f"{tmp_path}/container/compose.yaml", f"env={tenant_dir}/.env"]
 
     # 2. With ports fragment
-    (c_dir / "compose.ports.yaml").write_text("services:\n  tenant:\n    ports:\n      - 8080:8080\n")
+    (tenant_dir / "compose.ports.yaml").write_text("services:\n  tenant:\n    ports:\n      - 8080:8080\n")
     out2 = subprocess.check_output([str(run_file)], text=True).splitlines()
     assert out2 == [
         "-f", f"{tmp_path}/container/compose.yaml",
-        "-f", f"{tmp_path}/container/compose.ports.yaml",
+        "-f", f"{tenant_dir}/compose.ports.yaml",
+        f"env={tenant_dir}/.env",
     ]
 
 
@@ -93,7 +99,7 @@ def test_setup_splits_api_start_and_publish_questions():
     assert "Telegram Bot Token" in content
     assert "Telegram Chat ID" in content
     assert "Enable spoken voice replies?" in content
-    assert "container/compose.ports.yaml" in content
+    assert '$TENANT_DIR/compose.ports.yaml' in content
     assert "container/flock-compose.sh" in content
 
 

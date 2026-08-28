@@ -2,25 +2,28 @@
 # seed-home.sh — copy container/home/ into a running tenant, and copy credentials
 # back out again after an interactive login.
 #
-#   ./container/seed-home.sh in    [container]     host  → container
-#   ./container/seed-home.sh out   [container]     container → host   (logins only)
-#   ./container/seed-home.sh check [container]     which accounts still need one
+#   ./container/seed-home.sh --tenant NAME in    [container]  host → container
+#   ./container/seed-home.sh --tenant NAME out   [container]  container → host
+#   ./container/seed-home.sh --tenant NAME check [container]  login status
 #
 # Run `in` after `compose up`. Secrets travel by `docker cp` rather than a COPY
 # or a volume: the image is rebuilt constantly and these are not, and a secret in
 # an image is a secret in every copy of it (LLD-container §3).
 set -uo pipefail
 
-MODE="${1:-in}"
-# Pod, tenant and container name come from container/.env — the same file the
-# tenant was built from — rather than being hardcoded here. setup.sh names the
-# compose project "h-flock-<tenant>", so the container is "<project>-tenant-1".
-# Override either by exporting POD/TENANT, or by passing the container name.
 _here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-[ -f "$_here/.env" ] && . "$_here/.env"
-POD="${POD:-acme}"
-TENANT="${TENANT:-hq}"
-CONTAINER="${2:-h-flock-${TENANT}-tenant-1}"
+TENANT_ARG="${TENANT:-}"
+if [ "${1:-}" = "--tenant" ]; then
+    [ -n "${2:-}" ] || { echo "seed-home: --tenant requires a name" >&2; exit 2; }
+    TENANT_ARG="$2"; shift 2
+fi
+[ -n "$TENANT_ARG" ] || { echo "seed-home: --tenant NAME is required" >&2; exit 2; }
+. "$_here/flock-compose.sh"
+flock_tenant_context "$TENANT_ARG" || exit $?
+[ -f "$TENANT_ENV_FILE" ] || { echo "seed-home: no config at $TENANT_ENV_FILE" >&2; exit 2; }
+. "$TENANT_ENV_FILE"
+MODE="${1:-in}"
+CONTAINER="${2:-$FLOCK_CONTAINER}"
 HOME_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/home"
 IN_CONTAINER="/home/ubuntu"
 
@@ -147,5 +150,5 @@ PY
         done'
     ;;
 
-  *) echo "usage: seed-home.sh [in|out|check] [container]" >&2; exit 2 ;;
+  *) echo "usage: seed-home.sh --tenant NAME [in|out|check] [container]" >&2; exit 2 ;;
 esac

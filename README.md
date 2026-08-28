@@ -151,7 +151,7 @@ tenant has — one shared bearer token — and agents reach each other over the 
 without it. Loopback-only, `as` on a post is a declaration rather than a
 credential; publish the door (`API_PUBLISH=1`) and it isn't — a per-client HMAC
 is required to post `as` a specific enrolled client (`docs/API.md`). Set
-`API_ENABLED=1` in `container/.env`, or answer yes at the prompt.
+`API_ENABLED=1` in `tenants/<tenant>/.env`, or answer yes at the prompt.
 
 ⚠ **The Telegram bot is a CLIENT of that door, not a door of its own.**
 `clients/telegram/bot.py` takes `--api-url`, so it cannot run with the API off;
@@ -165,6 +165,11 @@ already per-tenant, but the published ports used to be hardcoded, so the second
 tenant came up healthy-looking with a door nobody could reach. A port already in
 use is refused rather than written into `.env`.
 
+Each setup is isolated under `tenants/<name>/`: its `.env`, optional published
+ports override, and generated `attach.sh` live together there. The whole
+`tenants/` tree is gitignored and created on demand, so one clone can operate
+several tenants without one setup overwriting another's credentials or ports.
+
 ⚠ **Choosing TLS makes `setup.sh` deliver the certificate before the doors
 start** — it creates the container, `docker cp`s the certificate in, then starts
 it. Certificates are never baked into the image and never a volume, the same
@@ -173,9 +178,8 @@ rule as credentials.
 Then:
 
 ```bash
-# watch the office
-docker exec -it -e TMUX_TMPDIR=/home/ubuntu/.flock/tmux h-flock-hq-tenant-1 \
-  tmux attach -t hq
+# watch the office; setup generated this tenant-specific helper
+./tenants/hq/attach.sh
 
 # drive it over HTTP
 curl -H "Authorization: Bearer $TOKEN" http://HOST:8080/agents
@@ -193,8 +197,8 @@ interactive login, so several agents share one and only the extras cost a browse
 flow. `setup.sh` asks for them by name, then assigns by defaults-plus-exceptions.
 
 ```bash
-./container/seed-home.sh check   # which accounts still need a login
-./container/seed-home.sh out     # after logging in — keeps it across rebuilds
+./container/seed-home.sh --tenant hq check  # which accounts still need a login
+./container/seed-home.sh --tenant hq out    # after login; keep it across rebuilds
 ```
 
 Secrets travel by `docker cp` from `container/home/`, never baked into the image
@@ -209,11 +213,11 @@ migration path:
 1. **On the SOURCE tenant:** pull real, currently-logged-in credential files out
    of the running container into `container/home/` on the host:
    ```bash
-   ./container/seed-home.sh out <source-container-name>
+   ./container/seed-home.sh --tenant <source-tenant> out <source-container-name>
    ```
 2. **Copy the repository** (`cp -r` or your preferred transfer method) to the
    new location.
-3. **Edit `container/.env`** for the new deployment (`CLAUDE_OAUTH_TOKEN_<PROFILE>`,
+3. **Edit `tenants/<tenant>/.env`** for the new deployment (`CLAUDE_OAUTH_TOKEN_<PROFILE>`,
    `TENANT`, `POD`, `AGENTS`, `API_TOKEN`, etc.).
    > ⚠ **Naming rules:** `TENANT` and `POD` must be lowercase alphanumeric and
    > hyphens (1–63 chars, starting with a letter or digit, not all-digits, and
@@ -221,11 +225,13 @@ migration path:
    > validates these upfront and fails fast with a clear error message instead of
    > crash-looping.
 4. **Bring the new container up.** Both paths are supported:
-   - **Interactive:** `./setup.sh` (prompts and generates `.env` for you — not
-     needed if `container/.env` is already configured).
+   - **Interactive:** `./setup.sh` (prompts and generates the tenant directory).
    - **Manual:**
      ```bash
-     docker compose -p h-flock-<tenant> --env-file container/.env -f container/compose.yaml up -d
+     . container/flock-compose.sh
+     flock_compose_args <tenant>
+     docker compose -p "$FLOCK_PROJECT" --env-file "$TENANT_ENV_FILE" \
+       "${FLOCK_COMPOSE_ARGS[@]}" up -d
      ```
      ⚠ **Always pass `-p` explicitly with a real project name.** Omitting `-p`
      defaults Docker Compose's project name to the current directory name (e.g.
@@ -233,14 +239,14 @@ migration path:
      instead of `h-flock-<tenant>-tenant-1`.
 5. **Seed the credentials into the new tenant:**
    ```bash
-   ./container/seed-home.sh in <the-real-container-name>
+   ./container/seed-home.sh --tenant <tenant> in <the-real-container-name>
    ```
    *(Note: `seed-home.sh` defaults to guessing `h-flock-${TENANT}-tenant-1`, which
    only matches if you used `-p h-flock-<tenant>` consistently; pass the actual
    container name explicitly otherwise.)*
 6. **Verify the login status:**
    ```bash
-   ./container/seed-home.sh check <the-real-container-name>
+   ./container/seed-home.sh --tenant <tenant> check <the-real-container-name>
    ```
 
 **End state:** assuming the source tenant was logged in and step 1 ran cleanly,
@@ -368,6 +374,7 @@ them they found eight things it did not say.
     api/         REST
     session/     WebSocket terminals
   container/     Dockerfile, entrypoint, compose, seed-home.sh
+  tenants/       generated per-tenant env, ports and attach helper (gitignored)
   docs/          the design, and why each decision went the way it did
 ```
 
@@ -401,7 +408,8 @@ Both doors support TLS via `API_TLS_CERT`/`API_TLS_KEY` and
 `SESSION_TLS_CERT`/`SESSION_TLS_KEY`. **A door published beyond loopback without
 TLS stops the tenant starting**, because the bearer token — and everything typed
 into a terminal — would cross the network in clear text. `setup.sh` asks; if you
-accept plain HTTP it records `ALLOW_PLAINTEXT_PUBLISH=1` in `container/.env`, so
+accept plain HTTP it records `ALLOW_PLAINTEXT_PUBLISH=1` in that tenant's
+`tenants/<tenant>/.env`, so
 it is a typed answer rather than a default nobody saw.
 
 ⚠ **A bind is not an exposure.** Both doors bind `0.0.0.0` *inside* the
@@ -417,10 +425,10 @@ at boot, so copying into a *running* tenant is too late. Create, copy, then
 start:
 
 ```bash
-. container/flock-compose.sh && flock_compose_args
-docker compose -p h-flock-<tenant> --env-file container/.env "${FLOCK_COMPOSE_ARGS[@]}" create
+. container/flock-compose.sh && flock_compose_args <tenant>
+docker compose -p "$FLOCK_PROJECT" --env-file "$TENANT_ENV_FILE" "${FLOCK_COMPOSE_ARGS[@]}" create
 docker cp /path/to/certs <container>:/home/ubuntu/tlscerts
-docker compose -p h-flock-<tenant> --env-file container/.env "${FLOCK_COMPOSE_ARGS[@]}" start
+docker compose -p "$FLOCK_PROJECT" --env-file "$TENANT_ENV_FILE" "${FLOCK_COMPOSE_ARGS[@]}" start
 ```
 
 **Verified end to end:** TLS 1.3 on both doors, `200` with a token and `401`

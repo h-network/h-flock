@@ -203,7 +203,7 @@ for exactly one login; `default` is the account nobody named.
 - **not:** a synonym for `agent` or `profile`. An account is the login and
   config directory behind a name; `profile` (below) is the pointer to it.
 - **state:** built. `setup.sh` asks for account names and seeds each one's
-  config directory; `container/seed-home.sh in|out|check` moves logins in and
+  config directory; `container/seed-home.sh --tenant NAME in|out|check` moves logins in and
   out of a running tenant. The configured set lives in Redis (`accounts`),
   read by `available_profiles()` and shown whole by `office profiles`.
 

@@ -16,6 +16,34 @@ This is a deliberate simplification, not a limit discovered later: co-locating
 Redis, the switch and the agents means they address each other over loopback,
 nothing needs discovery, and the whole tenant starts and stops as one thing.
 
+### 1.1 Host-side state is tenant-scoped
+
+One source clone can manage several tenants. `setup.sh` creates only the selected
+tenant's ignored directory:
+
+```
+tenants/<tenant>/
+  .env                  configuration and credentials, mode 0600
+  compose.ports.yaml    present only when a door is published
+  attach.sh             generated direct tmux attachment, mode 0755
+```
+
+`container/flock-compose.sh` is the single resolver for this layout. Given a
+tenant name it derives the directory, Compose project, container name and the
+base-plus-optional-ports file list. Every supported Compose call passes the same
+absolute tenant env path twice for two different jobs: `--env-file` supplies
+Compose interpolation, while `compose.yaml`'s `env_file` supplies the actual
+container environment (including dynamically named provider variables). Setting
+only the first would appear tenant-scoped while silently loading another env at
+runtime.
+
+⚠ **There is no shared fallback.** A consumer must name a tenant and refuses a
+missing `tenants/<tenant>/.env`. The sole compatibility path is in `setup.sh`:
+when the selected tenant has no new env and legacy `container/.env` names that
+exact tenant, it copies the legacy env and ports fragment into the new directory
+before prompting. It never deletes or overwrites the legacy files and never
+imports them for a different tenant.
+
 ⚠ **A rebuild is a new office wearing the same name.** Rebuilding a tenant container
 (`docker compose up --force-recreate`) restarts the office and destroys all runtime
 enrolments (hired agents, external API clients like `telegram` and `web`). Those clients
@@ -145,7 +173,7 @@ copying into a *running* tenant is too late: `setup.sh` does
 
 ⚠ **Two different paths, and conflating them is the classic bug here.** Where
 the certificate sits on the operator's machine and where the door looks for it
-inside the container are different strings; `container/.env` must carry the
+inside the container are different strings; `tenants/<tenant>/.env` must carry the
 second (`/home/ubuntu/tlscerts/tls.crt`). Writing the host path into it produced
 an installer that reported success and a tenant that crash-looped on
 `FileNotFoundError`.
@@ -246,7 +274,7 @@ Enrolling an external application client (`StartAgent` with `port_type: "api"`) 
 ### Entrypoint CLI Defaulting & Credential Verification
 
 - **Default CLI initialization:** `setup.sh` writes `AGENT_CLIS` only for agents that differ from the default CLI (`claude`). Therefore, a single-account default install passes no `AGENT_CLIS` environment variable. `container/entrypoint.sh` explicitly defaults every tmux agent's `launch` key in Redis (`pod:<pod>:tenant:<tenant>:agent:<name>:launch`) to `claude` before exception maps (`AGENT_CLIS`, `AGENT_PROFILES`) are applied. Without this explicit default, a default install writes no `launch` keys, `tmuxhost` builds every window as a bare shell, and the office comes up as bash prompts with presence `unknown`.
-- **`seed-home.sh check` credential verification:** `seed-home.sh check` inspects profile credentials. It checks actual token expiration timestamps (`refreshTokenExpiresAt` or `expiresAt`) rather than just non-empty file existence. Previously, a 281-byte credential file with an expiry of zero reported `"logged in"` while every agent sat at `"Not logged in · Run /login"`. `seed-home.sh check` now parses the credential JSON and reports `"logged in"`, `"EXPIRED"`, `"UNREADABLE"`, or `"NEEDS LOGIN"`.
+- **`seed-home.sh check` credential verification:** `seed-home.sh --tenant NAME check` inspects profile credentials. It checks actual token expiration timestamps (`refreshTokenExpiresAt` or `expiresAt`) rather than just non-empty file existence. Previously, a 281-byte credential file with an expiry of zero reported `"logged in"` while every agent sat at `"Not logged in · Run /login"`. The check now parses the credential JSON and reports `"logged in"`, `"EXPIRED"`, `"UNREADABLE"`, or `"NEEDS LOGIN"`.
 - **Upfront segment format validation:** `container/entrypoint.sh` validates `POD`, `TENANT`, and each agent name in `AGENTS` against segment rules (`^[a-z0-9][a-z0-9-]{0,62}$`, non-all-digits, non-reserved) before starting Redis. Hand-edited `.env` or cloned deployments with uppercase or invalid segment names fail fast with a clear error message rather than crash-looping on Python tracebacks.
 - **Custody log permission reconciliation:** On boot, `container/entrypoint.sh` reconciles directory and file permissions on `FLOCK_CUSTODY_FILE` (fixing ownership via `sudo` if carried over from `cp -r` clones or root mounts). If the path cannot be made writable, the container refuses to start loudly rather than silently dropping custody records.
 

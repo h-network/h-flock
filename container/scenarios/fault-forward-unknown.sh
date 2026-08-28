@@ -25,6 +25,9 @@ RUN_ID="$(date +%s)-$$"
 TENANT="bus100-${RUN_ID}"
 PROJECT="h-flock-${TENANT}"
 CONTAINER="${PROJECT}-tenant-1"
+. container/flock-compose.sh
+flock_compose_args "$TENANT"
+mkdir -p "$TENANT_DIR"
 API_PORT="${BUILD100_API_PORT:-18100}"
 SESSION_PORT="${BUILD100_SESSION_PORT:-18101}"
 WORK="${BUILD100_WORK:-/tmp/build100-${RUN_ID}}"
@@ -38,10 +41,10 @@ cleanup() {
   fi
   if [ "$CREATED_PROJECT" = "$PROJECT" ]; then
     echo "FAULT_INJECTION_TEARDOWN project=$CREATED_PROJECT"
-    . container/flock-compose.sh 2>/dev/null || true
-    flock_compose_args
-    docker compose -p "$CREATED_PROJECT" --env-file container/.env \
+    flock_compose_args "$TENANT"
+    docker compose -p "$CREATED_PROJECT" --env-file "$TENANT_ENV_FILE" \
       "${FLOCK_COMPOSE_ARGS[@]}" down -v >/dev/null
+    rm -rf -- "$TENANT_DIR"
   fi
 }
 trap cleanup EXIT INT TERM
@@ -77,11 +80,9 @@ TOKEN="$(openssl rand -hex 16)"
   echo "SESSION_HOST=127.0.0.1"
   echo "VERIFY_AFTER_SECONDS=120"
   echo "INGRESS_MAX=300"
-} > container/.env
-chmod 600 container/.env
-. container/flock-compose.sh 2>/dev/null || true
-flock_compose_args
-docker compose -p "$PROJECT" --env-file container/.env \
+} > "$TENANT_ENV_FILE"
+chmod 600 "$TENANT_ENV_FILE"
+docker compose -p "$PROJECT" --env-file "$TENANT_ENV_FILE" \
   "${FLOCK_COMPOSE_ARGS[@]}" up -d ${BUILD_FLAG} >"$WORK/setup.log" 2>&1
 accept_rc=$?
 # We proved absence immediately before invoking accept.sh. If its project now

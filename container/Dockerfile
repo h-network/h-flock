@@ -102,7 +102,7 @@ RUN mkdir -p /home/ubuntu/.flock/tmux /workdir \
 # default to 120 and build 80 raised `service.py`'s fallback to 120 — and the
 # window in a running tenant stayed 10, because this line won both times. Two
 # lanes fixed it, neither fix reached production. It is gone; `service.py` owns
-# it now, and an operator can still set it in `container/.env`.
+# it now, and an operator can still set it in the tenant's generated `.env`.
 #
 # ⚠ The two below duplicate their code defaults and currently AGREE, which is the
 # only reason they are not the same bug. Change one and you must change both —

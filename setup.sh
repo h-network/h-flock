@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
-# setup.sh — run this on the HOST. Asks for the tenant layout, writes
-# container/.env, and brings the tenant up. Redis, the tmux windows, the router
-# and both doors all run INSIDE the container; nothing runs on the host.
+# setup.sh — run this on the HOST. Asks for the tenant layout, writes isolated
+# deployment state under tenants/<name>/, and brings that tenant up. One shared
+# clone can manage many tenants; nothing generated is shared between them.
 set -uo pipefail
 cd "$(dirname "${BASH_SOURCE[0]}")"
 
@@ -21,6 +21,26 @@ echo "=== h-flock :: new tenant ==="
 
 read -rp "Pod name [acme]: " POD;    POD="$(slug "${POD:-acme}")"
 read -rp "Tenant name [hq]: " TENANT; TENANT="$(slug "${TENANT:-hq}")"
+
+. container/flock-compose.sh
+flock_tenant_context "$TENANT" || exit $?
+
+# One-way compatibility for pre-tenant-directory installs. Import only when the
+# legacy file names this exact tenant and the new tenant has no env yet. Never
+# delete or rewrite the legacy files: an operator may still need them for rollback.
+mkdir -p "$TENANT_DIR"
+if [ ! -f "$TENANT_ENV_FILE" ] && [ -f container/.env ]; then
+    LEGACY_TENANT="$(grep -s '^TENANT=' container/.env | cut -d= -f2-)"
+    if [ "$LEGACY_TENANT" = "$TENANT" ]; then
+        cp container/.env "$TENANT_ENV_FILE"
+        chmod 600 "$TENANT_ENV_FILE"
+        [ ! -f container/compose.ports.yaml ] || \
+            cp container/compose.ports.yaml "$TENANT_DIR/compose.ports.yaml"
+        echo "imported legacy container/.env into tenants/${TENANT}/"
+    elif [ -n "$LEGACY_TENANT" ]; then
+        echo "note: legacy container/.env belongs to '$LEGACY_TENANT'; leaving it untouched" >&2
+    fi
+fi
 
 read -rp "How many agents? [3]: " N; N="${N:-3}"
 [[ "$N" =~ ^[1-9][0-9]*$ ]] || { echo "error: expected a positive number, got '$N'" >&2; exit 2; }
@@ -62,7 +82,7 @@ PROFILES=(); PROFILE_MAP=(); CLI_MAP=()
 # typed. A token echoed here would sit in scrollback, in whatever recorded the
 # session, and in a `capture-pane` if setup were ever run inside a window.
 #
-# ⚠ BLANK KEEPS WHAT IS ALREADY THERE. setup.sh rewrites container/.env whole,
+# ⚠ BLANK KEEPS WHAT IS ALREADY THERE. setup.sh rewrites the tenant .env whole,
 # so without carrying the old value across, re-running it to add one agent would
 # silently delete every token — which is exactly how API_ENABLED=1 used to
 # vanish. Same read-it-back trick API_TOKEN already uses.
@@ -70,7 +90,7 @@ TOKEN_VAR() { printf 'CLAUDE_OAUTH_TOKEN_%s' "$(printf '%s' "$1" | tr 'a-z-' 'A-
 ask_token() {
     local profile="$1" var existing prompt entered
     var="$(TOKEN_VAR "$profile")"
-    existing="$(grep -s "^${var}=" container/.env | cut -d= -f2-)"
+    existing="$(grep -s "^${var}=" "$TENANT_ENV_FILE" | cut -d= -f2-)"
     if [ -n "$existing" ]; then
         prompt="  OAuth token for '$profile' [keep existing]: "
     else
@@ -112,7 +132,7 @@ for a in "${AGENTS[@]}"; do mset CLI "$a" claude; mset PROF "$a" default; done
 
 # ⚠ WHICH CLI IS ASKED ALWAYS. IT USED TO BE INSIDE THE ACCOUNTS BRANCH, so a
 # single-account tenant silently got claude for every agent with no way to say
-# otherwise — the only route through was writing AGENT_CLIS= into container/.env
+# otherwise — the only route through was writing AGENT_CLIS= into the tenant .env
 # by hand. Measured twice in two days while standing up offices that wanted
 # codex and agy. Accounts and frameworks are independent questions and are now
 # asked independently.
@@ -279,9 +299,9 @@ if check_bool "$WANT_TG" "n"; then
         echo "  (the Telegram bot talks to the REST API, so that service is enabled inside the container)"
         API_ENABLED=1
     fi
-    existing_tg_token="$(grep -s '^TELEGRAM_BOT_TOKEN=' container/.env 2>/dev/null | cut -d= -f2- || true)"
-    existing_tg_chat="$(grep -s '^TELEGRAM_CHAT_ID=' container/.env 2>/dev/null | cut -d= -f2- || true)"
-    existing_tg_voice="$(grep -s '^TELEGRAM_VOICE=' container/.env 2>/dev/null | cut -d= -f2- || true)"
+    existing_tg_token="$(grep -s '^TELEGRAM_BOT_TOKEN=' "$TENANT_ENV_FILE" 2>/dev/null | cut -d= -f2- || true)"
+    existing_tg_chat="$(grep -s '^TELEGRAM_CHAT_ID=' "$TENANT_ENV_FILE" 2>/dev/null | cut -d= -f2- || true)"
+    existing_tg_voice="$(grep -s '^TELEGRAM_VOICE=' "$TENANT_ENV_FILE" 2>/dev/null | cut -d= -f2- || true)"
     if [ -n "$existing_tg_token" ]; then
         read -rsp "  Telegram Bot Token [keep existing]: " TG_TOKEN; echo
     else
@@ -390,7 +410,7 @@ if [ "$API_PUBLISH" = "1" ] || [ "$SESSION_PUBLISH" = "1" ]; then
             else
                 echo "  ⚠ Plain HTTP: the api token and everything typed into a terminal"
                 echo "    cross the network unencrypted. Fine on a trusted LAN, not on one"
-                echo "    you share. Recorded as ALLOW_PLAINTEXT_PUBLISH=1 in container/.env."
+                echo "    you share. Recorded as ALLOW_PLAINTEXT_PUBLISH=1 in tenants/${TENANT}/.env."
                 ALLOW_PLAINTEXT=1
             fi
         fi
@@ -422,9 +442,9 @@ if [ "$API_PUBLISH" = "1" ] || [ "$SESSION_PUBLISH" = "1" ]; then
         echo "    ports:"
         [ "$API_PUBLISH" = "1" ] && [ -n "$API_PORT" ] && echo "      - \"${API_HOST}:${API_PORT}:8080\""
         [ "$SESSION_PUBLISH" = "1" ] && [ -n "$SESSION_PORT" ] && echo "      - \"${SESSION_HOST}:${SESSION_PORT}:8081\""
-    } > container/compose.ports.yaml
+    } > "$TENANT_DIR/compose.ports.yaml"
 else
-    rm -f container/compose.ports.yaml
+    rm -f "$TENANT_DIR/compose.ports.yaml"
 fi
 
 # Only exceptions travel, so the env stays small and readable.
@@ -450,7 +470,7 @@ AGENTS_CSV=""
 for a in "${AGENTS[@]}"; do AGENTS_CSV+="${a}:tmux,"; done
 AGENTS_CSV="${AGENTS_CSV%,}"
 
-TOKEN="$(grep -s '^API_TOKEN=' container/.env | cut -d= -f2)"
+TOKEN="$(grep -s '^API_TOKEN=' "$TENANT_ENV_FILE" | cut -d= -f2)"
 [ -n "$TOKEN" ] || TOKEN="$(openssl rand -hex 16)"
 
 # env is what persists; the roster is derived from it at every container start.
@@ -498,14 +518,25 @@ TOKEN="$(grep -s '^API_TOKEN=' container/.env | cut -d= -f2)"
         echo "PROVIDER_${PR_UPPER}_TOKEN=${LOCAL_TOKEN}"
         echo "PROVIDER_${PR_UPPER}_KIND=${EP_KIND}"
     fi
-} > container/.env
-chmod 600 container/.env
-echo "wrote container/.env"
+} > "$TENANT_ENV_FILE"
+chmod 600 "$TENANT_ENV_FILE"
 
-CONTAINER="h-flock-${TENANT}-tenant-1"
-. container/flock-compose.sh 2>/dev/null || true
-flock_compose_args
-COMPOSE=(docker compose -p "h-flock-${TENANT}" --env-file container/.env "${FLOCK_COMPOSE_ARGS[@]}")
+cat > "$TENANT_DIR/attach.sh" <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+_tenant_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+_repo_root="$(cd "$_tenant_dir/../.." && pwd)"
+. "$_repo_root/container/flock-compose.sh"
+flock_tenant_context "$(basename "$_tenant_dir")"
+exec docker exec -it -e TMUX_TMPDIR=/home/ubuntu/.flock/tmux \
+  "$FLOCK_CONTAINER" tmux attach -t "$TENANT"
+EOF
+chmod 755 "$TENANT_DIR/attach.sh"
+echo "wrote tenants/${TENANT}/.env and attach.sh"
+
+CONTAINER="$FLOCK_CONTAINER"
+flock_compose_args "$TENANT"
+COMPOSE=(docker compose -p "$FLOCK_PROJECT" --env-file "$TENANT_ENV_FILE" "${FLOCK_COMPOSE_ARGS[@]}")
 # ⚠ Build only when there is no image for THIS commit. The tag carries the SHA,
 # so an existing one is proof it matches the source; rebuilding it produces a
 # byte-identical result and used to happen on every tenant, five times in a full
@@ -542,7 +573,7 @@ done
 
 # Dotfiles, ssh keys and any saved logins — copied in, never baked into the image.
 if [ -d container/home ]; then
-    ./container/seed-home.sh in "$CONTAINER"
+    ./container/seed-home.sh --tenant "$TENANT" in "$CONTAINER"
 
     # ⚠ Restart, or every agent that boots with a CLI is unauthenticated.
     # The entrypoint creates windows and starts the CLIs as soon as the
@@ -584,12 +615,12 @@ if [ -n "$TLS_CERT_CONTAINER" ]; then SCHEME=https; SESSION_SCHEME=wss; fi
 # entrypoint declined to start is how "why is nothing listening" becomes a hunt.
 if [ "$API_ENABLED" = "1" ]; then
     if [ "$API_PUBLISH" = "1" ]; then
-        echo "  api      ${SCHEME}://${API_HOST:-127.0.0.1}:${API_PORT}   token in container/.env"
+        echo "  api      ${SCHEME}://${API_HOST:-127.0.0.1}:${API_PORT}   token in tenants/${TENANT}/.env"
     else
-        echo "  api      enabled inside tenant (not published to host)   token in container/.env"
+        echo "  api      enabled inside tenant (not published to host)   token in tenants/${TENANT}/.env"
     fi
 else
-    echo "  api      not enabled (API_ENABLED=0) — set it in container/.env to open it"
+    echo "  api      not enabled (API_ENABLED=0) — set it in tenants/${TENANT}/.env to open it"
 fi
 if [ "$SESSION_PUBLISH" = "1" ]; then
     echo "  session  ${SESSION_SCHEME}://${SESSION_HOST:-127.0.0.1}:${SESSION_PORT}/session"
@@ -601,7 +632,7 @@ if [ "$TELEGRAM" = "1" ]; then
     [ "$TELEGRAM_VOICE" = "1" ] && voice_suffix=" (voice replies enabled)"
     echo "  telegram bot running in tenant (chat id: ${TELEGRAM_CHAT_ID})${voice_suffix}"
 fi
-echo "  attach   docker exec -it -e TMUX_TMPDIR=/home/ubuntu/.flock/tmux $CONTAINER tmux attach -t ${TENANT}"
+echo "  attach   ./tenants/${TENANT}/attach.sh"
 if [ -n "$TLS_CERT_CONTAINER" ]; then
     echo
     echo "  ⚠ The shipped browser console cannot reach TLS tenant doors."
@@ -610,7 +641,7 @@ if [ -n "$TLS_CERT_CONTAINER" ]; then
 fi
 echo
 echo "Accounts still needing a login:"
-./container/seed-home.sh check "$CONTAINER"
+./container/seed-home.sh --tenant "$TENANT" check "$CONTAINER"
 echo
 echo "  Log in inside an agent's window, then save it so the next rebuild keeps it:"
-echo "    ./container/seed-home.sh out $CONTAINER"
+echo "    ./container/seed-home.sh --tenant $TENANT out"

@@ -3,7 +3,7 @@
 # tenant. No CLIs: bring the tenant up with AGENT_CLIS= so every window is a
 # plain shell, and what is under test is h-flock rather than an agent's judgement.
 #
-#   AGENT_CLIS= docker compose -p h-flock-hq up -d --force-recreate
+#   bash container/plumbing-check.sh --tenant hq
 #
 # ⚠ AGENT_CLIS= no longer gives plain shells on its own — the entrypoint defaults
 # every tmux agent to claude, so that a plain install is not three bash prompts.
@@ -11,7 +11,7 @@
 #
 #   docker exec <c> redis-cli --scan --pattern '*:launch' | xargs -r docker exec -i <c> redis-cli DEL
 #   docker exec <c> bash -lc 'TMUX_TMPDIR=… tmux kill-window -t <tenant>:<agent>'
-#   bash container/plumbing-check.sh
+#   bash container/plumbing-check.sh --tenant hq
 #
 # ⚠ Give the tenant a few seconds to settle first. The first run straight after
 # --force-recreate can fail a check while windows are still being created; three
@@ -20,19 +20,26 @@
 # ⚠ A pasted message is executed by the shell in a CLI-less window, so
 # "command not found" in a pane is the expected result and not a failure — the
 # check is that the text arrived at all.
-# Pod, tenant and container name come from container/.env — the same file the
-# tenant was built from — rather than being hardcoded here. setup.sh names the
-# compose project "h-flock-<tenant>", so the container is "<project>-tenant-1".
-# Override either by exporting POD/TENANT, or by passing the container name.
+# Pod, tenant and container name come from the selected tenant's generated env.
+# Select it with --tenant NAME (or exported TENANT); explicit POD/CONTAINER
+# overrides still win after the file is loaded.
 _here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # ⚠ Hold anything already exported. Sourcing .env would otherwise overwrite it,
 # so the documented `POD=… TENANT=… bash plumbing-check.sh` override silently
 # checked the wrong tenant — measured while checking a disposable one.
-_pod="${POD:-}"; _tenant="${TENANT:-}"
-[ -f "$_here/.env" ] && . "$_here/.env"
+_pod="${POD:-}"; _tenant="${TENANT:-}"; _container="${CONTAINER:-}"
+if [ "${1:-}" = "--tenant" ]; then
+  [ -n "${2:-}" ] || { echo "plumbing-check: --tenant requires a name" >&2; exit 2; }
+  _tenant="$2"; shift 2
+fi
+[ -n "$_tenant" ] || { echo "plumbing-check: --tenant NAME is required" >&2; exit 2; }
+. "$_here/flock-compose.sh"
+flock_tenant_context "$_tenant" || exit $?
+[ -f "$TENANT_ENV_FILE" ] || { echo "plumbing-check: no config at $TENANT_ENV_FILE" >&2; exit 2; }
+. "$TENANT_ENV_FILE"
 POD="${_pod:-${POD:-acme}}"
-TENANT="${_tenant:-${TENANT:-hq}}"
-C="${CONTAINER:-h-flock-${TENANT}-tenant-1}"
+TENANT="$_tenant"
+C="${_container:-$FLOCK_CONTAINER}"
 ROSTER="pod:$POD:tenant:$TENANT:roster"
 T=$(docker exec $C printenv API_TOKEN)
 # Agent names come from the roster, not from this file. The default tenant is
@@ -246,7 +253,7 @@ poll_equals hired-environment "hired env == booted env" "$BOOT_ENV" penv envprob
 cu -X POST -H 'Content-Type: application/json' -d '{"kind":"StopAgent","payload":{"agent":"envprobe"}}' $A/agents/host/envelopes >/dev/null
 
 echo "== 12. failure simulator =="
-if ! bash "$_here/sim-blocked.sh"; then
+if ! POD="$POD" CONTAINER="$C" bash "$_here/sim-blocked.sh" --tenant "$TENANT"; then
     echo "  FAIL  failure simulator reported failures"
     fail=$((fail+1))
 fi

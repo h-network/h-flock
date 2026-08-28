@@ -145,9 +145,9 @@ PY
 print_teardown() {
   if [ "$OWNED" = 1 ]; then
     . container/flock-compose.sh 2>/dev/null || true
-    flock_compose_args
+    flock_compose_args "$TENANT"
     printf 'TEARDOWN command='
-    printf '%q ' docker compose -p "$PROJECT" --env-file container/.env "${FLOCK_COMPOSE_ARGS[@]}" down -v
+    printf '%q ' docker compose -p "$PROJECT" --env-file "$TENANT_ENV_FILE" "${FLOCK_COMPOSE_ARGS[@]}" down -v
     echo
   elif [ -n "$PROJECT" ]; then
     echo "TEARDOWN unavailable reason=tenant_not_owned project=$PROJECT"
@@ -162,8 +162,9 @@ finalize() {
   capture_evidence
   if [ "$OWNED" = 1 ] && [ "$KEEP" = 0 ]; then
     . container/flock-compose.sh 2>/dev/null || true
-    flock_compose_args
-    docker compose -p "$PROJECT" --env-file container/.env "${FLOCK_COMPOSE_ARGS[@]}" down -v >/dev/null 2>&1 || true
+    flock_compose_args "$TENANT"
+    docker compose -p "$PROJECT" --env-file "$TENANT_ENV_FILE" "${FLOCK_COMPOSE_ARGS[@]}" down -v >/dev/null 2>&1 || true
+    rm -rf -- "$TENANT_DIR"
   fi
   print_teardown
   [ -n "$WORK" ] && rm -rf "$WORK"
@@ -281,6 +282,9 @@ PY
 [ -n "$session_port" ] || onboarding_incomplete session_port_unavailable
 API_TOKEN_CREATED="$(openssl rand -hex 16 2>/dev/null || python3 -c 'import secrets;print(secrets.token_hex(16))')"
 umask 077
+. container/flock-compose.sh 2>/dev/null || onboarding_incomplete compose_helper_missing
+flock_compose_args "$TENANT" || onboarding_incomplete invalid_tenant
+mkdir -p "$TENANT_DIR"
 {
   echo "POD=$POD"
   echo "TENANT=$TENANT"
@@ -298,8 +302,8 @@ umask 077
   [ -n "$PROVIDER_TOKEN" ] && echo "PROVIDER_${provider_upper}_TOKEN=$PROVIDER_TOKEN"
   [ -n "$PROVIDER_SMALL_MODEL" ] && echo "PROVIDER_${provider_upper}_SMALL_MODEL=$PROVIDER_SMALL_MODEL"
   echo "PROVIDER_${provider_upper}_KIND=vllm"
-} >container/.env
-chmod 600 container/.env
+} >"$TENANT_ENV_FILE"
+chmod 600 "$TENANT_ENV_FILE"
 
 . container/flock-image.sh 2>/dev/null || true
 if declare -f flock_image_tag >/dev/null; then
@@ -308,9 +312,7 @@ if declare -f flock_image_tag >/dev/null; then
 else
   BUILD_FLAG=--build
 fi
-. container/flock-compose.sh 2>/dev/null || true
-flock_compose_args
-docker compose -p "$PROJECT" --env-file container/.env "${FLOCK_COMPOSE_ARGS[@]}" up -d ${BUILD_FLAG} \
+docker compose -p "$PROJECT" --env-file "$TENANT_ENV_FILE" "${FLOCK_COMPOSE_ARGS[@]}" up -d ${BUILD_FLAG} \
   || onboarding_fail 1 tenant_start_failed
 
 health=""
