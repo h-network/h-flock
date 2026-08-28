@@ -222,9 +222,11 @@ Two consequences for anything downstream:
 be relaunched, and how many times before giving up, is a decision that needs
 something watching. Not part of bringing the host up.
 
-**Multiple tenants on one host.** One session per tenant is the shape, but
-whether one process manages several sessions or one runs per tenant is not
-settled and does not need to be yet.
+**Cross-tenant routing.** Multiple tenants on one host are already supported:
+`flock_tenant_context` gives each tenant its own Compose project and container,
+and therefore its own tmuxhost process, server and session. What remains
+deferred is tenants reaching one another, not how their tmux sessions are
+owned.
 
 ## 8. What this is not
 
@@ -239,18 +241,19 @@ supports it, not because anything here is designed around a viewer.
 
 ## Windows, models and failures — added after a night of live running
 
-⚠ **A window may point at a model provider.** `window_env` adds
-`ANTHROPIC_BASE_URL`, `ANTHROPIC_AUTH_TOKEN` and **all three tier variables**
-(`ANTHROPIC_DEFAULT_OPUS_MODEL`, `_SONNET_MODEL`, `_HAIKU_MODEL`) when the agent
-has an `provider`. The tiers matter: claude picks one internally, so setting a
-single model variable leaves the others falling back to vendor names the server
-does not serve — and the failure reads as *"issue with the selected model"*,
-which sends you chasing a model problem that is really configuration.
+⚠ **A window may point at a model provider.** `window_env` states the
+CLI-neutral intent with `AGENT_PROVIDER_URL`, `AGENT_PROVIDER_TOKEN`,
+`AGENT_PROVIDER_MODEL` and, when configured, `AGENT_PROVIDER_SMALL_MODEL`. It
+does not construct any vendor-specific variables itself. The base image's
+`startAgent` launcher translates that intent for the selected CLI, including
+Claude's URL and model-tier rules.
 
-⚠ **No `/v1` on the base url.** claude appends `/v1/messages` itself; a base
-carrying `/v1` produces `/v1/v1/messages`. `window_env` strips a trailing `/v1`
-for exactly this reason. codex wants the opposite, which is how it gets copied
-in wrong.
+⚠ **Unsupported provider/CLI combinations refuse rather than fall through.**
+The base launcher currently rejects provider configuration for codex and agy
+with exit 3. h-flock used to build `ANTHROPIC_*` directly, so a codex window
+silently ignored the intended provider and ran against the vendor. Keeping the
+translation and refusal in `startAgent` prevents that cost-and-privacy defect
+from returning when CLI-specific rules differ.
 
 ⚠ **The model id must match the served id byte for byte.** `gpt-oss:20b` is not
 `gpt-oss-20b`, and a mismatch is reported by the CLI as a model that does not
@@ -270,9 +273,11 @@ show a proposed next prompt in its input box. It is a rendering, not input — a
 bare Enter does nothing and a paste replaces it — but it looks alarming in a
 screenshot and in a terminal panel.
 
-⚠ **Inherited `ANTHROPIC_*` are unset first.** A previous subscription's
-variables win over what we set, which is the quietest way for a local provider to
-look broken.
+⚠ **The base launcher unsets inherited `ANTHROPIC_*` before translating a
+Claude provider.** A previous subscription's variables otherwise win over the
+translated settings, which is the quietest way for a local provider to look
+broken. This sanitising belongs to `startAgent`; `window_env` deliberately knows
+only the neutral `AGENT_PROVIDER_*` contract.
 
 ⚠ **There is one creation owner.** `StartAgent` publishes profile, provider and
 launch desired state; `tmuxhost` resolves it and builds the window. The former
