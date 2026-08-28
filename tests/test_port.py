@@ -8,7 +8,7 @@ import sys
 import tempfile
 import pytest
 from unittest.mock import patch, MagicMock
-from flock.port.openers import add_ticket_opener, message_opener, messages_opener, command_opener, get_tmux_windows
+from flock.port.openers import add_ticket_opener, attachment_opener, message_opener, messages_opener, command_opener, get_tmux_windows
 from flock.port.send import main as cli_main
 from flock.port.deliver import run_port
 from flock.bus import DeadLetter, build as build_envelope, encode, parse, prefix, receive
@@ -764,3 +764,205 @@ def test_port_burst_repro_twenty_envelopes_batched_cleanly(mock_run_tmux, mock_l
     opened_events = [r for r in records if r["event"] == "opened"]
     assert len(received_events) == 20
     assert len(opened_events) == 20
+
+
+@patch("flock.port.openers.list_windows")
+@patch("flock.tmux.ops.run_tmux")
+def test_attachment_opener_success(mock_run_tmux, mock_list_windows, tmp_path):
+    mock_list_windows.return_value = {"architect", "bob"}
+    mock_run_tmux.return_value = (0, "", "")
+
+    r = FakeRespRedis()
+    r.set("pod:acme:tenant:hq:agent:bob:launch", "claude")
+
+    import base64
+    raw_content = b"fake image bytes \x00\x01\x02"
+    b64_content = base64.b64encode(raw_content).decode("ascii")
+
+    envelope = {
+        "kind": "Attachment",
+        "stream_id": "0123456789abcdef0123456789abcdef",
+        "correlation_id": "corr-123",
+        "l2": {"source": "architect", "destination": "bob"},
+        "payload": {
+            "filename": "diagram.png",
+            "mime_type": "image/png",
+            "content_base64": b64_content,
+            "caption": "system architecture diagram",
+        },
+    }
+
+    attachment_opener(
+        r,
+        pod="acme",
+        tenant="hq",
+        agent="bob",
+        envelope=envelope,
+        session_name="hq",
+        workdir_root=str(tmp_path),
+    )
+
+    # Verify file content written to disk
+    expected_file = tmp_path / "bob" / "attachments" / "0123456789abcdef0123456789abcdef" / "diagram.png"
+    assert expected_file.exists()
+    assert expected_file.read_bytes() == raw_content
+
+    # Verify pending markers written
+    verify_key = "pod:acme:tenant:hq:agent:bob:pending.verify"
+    markers_key = "pod:acme:tenant:hq:agent:bob:delivery.markers"
+    assert len(r.streams.get(verify_key, [])) == 1
+    assert r.streams[verify_key][0][1]["stream_id"] == "0123456789abcdef0123456789abcdef"
+    assert r.streams[verify_key][0][1]["correlation_id"] == "corr-123"
+    assert len(r.streams.get(markers_key, [])) == 1
+
+    # Verify paste notice formatted properly
+    load_buffer_calls = [call for call in mock_run_tmux.call_args_list if "load-buffer" in call[0]]
+    assert len(load_buffer_calls) == 1
+    input_data = load_buffer_calls[0][1].get("input_data", "")
+    assert f"[attachment from architect] saved to {expected_file} (image/png, {len(raw_content)} bytes)\n" in input_data
+    assert "[attachment caption] system architecture diagram\n" in input_data
+
+
+@patch("flock.port.openers.list_windows")
+@patch("flock.tmux.ops.run_tmux")
+def test_attachment_opener_no_caption_and_idempotent_replay(mock_run_tmux, mock_list_windows, tmp_path):
+    mock_list_windows.return_value = {"architect", "bob"}
+    mock_run_tmux.return_value = (0, "", "")
+
+    r = FakeRespRedis()
+    r.set("pod:acme:tenant:hq:agent:bob:launch", "codex")
+
+    import base64
+    raw_content = b"plain text data"
+    b64_content = base64.b64encode(raw_content).decode("ascii")
+
+    envelope = {
+        "kind": "Attachment",
+        "stream_id": "stream-abc",
+        "l2": {"source": "architect", "destination": "bob"},
+        "payload": {
+            "filename": "notes.txt",
+            "mime_type": "text/plain",
+            "content_base64": b64_content,
+        },
+    }
+
+    # First delivery
+    attachment_opener(
+        r,
+        pod="acme",
+        tenant="hq",
+        agent="bob",
+        envelope=envelope,
+        session_name="hq",
+        workdir_root=str(tmp_path),
+    )
+
+    expected_file = tmp_path / "bob" / "attachments" / "stream-abc" / "notes.txt"
+    assert expected_file.exists()
+    assert expected_file.read_bytes() == raw_content
+
+    load_buffer_calls = [call for call in mock_run_tmux.call_args_list if "load-buffer" in call[0]]
+    input_data = load_buffer_calls[0][1].get("input_data", "")
+    assert f"[attachment from architect] saved to {expected_file} (text/plain, {len(raw_content)} bytes)\n" in input_data
+    assert "[attachment caption]" not in input_data
+
+    # Idempotent replay: deliver second time with modified payload content
+    new_content = b"updated text data"
+    envelope["payload"]["content_base64"] = base64.b64encode(new_content).decode("ascii")
+    attachment_opener(
+        r,
+        pod="acme",
+        tenant="hq",
+        agent="bob",
+        envelope=envelope,
+        session_name="hq",
+        workdir_root=str(tmp_path),
+    )
+    assert expected_file.read_bytes() == new_content
+
+
+@patch("flock.port.openers.list_windows")
+def test_attachment_opener_validation_errors(mock_list_windows, tmp_path):
+    mock_list_windows.return_value = {"architect", "bob"}
+    r = FakeRespRedis()
+
+    def make_env(payload, stream_id="str-1"):
+        return {
+            "kind": "Attachment",
+            "stream_id": stream_id,
+            "l2": {"source": "architect", "destination": "bob"},
+            "payload": payload,
+        }
+
+    import base64
+    valid_b64 = base64.b64encode(b"ok").decode("ascii")
+
+    # Extra key
+    with pytest.raises(DeadLetter):
+        attachment_opener(r, "acme", "hq", "bob", make_env({
+            "filename": "f.txt", "mime_type": "text/plain", "content_base64": valid_b64, "extra": "bad"
+        }), "hq", workdir_root=str(tmp_path))
+
+    # Missing required key
+    with pytest.raises(DeadLetter):
+        attachment_opener(r, "acme", "hq", "bob", make_env({
+            "filename": "f.txt", "mime_type": "text/plain"
+        }), "hq", workdir_root=str(tmp_path))
+
+    # Invalid filenames
+    for bad_name in [".", "..", "foo/bar", "foo\\bar", "foo\x00bar", "foo\x1fbar", "foo\x7fbar", "", "a" * 256]:
+        with pytest.raises(DeadLetter):
+            attachment_opener(r, "acme", "hq", "bob", make_env({
+                "filename": bad_name, "mime_type": "text/plain", "content_base64": valid_b64
+            }), "hq", workdir_root=str(tmp_path))
+
+    # Invalid mime types
+    for bad_mime in ["", "text", "text/plain; charset=utf-8", "image/*", "text/plain ", " text/plain", "a" * 256]:
+        with pytest.raises(DeadLetter):
+            attachment_opener(r, "acme", "hq", "bob", make_env({
+                "filename": "f.txt", "mime_type": bad_mime, "content_base64": valid_b64
+            }), "hq", workdir_root=str(tmp_path))
+
+    # Invalid base64 (whitespace, url-safe, bad padding, invalid chars)
+    for bad_b64 in ["aGVsbG8=\n", "aGVsbG8-", "aGVsbG8", "aGVsbG8==", "bad!char"]:
+        with pytest.raises(DeadLetter):
+            attachment_opener(r, "acme", "hq", "bob", make_env({
+                "filename": "f.txt", "mime_type": "text/plain", "content_base64": bad_b64
+            }), "hq", workdir_root=str(tmp_path))
+
+    # Window missing
+    mock_list_windows.return_value = {"architect"}
+    with pytest.raises(DeadLetter, match="window_missing"):
+        attachment_opener(r, "acme", "hq", "bob", make_env({
+            "filename": "f.txt", "mime_type": "text/plain", "content_base64": valid_b64
+        }), "hq", workdir_root=str(tmp_path))
+
+
+@patch("flock.port.deliver.attachment_opener")
+@patch("flock.port.deliver.messages_opener")
+def test_attachment_burst_isolation(mock_messages, mock_attachment):
+    r = FakeRespRedis()
+    r.hset("pod:acme:tenant:hq:roster", "bob", "tmux")
+    ingress_key = "pod:acme:tenant:hq:agent:bob:ingress"
+
+    env_msg1 = build_envelope(kind="Message", source="alice", destination="bob", payload={"text": "msg1"})
+    env_att = build_envelope(kind="Attachment", source="alice", destination="bob", payload={"filename": "a.txt", "mime_type": "text/plain", "content_base64": "YQ=="})
+    env_msg2 = build_envelope(kind="Message", source="alice", destination="bob", payload={"text": "msg2"})
+
+    r.rpush(ingress_key, encode(env_msg1), encode(env_att), encode(env_msg2))
+
+    from flock.port.deliver import deliver_one
+    deliver_one(r, "acme", "hq", "bob", "hq")
+
+    # Ingress drained
+    assert len(r.lists.get(ingress_key, [])) == 0
+
+    # messages_opener was called twice (msg1 flushed before attachment, msg2 flushed at end)
+    assert mock_messages.call_count == 2
+    assert mock_messages.call_args_list[0].kwargs["envelopes"][0]["payload"]["text"] == "msg1"
+    assert mock_messages.call_args_list[1].kwargs["envelopes"][0]["payload"]["text"] == "msg2"
+
+    # attachment_opener called once individually
+    assert mock_attachment.call_count == 1
+

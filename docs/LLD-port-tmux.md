@@ -88,9 +88,9 @@ a single Lua script).
 - **Message batching**: Consecutive `Message`-kind envelopes are concatenated
   into ONE combined bracketed paste (`[message from X] text\n` per block, in
   arrival order), requiring only a single lock-acquire/paste/lock-release cycle.
-- **Commands and Tickets**: Executable `Command` envelopes and `AddTicket`
-  mutations are never batched into message blocks; they are executed individually
-  in strict arrival order.
+- **Commands, Tickets, and Attachments**: Executable `Command` envelopes,
+  `AddTicket` mutations, and `Attachment` deliveries are never batched into
+  message blocks; they are executed individually in strict arrival order.
 - **Per-envelope custody**: Batching is purely a terminal-layer optimization and
   is invisible to the custody chain. Every drained envelope emits its own
   `received` record, writes its own `pending.verify` and `delivery.markers`
@@ -110,7 +110,7 @@ here.
 
 `flock.port` checks the destination's port_type in the roster:
 
-- **`port_type: "tmux"` (`deliver_one`)**: dispatches on `kind` to select an opener (`Message`, `Command`, `AddTicket`) and pastes into the agent's window (or mutates the board for `AddTicket`).
+- **`port_type: "tmux"` (`deliver_one`)**: dispatches on `kind` to select an opener (`Message`, `Command`, `AddTicket`, `Attachment`) and pastes into the agent's window (or mutates the board for `AddTicket`).
 - **`port_type: "api"` (`deliver_api`)**: pops the envelope from `ingress`, logs `received` and `opened`, and appends the envelope verbatim as JSON to the client's mailbox Redis Stream (`<prefix>:agent:<client>:inbox`) via `XADD MAXLEN ~ 1000 * envelope '<verbatim JSON>'`. Every kind is stored; nothing dead-letters for being uninteresting.
 
 For a tmux message, the rendered line names the sender:
@@ -165,6 +165,28 @@ success logs `board_write_confirmed`. An exception logs `board_write_unknown`
 because the write may have committed before its reply was lost; a returned
 non-positive length is provably invalid and logs `board_write_failed`. Both
 raise `DeadLetter`.
+
+### `Attachment` — file bytes into workspace, then inert notice
+
+`{"filename": "…", "mime_type": "…", "content_base64": "…", "caption": "…"}`.
+The `Attachment` opener independently revalidates schema, types, strict RFC 4648
+base64 decoding, and payload bounds (`ATTACHMENT_MAX_BYTES = 10_485_760` bytes).
+It creates `/workdir/<recipient>/attachments/<stream_id>/`, writes decoded bytes
+to a temporary file, and atomically renames (`os.replace`) to `filename` for
+idempotent replay and collision prevention.
+
+After the durable file write succeeds and before pasting, it writes the
+`pending.verify` and `delivery.markers` entries (deferred custody). It then
+pastes an inert notice naming the saved path:
+
+```
+[attachment from <source>] saved to <absolute-path> (<mime_type>, <decoded-byte-count> bytes)
+[attachment caption] <caption>
+```
+
+(with the caption line omitted when absent). Any validation, decode, or filesystem
+failure raises `DeadLetter`, parks the envelope on the dead queue, and pastes nothing.
+Attachments are never batched into message bursts.
 
 ### Verification and usage-correlation markers
 
