@@ -13,7 +13,7 @@ Each claim names an observation that would disprove it.
 | API and Redis credentials do not reach the tmux server or agent pane environments. | `API_TOKEN`, `REDIS_PASSWORD`, `REDISCLI_AUTH`, or an authenticated `REDIS_URL` appears in the tmux global environment or `/proc/<pane_pid>/environ`. |
 | The container—not an agent home—is the isolation boundary. Agents are colleagues and can read another agent's `/workdir` files. | A normal agent pane running as the tenant user receives a permissions error reading a peer's ordinary file. Such access would not be a security improvement unless the documented boundary changes with it. |
 | Window names, not indices or substring matches, identify agents. | An operation addressed to one name affects a different window, or `sim-a` is accepted as evidence for `sim-a-long`. |
-| A verifiable tmux paste records both the watchdog marker and the usage-correlation marker before delivery. | A `claude` or `codex` `Message`/`Command` paste has no same-stream-id entry in either `pending.verify` or `delivery.markers`, or either marker is timestamped after the paste. |
+| A verifiable tmux paste records both the watchdog marker and the usage-correlation marker before delivery. | A `claude`, `codex`, or `agy` `Message`/`Command` paste has no same-stream-id entry in either `pending.verify` or `delivery.markers`, or either marker is timestamped after the paste. |
 
 The scenarios under `container/scenarios/tmux-*.sh` print raw commands and
 observations. They intentionally do not decide these claims for the reader.

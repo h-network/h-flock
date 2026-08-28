@@ -183,9 +183,9 @@ Both entries have this shape:
 { "stream_id": "<stream_id>", "ts": "<ts>" }
 ```
 - **Ordering**: The marker is written *before* the paste sequence into the window. Writing it before paste prevents a sub-second race where a fast agent's reply arrives before the marker lands in Redis.
-- **Allowlist `{claude, codex}`**: Markers are recorded only for CLIs on an explicit allowlist (`claude`, `codex`).
+- **Allowlist `{claude, codex, agy}`**: Markers are recorded only for CLIs on an explicit allowlist (`claude`, `codex`, `agy`). (⚠ **`agy` was added to `VERIFIABLE_CLIS` 2026-08-27** once `~/.gemini/antigravity-cli/history.jsonl` was confirmed live and tailed by `ActivityTailer`.)
 - **Confirmed synchronously for `AddTicket`**: `AddTicket` pastes nothing, so it confirms its board write directly and is not verified via activity inputs. It never creates `blocked`; an untaken ticket is normal board state.
-- **Skipped for `agy` and `bash`**: `agy` has no session log file / activity feed and `bash` has no CLI turn records, so markers are skipped to avoid false unverified alerts.
+- **Skipped for `bash`**: `bash` has no CLI turn records or session activity feed, so markers are skipped to avoid false unverified alerts.
 - **Fail-safe**: Marker creation is wrapped in `try...except` so stream write failures never impact envelope delivery.
 - **`blocked` state**: The watchdog checks `pending.verify` on its pass, after
   the marker is at least `VERIFY_AFTER_SECONDS` old (default 120 seconds). If
