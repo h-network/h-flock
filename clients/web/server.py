@@ -76,6 +76,39 @@ def verify_telegram_init_data(init_data: str, bot_token: str, *, max_age_s: int 
         return None
 
 
+# ⚠ An allowlist, not a denylist — exactly the `/api/...` paths
+# mini-app.js's panels call (AgentsPanel, BoardsPanel, AlertsPanel), and
+# nothing implied more broadly by "read-only". `/api/recordings`,
+# `/api/audit` and `/conversation` are reads too, and none of them are on
+# this list even though they were reachable before this was added — a
+# review caught that the write/terminal boundary was reasoned carefully but
+# GET was scoped only by what the current page happens to call, not by
+# anything the server enforced. Recordings are byte-for-byte terminal
+# capture, the audit log and conversation transcripts are full history —
+# meaningfully more sensitive than the roster/alerts/board glance the Mini
+# App actually shows, and an oversight relative to that framing, not a
+# considered call. An allowlist rather than excluding those three by name
+# also means a new api endpoint added later does not silently become
+# reachable from a Mini App session just by existing.
+_TELEGRAM_READ_ALLOWLIST_EXACT = {"/agents", "/board", "/alerts", "/alerts/stream"}
+
+
+def _telegram_read_allowed(subpath: str) -> bool:
+    """`subpath` is `self.path` with the leading `/api` and any query string
+    removed. Allows `/agents/<name>` (bare presence) but not a deeper
+    sub-resource like `/agents/<name>/activity`, `/agents/<name>/messages`
+    or `/agents/<name>/board` — those are conversation- and activity-level
+    detail, not the roster summary AgentsPanel reads.
+    """
+    path = subpath.split("?", 1)[0]
+    if path in _TELEGRAM_READ_ALLOWLIST_EXACT:
+        return True
+    if path.startswith("/agents/"):
+        rest = path[len("/agents/"):]
+        return bool(rest) and "/" not in rest
+    return False
+
+
 def _load_config_file(config_path: str) -> dict[str, str | int | bool]:
     path = Path(config_path)
     if not path.exists():
@@ -639,6 +672,11 @@ class OfficeHandler(SimpleHTTPRequestHandler):
             # WebSocket frames server-side; skipped for v1 in favour of a
             # boundary simple enough to be obviously correct. See the PR note.
             self._json(403, {"detail": "terminal access is not available from a Telegram Mini App session"})
+        elif self.path.startswith("/api/") and self._session_is_telegram() and not _telegram_read_allowed(self.path.removeprefix("/api")):
+            # See _telegram_read_allowed — recordings, the audit log and
+            # conversation transcripts are all reachable through this same
+            # generic prefix and are not on the allowlist.
+            self._json(403, {"detail": "this session cannot read that resource"})
         elif self.path == "/" or self.path.startswith("/?"):
             self.path = "/index.html"
             super().do_GET()

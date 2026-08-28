@@ -15,7 +15,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 import pytest
 
-from clients.web.server import OfficeHandler, verify_telegram_init_data
+from clients.web.server import OfficeHandler, _telegram_read_allowed, verify_telegram_init_data
 
 
 def _signed_init_data(bot_token: str, user_id: int, *, auth_date: int | None = None, tamper: bool = False) -> str:
@@ -478,6 +478,32 @@ def test_verify_telegram_init_data_rejects_malformed_input_without_raising():
     assert verify_telegram_init_data("auth_date=notanumber&hash=abcd", "test-bot-token") is None
 
 
+# ── _telegram_read_allowed: the GET allowlist a Mini App session is held to ──
+
+def test_telegram_read_allowed_covers_exactly_what_mini_app_js_calls():
+    assert _telegram_read_allowed("/agents") is True
+    assert _telegram_read_allowed("/board") is True
+    assert _telegram_read_allowed("/alerts") is True
+    assert _telegram_read_allowed("/alerts/stream") is True
+    assert _telegram_read_allowed("/alerts?after=1-0") is True  # query string ignored
+    assert _telegram_read_allowed("/agents/architect") is True  # bare presence
+
+
+def test_telegram_read_allowed_refuses_deeper_agent_sub_resources():
+    assert _telegram_read_allowed("/agents/architect/activity") is False
+    assert _telegram_read_allowed("/agents/architect/messages") is False
+    assert _telegram_read_allowed("/agents/architect/board") is False
+    assert _telegram_read_allowed("/agents/architect/conversation") is False
+    assert _telegram_read_allowed("/agents/") is False
+
+
+def test_telegram_read_allowed_refuses_recordings_audit_and_conversation():
+    assert _telegram_read_allowed("/recordings") is False
+    assert _telegram_read_allowed("/recordings/some-id") is False
+    assert _telegram_read_allowed("/audit") is False
+    assert _telegram_read_allowed("/agents/architect/conversation") is False
+
+
 # ── /api/telegram-auth: the server-side login path ──────────────────────────
 
 def _telegram_web_server(**overrides):
@@ -557,6 +583,43 @@ def test_telegram_auth_creates_a_read_only_session_that_can_read_but_not_write()
         status_line = resp_file.readline().decode()
         assert "403" in status_line
         sock.close()
+    finally:
+        web_server.shutdown()
+        web_server.server_close()
+
+
+def test_telegram_session_cannot_read_recordings_audit_or_conversation():
+    """The write boundary was reasoned carefully (session_origin, refused
+    before any handler runs); GET was originally scoped only by what
+    mini-app.js happens to call, not by anything the server enforced — a
+    review caught it. Recordings, the audit log and full conversation
+    transcripts are meaningfully more sensitive than the roster/alerts/board
+    glance the Mini App actually shows, so they get the same explicit
+    refusal writes already had, not just an absence from the page."""
+    web_server = _telegram_web_server()
+    web_port = web_server.server_address[1]
+    web_thread = threading.Thread(target=web_server.serve_forever, daemon=True)
+    web_thread.start()
+    try:
+        req_auth = urllib.request.Request(
+            f"http://127.0.0.1:{web_port}/api/telegram-auth",
+            data=json.dumps({"initData": _signed_init_data("test-bot-token", 555)}).encode(),
+            headers={"Content-Type": "application/json"},
+            method="POST",
+        )
+        with urllib.request.urlopen(req_auth) as resp:
+            session_cookie = resp.headers.get("Set-Cookie").split(";")[0]
+
+        for blocked_path in ("/api/recordings", "/api/audit", "/api/agents/architect/conversation", "/api/agents/architect/activity"):
+            req = urllib.request.Request(f"http://127.0.0.1:{web_port}{blocked_path}", headers={"Cookie": session_cookie})
+            with pytest.raises(urllib.error.HTTPError) as exc_info:
+                urllib.request.urlopen(req)
+            assert exc_info.value.code == 403, f"{blocked_path} should be refused"
+
+        for allowed_path in ("/api/agents", "/api/board", "/api/alerts", "/api/agents/architect"):
+            req = urllib.request.Request(f"http://127.0.0.1:{web_port}{allowed_path}", headers={"Cookie": session_cookie})
+            with urllib.request.urlopen(req) as resp:
+                assert resp.status == 200, f"{allowed_path} should still be readable"
     finally:
         web_server.shutdown()
         web_server.server_close()

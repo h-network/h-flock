@@ -193,6 +193,24 @@ the console's existing safety assumptions — built around a human typing an
 operator secret — still hold for a session an initData POST created instead;
 see the branch history for that reasoning in full.
 
+**GET is scoped the same explicit way, not left to "whatever the page calls."**
+`_telegram_read_allowed` (`server.py`) is an allowlist — exactly
+`/agents`, `/agents/<name>` (bare presence, not a sub-resource), `/board`,
+`/alerts` and `/alerts/stream`, the paths `mini-app.js`'s panels actually
+call — checked on every `GET /api/*` for a Telegram-origin session before
+any handler runs. `/api/recordings` (byte-for-byte terminal capture),
+`/api/audit` (the operator action log) and `/agents/<name>/conversation`
+(full message transcripts) are reads too, and meaningfully more sensitive
+than the roster/alerts/board glance this page shows — reachable through the
+same generic proxy path any authenticated session uses, so this needed the
+same explicit treatment the write boundary already had, and initially
+didn't get it: a review caught that GET was scoped only by what the page
+happened to call, not by anything the server enforced, which was an
+oversight relative to how carefully the write side was reasoned, not a
+considered call. An allowlist rather than naming those three paths to
+exclude also means a new api endpoint added later does not silently become
+reachable from a Mini App session just by existing.
+
 **Auth is Telegram's own scheme, reused rather than duplicated.** The Mini
 App SDK hands the page `Telegram.WebApp.initData`, which Telegram itself
 signs with `HMAC-SHA256("WebAppData", bot_token)` — the same
