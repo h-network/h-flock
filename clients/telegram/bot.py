@@ -6,6 +6,7 @@ the 'architect' agent via Telegram.
 
 import argparse
 import asyncio
+import html
 import json
 import logging
 import os
@@ -251,6 +252,37 @@ class FlockClient:
             time.sleep(backoff)
             backoff = min(backoff * 2, 30.0)
 
+    def stream_activity(self, agent: str, after: str | None = None):
+        """Yield activity dicts from GET /agents/{agent}/activity/stream as they arrive."""
+        cursor = after
+        backoff = 1.0
+        while True:
+            path = f"/agents/{agent}/activity/stream"
+            if cursor:
+                path += f"?after={urllib.parse.quote(cursor)}"
+            req = urllib.request.Request(f"{self.base_url}{path}", headers=self._headers(), method="GET")
+            try:
+                with urllib.request.urlopen(req, timeout=90, context=self.ssl_context) as resp:
+                    backoff = 1.0
+                    for event_type, event_id, data in _parse_sse_events(resp):
+                        if event_id:
+                            cursor = event_id
+                        if event_type == "error" or data is None:
+                            continue
+                        try:
+                            parsed = json.loads(data)
+                        except json.JSONDecodeError:
+                            continue
+                        if not isinstance(parsed, dict):
+                            continue
+                        if parsed.get("cursor"):
+                            cursor = parsed["cursor"]
+                        yield parsed
+            except Exception as exc:
+                logger.warning(f"activity stream for {agent} disconnected, retrying in {backoff:.0f}s: {exc}")
+            time.sleep(backoff)
+            backoff = min(backoff * 2, 30.0)
+
 
 def _parse_sse_events(line_iter):
     """Parse raw SSE lines into `(event_type, id, data)` tuples, one per
@@ -445,6 +477,7 @@ class ReplyPusher:
         tts_voice: str | None = None,
         voice_enabled: bool = False,
         voice_enabled_fn=None,
+        activity_finalizer_fn=None,
     ):
         self.flock = flock
         self.telegram = telegram
@@ -453,6 +486,7 @@ class ReplyPusher:
         self.tts_voice = tts_voice or os.getenv("TTS_VOICE", DEFAULT_TTS_VOICE)
         self.voice_enabled = voice_enabled
         self.voice_enabled_fn = voice_enabled_fn
+        self.activity_finalizer_fn = activity_finalizer_fn
 
     def _seed_cursor(self) -> str | None:
         """On a fresh cursor store, start at the current tail — a message
@@ -479,6 +513,10 @@ class ReplyPusher:
             if cursor:
                 self.cursor_store.save(cursor)
             if self.telegram:
+                source = message.get("l2", {}).get("source")
+                if self.activity_finalizer_fn and source:
+                    self.activity_finalizer_fn(self.chat_id, source)
+
                 reply_text = render_reply(message, self.flock.app_name)
                 self.telegram.send_message(self.chat_id, reply_text)
                 is_voice = (
@@ -600,20 +638,42 @@ class TelegramClient:
         files = {"voice": (filename, voice_data, "audio/mpeg")}
         return self.request_multipart("sendVoice", fields=fields, files=files)
 
-    def send_message(self, chat_id: int | str, text: str, reply_to_message_id: int | None = None,
-                      reply_markup: dict | None = None) -> dict:
+    def send_message(
+        self,
+        chat_id: int | str,
+        text: str,
+        reply_to_message_id: int | None = None,
+        reply_markup: dict | None = None,
+        parse_mode: str | None = None,
+        disable_web_page_preview: bool | None = None,
+    ) -> dict:
         data = {"chat_id": chat_id, "text": text}
         if reply_to_message_id:
             data["reply_to_message_id"] = reply_to_message_id
         if reply_markup is not None:
             data["reply_markup"] = reply_markup
+        if parse_mode is not None:
+            data["parse_mode"] = parse_mode
+        if disable_web_page_preview is not None:
+            data["disable_web_page_preview"] = disable_web_page_preview
         return self.request("sendMessage", data)
 
-    def edit_message_text(self, chat_id: int | str, message_id: int, text: str,
-                           reply_markup: dict | None = None) -> dict:
+    def edit_message_text(
+        self,
+        chat_id: int | str,
+        message_id: int,
+        text: str,
+        reply_markup: dict | None = None,
+        parse_mode: str | None = None,
+        disable_web_page_preview: bool | None = None,
+    ) -> dict:
         data = {"chat_id": chat_id, "message_id": message_id, "text": text}
         if reply_markup is not None:
             data["reply_markup"] = reply_markup
+        if parse_mode is not None:
+            data["parse_mode"] = parse_mode
+        if disable_web_page_preview is not None:
+            data["disable_web_page_preview"] = disable_web_page_preview
         return self.request("editMessageText", data)
 
     def send_chat_action(self, chat_id: int | str, action: str = "typing") -> dict:
@@ -689,6 +749,106 @@ class ChatDict(dict):
         return super().setdefault(self._k(key), default)
 
 
+class ActivityRender:
+    """Coalesces real-time agent execution events (input, tool, output)
+    into a single live-updating Telegram message using editMessageText.
+    """
+
+    MAX_LEN = 3800
+
+    def __init__(self, chat_id: int | str, agent: str) -> None:
+        self.chat_id = str(chat_id)
+        self.agent = agent
+        self.events: list[dict] = []
+        self.message_id: int | None = None
+        self.completed: bool = False
+        self.last_flush_ts: float = 0.0
+        self.lock = threading.Lock()
+
+    def add_event(self, event: dict) -> None:
+        with self.lock:
+            self.events.append(event)
+            if event.get("kind") == "output":
+                self.completed = True
+
+    def finalize(self) -> None:
+        with self.lock:
+            self.completed = True
+
+    def render(self) -> str:
+        with self.lock:
+            header = f"🛠 <b>Activity</b> (<code>{html.escape(self.agent)}</code>)"
+            if self.completed:
+                header += f" · completed ({len(self.events)} steps)"
+            lines = [header]
+            total = len(self.events)
+            display_events = self.events
+            omitted = 0
+            if total > 20:
+                omitted = total - 20
+                display_events = self.events[-20:]
+
+            if omitted > 0:
+                lines.append(f"<i>… {omitted} earlier steps omitted …</i>")
+
+            start_idx = omitted + 1
+            for i, ev in enumerate(display_events, start=start_idx):
+                kind = ev.get("kind", "")
+                is_latest = (i == total and not self.completed)
+                glyph = "⏳" if is_latest else "✓"
+                if kind == "input":
+                    desc = "💬 <i>input received</i>"
+                elif kind == "output":
+                    desc = "✍️ <i>output produced</i>"
+                    glyph = "✓"
+                elif kind == "tool":
+                    tool_name = ev.get("tool", "tool")
+                    desc = f"<code>{html.escape(tool_name)}</code>"
+                else:
+                    desc = html.escape(str(kind or "event"))
+                lines.append(f"{i}. {glyph} {desc}")
+
+            text = "\n".join(lines)
+            if len(text) > self.MAX_LEN:
+                text = text[: self.MAX_LEN - 20] + "\n…[truncated]"
+            return text
+
+    def flush(self, telegram_client, force: bool = False) -> None:
+        """Send initial message or edit existing message. Debounced/throttled."""
+        if not telegram_client:
+            return
+        with self.lock:
+            if not self.events and self.message_id is None:
+                return
+            now = time.time()
+            if not force and self.message_id is not None and not self.completed and (now - self.last_flush_ts < 0.8):
+                return
+            self.last_flush_ts = now
+
+        text = self.render()
+        try:
+            if self.message_id is None:
+                resp = telegram_client.send_message(
+                    self.chat_id,
+                    text,
+                    parse_mode="HTML",
+                    disable_web_page_preview=True,
+                )
+                msg_id = resp.get("result", {}).get("message_id") if isinstance(resp, dict) else None
+                with self.lock:
+                    self.message_id = msg_id
+            else:
+                telegram_client.edit_message_text(
+                    self.chat_id,
+                    self.message_id,
+                    text,
+                    parse_mode="HTML",
+                    disable_web_page_preview=True,
+                )
+        except Exception as exc:
+            logger.debug(f"ActivityRender flush failed (chat={self.chat_id}, msg={self.message_id}): {exc}")
+
+
 class TelegramBot:
     """Coalesces activity tool calls into a single Telegram progress message."""
 
@@ -701,6 +861,7 @@ class TelegramBot:
         allowed_chat_id: int | str | None = None,
         default_tts_voice: str | None = None,
         voice_feature_enabled: bool | None = None,
+        no_activity_push: bool = False,
     ):
         self.flock = flock_client
         self.telegram = telegram_client
@@ -731,6 +892,12 @@ class TelegramBot:
         # Per-chat toggle for spoken TTS voice replies
         self.chat_voice_enabled: dict = ChatDict()
         self.default_tts_voice = default_tts_voice or os.getenv("TTS_VOICE", DEFAULT_TTS_VOICE)
+        self.no_activity_push = (
+            (os.getenv("NO_ACTIVITY_PUSH") == "1")
+            if no_activity_push is False and os.getenv("NO_ACTIVITY_PUSH") is not None
+            else bool(no_activity_push)
+        )
+        self.activity_renders: dict = ChatDict()
 
     def is_voice_enabled(self, chat_id: int | str) -> bool:
         return self.voice_feature_enabled and self.chat_voice_enabled.get(str(chat_id), False)
@@ -1277,6 +1444,58 @@ class TelegramBot:
             return self.handle_status_command(chat_id)
         return self.handle_user_prompt(chat_id, text)
 
+    def _get_activity_tail(self, agent: str) -> str | None:
+        """Fetch the current latest activity cursor for an agent before prompting."""
+        try:
+            code, data = self.flock.get_activity(agent, limit=1)
+            if code == 200 and data.get("next_cursor"):
+                return data["next_cursor"]
+        except Exception as exc:
+            logger.debug(f"Failed to fetch activity tail for {agent}: {exc}")
+        return None
+
+    def _watch_activity(
+        self,
+        chat_id: int | str,
+        agent: str,
+        after_cursor: str | None,
+        render: ActivityRender,
+        timeout_s: float = 300.0,
+        stream_fn=None,
+    ) -> None:
+        """Background thread consuming activity events for a prompted turn."""
+        stream_gen = stream_fn or (lambda: self.flock.stream_activity(agent, after=after_cursor))
+        start_time = time.time()
+        try:
+            for event in stream_gen():
+                if render.completed or (time.time() - start_time > timeout_s):
+                    break
+                if not isinstance(event, dict):
+                    continue
+                if event.get("agent") and event.get("agent") != agent:
+                    continue
+                render.add_event(event)
+                render.flush(self.telegram)
+                if event.get("kind") == "output":
+                    time.sleep(0.5)
+                    render.finalize()
+                    render.flush(self.telegram, force=True)
+                    break
+        except Exception as exc:
+            logger.debug(f"Activity watcher exception for {agent}: {exc}")
+        finally:
+            if render.events and render.message_id:
+                render.finalize()
+                render.flush(self.telegram, force=True)
+
+    def finalize_activity(self, chat_id: int | str, agent: str) -> None:
+        """Finalize and flush any live activity message for (chat_id, agent)."""
+        key = f"{str(chat_id)}:{agent}"
+        render = self.activity_renders.pop(key, None)
+        if render:
+            render.finalize()
+            render.flush(self.telegram, force=True)
+
     def handle_user_prompt(self, chat_id: int | str, text: str) -> str:
         """Post `text` to this chat's target agent (§ 🎯 Message agent,
         default target_agent/--agent) and return immediately.
@@ -1294,26 +1513,47 @@ class TelegramBot:
         the eventual reply now, on its own schedule, matching the actual
         fire-and-forget model.
         """
-        agent = self._target_for(chat_id)
+        cid = str(chat_id)
+        agent = self._target_for(cid)
         code, presence_data = self.flock.get_presence(agent)
         state = presence_data.get("presence", {}).get("state") if code == 200 else "unknown"
 
         if state == "blocked":
             reply_text = f"{agent} is not accepting messages right now"
             if self.telegram:
-                self.telegram.send_message(chat_id, reply_text)
+                self.telegram.send_message(cid, reply_text)
             return reply_text
+
+        # Start live activity watcher if enabled
+        if not self.no_activity_push and self.telegram:
+            tail_cursor = self._get_activity_tail(agent)
+            render = ActivityRender(cid, agent)
+            key = f"{cid}:{agent}"
+            old_render = self.activity_renders.get(key)
+            if old_render:
+                old_render.finalize()
+                old_render.flush(self.telegram, force=True)
+            self.activity_renders[key] = render
+
+            watcher = threading.Thread(
+                target=self._watch_activity,
+                args=(cid, agent, tail_cursor, render),
+                daemon=True,
+                name=f"activity-watcher-{agent}",
+            )
+            watcher.start()
 
         code, resp = self.flock.send_message(agent, text)
         if code != 202:
+            self.finalize_activity(cid, agent)
             reply_text = f"Failed to send message to {agent}: {resp.get('detail', 'error')}"
             if self.telegram:
-                self.telegram.send_message(chat_id, reply_text)
+                self.telegram.send_message(cid, reply_text)
             return reply_text
 
         reply_text = f"✅ Sent to {agent}."
         if self.telegram:
-            self.telegram.send_message(chat_id, reply_text)
+            self.telegram.send_message(cid, reply_text)
         return reply_text
 
     def _dispatch_update(self, update: dict) -> None:
@@ -1393,12 +1633,20 @@ class DryRunTelegramClient:
     def __init__(self):
         self.next_msg_id = 1
 
-    def send_message(self, chat_id: int | str, text: str, reply_to_message_id: int | None = None,
-                      reply_markup: dict | None = None) -> dict:
+    def send_message(
+        self,
+        chat_id: int | str,
+        text: str,
+        reply_to_message_id: int | None = None,
+        reply_markup: dict | None = None,
+        parse_mode: str | None = None,
+        disable_web_page_preview: bool | None = None,
+    ) -> dict:
         msg_id = self.next_msg_id
         self.next_msg_id += 1
         extra = f"\n[keyboard: {reply_markup}]" if reply_markup else ""
-        print(f"[DRY-RUN Telegram] sendMessage (chat={chat_id}, msg_id={msg_id}):\n{text}{extra}\n")
+        pm = f" [parse_mode={parse_mode}]" if parse_mode else ""
+        print(f"[DRY-RUN Telegram] sendMessage (chat={chat_id}, msg_id={msg_id}){pm}:\n{text}{extra}\n")
         return {"ok": True, "result": {"message_id": msg_id, "chat": {"id": chat_id}, "text": text}}
 
     def send_voice(
@@ -1425,10 +1673,18 @@ class DryRunTelegramClient:
             },
         }
 
-    def edit_message_text(self, chat_id: int | str, message_id: int, text: str,
-                           reply_markup: dict | None = None) -> dict:
+    def edit_message_text(
+        self,
+        chat_id: int | str,
+        message_id: int,
+        text: str,
+        reply_markup: dict | None = None,
+        parse_mode: str | None = None,
+        disable_web_page_preview: bool | None = None,
+    ) -> dict:
         extra = f"\n[keyboard: {reply_markup}]" if reply_markup else ""
-        print(f"[DRY-RUN Telegram] editMessageText (chat={chat_id}, msg_id={message_id}):\n{text}{extra}\n")
+        pm = f" [parse_mode={parse_mode}]" if parse_mode else ""
+        print(f"[DRY-RUN Telegram] editMessageText (chat={chat_id}, msg_id={message_id}){pm}:\n{text}{extra}\n")
         return {"ok": True, "result": {"message_id": message_id, "chat": {"id": chat_id}, "text": text}}
 
     def send_chat_action(self, chat_id: int | str, action: str = "typing") -> dict:
@@ -1500,6 +1756,8 @@ def main() -> None:
                         help="File path to store the alerts-stream cursor (default: derived from --cursor-file)")
     parser.add_argument("--no-alert-push", action="store_true", default=os.getenv("NO_ALERT_PUSH") == "1",
                         help="Disable proactively pushing new watchdog alerts to --chat-id")
+    parser.add_argument("--no-activity-push", action="store_true", default=os.getenv("NO_ACTIVITY_PUSH") == "1",
+                        help="Disable live-updating activity message while an agent works")
     parser.add_argument("--voice", action="store_true", default=os.getenv("TELEGRAM_VOICE") == "1",
                         help="Enable spoken voice replies feature for this tenant")
     parser.add_argument("--tts-voice", default=os.getenv("TTS_VOICE", DEFAULT_TTS_VOICE),
@@ -1531,6 +1789,7 @@ def main() -> None:
         allowed_chat_id=args.chat_id or None,
         default_tts_voice=args.tts_voice or None,
         voice_feature_enabled=args.voice,
+        no_activity_push=args.no_activity_push,
     )
 
     # ⚠ Called once here, unconditionally, before any mode below runs — not
@@ -1566,6 +1825,7 @@ def main() -> None:
                 cursor_store,
                 tts_voice=args.tts_voice or None,
                 voice_enabled_fn=bot.is_voice_enabled,
+                activity_finalizer_fn=bot.finalize_activity,
             )
             threading.Thread(target=reply_pusher.run, daemon=True, name="reply-pusher").start()
             if not args.no_alert_push:

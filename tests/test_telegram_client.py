@@ -9,7 +9,7 @@ from pathlib import Path
 
 from clients.telegram import bot
 from clients.telegram.bot import (
-    AlertPusher, CursorStore, DryRunTelegramClient, FlockClient, ReplyPusher,
+    ActivityRender, AlertPusher, CursorStore, DryRunTelegramClient, FlockClient, ReplyPusher,
     TelegramBot, TelegramClient, render_alert, render_reply,
     synthesize_speech, _parse_sse_events,
 )
@@ -95,6 +95,11 @@ class DummyFlockClient:
                 res.append(evt)
         return 200, {"agent": agent, "activity": res, "next_cursor": res[-1]["cursor"] if res else after}
 
+    def stream_activity(self, agent, after=None):
+        for evt in self.activity_queue:
+            if after is None or evt["cursor"] > after:
+                yield evt
+
 
 class DummyTelegramClient:
     def __init__(self):
@@ -105,13 +110,13 @@ class DummyTelegramClient:
         self.answered_callbacks = []
         self.commands_set = []
 
-    def send_message(self, chat_id, text, reply_to_message_id=None, reply_markup=None):
+    def send_message(self, chat_id, text, reply_to_message_id=None, reply_markup=None, **kwargs):
         msg_id = len(self.sent_messages) + len(self.sent_voices) + 1
-        entry = {"chat_id": chat_id, "text": text, "message_id": msg_id, "reply_markup": reply_markup}
+        entry = {"chat_id": chat_id, "text": text, "message_id": msg_id, "reply_markup": reply_markup, **kwargs}
         self.sent_messages.append(entry)
         return {"ok": True, "result": entry}
 
-    def send_voice(self, chat_id, voice, caption=None, reply_to_message_id=None, reply_markup=None):
+    def send_voice(self, chat_id, voice, caption=None, reply_to_message_id=None, reply_markup=None, **kwargs):
         msg_id = len(self.sent_messages) + len(self.sent_voices) + 1
         entry = {
             "chat_id": chat_id,
@@ -119,12 +124,13 @@ class DummyTelegramClient:
             "caption": caption,
             "message_id": msg_id,
             "reply_markup": reply_markup,
+            **kwargs,
         }
         self.sent_voices.append(entry)
         return {"ok": True, "result": entry}
 
-    def edit_message_text(self, chat_id, message_id, text, reply_markup=None):
-        entry = {"chat_id": chat_id, "message_id": message_id, "text": text, "reply_markup": reply_markup}
+    def edit_message_text(self, chat_id, message_id, text, reply_markup=None, **kwargs):
+        entry = {"chat_id": chat_id, "message_id": message_id, "text": text, "reply_markup": reply_markup, **kwargs}
         self.edited_messages.append(entry)
         return {"ok": True, "result": entry}
 
@@ -1487,5 +1493,194 @@ def test_telegram_bot_int_str_chat_id_in_flows():
     reply = bot_instance.handle_pending_text("46444780", "My Ticket Title")
     assert "Description?" in reply
     assert "46444780" in bot_instance.pending
+
+
+def test_activity_render_formatting_and_lifecycle():
+    render = ActivityRender(chat_id="12345", agent="architect")
+    assert render.render() == "🛠 <b>Activity</b> (<code>architect</code>)"
+
+    # Add input event
+    render.add_event({"kind": "input", "cursor": "1-0"})
+    text1 = render.render()
+    assert "🛠 <b>Activity</b> (<code>architect</code>)" in text1
+    assert "1. ⏳ 💬 <i>input received</i>" in text1
+
+    # Add tool events
+    render.add_event({"kind": "tool", "tool": "Read", "cursor": "2-0"})
+    text2 = render.render()
+    assert "1. ✓ 💬 <i>input received</i>" in text2
+    assert "2. ⏳ <code>Read</code>" in text2
+
+    render.add_event({"kind": "tool", "tool": "Bash", "cursor": "3-0"})
+    text3 = render.render()
+    assert "1. ✓ 💬 <i>input received</i>" in text3
+    assert "2. ✓ <code>Read</code>" in text3
+    assert "3. ⏳ <code>Bash</code>" in text3
+
+    # Add output event -> completed
+    render.add_event({"kind": "output", "cursor": "4-0"})
+    assert render.completed is True
+    text4 = render.render()
+    assert "🛠 <b>Activity</b> (<code>architect</code>) · completed (4 steps)" in text4
+    assert "1. ✓ 💬 <i>input received</i>" in text4
+    assert "2. ✓ <code>Read</code>" in text4
+    assert "3. ✓ <code>Bash</code>" in text4
+    assert "4. ✓ ✍️ <i>output produced</i>" in text4
+
+
+def test_activity_render_truncation_and_escaping():
+    # Escaping special characters in agent and tool names
+    render = ActivityRender(chat_id="99", agent="<dangerous>&agent")
+    render.add_event({"kind": "tool", "tool": "<script>alert(1)</script>"})
+    text = render.render()
+    assert "&lt;dangerous&gt;&amp;agent" in text
+    assert "&lt;script&gt;alert(1)&lt;/script&gt;" in text
+
+    # Truncation when more than 20 events are present
+    render_many = ActivityRender(chat_id="99", agent="architect")
+    for i in range(25):
+        render_many.add_event({"kind": "tool", "tool": f"Tool_{i}"})
+    text_many = render_many.render()
+    assert "<i>… 5 earlier steps omitted …</i>" in text_many
+    assert "25. ⏳ <code>Tool_24</code>" in text_many
+
+
+def test_activity_render_flush_debouncing():
+    client = DummyTelegramClient()
+    render = ActivityRender(chat_id="555", agent="architect")
+
+    # Initial flush with no events does nothing
+    render.flush(client)
+    assert len(client.sent_messages) == 0
+
+    # Add event and flush -> send_message called
+    render.add_event({"kind": "input"})
+    render.flush(client)
+    assert len(client.sent_messages) == 1
+    assert render.message_id == 1
+
+    # Second flush immediately without force or completion is debounced
+    render.add_event({"kind": "tool", "tool": "Bash"})
+    render.flush(client, force=False)
+    assert len(client.edited_messages) == 0
+
+    # Forced flush or finalized flush edits the message
+    render.flush(client, force=True)
+    assert len(client.edited_messages) == 1
+    assert "<code>Bash</code>" in client.edited_messages[0]["text"]
+
+
+def test_flock_client_stream_activity(monkeypatch):
+    flock = FlockClient("http://fake:8080", "fake-token")
+
+    raw_sse = (
+        b"id: 100-0\n"
+        b"event: activity\n"
+        b'data: {"v":1,"agent":"architect","kind":"tool","tool":"Bash","cursor":"100-0"}\n\n'
+    )
+
+    class FakeResponse:
+        def __enter__(self):
+            return iter(raw_sse.splitlines(keepends=True))
+
+        def __exit__(self, *args):
+            pass
+
+    monkeypatch.setattr(bot.urllib.request, "urlopen", lambda req, timeout=90, context=None: FakeResponse())
+
+    events = []
+    # Consume one event and break
+    for ev in flock.stream_activity("architect"):
+        events.append(ev)
+        break
+
+    assert len(events) == 1
+    assert events[0]["tool"] == "Bash"
+    assert events[0]["cursor"] == "100-0"
+
+
+def test_telegram_bot_live_activity_with_user_prompt_and_reply_pusher(monkeypatch):
+    flock = DummyFlockClient()
+    flock.activity_queue = [{"cursor": "50-0", "agent": "architect", "kind": "input"}]
+    telegram = DummyTelegramClient()
+    store = CursorStore()
+    bot_instance = TelegramBot(
+        flock_client=flock,
+        telegram_client=telegram,
+        cursor_store=store,
+        target_agent="architect",
+        allowed_chat_id=12345,
+    )
+
+    activity_events = [
+        {"agent": "architect", "kind": "input", "cursor": "51-0"},
+        {"agent": "architect", "kind": "tool", "tool": "Read", "cursor": "52-0"},
+        {"agent": "architect", "kind": "output", "cursor": "53-0"},
+    ]
+
+    def fake_stream(agent, after=None):
+        yield from activity_events
+
+    monkeypatch.setattr(flock, "stream_activity", fake_stream)
+
+    # User sends prompt
+    reply = bot_instance.handle_user_prompt(12345, "build the feature")
+    assert reply == "✅ Sent to architect."
+
+    # Give watcher thread a moment to process the generator
+    import time
+    time.sleep(0.8)
+
+    # Activity message was sent, and then edited
+    assert len(telegram.sent_messages) >= 2  # 1 for activity + 1 for "Sent to architect."
+    activity_msg = telegram.sent_messages[0]
+    assert "🛠 <b>Activity</b> (<code>architect</code>)" in activity_msg["text"]
+
+    # ReplyPusher delivers final reply
+    pusher = ReplyPusher(
+        flock=flock,
+        telegram=telegram,
+        chat_id=12345,
+        cursor_store=store,
+        activity_finalizer_fn=bot_instance.finalize_activity,
+    )
+
+    messages = [
+        {"l2": {"source": "architect"}, "payload": {"text": "done building"}, "cursor": "60-0"},
+    ]
+
+    def fake_reply_stream(after=None):
+        yield from messages
+
+    pusher.run(stream_fn=fake_reply_stream)
+
+    # Activity message should be finalized
+    assert len(telegram.edited_messages) >= 1
+    last_edit = telegram.edited_messages[-1]
+    assert "completed" in last_edit["text"]
+
+    # Final reply delivered
+    assert telegram.sent_messages[-1]["text"] == "architect: done building"
+
+
+def test_telegram_bot_no_activity_push_flag():
+    flock = DummyFlockClient()
+    telegram = DummyTelegramClient()
+    store = CursorStore()
+    bot_instance = TelegramBot(
+        flock_client=flock,
+        telegram_client=telegram,
+        cursor_store=store,
+        target_agent="architect",
+        allowed_chat_id=12345,
+        no_activity_push=True,
+    )
+
+    reply = bot_instance.handle_user_prompt(12345, "build the feature")
+    assert reply == "✅ Sent to architect."
+    assert len(bot_instance.activity_renders) == 0
+    # Only "✅ Sent to architect." message is sent
+    assert len(telegram.sent_messages) == 1
+    assert telegram.sent_messages[0]["text"] == "✅ Sent to architect."
 
 

@@ -30,6 +30,7 @@ A Telegram bot client that talks to an **h-flock** tenant over HTTP, allowing a 
 | `TELEGRAM_CHAT_ID` | *optional* | Fixed chat for `--prompt`/`--status` one-shots, live alert push (§2b), **and the only chat the bot will respond to** — no reply, no push, no menu action for anyone else |
 | `ALERTS_CURSOR_FILE` | derived from `CURSOR_FILE` | Path to store the alerts-stream cursor, kept separate from the mailbox cursor |
 | `NO_ALERT_PUSH` | unset | Set to `1` to disable live alert push even when `TELEGRAM_CHAT_ID` is set |
+| `NO_ACTIVITY_PUSH` | unset | Set to `1` to disable live-updating progress messages while agents execute tools |
 | `TELEGRAM_VOICE` | `0` | Set to `1` to enable the spoken TTS voice replies feature in this tenant |
 | `TTS_VOICE` | `en-GB-RyanNeural` | Default Microsoft neural TTS voice for spoken replies (e.g. `en-GB-RyanNeural`) via `edge-tts` |
 
@@ -171,6 +172,25 @@ and takes the tail client-side; `AlertPusher` avoids the equivalent problem
 on first run by seeding its cursor from `next_cursor` (the current tail)
 instead of streaming from the beginning, so it does not replay the whole
 retained history as if every alert were new.
+
+---
+
+## 2c. Live Activity Progress (Rolling `editMessageText`)
+
+When a user sends a prompt to an agent via Telegram, the bot starts an activity watcher that tails the agent's real-time execution stream (`GET /agents/{agent}/activity/stream`). As the agent executes tools (`Bash`, `Read`, `Edit`, `Grep`, etc.) and transitions between states (`input`, `tool`, `output`), the bot maintains a live-updating message using Telegram's `editMessageText`:
+
+```text
+🛠 Activity (architect)
+1. ✓ 💬 input received
+2. ✓ Read
+3. ✓ Grep
+4. ⏳ Bash
+```
+
+- **Tool-Names Privacy Invariant:** Respects `HLD.md` §8 privacy boundaries — events carry tool names and lifecycle markers only, never arguments, parameters, file paths, or shell strings.
+- **In-Place Updates & Throttling:** Edits are throttled to at most ~1/sec to comply with Telegram rate limits, keeping total rendered characters well below Telegram's 4096 cap via sliding window truncation for long execution runs.
+- **Completion & Coexistence with Replies:** When the agent finishes (`output` event or when `ReplyPusher` delivers the reply from the mailbox), the activity message is finalized in place (`🛠 Activity (architect) · completed (4 steps)`), and the full final response (and voice note if enabled) is delivered as a fresh new message.
+- **Disabling:** Disable live activity streaming by passing `--no-activity-push` or setting `NO_ACTIVITY_PUSH=1`.
 
 ---
 
