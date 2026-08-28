@@ -7,8 +7,8 @@
 > lane, which is the only reason it is centralised. Anything one module can
 > decide alone belongs in that module's LLD, not here.
 >
-> The five LLDs remain the design. This file adds nothing to it — it fixes the
-> details three lanes would otherwise each answer differently.
+> The module LLDs remain the design. This file adds nothing to them — it fixes
+> the details several lanes would otherwise each answer differently.
 
 ## 1. Stack and layout
 
@@ -25,7 +25,7 @@ is imported, never vendored.
     tmux/        create/kill/list windows, the paste sequence   ← library
     switch/      the switch process
     control/     the control port_type: StartAgent, StopAgent openers
-    port/     the port: invoked per delivery, dispatches on port_type
+    port/     the port: invoked per kick, dispatches on port_type
     tmuxhost/    the tmux host
     api/         the FastAPI app
   tests/
@@ -117,12 +117,13 @@ opener never writes the dead list or emits a terminal record itself. Registering
 one is how a kind becomes deliverable; `LLD-port-tmux` §3 is the tmux
 implementation of one.
 
-⚠ **Port burst batching**: When `flock.port` wakes up, it atomically drains all
-currently queued envelopes from the agent's ingress queue via an atomic Lua script
-(`_DRAIN_INGRESS`). Consecutive `Message`-kind envelopes are concatenated into ONE
-combined bracketed paste in arrival order, executed under a single lock acquisition.
-Non-`Message` kinds (`Command`, `AddTicket`, `Attachment`) are executed
-individually in arrival order. Every drained envelope retains its own
+⚠ **Port burst batching is port_type-specific.** After acquiring the busy tag,
+`tmux`, `api`, and unknown-port delivery atomically drain the ingress snapshot
+with `_DRAIN_INGRESS` (`LRANGE` + `DEL` in one Lua execution). `control` keeps
+the one-envelope `receive(..., blocking=False)` path. On tmux, consecutive
+`Message` envelopes are concatenated into ONE combined bracketed paste in
+arrival order. Non-`Message` kinds (`Command`, `AddTicket`, `Attachment`) open
+individually in arrival order. Every parsed drained envelope retains its own
 `received` and terminal record per `stream_id`; kinds that paste also retain
 their own `pending.verify` / `delivery.markers` entries.
 
@@ -465,9 +466,9 @@ already safely on the ingress queue, so the worst case is that it waits for the
 next kick. Letting it propagate kills the switch and, per `LLD-container` §6,
 the whole tenant.
 
-The pre-delay measurement split delivery into `forwarded` → `received` 274 ms
-(process start, busy tag, `HGET`, `LPOP`) and `received` → `opened` 226 ms (the
-paste path).
+The pre-delay measurement of a single tmux envelope split delivery into
+`forwarded` → `received` 274 ms (process start, busy tag, `HGET`, ingress
+consumption) and `received` → `opened` 226 ms (the paste path).
 
 ⚠ **`PASTE_ENTER_DELAY` is the environment variable; `ENTER_DELAY` is the module
 constant it is read into** (`tmux/ops.py`). Both names refer to the same thing.
@@ -479,11 +480,14 @@ delay is not slack for a slow terminal: the paste and the Enter are **two
 writes**, and a CLI arriving at both together takes the text and drops the
 submit. Do not tune it to zero because the machine is fast.
 
-So **paste-and-enter is the larger half** after the configured delay. The total
-puts a single tmux agent near **1 delivery a second**, not 2. Deliveries to
-different agents overlap freely, so it is a per-agent
-ceiling, not a tenant one, and nothing is lost above it — the backlog waits in
-Redis. If it ever matters, the lever is the port's import graph.
+So **paste-and-enter is the larger half** after the configured delay for one
+paste. An isolated tmux envelope remains near one second end to end, but that is
+not a one-envelope-per-second ceiling: a consecutive `Message` burst shares one
+paste-and-enter and emits custody records for every envelope in the batch.
+Commands, Attachments, and AddTicket mutations still open individually.
+Deliveries to different agents overlap freely; work waiting for ownership
+remains in Redis. If startup
+latency ever matters, the lever is the port's import graph.
 
 The port is invoked, delivers, and **exits**. It is not a service and holds
 nothing between deliveries. On start it:
@@ -497,12 +501,16 @@ nothing between deliveries. On start it:
    back into a check followed by a write.
 2. `HGET`s the roster for this agent's port_type, and dispatches to that base's
    delivery routine
-3. delivers **the one envelope it was kicked for**
+3. consumes according to port_type: tmux/api/unknown drain the current ingress
+   snapshot; control pops one envelope
 4. `HDEL`s the busy tag and exits
 
 A crash between 1 and 4 leaves the tag set. Nothing expires it and nothing takes
-over — that is the design, not an omission. `HGETALL …:delivering` plus the
-ingress depth is how you see it.
+over — that is the design, not an omission. Before consumption,
+`HGETALL …:delivering` plus ingress depth exposes the failure. After a burst
+drain, parsed items have `received` evidence but a crash can lose unparsed items
+from the in-process snapshot before they acquire a port record. Closing that
+at-most-once window requires reserve/ack machinery, not a stale-tag timeout.
 
 Adding a base is adding a value to the roster and a routine to the port.
 Nothing in the switch changes, because the switch never learns that bases exist.
@@ -519,7 +527,7 @@ office send -a <destination> --file <path>
 office send --agent=<destination> "<text>"
 office send -a <destination> -- --<leading-dash-body>
 office send-file -a <destination> <path> [--caption <text>] [--mime-type <type>]
-office broadcast <text>...              # tenant broadcast, everyone but you
+office broadcast <text>...              # tmux colleagues, everyone but you
 office hire <agent> [--cli claude|codex|agy] [--profile <account>]
 office peers | profiles | letGo | let-go | pause | resume
 office add | list | take | done | cancel | hold | delete
@@ -557,7 +565,9 @@ is the authority; if the two disagree, the code is right and this is the stale o
   skipped — they have no `/workdir`. Also on `PATH` under the bare name, which
   delegates here (`office/cli.py:clone_to_all_main`).
 - **`status`** reports agent presence, open work ticket, and last activity feed.
-  An `agy` agent reads `not collected (agy)` under the activity feed column.
+  An `agy` agent uses its tailed input history like the other supported CLIs;
+  before that feed exists it reads `no activity feed`, not a permanent
+  provider-specific label.
 - **`usage`** reports token counts, active model, rate limits, and estimated cost per agent, from the `usage`
   records the watchdog emits. Codex rows price against the model resolved from
   `turn_context` (e.g. `gpt-5.6-sol` matching `gpt-5` pricing) and surface a rate-limit
@@ -1084,30 +1094,38 @@ because one account can be shared by several agents. The rest are
 per-agent and are in the classified set the teardown test enforces —
 `AGENT_STATE_RESOURCES` and `AGENT_DATA_RESOURCES` in `bus/resources.py`.
 
+### Delivery verification markers
+
+```
+  <prefix>:agent:<name>:pending.verify    STREAM   MAXLEN ~ 100
+  <prefix>:agent:<name>:delivery.markers  STREAM   MAXLEN ~ 500
+```
+
+The tmux port writes both markers **before** a paste; `Attachment` deliberately
+writes them after its durable file write and before its notice paste. The
+watchdog judges and deletes `pending.verify`; its usage correlator reads
+`delivery.markers`. The switch owns neither stream.
+
+⚠ **Before the paste, not after — this was a bug.** Marking afterwards lost a
+sub-second race: six deliveries landed and five read unverified because the
+agent's reply beat the marker. A failed paste can leave a marker for the
+watchdog's ordinary judgment.
+
+⚠ **Only `{claude, codex, agy}` are marked — an allowlist, never a denylist.**
+The rule was once "not agy", which marked plain bash windows that could never
+confirm anything. A CLI whose activity cannot be tailed must be skipped by
+default, not by having been remembered.
+
+Resources compose with a **dot** — `tasks.todo`, `activity.offset`,
+`pending.verify` — and each part is validated as a segment. ⚠ **Do not widen the
+resource rule to admit a name.** Pick a name that fits. It was widened once to
+allow an underscore, which also silently bypassed the all-digit rejection for
+resources — a relaxation nobody asked for, in service of a name that had a
+conforming alternative.
+
 ### The client mailbox — build 12
 
 ```
-  <prefix>:agent:<name>:pending.verify   STREAM   MAXLEN ~ 100
-
-Written by the port **before** the paste, judged and dropped by the switch.
-
-⚠ **Before, not after — this was a bug.** Marking afterwards lost a sub-second
-race: six deliveries landed and five read unverified because the agent's reply
-beat the marker. Marking first costs nothing if the paste then fails, because the
-delivery genuinely did not arrive.
-
-⚠ **Only `{claude, codex}` are marked — an allowlist, never a denylist.** The
-rule was once "not agy", which marked plain bash windows that could never
-confirm anything. A CLI whose activity cannot be tailed must be skipped by
-default, not by having been remembered. Resources
-compose with a **dot** — `tasks.todo`, `activity.offset`, `pending.verify` — and
-each part is validated as a segment.
-
-⚠ **Do not widen the resource rule to admit a name.** Pick a name that fits. It
-was widened once to allow an underscore, which also silently bypassed the
-all-digit rejection for resources — a relaxation nobody asked for, in service of
-a name that had a conforming alternative.
-
   <prefix>:agent:<client>:inbox   STREAM   MAXLEN ~ 1000
 ```
 

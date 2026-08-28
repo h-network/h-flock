@@ -39,12 +39,12 @@ reach the kind of agent that component knows how to drive.
 
 **Everything reaches the bus through a port.** Not a workaround for agents
 that cannot speak Redis — the rule for all of them. For registered VABs, `send`
-writes what its participant emits onto egress and `receive` takes what arrives
-on ingress and passes it to an opener. The switch owns the middle, where it pops
-egress and writes ingress. There is one explicit fallback: an unknown roster port_type
-uses `deliver_unroutable`, which directly pops one ingress item, validates it and
-parks it with an `unroutable port_type` reason because there is no opener table to
-dispatch to.
+writes what its participant emits onto egress and the receive boundary takes
+what arrives on ingress and passes it to an opener. The switch owns the middle,
+where it pops egress and writes ingress. There is one explicit fallback: an unknown roster port_type
+uses `deliver_unroutable`, which drains the current ingress snapshot, validates
+each item and parks it with an `unroutable port_type` reason because there is no
+opener table to dispatch to.
 
 What differs between participants is only the far end. One delivery routine
 types into a terminal window; another appends the unchanged envelope to a
@@ -68,7 +68,7 @@ In tests, `FakeRespRedis` in `tests/conftest.py` strictly adheres to the 24-meth
 
 ### The two doors
 
-**Normal envelope traffic enters and leaves an edge through two tools.** The
+**Normal envelope traffic enters and leaves an edge through two logical doors.** The
 switch necessarily performs raw queue operations in the middle; the unknown-port_type
 fallback above is the sole edge exception. The doors are the normal edge
 inspectors:
@@ -76,12 +76,14 @@ inspectors:
 | | Does | Rejects |
 |---|---|---|
 | **send** | builds the envelope, writes the egress selected by `source`, logs | nothing malformed can be constructed |
-| **receive** | validates what came off ingress, dispatches on `kind` to an opener, logs | unknown kind → dead-letter |
+| **receive boundary** | validates what came off ingress, dispatches on `kind` to an opener, logs | unknown kind → dead-letter |
 
-For registered VABs, each check therefore has one home. An envelope built by
-`send` cannot be malformed because only one thing builds it, and `receive` owns
-normal ingress validation and terminal logging. `deliver_unroutable` duplicates
-that parse/park boundary for the exceptional port_type case. `send` does **not**,
+For registered VABs, each check therefore has one logical home. An envelope
+built by `send` cannot be structurally malformed because only one thing builds
+it. The `receive()` library function implements the one-envelope control path;
+the tmux and api burst routines apply the same parse, dead-letter and terminal
+logging boundary to every item in their drained snapshot. `deliver_unroutable`
+duplicates that parse/park boundary for the exceptional port_type case. `send` does **not**,
 however, authenticate its caller: its
 `source` argument selects both the envelope field and the egress prefix. The
 agent CLI supplies that argument from `AGENT_NAME`. At the switch, the popped
@@ -594,11 +596,10 @@ Rail 2 is what keeps invariant 8 true here. The switch does not know a port
 by name, by type or by capability — it knows one command, and the knowledge of
 what to do lives on the far side of it.
 
-**One delivery per participant at a time.** The number of adapters running for
-frontend is the number of kicks fired, so two envelopes landing close together start two of
-them — and they do not merely reorder, they interleave against one window: two
-pastes, then two `Enter`s, fusing both messages into one input. `send-keys`
-targets a window, not a delivery.
+**One port owns a participant at a time.** The number of port processes started
+for `frontend` is the number of kicks fired. Without serialisation, two of them
+can interleave against one window: two pastes, then two `Enter`s, fusing both
+messages into one input. `send-keys` targets a window, not a delivery.
 
 A **busy tag** serialises them, written by the port and cleared by it:
 
@@ -612,11 +613,22 @@ A **busy tag** serialises them, written by the port and cleared by it:
 
 `HSETNX` is the right primitive because testing absence and claiming the field
 must be one atomic operation. `HEXISTS` followed by `HSET` has a race: two
-adapters can both observe no tag and then both claim it, recreating the
-concurrent delivery this guard exists to prevent. A waiter loops on `HSETNX`
-rather than exiting, so each kick delivers the envelope it was fired for;
-nothing has to drain a backlog on another kick's behalf and there is no seam
-where an envelope lands just after a drain finished.
+ports can both observe no tag and then both claim it, recreating the concurrent
+delivery this guard exists to prevent. A waiter loops on `HSETNX` rather than
+exiting, then dispatches according to the participant's port_type:
+
+- `tmux`, `api`, and the unknown-port fallback atomically drain the complete
+  ingress snapshot with one Lua `LRANGE` + `DEL`. Tmux concatenates each
+  consecutive run of `Message` envelopes into one paste; non-Message kinds open
+  individually in arrival order. Api and unknown-port delivery handle every
+  drained item individually.
+- `control` retains the library `receive(..., blocking=False)` path and `LPOP`s
+  one lifecycle envelope.
+
+Every accepted ingress write produced a kick. Consequently, after one tmux or
+api port drains a burst, already-waiting redundant kicks can acquire the tag,
+find an empty queue, and exit. An envelope arriving after the atomic drain has
+its own kick and remains in Redis until some port acquires the tag.
 
 ⚠ **A crashed port leaves the tag set, and that is deliberate.** Nothing
 expires it, nothing checks whether the holder is alive, and nothing takes over.
@@ -632,12 +644,17 @@ And it is visible, without anything new being built:
   LLEN …:agent:frontend:ingress        what has piled up behind it
 ```
 
-The log says which failure it was. A port that died **before** popping leaves
-its envelope in the queue — nothing lost, tag set, depth growing. One that died
-**after** popping leaves a `received` with no `opened` on that `stream_id`, which
-is precisely the signature §4's two-record rule exists to produce. A wedged
-port and a dead one look the same from outside, and they do not need telling
-apart: something is wrong with frontend, go and look.
+The log bounds which failure it was. A port that dies **before** consuming
+ingress leaves the queue intact — nothing lost, tag set, depth growing. On the
+control path, one that dies after `LPOP` leaves `received` with no terminal
+record if parsing completed. On a burst path, the atomic drain transfers the
+whole snapshot into that process: parsed items have `received` and later an
+`opened` or `dead_lettered`, but a crash can lose unparsed drained items before
+they acquire a port-side record. That is the receiving edge's equivalent of the
+switch's destructive-pop window in §4, and closing it would require a
+reserve/ack journal rather than the current at-most-once transport. A wedged
+port and a dead one still do not need distinguishing automatically: something
+is wrong with frontend, go and look.
 
 A port that diagnoses or repairs its own stuck deliveries is a real thing to
 want, and it is not for a build that does not yet work end to end.
@@ -658,19 +675,20 @@ it on**, which differs by where it died:
 
 The opener contract has exactly two declared terminal outcomes: return normally
 only after opening the envelope, or raise `flock.bus.DeadLetter(reason)` to
-reject it. `receive()` catches that signal, parks the raw envelope under the
-receiving agent and emits
+reject it. The one-envelope `receive()` path and the burst delivery loops catch
+that signal, park the raw envelope under the receiving agent and emit
 `dead_lettered`; only a normal return emits `opened`. Openers must not write the
 dead list or emit their own terminal record. Keeping custody and the terminal
-record in the door prevents one stream from being logged as both dead-lettered
-and opened, and applies the rule to every registered kind rather than to a list
-of remembered opener implementations.
+record at the receive boundary prevents one stream from being logged as both
+dead-lettered and opened, and applies the rule to every registered kind rather
+than to a list of remembered opener implementations.
 
 The sentinel uses an exception for an expected outcome, which is less ordinary
 than a return value. That cost is deliberate: wrapper openers naturally
 propagate it, while a return sentinel can be discarded by a wrapper and turn
 the rejection back into `opened`. Other opener exceptions remain failures;
-`receive()` parks and logs those as `opener failed` without stopping the port.
+the one-envelope and burst paths park and log those as `opener failed` without
+stopping the port.
 
 ## 4. Semantics
 
@@ -899,7 +917,7 @@ is intentionally outside the running single-tenant system; do not solve it
 pre-emptively.
 
 *(Concurrent delivery to one participant used to be listed here as open. It is
-settled — see §3.3, "one delivery per participant".)*
+settled — see §3.3, "one port owns a participant at a time".)*
 
 **Cross-tenant routing.** Not a separate component — a branch in the switch.
 When a `destination` does not resolve inside the local tenant, look it up in a
