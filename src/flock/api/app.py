@@ -190,7 +190,13 @@ def _validate_attachment_payload(payload: Any) -> None:
             detail="invalid attachment payload: caption must be a string",
         )
 
-    filename_bytes = filename.encode("utf-8")
+    try:
+        filename_bytes = filename.encode("utf-8")
+    except UnicodeEncodeError:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail="invalid attachment filename: must be valid UTF-8",
+        )
     if len(filename_bytes) < 1 or len(filename_bytes) > ATTACHMENT_FILENAME_MAX_BYTES:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
@@ -226,7 +232,14 @@ def _validate_attachment_payload(payload: Any) -> None:
         )
 
     if caption is not None:
-        if len(caption.encode("utf-8")) > ATTACHMENT_CAPTION_MAX_BYTES:
+        try:
+            caption_bytes = caption.encode("utf-8")
+        except UnicodeEncodeError:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+                detail="invalid attachment caption: must be valid UTF-8",
+            )
+        if len(caption_bytes) > ATTACHMENT_CAPTION_MAX_BYTES:
             raise HTTPException(
                 status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
                 detail="invalid attachment caption: exceeds maximum size of 65,536 UTF-8 bytes",
@@ -516,6 +529,11 @@ def _render_restdoc_html(app: FastAPI) -> str:
           <td>Pastes <code>&lt;text&gt;</code> bare into the window — <strong>it executes in the terminal</strong>.</td>
         </tr>
         <tr>
+          <td><code>Attachment</code></td>
+          <td><code>{{"filename": "...", "mime_type": "...", "content_base64": "..."}}</code></td>
+          <td>Decodes and writes file to recipient's workspace (up to 10MB decoded), then pastes an inert notice naming the file.</td>
+        </tr>
+        <tr>
           <td><code>StartAgent</code></td>
           <td><code>{{"agent": "...", "cli": "claude"}}</code></td>
           <td>Enrols agent in roster, creates terminal window, and starts CLI (defaults to <code>claude</code>).</td>
@@ -530,7 +548,7 @@ def _render_restdoc_html(app: FastAPI) -> str:
 
     <div class="warning-box">
       <strong>⚠ Notice: This list of kinds is current, not authoritative.</strong><br>
-      The API server does NOT validate <code>kind</code> or <code>payload</code>. An unknown <code>kind</code> is accepted with HTTP <code>202 Accepted</code> and dead-letters at the far edge if unopenable. An application MUST NOT treat this list as a whitelist. Adding new kinds is a capability of ports and openers, not an API schema change.
+      The API server does NOT validate <code>kind</code> or <code>payload</code> (with the one named exception of <code>Attachment</code> resource admission and closed payload schema validation). An unknown <code>kind</code> is accepted under the default 1MB limit with HTTP <code>202 Accepted</code> and dead-letters at the far edge if unopenable. An application MUST NOT treat this list as a whitelist. Adding new kinds is a capability of ports and openers, not an API schema change.
     </div>
 
     <h2>3. Meaning of HTTP 202 Accepted</h2>
