@@ -493,9 +493,21 @@ class ReplyPusher:
         that arrived before this process started is not an answer to
         anything sent through it; replaying it looks like lag at best and a
         stale, mismatched reply at worst."""
-        code, data = self.flock.get_messages(after=None)
-        if code == 200 and data.get("next_cursor"):
-            return data["next_cursor"]
+        cursor = None
+        try:
+            while True:
+                code, data = self.flock.get_messages(after=cursor, limit=1000)
+                if code != 200:
+                    break
+                items = data.get("messages", [])
+                if not items:
+                    break
+                cursor = data.get("next_cursor")
+                if len(items) < 1000:
+                    break
+            return cursor
+        except Exception as exc:
+            logger.debug(f"Failed to seed mailbox cursor: {exc}")
         return None
 
     def run(self, stream_fn=None) -> None:
@@ -1445,9 +1457,18 @@ class TelegramBot:
     def _get_activity_tail(self, agent: str) -> str | None:
         """Fetch the current latest activity cursor for an agent before prompting."""
         try:
-            code, data = self.flock.get_activity(agent, limit=1)
-            if code == 200 and data.get("next_cursor"):
-                return data["next_cursor"]
+            cursor = None
+            while True:
+                code, data = self.flock.get_activity(agent, after=cursor, limit=1000)
+                if code != 200:
+                    break
+                items = data.get("activity", [])
+                if not items:
+                    break
+                cursor = data.get("next_cursor")
+                if len(items) < 1000:
+                    break
+            return cursor
         except Exception as exc:
             logger.debug(f"Failed to fetch activity tail for {agent}: {exc}")
         return None
