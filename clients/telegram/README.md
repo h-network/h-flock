@@ -39,6 +39,7 @@ A Telegram bot client that talks to an **h-flock** tenant over HTTP, allowing a 
 | `PANE_WATCH_TAIL_LINES` | `12` | `/watch`: how many rows back from the bottom of the pane to look before cropping chrome |
 | `PANE_WATCH_REFRESH_SECONDS` | `2.0` | `/watch`: seconds between pane refreshes |
 | `PANE_WATCH_MAX_DURATION_SECONDS` | `600` | `/watch`: auto-stop a forgotten watch after this many seconds |
+| `MINI_APP_URL` | unset | Public HTTPS URL for `clients/web/mini.html` — adds a 📊 Dashboard `web_app` button to the sticky menu (§2a) when set, omitted entirely otherwise. See `clients/web/README.md`'s Telegram Mini App section — that server is not started here and needs its own `TELEGRAM_BOT_TOKEN`/`TELEGRAM_CHAT_ID` to accept the button's login |
 
 ### Running in Dry-Run Mode (Without Telegram Token)
 
@@ -133,6 +134,13 @@ own (narrower) argparse surface, per office-sme:
 - **🔊 Voice: ON / 🔇 Voice: OFF** — toggle spoken text-to-speech voice replies
   for this chat. Dynamic button label reflects current chat state (`/voice` command
   also toggles this).
+- **📊 Dashboard** *(conditional — only when `MINI_APP_URL` is configured)* —
+  a Telegram Mini App `web_app` button, distinct from every button above:
+  tapping it opens `clients/web/mini.html` inside Telegram's own WebView
+  client-side and never arrives at `handle_text_message` as a message the
+  way every other sticky-keyboard tap does. Read-only — see
+  `clients/web/README.md`'s Telegram Mini App section for the auth flow
+  and what it can and can't do.
 
 ⚠ **`Command` is deliberately not exposed here**, same as the web console
 (`clients/web/SPEC.md` §6): it pastes bare text into a pane and *executes*

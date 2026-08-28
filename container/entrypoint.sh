@@ -479,6 +479,11 @@ if [ -n "${TELEGRAM_BOT_TOKEN:-}" ]; then
       --cursor-file "/home/ubuntu/.flock/telegram.cursor.json"
     )
     [ -n "${TELEGRAM_CHAT_ID:-}" ] && tg_args+=(--chat-id "$TELEGRAM_CHAT_ID")
+    # ⚠ Unset means no button, not a broken one — clients/web itself is not
+    # started here (comment above); MINI_APP_URL only ever names a URL the
+    # operator started that server at themselves, elsewhere. See
+    # clients/web/README.md's Mini App section for how that's set up.
+    [ -n "${MINI_APP_URL:-}" ] && tg_args+=(--mini-app-url "$MINI_APP_URL")
     start_client telegram "${tg_args[@]}"
   fi
 fi

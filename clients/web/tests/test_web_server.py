@@ -2,16 +2,35 @@
 
 from __future__ import annotations
 
+import hashlib
+import hmac
 import json
 import socket
 import threading
 import time
+import urllib.error
+import urllib.parse
 import urllib.request
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 import pytest
 
-from clients.web.server import OfficeHandler
+from clients.web.server import OfficeHandler, verify_telegram_init_data
+
+
+def _signed_init_data(bot_token: str, user_id: int, *, auth_date: int | None = None, tamper: bool = False) -> str:
+    """Build a correctly (or, if tamper=True, incorrectly) signed initData
+    string the same way Telegram's Mini App SDK would, for testing against
+    verify_telegram_init_data's own implementation of that same scheme."""
+    fields = {
+        "auth_date": str(auth_date if auth_date is not None else int(time.time())),
+        "query_id": "AA",
+        "user": json.dumps({"id": user_id, "first_name": "Op"}),
+    }
+    data_check_string = "\n".join(f"{k}={v}" for k, v in sorted(fields.items()))
+    secret_key = hmac.new(b"WebAppData", bot_token.encode("utf-8"), hashlib.sha256).digest()
+    fields["hash"] = "0" * 64 if tamper else hmac.new(secret_key, data_check_string.encode("utf-8"), hashlib.sha256).hexdigest()
+    return urllib.parse.urlencode(fields)
 
 
 class DummySessionServer(BaseHTTPRequestHandler):
@@ -412,6 +431,207 @@ def test_auth_login_rate_limiting_returns_429():
             urllib.request.urlopen(req_bad)
         assert exc_info.value.code == 429
         assert exc_info.value.headers.get("Retry-After") == "60"
+    finally:
+        web_server.shutdown()
+        web_server.server_close()
+
+
+# ── verify_telegram_init_data: pure function, no server needed ─────────────
+
+def test_verify_telegram_init_data_accepts_a_correctly_signed_payload():
+    init_data = _signed_init_data("test-bot-token", 555)
+    fields = verify_telegram_init_data(init_data, "test-bot-token")
+    assert fields is not None
+    assert fields["user"]["id"] == 555
+
+
+def test_verify_telegram_init_data_rejects_a_tampered_hash():
+    init_data = _signed_init_data("test-bot-token", 555, tamper=True)
+    assert verify_telegram_init_data(init_data, "test-bot-token") is None
+
+
+def test_verify_telegram_init_data_rejects_the_wrong_bot_token():
+    init_data = _signed_init_data("test-bot-token", 555)
+    assert verify_telegram_init_data(init_data, "a-different-bot-token") is None
+
+
+def test_verify_telegram_init_data_rejects_a_stale_auth_date():
+    init_data = _signed_init_data("test-bot-token", 555, auth_date=int(time.time()) - 3600)
+    assert verify_telegram_init_data(init_data, "test-bot-token", max_age_s=300) is None
+
+
+def test_verify_telegram_init_data_rejects_a_future_auth_date():
+    """A signature is otherwise valid forever -- Telegram does not expire it
+    itself -- so a captured initData with its clock pushed forward must be
+    caught by the same window check, not just the past-dated case."""
+    init_data = _signed_init_data("test-bot-token", 555, auth_date=int(time.time()) + 3600)
+    assert verify_telegram_init_data(init_data, "test-bot-token", max_age_s=300) is None
+
+
+def test_verify_telegram_init_data_rejects_missing_input():
+    assert verify_telegram_init_data("", "test-bot-token") is None
+    assert verify_telegram_init_data(_signed_init_data("test-bot-token", 555), "") is None
+
+
+def test_verify_telegram_init_data_rejects_malformed_input_without_raising():
+    assert verify_telegram_init_data("not=validly&hash=formed", "test-bot-token") is None
+    assert verify_telegram_init_data("auth_date=notanumber&hash=abcd", "test-bot-token") is None
+
+
+# ── /api/telegram-auth: the server-side login path ──────────────────────────
+
+def _telegram_web_server(**overrides):
+    web_server = ThreadingHTTPServer(("127.0.0.1", 0), OfficeHandler)
+    web_server.api_base = "http://127.0.0.1:8080"
+    web_server.session_host = "127.0.0.1"
+    web_server.session_port = 8081
+    web_server.api_token = "test-secret-token"
+    web_server.client_name = "web"
+    web_server.demo_mode = True
+    web_server.secret = "topsecret123"
+    web_server.valid_sessions = {}
+    web_server.session_origin = {}
+    web_server.session_ttl = 86400
+    web_server.login_attempts = {}
+    web_server.max_login_attempts = 5
+    web_server.rate_limit_window = 60
+    web_server.max_sessions = 16
+    web_server.active_sessions = 0
+    web_server.sessions_lock = threading.Lock()
+    web_server.telegram_bot_token = "test-bot-token"
+    web_server.telegram_allowed_user_id = "555"
+    for key, value in overrides.items():
+        setattr(web_server, key, value)
+    return web_server
+
+
+def test_telegram_auth_creates_a_read_only_session_that_can_read_but_not_write():
+    web_server = _telegram_web_server()
+    web_port = web_server.server_address[1]
+    web_thread = threading.Thread(target=web_server.serve_forever, daemon=True)
+    web_thread.start()
+    try:
+        req = urllib.request.Request(
+            f"http://127.0.0.1:{web_port}/api/telegram-auth",
+            data=json.dumps({"initData": _signed_init_data("test-bot-token", 555)}).encode(),
+            headers={"Content-Type": "application/json"},
+            method="POST",
+        )
+        with urllib.request.urlopen(req) as resp:
+            assert resp.status == 200
+            assert json.loads(resp.read().decode()) == {"authenticated": True, "read_only": True}
+            cookie_header = resp.headers.get("Set-Cookie")
+            assert "HttpOnly" in cookie_header and "SameSite=Strict" in cookie_header
+            session_cookie = cookie_header.split(";")[0]
+
+        # client-config reflects the read-only session
+        req_config = urllib.request.Request(f"http://127.0.0.1:{web_port}/client-config", headers={"Cookie": session_cookie})
+        with urllib.request.urlopen(req_config) as resp:
+            assert json.loads(resp.read().decode())["read_only"] is True
+
+        # reads still work
+        req_read = urllib.request.Request(f"http://127.0.0.1:{web_port}/api/agents", headers={"Cookie": session_cookie})
+        with urllib.request.urlopen(req_read) as resp:
+            assert resp.status == 200
+
+        # writes are refused
+        req_write = urllib.request.Request(
+            f"http://127.0.0.1:{web_port}/api/host/envelopes",
+            data=json.dumps({"text": "hi"}).encode(),
+            headers={"Content-Type": "application/json", "Cookie": session_cookie},
+            method="POST",
+        )
+        with pytest.raises(urllib.error.HTTPError) as exc_info:
+            urllib.request.urlopen(req_write)
+        assert exc_info.value.code == 403
+
+        # the terminal door is refused outright, not just read-only
+        sock = socket.create_connection(("127.0.0.1", web_port), timeout=5)
+        request_raw = (
+            "GET /session HTTP/1.1\r\n"
+            f"Host: 127.0.0.1\r\nCookie: {session_cookie}\r\n"
+            "Upgrade: websocket\r\nConnection: Upgrade\r\n\r\n"
+        )
+        sock.sendall(request_raw.encode())
+        resp_file = sock.makefile("rb", buffering=0)
+        status_line = resp_file.readline().decode()
+        assert "403" in status_line
+        sock.close()
+    finally:
+        web_server.shutdown()
+        web_server.server_close()
+
+
+def test_telegram_auth_rejects_a_valid_signature_for_the_wrong_user():
+    web_server = _telegram_web_server()
+    web_port = web_server.server_address[1]
+    web_thread = threading.Thread(target=web_server.serve_forever, daemon=True)
+    web_thread.start()
+    try:
+        req = urllib.request.Request(
+            f"http://127.0.0.1:{web_port}/api/telegram-auth",
+            data=json.dumps({"initData": _signed_init_data("test-bot-token", 999)}).encode(),
+            headers={"Content-Type": "application/json"},
+            method="POST",
+        )
+        with pytest.raises(urllib.error.HTTPError) as exc_info:
+            urllib.request.urlopen(req)
+        assert exc_info.value.code == 401
+    finally:
+        web_server.shutdown()
+        web_server.server_close()
+
+
+def test_telegram_auth_disabled_returns_404_when_not_configured():
+    web_server = _telegram_web_server(telegram_bot_token=None, telegram_allowed_user_id=None)
+    web_port = web_server.server_address[1]
+    web_thread = threading.Thread(target=web_server.serve_forever, daemon=True)
+    web_thread.start()
+    try:
+        req = urllib.request.Request(
+            f"http://127.0.0.1:{web_port}/api/telegram-auth",
+            data=json.dumps({"initData": _signed_init_data("test-bot-token", 555)}).encode(),
+            headers={"Content-Type": "application/json"},
+            method="POST",
+        )
+        with pytest.raises(urllib.error.HTTPError) as exc_info:
+            urllib.request.urlopen(req)
+        assert exc_info.value.code == 404
+    finally:
+        web_server.shutdown()
+        web_server.server_close()
+
+
+def test_telegram_auth_and_operator_secret_login_are_independent_sessions():
+    """A normal /login session is unaffected by any of this -- read_only is
+    false, writes go through as before. Confirms the new write-guard is
+    keyed on session_origin, not on the mere presence of the feature."""
+    web_server = _telegram_web_server()
+    web_port = web_server.server_address[1]
+    web_thread = threading.Thread(target=web_server.serve_forever, daemon=True)
+    web_thread.start()
+    try:
+        req_login = urllib.request.Request(
+            f"http://127.0.0.1:{web_port}/login",
+            data=json.dumps({"secret": "topsecret123"}).encode(),
+            headers={"Content-Type": "application/json"},
+            method="POST",
+        )
+        with urllib.request.urlopen(req_login) as resp:
+            session_cookie = resp.headers.get("Set-Cookie").split(";")[0]
+
+        req_config = urllib.request.Request(f"http://127.0.0.1:{web_port}/client-config", headers={"Cookie": session_cookie})
+        with urllib.request.urlopen(req_config) as resp:
+            assert json.loads(resp.read().decode())["read_only"] is False
+
+        req_write = urllib.request.Request(
+            f"http://127.0.0.1:{web_port}/api/host/envelopes",
+            data=json.dumps({"text": "hi"}).encode(),
+            headers={"Content-Type": "application/json", "Cookie": session_cookie},
+            method="POST",
+        )
+        with urllib.request.urlopen(req_write) as resp:
+            assert resp.status == 202
     finally:
         web_server.shutdown()
         web_server.server_close()

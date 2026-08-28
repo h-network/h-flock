@@ -22,10 +22,58 @@ import urllib.request
 from http.cookies import SimpleCookie
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
-from urllib.parse import urlsplit
+from urllib.parse import parse_qsl, urlsplit
 
 
 HERE = Path(__file__).resolve().parent
+
+
+def _parse_telegram_init_data(init_data: str) -> dict[str, str]:
+    """Parse the query-string-shaped `initData` the Telegram Mini App SDK
+    hands the page into a flat dict. Pure parsing — validates nothing."""
+    return dict(parse_qsl(init_data, keep_blank_values=True, strict_parsing=False))
+
+
+def verify_telegram_init_data(init_data: str, bot_token: str, *, max_age_s: int = 300) -> dict | None:
+    """Validate `initData` per Telegram's own Mini App HMAC scheme — this is
+    Telegram's signature, not ours, so it is implemented exactly as Telegram
+    specifies rather than adapted: `secret_key = HMAC-SHA256("WebAppData",
+    bot_token)`, then `HMAC-SHA256(secret_key, data_check_string)` over every
+    field except `hash` itself, sorted `key=value` joined by `\\n`. Same
+    HMAC-over-canonical-payload shape API.md's per-client `kid`/`sig`
+    signatures already use — reused deliberately rather than inventing a
+    second auth primitive.
+
+    Returns the parsed field dict (with `user` decoded from its embedded
+    JSON string) on success, `None` on any failure: bad signature, missing
+    hash, unparseable input, or an `auth_date` outside `max_age_s`.
+    ⚠ Telegram does not expire `initData` itself — a signature stays valid
+    forever unless the caller checks `auth_date`, so a captured initData
+    string would otherwise be a permanent login token. `max_age_s` (default
+    300s) is that check; `abs()` also rejects a future-dated auth_date
+    rather than only a stale one, which the interval check alone would miss.
+    Never raises — every failure mode is a return of `None`.
+    """
+    if not init_data or not bot_token:
+        return None
+    try:
+        fields = _parse_telegram_init_data(init_data)
+        provided_hash = fields.pop("hash", None)
+        if not provided_hash:
+            return None
+        data_check_string = "\n".join(f"{k}={v}" for k, v in sorted(fields.items()))
+        secret_key = hmac.new(b"WebAppData", bot_token.encode("utf-8"), hashlib.sha256).digest()
+        computed = hmac.new(secret_key, data_check_string.encode("utf-8"), hashlib.sha256).hexdigest()
+        if not hmac.compare_digest(computed, provided_hash):
+            return None
+        auth_date = int(fields.get("auth_date", "0"))
+        if auth_date <= 0 or abs(time.time() - auth_date) > max_age_s:
+            return None
+        if "user" in fields:
+            fields["user"] = json.loads(fields["user"])
+        return fields
+    except (ValueError, TypeError, json.JSONDecodeError):
+        return None
 
 
 def _load_config_file(config_path: str) -> dict[str, str | int | bool]:
@@ -123,22 +171,36 @@ class OfficeHandler(SimpleHTTPRequestHandler):
         except Exception:
             pass
 
-    def _is_authenticated(self) -> bool:
-        secret = getattr(self.server, "secret", None)
-        if not secret:
-            return True
+    def _cookie_token(self) -> str | None:
         cookie_header = self.headers.get("Cookie", "")
         if not cookie_header:
-            return False
+            return None
         cookies = SimpleCookie()
         try:
             cookies.load(cookie_header)
         except Exception:
-            return False
+            return None
         session_cookie = cookies.get("hflock_session")
-        if not session_cookie or not session_cookie.value:
+        return session_cookie.value if session_cookie and session_cookie.value else None
+
+    def _session_is_telegram(self) -> bool:
+        """True for a session that was authenticated via /api/telegram-auth
+        rather than the operator secret — see verify_telegram_init_data.
+        Read-only: _handle_telegram_auth is the only place that ever adds an
+        entry, and only for a session it just created."""
+        token = self._cookie_token()
+        if not token:
             return False
-        token = session_cookie.value
+        session_origin = getattr(self.server, "session_origin", {})
+        return session_origin.get(token) == "telegram"
+
+    def _is_authenticated(self) -> bool:
+        secret = getattr(self.server, "secret", None)
+        if not secret:
+            return True
+        token = self._cookie_token()
+        if not token:
+            return False
         lock = getattr(self.server, "sessions_lock", None)
         valid_sessions = getattr(self.server, "valid_sessions", {})
         if isinstance(valid_sessions, set):
@@ -147,6 +209,7 @@ class OfficeHandler(SimpleHTTPRequestHandler):
 
         session_ttl = getattr(self.server, "session_ttl", 86400)  # 24h lifetime
         now = time.time()
+        session_origin = getattr(self.server, "session_origin", None)
 
         if lock is not None:
             with lock:
@@ -154,11 +217,15 @@ class OfficeHandler(SimpleHTTPRequestHandler):
                 expired = [t for t, created in valid_sessions.items() if now - created > session_ttl]
                 for exp in expired:
                     del valid_sessions[exp]
+                    if session_origin is not None:
+                        session_origin.pop(exp, None)
                 created = valid_sessions.get(token)
         else:
             expired = [t for t, created in valid_sessions.items() if now - created > session_ttl]
             for exp in expired:
                 del valid_sessions[exp]
+                if session_origin is not None:
+                    session_origin.pop(exp, None)
             created = valid_sessions.get(token)
 
         if created is None:
@@ -187,16 +254,8 @@ class OfficeHandler(SimpleHTTPRequestHandler):
             super().log_message(format, *args)
 
     def _get_session_id(self) -> str:
-        cookie_header = self.headers.get("Cookie", "")
-        if cookie_header:
-            cookies = SimpleCookie()
-            try:
-                cookies.load(cookie_header)
-                if "hflock_session" in cookies:
-                    return cookies["hflock_session"].value[:12] + "..."
-            except Exception:
-                pass
-        return "unauthenticated"
+        token = self._cookie_token()
+        return f"{token[:12]}..." if token else "unauthenticated"
 
     def _audit_log(self, event: str, details: dict, session_id: str | None = None) -> None:
         audit_file = getattr(self.server, "audit_log", None)
@@ -564,6 +623,7 @@ class OfficeHandler(SimpleHTTPRequestHandler):
                 "demo": self.server.demo_mode,
                 "auth_required": bool(getattr(self.server, "secret", None)),
                 "authenticated": self._is_authenticated(),
+                "read_only": self._session_is_telegram(),
             })
         elif getattr(self.server, "secret", None) and not self._is_authenticated():
             if self.path == "/login.html" or self.path == "/style.css":
@@ -572,6 +632,13 @@ class OfficeHandler(SimpleHTTPRequestHandler):
                 self._json(401, {"detail": "authentication required"})
             else:
                 self._serve_login_page()
+        elif (self.path.startswith("/session") or self.headers.get("Upgrade", "").lower() == "websocket") and self._session_is_telegram():
+            # ⚠ No terminal for a Mini App session, full stop — not "read-only
+            # terminal", refused outright. Enforcing read-only *within* the
+            # session-door protocol means parsing and rewriting the proxied
+            # WebSocket frames server-side; skipped for v1 in favour of a
+            # boundary simple enough to be obviously correct. See the PR note.
+            self._json(403, {"detail": "terminal access is not available from a Telegram Mini App session"})
         elif self.path == "/" or self.path.startswith("/?"):
             self.path = "/index.html"
             super().do_GET()
@@ -596,10 +663,16 @@ class OfficeHandler(SimpleHTTPRequestHandler):
     def do_POST(self) -> None:
         if self.path == "/login":
             self._handle_login()
+        elif self.path == "/api/telegram-auth":
+            self._handle_telegram_auth()
         elif self.path == "/logout":
             self._handle_logout()
         elif getattr(self.server, "secret", None) and not self._is_authenticated():
             self._json(401, {"detail": "authentication required"})
+        elif self.path.startswith("/api/") and self._session_is_telegram():
+            # Every POST /api/* is a write (envelopes, lifecycle, recordings)
+            # — a Telegram Mini App session is read-only in v1, full stop.
+            self._json(403, {"detail": "this session is read-only"})
         elif self.path == "/api/recordings" or self.path.startswith("/api/recordings/"):
             self._handle_post_recordings()
         elif self.path.startswith("/api/"):
@@ -699,25 +772,117 @@ class OfficeHandler(SimpleHTTPRequestHandler):
             self._audit_log("login_failure", {"reason": "invalid operator secret"})
             self._json(401, {"detail": "invalid operator secret"})
 
+    def _handle_telegram_auth(self) -> None:
+        """POST /api/telegram-auth — the Mini App's login, alongside /login's
+        operator-secret one. A session created here is functionally identical
+        to a normal one (same cookie, same valid_sessions entry, same
+        session_ttl) except it is additionally recorded in session_origin as
+        "telegram", which do_GET/do_POST use to refuse every write and the
+        terminal socket for it — see _session_is_telegram. This is a second
+        way to *reach* an existing session, not a second authorization model.
+        """
+        client_ip = self.client_address[0]
+        now = time.time()
+        lock = getattr(self.server, "sessions_lock", None)
+        login_attempts = getattr(self.server, "login_attempts", {})
+        rate_limit_window = getattr(self.server, "rate_limit_window", 60)
+        max_attempts = getattr(self.server, "max_login_attempts", 5)
+
+        if lock is not None:
+            with lock:
+                attempts = [t for t in login_attempts.get(client_ip, []) if now - t < rate_limit_window]
+                login_attempts[client_ip] = attempts
+                if len(attempts) >= max_attempts:
+                    self.send_response(429)
+                    self.send_header("Content-Type", "application/json")
+                    self.send_header("Retry-After", str(int(rate_limit_window)))
+                    self.end_headers()
+                    self.wfile.write(json.dumps({"detail": "too many login attempts, please try again later"}).encode("utf-8"))
+                    return
+
+        bot_token = getattr(self.server, "telegram_bot_token", None)
+        allowed_user_id = getattr(self.server, "telegram_allowed_user_id", None)
+        if not bot_token or not allowed_user_id:
+            self._json(404, {"detail": "Telegram Mini App login is not configured for this console"})
+            return
+
+        length = int(self.headers.get("Content-Length", "0"))
+        if length > self.MAX_BODY_SIZE:
+            self._json(413, {"detail": "payload too large"})
+            return
+        raw_body = self.rfile.read(length) if length else b"{}"
+        try:
+            data = json.loads(raw_body.decode("utf-8"))
+        except Exception:
+            data = {}
+
+        fields = verify_telegram_init_data(data.get("initData", ""), bot_token)
+        user_id = str(fields.get("user", {}).get("id", "")) if fields else ""
+        # ⚠ Cryptographic validity alone is not authorization. `fields` being
+        # non-None proves this really came from Telegram for THIS bot; it
+        # says nothing about WHO — anyone who opens the bot gets valid,
+        # correctly-signed initData for themselves. The chat_id allowlist
+        # check is what refuses everyone but the configured operator, same
+        # "no config means refuse everyone" rule bot.py's _chat_allowed uses.
+        if not fields or not hmac.compare_digest(user_id, str(allowed_user_id)):
+            if lock is not None:
+                with lock:
+                    attempts = login_attempts.get(client_ip, [])
+                    attempts.append(now)
+                    login_attempts[client_ip] = attempts
+            else:
+                attempts = login_attempts.get(client_ip, [])
+                attempts.append(now)
+                login_attempts[client_ip] = attempts
+            self._audit_log("telegram_auth_failure", {"user_id": user_id or "unknown"})
+            self._json(401, {"detail": "not authorized for this console"})
+            return
+
+        token = secrets.token_hex(32)
+        valid_sessions = getattr(self.server, "valid_sessions", None)
+        session_origin = getattr(self.server, "session_origin", None)
+        if valid_sessions is not None:
+            if lock is not None:
+                with lock:
+                    valid_sessions[token] = now
+                    if session_origin is not None:
+                        session_origin[token] = "telegram"
+                    login_attempts.pop(client_ip, None)
+            else:
+                valid_sessions[token] = now
+                if session_origin is not None:
+                    session_origin[token] = "telegram"
+                login_attempts.pop(client_ip, None)
+        cookie_header = f"hflock_session={token}; Path=/; HttpOnly; SameSite=Strict"
+        if getattr(self.server, "api_base", "").startswith("https://"):
+            cookie_header += "; Secure"
+        self.send_response(200)
+        self.send_header("Content-Type", "application/json")
+        self.send_header("Set-Cookie", cookie_header)
+        self.send_header("Cache-Control", "no-store")
+        self.end_headers()
+        self.wfile.write(json.dumps({"authenticated": True, "read_only": True}).encode("utf-8"))
+        self._audit_log("telegram_auth_success", {"user_id": user_id}, session_id=f"{token[:12]}...")
+
     def _handle_logout(self) -> None:
         self._audit_log("logout", {})
-        cookie_header = self.headers.get("Cookie", "")
-        if cookie_header:
-            cookies = SimpleCookie()
-            try:
-                cookies.load(cookie_header)
-                if "hflock_session" in cookies:
-                    tok = cookies["hflock_session"].value
-                    lock = getattr(self.server, "sessions_lock", None)
-                    valid_sessions = getattr(self.server, "valid_sessions", None)
-                    if valid_sessions is not None:
-                        if lock is not None:
-                            with lock:
-                                valid_sessions.pop(tok, None)
-                        else:
-                            valid_sessions.pop(tok, None)
-            except Exception:
-                pass
+        tok = self._cookie_token()
+        if tok:
+            lock = getattr(self.server, "sessions_lock", None)
+            valid_sessions = getattr(self.server, "valid_sessions", None)
+            session_origin = getattr(self.server, "session_origin", None)
+
+            def _forget():
+                if valid_sessions is not None:
+                    valid_sessions.pop(tok, None)
+                if session_origin is not None:
+                    session_origin.pop(tok, None)
+
+            if lock is not None:
+                with lock:
+                    _forget()
+            else:
+                _forget()
         clear_cookie = "hflock_session=; Path=/; Max-Age=0; HttpOnly; SameSite=Strict"
         self.send_response(200)
         self.send_header("Content-Type", "application/json")
@@ -734,6 +899,12 @@ class OfficeHandler(SimpleHTTPRequestHandler):
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>h-flock Operator Login</title>
   <link rel="stylesheet" href="/style.css">
+  <!-- Telegram's own official Mini App SDK -- same telegram.org domain
+       clients/telegram/bot.py already talks to (api.telegram.org). Loaded
+       from Telegram directly rather than vendored: it defines window.Telegram
+       harmlessly (initData just empty) in any normal browser, so this script
+       tag is inert outside an actual Telegram WebView. -->
+  <script src="https://telegram.org/js/telegram-web-app.js"></script>
   <style>
     body { display: flex; align-items: center; justify-content: center; min-height: 100vh; margin: 0; background: #0f172a; color: #f8fafc; font-family: system-ui, sans-serif; }
     .card { background: #1e293b; padding: 2rem; border-radius: 0.5rem; box-shadow: 0 10px 15px -3px rgba(0,0,0,0.5); width: 100%; max-width: 400px; border: 1px solid #334155; }
@@ -742,11 +913,13 @@ class OfficeHandler(SimpleHTTPRequestHandler):
     button { width: 100%; padding: 0.75rem; background: #2563eb; color: #fff; border: none; border-radius: 0.25rem; font-weight: 600; cursor: pointer; }
     button:hover { background: #1d4ed8; }
     .error { color: #f87171; font-size: 0.875rem; display: none; margin-top: 0.5rem; }
+    .hint { color: #94a3b8; font-size: 0.8rem; margin-top: 0.75rem; }
   </style>
 </head>
 <body>
-  <div class="card">
-    <h2>h-flock Operator Login</h2>
+  <div class="card" id="card">
+    <h2 id="card-title">h-flock Operator Login</h2>
+    <p id="telegram-status" class="hint" style="display:none;">Signing in via Telegram…</p>
     <form id="login-form">
       <label for="secret">Operator Secret</label>
       <input type="password" id="secret" name="secret" required autofocus placeholder="Enter shared secret">
@@ -755,6 +928,31 @@ class OfficeHandler(SimpleHTTPRequestHandler):
     </form>
   </div>
   <script>
+    // Mini App auto-login: if this page is running inside Telegram's WebView
+    // (real initData present, not just the SDK script having loaded), skip
+    // the manual secret form entirely and authenticate via initData instead
+    // -- see server.py's _handle_telegram_auth for what's actually checked.
+    // A read-only mini-app session lands on /mini.html, never / (the
+    // full write-capable console), matching the deliberately smaller v1
+    // surface this session gets.
+    (function () {
+      const tg = window.Telegram && window.Telegram.WebApp;
+      if (!tg || !tg.initData) return;
+      document.getElementById("login-form").style.display = "none";
+      document.getElementById("telegram-status").style.display = "block";
+      try { tg.ready(); tg.expand(); } catch (e) {}
+      fetch("/api/telegram-auth", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ initData: tg.initData })
+      }).then((res) => {
+        if (res.ok) { window.location.href = "/mini.html"; return; }
+        document.getElementById("telegram-status").textContent = "Telegram sign-in failed. This chat isn't authorized for this console.";
+      }).catch(() => {
+        document.getElementById("telegram-status").textContent = "Connection error contacting the console.";
+      });
+    })();
+
     document.getElementById("login-form").addEventListener("submit", async (e) => {
       e.preventDefault();
       const secret = document.getElementById("secret").value;
@@ -1236,6 +1434,13 @@ def main() -> None:
     parser.add_argument("--log-format", choices=["text", "json"], default=os.environ.get("HFLOCK_LOG_FORMAT", "text"))
     parser.add_argument("--audit-log", default=os.environ.get("HFLOCK_AUDIT_LOG"))
     parser.add_argument("--demo", action="store_true", default=None)
+    # Same variable names clients/telegram/bot.py already uses for the same
+    # bot and the same single operator — a Mini App login is "prove you're
+    # the same person the bot already only talks to", not a second identity
+    # to configure. Both required together; either absent disables the
+    # feature and /api/telegram-auth answers 404 (§ _handle_telegram_auth).
+    parser.add_argument("--telegram-bot-token", default=os.environ.get("TELEGRAM_BOT_TOKEN"))
+    parser.add_argument("--telegram-chat-id", default=os.environ.get("TELEGRAM_CHAT_ID"))
     args = parser.parse_args()
 
     cfg: dict[str, str | int | bool] = {}
@@ -1325,6 +1530,9 @@ def main() -> None:
     server.log_format = log_format
     server.audit_log = audit_log
     server.valid_sessions = {}  # token -> created_timestamp
+    server.session_origin = {}  # token -> "telegram", for sessions from _handle_telegram_auth only
+    server.telegram_bot_token = args.telegram_bot_token or (str(cfg.get("telegram_bot_token")) if cfg.get("telegram_bot_token") else None)
+    server.telegram_allowed_user_id = args.telegram_chat_id or (str(cfg.get("telegram_chat_id")) if cfg.get("telegram_chat_id") else None)
     server.session_ttl = int(os.environ.get("HFLOCK_SESSION_TTL", "86400"))  # 24 hours
     server.login_attempts = {}  # ip -> list of timestamp attempts
     server.max_login_attempts = int(os.environ.get("HFLOCK_MAX_LOGIN_ATTEMPTS", "5"))

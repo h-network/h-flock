@@ -86,6 +86,11 @@ services:
       TELEGRAM_BOT_TOKEN: "${TELEGRAM_BOT_TOKEN:-}"
       TELEGRAM_CHAT_ID: "${TELEGRAM_CHAT_ID:-}"
       TELEGRAM_VOICE: "${TELEGRAM_VOICE:-0}"
+      # Unset means the Telegram bot's 📊 Dashboard button is simply absent —
+      # a public HTTPS URL for a separately-run clients/web/mini.html
+      # (clients/web is not started here; see the comment above §"bundled
+      # clients" and clients/web/README.md's Mini App section).
+      MINI_APP_URL: "${MINI_APP_URL:-}"
     # Worker and door services restart independently inside the tenant. Redis
     # remains critical: its exit restarts the tenant so boot can purge transport.
     restart: unless-stopped

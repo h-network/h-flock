@@ -69,6 +69,8 @@ Command-line options override the corresponding environment defaults.
 | operator session lifetime, seconds | — | `HFLOCK_SESSION_TTL` | `86400` (24 hours) |
 | failed logins allowed per window/IP | — | `HFLOCK_MAX_LOGIN_ATTEMPTS` | `5` |
 | login rate-limit window, seconds | — | `HFLOCK_RATE_LIMIT_WINDOW` | `60` |
+| Telegram bot token, for Mini App login | `--telegram-bot-token` | `TELEGRAM_BOT_TOKEN` | unset — feature disabled |
+| Telegram user id allowed to sign in via the Mini App | `--telegram-chat-id` | `TELEGRAM_CHAT_ID` | unset — feature disabled |
 
 Run `python3 server.py --help` for the command-line surface.
 
@@ -169,6 +171,64 @@ trusted operator network.
   Possessing the tenant `API_TOKEN` authorizes producing messages to the tenant API, but
   the backend does not enforce sub-client source identity bindings. Any client with the
   tenant token may specify any source string in an envelope body.
+
+## Telegram Mini App (read-only, v1)
+
+`mini.html` + `mini-app.js` is a second, much smaller front end this same
+server proxies: a `web_app` button in `clients/telegram/bot.py`'s sticky menu
+(📊 Dashboard, shown only when `MINI_APP_URL` is configured for the bot)
+opens it inside Telegram's own WebView. It reuses the console's existing
+panel modules (`AgentsPanel`, `AlertsPanel`, `BoardsPanel` — same API client,
+same freshness states) rather than a second implementation of any of them.
+
+**Read-only, and not by convention.** This page carries no hire dialog, no
+lifecycle buttons, no message composer and no terminal — there is nothing on
+it that could send a write, not just nothing visible that does. The server
+enforces the same boundary independently of what the page happens to render:
+a session created via `/api/telegram-auth` gets every `POST /api/*` refused
+with `403` and the `/session` terminal socket refused outright, regardless of
+what any future page might try to send. Lifecycle actions and terminal
+access were deliberately left for a later pass rather than guessing whether
+the console's existing safety assumptions — built around a human typing an
+operator secret — still hold for a session an initData POST created instead;
+see the branch history for that reasoning in full.
+
+**Auth is Telegram's own scheme, reused rather than duplicated.** The Mini
+App SDK hands the page `Telegram.WebApp.initData`, which Telegram itself
+signs with `HMAC-SHA256("WebAppData", bot_token)` — the same
+HMAC-over-canonical-payload shape `docs/API.md`'s per-client `kid`/`sig`
+signatures already use elsewhere in this project, so this reuses the
+primitive rather than inventing a second one. The login page
+(`_serve_login_page` in `server.py`) detects a Telegram WebView and POSTs
+`initData` to `POST /api/telegram-auth` instead of showing the operator-secret
+form; the server validates the signature, checks `auth_date` is within a
+short window (Telegram doesn't expire `initData` itself — a captured string
+would otherwise be a permanent login token), and then checks the signed
+user id against `TELEGRAM_CHAT_ID` — the same single-operator allowlist
+`clients/telegram/bot.py`'s `_chat_allowed` already enforces for the bot
+itself. A cryptographically valid initData for a *different* Telegram user is
+still refused: the signature proves it came from Telegram for this bot, not
+that the signer is authorized. On success it sets the exact same
+`HttpOnly`/`SameSite=Strict` session cookie a secret login sets — this is a
+second way to *reach* a session, not a second authorization model — and
+redirects to `/mini.html` rather than `/` (the full, write-capable console).
+
+**Both `TELEGRAM_BOT_TOKEN` and `TELEGRAM_CHAT_ID` are required together**;
+either absent disables the feature (`/api/telegram-auth` answers `404`) and
+`/login`'s operator-secret flow is entirely unaffected — same variable names
+`clients/telegram/bot.py` already uses for the same bot and the same single
+operator, deliberately, since a Mini App login is "prove you're the person
+the bot already only talks to," not a second identity to configure.
+
+**Testing it needs a real public HTTPS origin** — Telegram's own requirement
+for a `web_app` button to open on a device, not something this codebase can
+route around. For development, run this server normally and put a temporary
+tunnel (e.g. `cloudflared tunnel --url http://127.0.0.1:8090`) in front of it
+just long enough to open the Dashboard button from a phone; tear the tunnel
+down afterward. That URL is never committed anywhere — set `MINI_APP_URL`
+for the bot and `--listen`/TLS termination for this server the same way any
+other exposure decision is made (`SPEC-bundled-clients-and-exposure.md`),
+per-environment, not baked into the code.
 
 ## Deliberate limitations
 
