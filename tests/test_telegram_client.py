@@ -322,6 +322,46 @@ def test_handle_user_prompt_success():
         assert telegram.sent_messages[0]["text"] == "✅ Sent to architect."
 
 
+def test_handle_user_prompt_shows_typing_before_dispatch():
+    flock = DummyFlockClient()
+    flock.presence_state = "working"
+    telegram = DummyTelegramClient()
+    with tempfile.TemporaryDirectory() as tmpdir:
+        store = CursorStore(str(Path(tmpdir) / "cursor.json"))
+        bot = TelegramBot(flock, telegram, store, target_agent="architect")
+
+        bot.handle_user_prompt(12345, "please check auth")
+
+        assert telegram.chat_actions == [{"chat_id": "12345", "action": "typing"}]
+
+
+def test_dispatching_flows_all_show_typing_before_their_network_call():
+    """Every flow that does a round trip to the fabric before replying shows
+    a typing indicator first -- add ticket, lifecycle control, hire, retire,
+    broadcast, and the main prompt dispatch (covered separately above)."""
+    with tempfile.TemporaryDirectory() as tmpdir:
+        bot_instance, flock, telegram = _make_bot(tmpdir=tmpdir)
+
+        bot_instance.pending["12345"] = {"flow": "addticket", "agent": "architect", "stage": "priority", "title": "t"}
+        bot_instance.handle_addticket_priority(12345, "high")
+        assert telegram.chat_actions[-1] == {"chat_id": "12345", "action": "typing"}
+
+        bot_instance.handle_lifecycle_control(12345, "PauseAgent", "architect")
+        assert telegram.chat_actions[-1] == {"chat_id": 12345, "action": "typing"}
+
+        bot_instance.pending["12345"] = {"flow": "hire", "stage": "provider", "name": "newagent", "profile": None}
+        bot_instance.handle_pending_text(12345, "-")
+        assert telegram.chat_actions[-1] == {"chat_id": "12345", "action": "typing"}
+
+        bot_instance.pending["12345"] = {"flow": "retire", "agent": "architect"}
+        bot_instance.handle_pending_text(12345, "architect")
+        assert telegram.chat_actions[-1] == {"chat_id": "12345", "action": "typing"}
+
+        bot_instance.pending["12345"] = {"flow": "broadcast"}
+        bot_instance.handle_pending_text(12345, "standup in five")
+        assert telegram.chat_actions[-1] == {"chat_id": "12345", "action": "typing"}
+
+
 def test_door_context_none_for_plain_http():
     assert bot._door_ssl_context("http://localhost:8080", "", False) is None
 
