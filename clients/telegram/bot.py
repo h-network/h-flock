@@ -768,8 +768,6 @@ class ActivityRender:
     def add_event(self, event: dict) -> None:
         with self.lock:
             self.events.append(event)
-            if event.get("kind") == "output":
-                self.completed = True
 
     def finalize(self) -> None:
         with self.lock:
@@ -1476,11 +1474,6 @@ class TelegramBot:
                     continue
                 render.add_event(event)
                 render.flush(self.telegram)
-                if event.get("kind") == "output":
-                    time.sleep(0.5)
-                    render.finalize()
-                    render.flush(self.telegram, force=True)
-                    break
         except Exception as exc:
             logger.debug(f"Activity watcher exception for {agent}: {exc}")
         finally:
