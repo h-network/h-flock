@@ -1,6 +1,7 @@
 # h-flock — High Level Design
 
-> How the pieces fit. The five LLDs each describe one module in depth and
+> How the pieces fit. The module LLDs describe their respective parts in depth
+> and
 > [`CONTRACTS.md`](CONTRACTS.md) pins what more than one of them depends on —
 > this is the layer in between, which nothing else covered.
 >
@@ -90,12 +91,15 @@ wrong since. It also predated the v4 wire.
   ║                                                                         ║
   ║    ② popped         header_record_fields(raw)  — header only            ║
   ║       ttl − 1, hops + 1                        — a splice, body intact  ║
-  ║    ③ forwarded      RPUSH ingress                                       ║
+  ║       admission     Lua: capacity check + RPUSH as one operation         ║
+  ║       full          sender dead-letter; no forward and no kick           ║
+  ║    ③ forwarded      accepted unicast, or all broadcast copies           ║
   ║    ④ kick_started   Popen flock.port — fire and forget, never waits     ║
   ╚═══════════════════════════════════╤═════════════════════════════════════╝
                                       ▼
                         pod:…:agent:<dest>:ingress           (list)
-                                      │  LPOP
+                                      │  atomic burst drain (tmux/api)
+                                      │  or LPOP one (control)
                                       ▼
   ┌─────────────────────────────────────────────────────────────────────────┐
   │  flock.port — the FIRST component that parses the body                  │
@@ -105,9 +109,9 @@ wrong since. It also predated the v4 wire.
   │    ⑥ opened         HDEL   delivering                                   │
   └───────────────────────────────┬─────────────────────────────────────────┘
                                   │
-                    ┌─────────────┼──────────────┐
-                 tmux pane      mailbox        board
-                 (paste)        (a stream)     (four lists)
+                    ┌──────────┬──┴─────────┬───────────┐
+                 tmux pane   mailbox      board     workspace file
+                 (paste)     (a stream)   (lists)   + pane notice
 ```
 
 **The v4 frame on the wire** — `bus/envelope.py:9‥17`:
@@ -126,8 +130,16 @@ wrong since. It also predated the v4 wire.
 so `HEADER_WIDTH` stays 256, the body offset does not move, and older readers
 still parse the fields they know. Build 73.
 
-⚠ **The six circled records are the whole custody chain**, joined on
-`(stream_id, recipient)`. A crash shows up as a stage present with no successor.
+⚠ **Ingress admission is atomic and count-bounded.** `_ADMIT_INGRESS` checks
+every target against `INGRESS_MAX` and appends all accepted copies in one Lua
+execution. A full unicast target, or any full member of a broadcast, rejects the
+whole operation: the raw envelope is parked once under the sender's dead queue,
+and neither `forwarded` nor `kick_started` is emitted. The bound counts
+envelopes, not their bytes.
+
+⚠ **The six circled records are a successful unicast's custody chain**, joined
+on `(stream_id, recipient)`. A crash shows up as a stage present with no
+successor; a rejected admission ends earlier with `dead_lettered`.
 ⚠ **Broadcast is the exception:** ③ is emitted **once** with `count=N` and
 `destination:"all"`, so ③→④ cannot be joined per recipient.
 
@@ -136,7 +148,7 @@ still parse the fields they know. Build 73.
 | `flock.bus` | library — keys, envelopes, `send`/`receive`, roster reads | shared |
 | `flock.tmux` | library — windows, and the paste sequence | shared |
 | `flock.switch` | **the one daemon** | blocks on every egress; also runs the maintenance pass (§8b) |
-| `flock.port` | invoked per delivery, dispatches on port_type, exits | not a daemon |
+| `flock.port` | invoked per kick, dispatches on port_type, exits | may drain a burst; not a daemon |
 | `flock.control` | `StartAgent` / `StopAgent` / pause / resume openers | reached only via the bus |
 | `flock.tmuxhost` | the tmux server, session, windows | |
 | `flock.office` | the one agent-facing command | imports `flock.bus` only |
@@ -154,16 +166,20 @@ recorded in `CONTRACTS` §5 rather than left as a rule everybody quietly breaks.
 Agents produce whenever they like, so something must wait on their output. But
 the switch *writes* ingress — it already knows an envelope arrived, so waiting on
 it would be waiting to be told something it just did. Instead it `RPUSH`es and
-spawns `flock.port <agent>` fire-and-forget. The port delivers **one
-envelope** and exits.
+spawns `flock.port <agent>` fire-and-forget. The port acquires that
+participant's busy tag, delivers its finite unit of work, and exits. For a tmux
+or api participant that unit is an atomic snapshot of every envelope currently
+on ingress; for control it remains one envelope. Consecutive tmux `Message`s in
+the snapshot share one paste, while other kinds open individually in order.
 
-⚠ **The alternative moves the backlog into RAM.** A long-running consumer per
-agent, popping eagerly, drains the Redis backlog into process memory: delivery
-takes hundreds of milliseconds, arrivals are not rate-limited, and nothing is
-inspectable when it goes wrong. Keeping the backlog in Redis is the point. ⚠ **Durable across port
-lifetimes, not across a tenant restart** — Redis uses AOF persistence for durable
-boards and streams, but deliberately purges ephemeral transport queues at boot
-(`LLD-container` §§5, 7).
+⚠ **A long-running consumer would move an open-ended backlog into RAM.** The
+short-lived port leaves ingress in Redis until it owns the busy tag, then drains
+one bounded snapshot so a tmux burst can be pasted once. Arrivals after that
+atomic drain remain in Redis for a later kicked port. `INGRESS_MAX` bounds the
+snapshot by envelope count; it is not a byte limit. ⚠ **Durable across port
+lifetimes, not across a tenant restart** — Redis uses AOF persistence for
+durable boards and streams, but deliberately purges ephemeral transport queues
+at boot (`LLD-container` §§5, 7).
 
 Consequences worth knowing: an office of idle agents costs nothing, because there
 are no processes between deliveries; and a **busy tag** in Redis serialises
@@ -191,7 +207,7 @@ office send -a frontend …        the agent's own command, its only surface
    → switch                 pops, resolves frontend in the roster, RPUSHes
    → …:frontend:ingress          and kicks a port
    → port                reads frontend's port_type, dispatches, exits
-   → opener                 tmux → paste · api → mailbox · control → act
+   → opener                 tmux → paste/file · api → mailbox · control → act
 ```
 
 Six log records mark the path — `sent`, `popped`, `forwarded`, `kick_started`,
@@ -212,8 +228,11 @@ earlier wording said "nothing", which the code contradicts.
 ## 6. Kinds — the capability list
 
 `kind` says what sort of thing an envelope is. The switch ignores it; an opener
-at the far edge reads it. **Adding a capability is adding an opener**, which is
-the same sentence as §1 from a different angle.
+at the far edge reads it. **Adding a capability is normally adding an opener**,
+which is the same sentence as §1 from a different angle. `Attachment` adds one
+explicit producer-side exception: the api recognizes that name only to apply
+its larger, schema-measurable admission limit. It still does not decide whether
+a destination can open the kind.
 
 | kind | opened by | does |
 |---|---|---|
@@ -546,10 +565,11 @@ The short list that everything else assumes:
    route work *through*.
 4. **The switch reads roster fields, never values.** It cannot know a port_type.
 5. **Adapters do not exist between deliveries.**
-6. **The api does not validate `kind`** — which kinds are openable is a fact
+6. **The api does not whitelist `kind`** — which kinds are openable is a fact
    about adapters, discovered at the far edge. ⚠ **Attachment is the one named
-   exception** (`CONTRACTS` §6, `LLD-api` §3) for kind-aware size and shape admission
-   at the door, not a whitelist.
+   exception** (`CONTRACTS` §6, `LLD-api` §3) for kind-aware size and shape
+   admission at the door; unknown kinds remain accepted under the ordinary
+   limit.
 7. **Nothing in the data path reads a terminal.** Delivery is `paste → Enter`,
    with no branching on what a pane says. **Observation may look, and may only
    report** — out-of-band, on its own schedule, never in the path an envelope
