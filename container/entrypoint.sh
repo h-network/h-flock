@@ -124,6 +124,15 @@ mkdir -p "$TMUX_TMPDIR"
 chmod 700 "$TMUX_TMPDIR"
 
 pids=()
+critical_pid=""
+start_critical() {
+  local name="$1"; shift
+  "$@" &
+  critical_pid=$!
+  pids+=("$critical_pid")
+  jlog "{\"module\":\"container\",\"writer\":\"container\",\"event\":\"critical_service_started\",\"service\":\"$name\",\"pid\":$critical_pid}"
+}
+
 start() {
   local name="$1"; shift
   /usr/local/bin/supervise-service.sh "$name" "$@" &
@@ -241,7 +250,7 @@ rcli() {
   fi
 }
 
-start redis "${redis_cmd[@]}"
+start_critical redis "${redis_cmd[@]}"
 redis_deadline=$((SECONDS + ${REDIS_READY_SECONDS:-30}))
 until [ "$(rcli ping 2>/dev/null)" = "PONG" ]; do
   if [ "$SECONDS" -ge "$redis_deadline" ]; then
@@ -474,6 +483,7 @@ if [ -n "${TELEGRAM_BOT_TOKEN:-}" ]; then
   fi
 fi
 
-# Supervisors restart their own child forever. Waiting for all of them keeps the
-# entrypoint alive without making any one service's exit a container-wide event.
-wait "${pids[@]}"
+# Redis is deliberately the critical exception. Its exit ends the entrypoint so
+# the container restart path can purge transport before any switch reconnects.
+# Every other core service restarts behind its own independent supervisor.
+wait "$critical_pid"

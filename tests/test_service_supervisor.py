@@ -51,10 +51,11 @@ def test_service_restarts_without_disturbing_peer_and_term_reaches_child(tmp_pat
                 process.wait(timeout=3)
 
 
-def test_every_core_service_uses_supervisor_and_entrypoint_does_not_wait_for_first_exit():
+def test_peer_services_use_supervisor_while_redis_remains_critical():
     script = ENTRYPOINT.read_text()
-    for service in ("redis", "tmuxhost", "switch", "watchdog", "api", "session"):
+    for service in ("tmuxhost", "switch", "watchdog", "api", "session"):
         assert f"start {service}" in script
+    assert 'start_critical redis "${redis_cmd[@]}"' in script
     assert '/usr/local/bin/supervise-service.sh "$name" "$@" &' in script
     assert 'wait -n "${pids[@]}"' not in script
-    assert 'wait "${pids[@]}"' in script
+    assert 'wait "$critical_pid"' in script

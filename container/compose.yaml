@@ -83,8 +83,8 @@ services:
       TELEGRAM_BOT_TOKEN: "${TELEGRAM_BOT_TOKEN:-}"
       TELEGRAM_CHAT_ID: "${TELEGRAM_CHAT_ID:-}"
       TELEGRAM_VOICE: "${TELEGRAM_VOICE:-0}"
-    # Core services restart independently inside the tenant. This is the last
-    # resort for an entrypoint or container failure (LLD-container §6).
+    # Worker and door services restart independently inside the tenant. Redis
+    # remains critical: its exit restarts the tenant so boot can purge transport.
     restart: unless-stopped
     init: false  # tini is PID 1 from the image's own ENTRYPOINT
     healthcheck:
