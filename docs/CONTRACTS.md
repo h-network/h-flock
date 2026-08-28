@@ -573,8 +573,9 @@ is the authority; if the two disagree, the code is right and this is the stale o
   `turn_context` (e.g. `gpt-5.6-sol` matching `gpt-5` pricing) and surface a rate-limit
   column (`used_percent`, `plan_type`). ⚠ **Rate limits are verified against
   the captured rollout fixture `tests/fixtures/codex-session-captured.jsonl` and
-  remain unproven against a live codex agent in acceptance.** An `agy` agent
-  reads `model: "not collected"` with `-` for counts and `unpriced` in table output.
+  remain unproven against a live codex agent in acceptance.** Token usage is
+  `not collected (agy)`: an `agy` agent reads `model: "not collected"` with `-`
+  for counts and `unpriced` in table output.
   `office usage --json` includes `"collected": false` on uncollected rows
   (`agy`), while claude and codex rows omit the key. `agy` writes a
   per-conversation transcript under `brain/<id>/.system_generated/logs/`, but
