@@ -36,7 +36,7 @@ A Telegram bot client that talks to an **h-flock** tenant over HTTP, allowing a 
 | `TTS_VOICE` | `en-GB-RyanNeural` | Default Microsoft neural TTS voice for spoken replies (e.g. `en-GB-RyanNeural`) via `edge-tts` |
 | `PANE_WATCH_CHROME_DEFAULT` | `4` | `/watch`: bottom pane rows cropped as UI chrome (input box, shortcut hint, separators) |
 | `PANE_WATCH_CHROME_OVERRIDES` | unset | `/watch`: per-agent chrome-row exceptions, `"agent=n,agent2=n"` — see §2c, Codex needs `5` |
-| `PANE_WATCH_TAIL_LINES` | `10` | `/watch`: how many rows back from the bottom of the pane to look before cropping chrome |
+| `PANE_WATCH_TAIL_LINES` | `12` | `/watch`: how many rows back from the bottom of the pane to look before cropping chrome |
 | `PANE_WATCH_REFRESH_SECONDS` | `2.0` | `/watch`: seconds between pane refreshes |
 | `PANE_WATCH_MAX_DURATION_SECONDS` | `600` | `/watch`: auto-stop a forgotten watch after this many seconds |
 
@@ -234,9 +234,9 @@ the gap.
 120×32 screen (`LLD-tmux-host.md` §3); most of that is either stale
 scrollback or the CLI's own input chrome, neither of which is "what the agent
 just said". The bot looks at the last `PANE_WATCH_TAIL_LINES` rows (default
-`10`) and crops the bottom `PANE_WATCH_CHROME_DEFAULT` rows (default `4`) —
-net, roughly rows `[bottom-10 .. bottom-4]` — then trims purely-blank rows
-from either edge of what's left.
+`12`) and crops the bottom `PANE_WATCH_CHROME_DEFAULT` rows (default `4`) —
+net, roughly rows `[bottom-12 .. bottom-4]` — then trims rows from either edge
+of what's left that are blank or match `_is_transient_chrome_line` (below).
 
 ⚠ **Chrome height is not the same across claude/codex/agy, and the bot
 cannot ask which one an agent runs** (`GET /agents/{agent}` carries
@@ -244,12 +244,29 @@ cannot ask which one an agent runs** (`GET /agents/{agent}` carries
 `framework=<cli>` field reads that, from a Redis key (`resource: "launch"`)
 the api door does not expose). Measured against
 three live panes: claude and agy's Antigravity CLI both draw a 4-row bottom
-chrome (separator / input line / separator / hint), Codex draws 5 (separator
-/ blank / input box / footer status line). The default of `4` is correct for
-two of three; `PANE_WATCH_CHROME_OVERRIDES` (same `"name=value"` exceptions
-shape as `entrypoint.sh`'s `AGENT_CLIS`) lets an operator who knows which
-agents run Codex correct those by name rather than the bot guessing or
-mis-cropping silently.
+*structural* chrome (separator / input line / separator / hint), Codex draws
+5 (separator / blank / input box / footer status line). The default of `4`
+is correct for two of three; `PANE_WATCH_CHROME_OVERRIDES` (same
+`"name=value"` exceptions shape as `entrypoint.sh`'s `AGENT_CLIS`) lets an
+operator who knows which agents run Codex correct those by name rather than
+the bot guessing or mis-cropping silently.
+
+⚠ **A second, state-dependent kind of chrome sits just above the structural
+kind, and no fixed offset can crop it correctly.** A CLI's own
+thinking-spinner ("✻ Churned for 20s", "Boogieing… (17s · ↓ 639 tokens)") and
+update-nag banner ("✔ Update installed · Restart to update") are present or
+absent depending on whether the agent is mid-turn or an update just shipped —
+not on which CLI it is. Widening the crop only shifts where the leak lands;
+first shipped (`PANE_WATCH_TAIL_LINES` `10`, no filtering) it leaked on a
+codex pane and, checked again on a claude pane that happened to have both a
+spinner and an update banner up at once, it was leaking there too. Filtered
+by content instead (`_is_transient_chrome_line`, `bot.py`): update-banner
+phrasing, a line ending in `tokens)`, claude's `done HH:MM AM/PM` completion
+stamp, and a short (≤60 char) line matching `<word(s)> for Ns[ Ns]` — capped
+in length so a genuine reply that happens to mention a duration mid-sentence
+isn't mistaken for a spinner line. agy's own spinner text is unconfirmed —
+none of the three lanes has captured it mid-turn yet — so it may need a
+pattern added once it leaks somewhere.
 
 **Refresh & stop conditions.** Polls every `PANE_WATCH_REFRESH_SECONDS`
 (default `2.0`). Stops on any of: the **⏹ Stop watching** button or
