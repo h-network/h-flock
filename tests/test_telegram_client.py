@@ -1517,15 +1517,22 @@ def test_activity_render_formatting_and_lifecycle():
     assert "2. ✓ <code>Read</code>" in text3
     assert "3. ⏳ <code>Bash</code>" in text3
 
-    # Add output event -> completed
+    # Add output event -> stays in-progress until finalize()
     render.add_event({"kind": "output", "cursor": "4-0"})
-    assert render.completed is True
+    assert render.completed is False
     text4 = render.render()
-    assert "🛠 <b>Activity</b> (<code>architect</code>) · completed (4 steps)" in text4
+    assert "🛠 <b>Activity</b> (<code>architect</code>)" in text4
     assert "1. ✓ 💬 <i>input received</i>" in text4
     assert "2. ✓ <code>Read</code>" in text4
     assert "3. ✓ <code>Bash</code>" in text4
     assert "4. ✓ ✍️ <i>output produced</i>" in text4
+
+    # Finalize explicitly
+    render.finalize()
+    assert render.completed is True
+    text5 = render.render()
+    assert "🛠 <b>Activity</b> (<code>architect</code>) · completed (4 steps)" in text5
+    assert "4. ✓ ✍️ <i>output produced</i>" in text5
 
 
 def test_activity_render_truncation_and_escaping():
@@ -1565,6 +1572,7 @@ def test_activity_render_flush_debouncing():
     assert len(client.edited_messages) == 0
 
     # Forced flush or finalized flush edits the message
+    render.finalize()
     render.flush(client, force=True)
     assert len(client.edited_messages) == 1
     assert "<code>Bash</code>" in client.edited_messages[0]["text"]
@@ -1661,6 +1669,82 @@ def test_telegram_bot_live_activity_with_user_prompt_and_reply_pusher(monkeypatc
 
     # Final reply delivered
     assert telegram.sent_messages[-1]["text"] == "architect: done building"
+
+
+def test_telegram_bot_multi_output_turn_does_not_early_exit(monkeypatch):
+    """Verify that multiple output events interleaved with tools do not cause early exit."""
+    flock = DummyFlockClient()
+    flock.activity_queue = [{"cursor": "70-0", "agent": "architect", "kind": "input"}]
+    telegram = DummyTelegramClient()
+    store = CursorStore()
+    bot_instance = TelegramBot(
+        flock_client=flock,
+        telegram_client=telegram,
+        cursor_store=store,
+        target_agent="architect",
+        allowed_chat_id=12345,
+    )
+
+    # 7-step turn with multiple outputs interleaved between tools
+    activity_events = [
+        {"agent": "architect", "kind": "input", "cursor": "71-0"},
+        {"agent": "architect", "kind": "output", "cursor": "72-0"},
+        {"agent": "architect", "kind": "tool", "tool": "Read", "cursor": "73-0"},
+        {"agent": "architect", "kind": "output", "cursor": "74-0"},
+        {"agent": "architect", "kind": "tool", "tool": "Edit", "cursor": "75-0"},
+        {"agent": "architect", "kind": "tool", "tool": "Bash", "cursor": "76-0"},
+        {"agent": "architect", "kind": "output", "cursor": "77-0"},
+    ]
+
+    event_index = 0
+    event_lock = threading.Lock()
+
+    def fake_stream(agent, after=None):
+        nonlocal event_index
+        while True:
+            with event_lock:
+                if event_index < len(activity_events):
+                    ev = activity_events[event_index]
+                    event_index += 1
+                    yield ev
+                else:
+                    break
+            import time
+            time.sleep(0.05)
+
+    monkeypatch.setattr(flock, "stream_activity", fake_stream)
+
+    reply = bot_instance.handle_user_prompt(12345, "run multi step task")
+    assert reply == "✅ Sent to architect."
+
+    import time
+    time.sleep(0.8)
+
+    key = "12345:architect"
+    render = bot_instance.activity_renders.get(key)
+    assert render is not None
+    # All 7 events must have been recorded (not stopped at step 2!)
+    assert len(render.events) == 7
+    assert [e.get("kind") for e in render.events] == [
+        "input", "output", "tool", "output", "tool", "tool", "output"
+    ]
+
+    # Final reply arrives via ReplyPusher and finalizes the render
+    pusher = ReplyPusher(
+        flock=flock,
+        telegram=telegram,
+        chat_id=12345,
+        cursor_store=store,
+        activity_finalizer_fn=bot_instance.finalize_activity,
+    )
+
+    pusher.run(stream_fn=lambda after=None: iter([
+        {"l2": {"source": "architect"}, "payload": {"text": "all done"}, "cursor": "80-0"}
+    ]))
+
+    assert render.completed is True
+    assert "completed (7 steps)" in render.render()
+    assert telegram.sent_messages[-1]["text"] == "architect: all done"
 
 
 def test_telegram_bot_no_activity_push_flag():
