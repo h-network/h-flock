@@ -161,8 +161,9 @@ envelope** and exits.
 agent, popping eagerly, drains the Redis backlog into process memory: delivery
 takes hundreds of milliseconds, arrivals are not rate-limited, and nothing is
 inspectable when it goes wrong. Keeping the backlog in Redis is the point. ⚠ **Durable across port
-lifetimes, not across a tenant restart** — Redis runs without persistence by
-design (`LLD-container` §7), so a restart empties it.
+lifetimes, not across a tenant restart** — Redis uses AOF persistence for durable
+boards and streams, but deliberately purges ephemeral transport queues at boot
+(`LLD-container` §§5, 7).
 
 Consequences worth knowing: an office of idle agents costs nothing, because there
 are no processes between deliveries; and a **busy tag** in Redis serialises

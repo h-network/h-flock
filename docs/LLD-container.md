@@ -32,7 +32,7 @@ tenant container instead.
   │        ▲              ▲                    ▲               │
   │        │              │                    │               │
   │   ┌────┴────┐   ┌─────┴──────┐      ┌──────┴──────┐        │
-  │   │ switch  │   │  port   │      │     api     │        │
+  │   │ switch  │   │    port    │      │     api     │        │
   │   └─────────┘   └─────┬──────┘      └──────┬──────┘        │
   │                       │ send-keys          │               │
   │                 ┌─────▼──────┐             │               │
@@ -55,7 +55,7 @@ tenant container instead.
 | redis | — | the bus. Loopback, AOF persistence enabled; ephemeral transport queues purged at boot (BUILD-63) |
 | switch | `LLD-bus-and-switch` | one per tenant, therefore one per container |
 | tmux host | `LLD-tmux-host` | creates the server, session and windows for `port_type: tmux` entries |
-| tmux port | `LLD-port-tmux` | kicked per delivery; pastes into windows (`port_type: tmux`), appends to mailbox stream (`port_type: api`), writes pending.verify marker, exits |
+| `flock.port` | `LLD-port-tmux` | kicked per delivery; pastes into windows (`port_type: tmux`), appends to mailbox stream (`port_type: api`), writes pending.verify marker, exits |
 | watchdog | `flock.watchdog` | background process; samples presence, tasks, activity; writes alerts for human operator |
 | api | `LLD-api` | envelopes in, state out, client mailbox polling & SSE streaming |
 | session | `LLD-session` | terminal output and keystrokes. Its own port |
