@@ -1,9 +1,12 @@
 import asyncio
+import base64
 import hashlib
 import hmac
 import ipaddress
 import json
+import math
 import os
+import re
 import uuid
 from dataclasses import dataclass
 from typing import Any
@@ -20,6 +23,16 @@ from flock.bus.doors import send
 from flock.bus.envelope import EnvelopeError
 from flock.bus.keys import prefix
 from flock.bus.roster import is_member, members, port_type
+
+DEFAULT_ENVELOPE_MAX_BYTES = 1_048_576
+ATTACHMENT_MAX_BYTES = 10_485_760
+ATTACHMENT_BASE64_MAX_BYTES = 4 * math.ceil(ATTACHMENT_MAX_BYTES / 3)
+ATTACHMENT_FILENAME_MAX_BYTES = 255
+ATTACHMENT_MIME_TYPE_MAX_BYTES = 255
+ATTACHMENT_CAPTION_MAX_BYTES = 65_536
+ATTACHMENT_MIME_TYPE_RE = re.compile(
+    r"^[A-Za-z0-9][A-Za-z0-9!#$&^_.+-]*/[A-Za-z0-9][A-Za-z0-9!#$&^_.+-]*$"
+)
 
 
 @dataclass(frozen=True)
@@ -144,6 +157,105 @@ def _verify_client_signature(
         return False
     expected = hmac.new(secret.encode("utf-8"), _canonical_envelope(envelope), hashlib.sha256).hexdigest()
     return hmac.compare_digest(expected, sig)
+
+
+def _validate_attachment_payload(payload: Any) -> None:
+    if not isinstance(payload, dict):
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail="invalid attachment payload: must be an object",
+        )
+    required_keys = {"filename", "mime_type", "content_base64"}
+    allowed_keys = {"filename", "mime_type", "content_base64", "caption"}
+    payload_keys = set(payload.keys())
+    if not required_keys.issubset(payload_keys) or not payload_keys.issubset(allowed_keys):
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail="invalid attachment payload schema: filename, mime_type, and content_base64 are required; caption is optional; no other fields are allowed",
+        )
+
+    filename = payload["filename"]
+    mime_type = payload["mime_type"]
+    content_base64 = payload["content_base64"]
+    caption = payload.get("caption")
+
+    if not isinstance(filename, str) or not isinstance(mime_type, str) or not isinstance(content_base64, str):
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail="invalid attachment payload: filename, mime_type, and content_base64 must be strings",
+        )
+    if caption is not None and not isinstance(caption, str):
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail="invalid attachment payload: caption must be a string",
+        )
+
+    filename_bytes = filename.encode("utf-8")
+    if len(filename_bytes) < 1 or len(filename_bytes) > ATTACHMENT_FILENAME_MAX_BYTES:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail="invalid attachment filename: must be non-empty and at most 255 UTF-8 bytes",
+        )
+    if filename in {".", ".."}:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail="invalid attachment filename: '.' and '..' are not permitted",
+        )
+    if "/" in filename or "\\" in filename:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail="invalid attachment filename: path separators are not permitted",
+        )
+    if any(ord(c) < 32 or ord(c) == 127 for c in filename):
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail="invalid attachment filename: control characters and NUL are not permitted",
+        )
+
+    try:
+        mime_bytes = mime_type.encode("ascii")
+    except UnicodeEncodeError:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail="invalid attachment mime_type: must be ASCII",
+        )
+    if len(mime_bytes) > ATTACHMENT_MIME_TYPE_MAX_BYTES or not ATTACHMENT_MIME_TYPE_RE.fullmatch(mime_type):
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail="invalid attachment mime_type: must be at most 255 ASCII bytes matching type/subtype grammar",
+        )
+
+    if caption is not None:
+        if len(caption.encode("utf-8")) > ATTACHMENT_CAPTION_MAX_BYTES:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+                detail="invalid attachment caption: exceeds maximum size of 65,536 UTF-8 bytes",
+            )
+
+    try:
+        b64_ascii = content_base64.encode("ascii")
+    except UnicodeEncodeError:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail="invalid attachment content_base64: must be valid ASCII standard base64",
+        )
+    if len(b64_ascii) > ATTACHMENT_BASE64_MAX_BYTES:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail="attachment content_base64 exceeds maximum allowed encoded size",
+        )
+    try:
+        decoded_bytes = base64.b64decode(b64_ascii, validate=True)
+    except Exception as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail=f"invalid attachment content_base64: {exc}",
+        ) from exc
+    if len(decoded_bytes) > ATTACHMENT_MAX_BYTES:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail="decoded attachment exceeds maximum size limit of 10MB (10,485,760 bytes)",
+        )
 
 
 def _render_restdoc_html(app: FastAPI) -> str:
@@ -713,21 +825,25 @@ def create_app(*, settings: Settings | None = None, redis_client: Any = None) ->
                     status_code=status.HTTP_401_UNAUTHORIZED,
                     detail="invalid or missing signature for 'as' client",
                 )
-        try:
-            payload_str = json.dumps(envelope)
-        except (TypeError, ValueError):
-            payload_str = ""
-        if len(payload_str.encode("utf-8")) > 1_048_576:
-            raise HTTPException(
-                status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
-                detail="envelope payload exceeds maximum size limit of 1MB",
-            )
         if "text" in envelope and set(envelope) <= {"text", "as", "kid", "sig"}:
             kind = "Message"
             payload = {"text": envelope["text"]}
         else:
             kind = envelope.get("kind")
             payload = envelope.get("payload")
+
+        if kind == "Attachment":
+            _validate_attachment_payload(payload)
+        else:
+            try:
+                payload_str = json.dumps(envelope)
+            except (TypeError, ValueError):
+                payload_str = ""
+            if len(payload_str.encode("utf-8")) > DEFAULT_ENVELOPE_MAX_BYTES:
+                raise HTTPException(
+                    status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+                    detail="envelope payload exceeds maximum size limit of 1MB",
+                )
         correlation_id = uuid.uuid4().hex
         try:
             stream_id = send(

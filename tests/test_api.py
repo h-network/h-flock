@@ -1,5 +1,6 @@
 from conftest import FakeRedis, FakePipeline
 import asyncio
+import base64
 import hashlib
 import hmac as hmac_lib
 import json
@@ -812,6 +813,274 @@ def test_send_door_non_local_destination_raises_envelope_error(client):
             destination="otherpod:othertenant:bob",
             payload={"text": "remote msg"},
         )
+
+
+def test_post_envelope_attachment_valid_accepted(client, monkeypatch):
+    app, _ = client
+    sent = {}
+    monkeypatch.setattr(api_module, "send", lambda _redis, **kwargs: sent.update(kwargs) or "stream-1")
+
+    # 2 MB binary file payload (larger than 1MB default limit)
+    raw_data = b"x" * (2 * 1024 * 1024)
+    b64_data = base64.b64encode(raw_data).decode("ascii")
+
+    envelope = {
+        "kind": "Attachment",
+        "payload": {
+            "filename": "diagram.png",
+            "mime_type": "image/png",
+            "content_base64": b64_data,
+            "caption": "system architecture diagram",
+        },
+    }
+    status_code, body = request(
+        app,
+        "POST",
+        "/agents/alice/envelopes",
+        token="secret",
+        body=envelope,
+    )
+    assert status_code == 202
+    assert "stream_id" in body
+    assert sent["kind"] == "Attachment"
+    assert sent["payload"]["filename"] == "diagram.png"
+
+
+def test_post_envelope_attachment_exact_max_boundary_accepted(client, monkeypatch):
+    app, _ = client
+    sent = {}
+    monkeypatch.setattr(api_module, "send", lambda _redis, **kwargs: sent.update(kwargs) or "stream-1")
+
+    # Exactly 10,485,760 bytes (10 MiB)
+    raw_data = b"y" * 10_485_760
+    b64_data = base64.b64encode(raw_data).decode("ascii")
+
+    envelope = {
+        "kind": "Attachment",
+        "payload": {
+            "filename": "archive.tar.gz",
+            "mime_type": "application/gzip",
+            "content_base64": b64_data,
+        },
+    }
+    status_code, body = request(
+        app,
+        "POST",
+        "/agents/alice/envelopes",
+        token="secret",
+        body=envelope,
+    )
+    assert status_code == 202
+    assert "stream_id" in body
+
+
+def test_post_envelope_attachment_exceeding_decoded_max_rejected(client):
+    app, _ = client
+    # 10,485,761 bytes (> 10 MiB)
+    raw_data = b"z" * (10_485_760 + 1)
+    b64_data = base64.b64encode(raw_data).decode("ascii")
+
+    envelope = {
+        "kind": "Attachment",
+        "payload": {
+            "filename": "big.bin",
+            "mime_type": "application/octet-stream",
+            "content_base64": b64_data,
+        },
+    }
+    status_code, body = request(
+        app,
+        "POST",
+        "/agents/alice/envelopes",
+        token="secret",
+        body=envelope,
+    )
+    assert status_code == 422
+    assert "exceeds maximum size limit" in body["detail"]
+
+
+def test_post_envelope_attachment_exceeding_derived_base64_bound_rejected(client):
+    app, _ = client
+    # base64 length > ATTACHMENT_BASE64_MAX_BYTES (13,981,016)
+    oversized_b64 = "A" * 13_981_020
+
+    envelope = {
+        "kind": "Attachment",
+        "payload": {
+            "filename": "big.bin",
+            "mime_type": "application/octet-stream",
+            "content_base64": oversized_b64,
+        },
+    }
+    status_code, body = request(
+        app,
+        "POST",
+        "/agents/alice/envelopes",
+        token="secret",
+        body=envelope,
+    )
+    assert status_code == 422
+    assert "exceeds maximum allowed encoded size" in body["detail"]
+
+
+def test_post_envelope_non_attachment_exceeding_1mb_rejected(client):
+    app, _ = client
+    # Sugar message exceeding 1MB
+    status_code, body = request(
+        app,
+        "POST",
+        "/agents/alice/envelopes",
+        token="secret",
+        body={"text": "m" * (1024 * 1024 + 100)},
+    )
+    assert status_code == 422
+    assert "exceeds maximum size limit of 1MB" in body["detail"]
+
+    # Command exceeding 1MB
+    status_code_cmd, _ = request(
+        app,
+        "POST",
+        "/agents/alice/envelopes",
+        token="secret",
+        body={"kind": "Command", "payload": {"text": "c" * (1024 * 1024 + 100)}},
+    )
+    assert status_code_cmd == 422
+
+    # Unknown kind exceeding 1MB
+    status_code_custom, _ = request(
+        app,
+        "POST",
+        "/agents/alice/envelopes",
+        token="secret",
+        body={"kind": "CustomKind", "payload": {"data": "u" * (1024 * 1024 + 100)}},
+    )
+    assert status_code_custom == 422
+
+
+def test_post_envelope_unknown_kind_under_1mb_accepted(client, monkeypatch):
+    app, _ = client
+    sent = {}
+    monkeypatch.setattr(api_module, "send", lambda _redis, **kwargs: sent.update(kwargs) or "stream-1")
+    status_code, _ = request(
+        app,
+        "POST",
+        "/agents/alice/envelopes",
+        token="secret",
+        body={"kind": "FutureKind", "payload": {"foo": "bar"}},
+    )
+    assert status_code == 202
+    assert sent["kind"] == "FutureKind"
+
+
+def test_post_envelope_attachment_schema_validation(client):
+    app, _ = client
+
+    # Payload not a dict
+    for bad_payload in ["string", 123, [1, 2, 3]]:
+        status_code, _ = request(
+            app, "POST", "/agents/alice/envelopes", token="secret",
+            body={"kind": "Attachment", "payload": bad_payload},
+        )
+        assert status_code == 422
+
+    # Missing required keys
+    valid_payload = {
+        "filename": "a.txt",
+        "mime_type": "text/plain",
+        "content_base64": base64.b64encode(b"hello").decode(),
+    }
+    for required_key in ["filename", "mime_type", "content_base64"]:
+        incomplete = {k: v for k, v in valid_payload.items() if k != required_key}
+        status_code, _ = request(
+            app, "POST", "/agents/alice/envelopes", token="secret",
+            body={"kind": "Attachment", "payload": incomplete},
+        )
+        assert status_code == 422
+
+    # Extra fields (closed schema)
+    with_extra = dict(valid_payload, extra="forbidden")
+    status_code, _ = request(
+        app, "POST", "/agents/alice/envelopes", token="secret",
+        body={"kind": "Attachment", "payload": with_extra},
+    )
+    assert status_code == 422
+
+    # Non-string field types
+    for bad_field in [{"filename": 123}, {"mime_type": True}, {"content_base64": None}, {"caption": 456}]:
+        bad_types = dict(valid_payload, **bad_field)
+        status_code, _ = request(
+            app, "POST", "/agents/alice/envelopes", token="secret",
+            body={"kind": "Attachment", "payload": bad_types},
+        )
+        assert status_code == 422
+
+
+def test_post_envelope_attachment_filename_validation(client):
+    app, _ = client
+    b64 = base64.b64encode(b"test").decode()
+
+    # Empty filename
+    res, _ = request(app, "POST", "/agents/alice/envelopes", token="secret",
+                     body={"kind": "Attachment", "payload": {"filename": "", "mime_type": "text/plain", "content_base64": b64}})
+    assert res == 422
+
+    # Filename > 255 UTF-8 bytes
+    long_fn = "a" * 256
+    res, _ = request(app, "POST", "/agents/alice/envelopes", token="secret",
+                     body={"kind": "Attachment", "payload": {"filename": long_fn, "mime_type": "text/plain", "content_base64": b64}})
+    assert res == 422
+
+    # . and .. and path separators and control characters
+    for invalid_fn in [".", "..", "dir/file.txt", "dir\\file.txt", "file\x00.txt", "file\n.txt", "file\x1f.txt", "file\x7f.txt"]:
+        res, _ = request(app, "POST", "/agents/alice/envelopes", token="secret",
+                         body={"kind": "Attachment", "payload": {"filename": invalid_fn, "mime_type": "text/plain", "content_base64": b64}})
+        assert res == 422
+
+
+def test_post_envelope_attachment_mime_type_validation(client):
+    app, _ = client
+    b64 = base64.b64encode(b"test").decode()
+
+    invalids = [
+        "", "image/*", "text/plain; charset=utf-8", "/png", "image/",
+        "image/png ", " image/png", "image/png\n", "image/pñg", "a" * 256 + "/b",
+    ]
+    for invalid_mime in invalids:
+        res, _ = request(app, "POST", "/agents/alice/envelopes", token="secret",
+                         body={"kind": "Attachment", "payload": {"filename": "test.txt", "mime_type": invalid_mime, "content_base64": b64}})
+        assert res == 422
+
+
+def test_post_envelope_attachment_caption_validation(client):
+    app, _ = client
+    b64 = base64.b64encode(b"test").decode()
+
+    # Caption > 65536 UTF-8 bytes
+    long_caption = "c" * 65_537
+    res, _ = request(app, "POST", "/agents/alice/envelopes", token="secret",
+                     body={"kind": "Attachment", "payload": {"filename": "test.txt", "mime_type": "text/plain", "content_base64": b64, "caption": long_caption}})
+    assert res == 422
+
+
+def test_post_envelope_attachment_base64_strict_validation(client):
+    app, _ = client
+
+    invalids = [
+        "AA AA",        # whitespace
+        "AA\t==",       # whitespace
+        "AA\r\n==",     # whitespace
+        " AA==",        # leading whitespace
+        "AA== ",        # trailing whitespace
+        "AA_-",         # URL-safe chars
+        "A===",         # invalid padding
+        "=====",        # invalid padding
+        "AAAAA",        # length not multiple of 4 / excess data
+        "AA==\u200b",   # unicode whitespace/non-ascii
+    ]
+    for invalid_b64 in invalids:
+        res, _ = request(app, "POST", "/agents/alice/envelopes", token="secret",
+                         body={"kind": "Attachment", "payload": {"filename": "test.txt", "mime_type": "text/plain", "content_base64": invalid_b64}})
+        assert res == 422
 
 
 

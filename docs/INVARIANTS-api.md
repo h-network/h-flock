@@ -12,9 +12,9 @@ Module invariants under real tenant conditions (`api-lab` on ports 8110 / 8111),
 - **Verification Status:** **HELD.** Missing and invalid tokens rejected with HTTP 401 / HTTP 403 across all routes.
 
 ### Invariant 2: Payload Size & Schema Bound
-- **Statement:** Envelopes submitted to `POST /agents/{agent}/envelopes` exceeding 1 MB (1,048,576 bytes) or containing malformed non-string `"as"` parameters are rejected with HTTP `422 Unprocessable Content` before reaching Redis queues.
-- **Falsification Observation:** An envelope exceeding 1 MB returning `202 Accepted` or placing oversized data onto Redis egress/ingress queues, or a malformed `"as"` dictionary payload causing an uncaught 500 Internal Server Error / `redis.exceptions.DataError`.
-- **Verification Status:** **HELD.** Oversized envelopes (>1MB) and malformed `"as"` dict payloads both return HTTP 422 Unprocessable Content.
+- **Statement:** Envelopes submitted to `POST /agents/{agent}/envelopes` exceeding default 1 MB (1,048,576 bytes) for standard envelopes or 10 MB (10,485,760 bytes) decoded content for `Attachment` envelopes, or violating payload schemas (such as malformed non-string `"as"` parameters or invalid Attachment schemas), are rejected with HTTP `422 Unprocessable Content` before reaching Redis queues.
+- **Falsification Observation:** An envelope exceeding size limits returning `202 Accepted` or placing oversized data onto Redis egress/ingress queues, or a malformed payload causing an uncaught 500 Internal Server Error / `redis.exceptions.DataError`.
+- **Verification Status:** **HELD.** Oversized standard envelopes (>1MB), oversized attachments (>10MB decoded), and malformed payloads return HTTP 422 Unprocessable Content.
 
 ### Invariant 3: Session Door Token Log Confidentiality
 - **Statement:** Connecting to the WebSocket session door (`ws://HOST:8111/session?token=<TOKEN>`) validates credentials without printing the token into container stdout or uvicorn access logs.
