@@ -107,3 +107,37 @@ def test_pricing_config_is_copied_into_container_image():
     assert "container/config/pricing.json" in dockerfile, (
         "pricing.json is not COPYed in container/Dockerfile; container will fall back to hardcoded defaults"
     )
+
+
+def test_web_dockerfile_copies_the_console_and_binds_every_interface():
+    """container/web.Dockerfile is clients/web/server.py's own image, separate
+    from the tenant image — its contract with testbed's companion compose/
+    setup.sh ticket is WEB_LISTEN=0.0.0.0 (routable from a reverse proxy on
+    the shared docker network) and WEB_PORT left undeclared so server.py's
+    own --port/WEB_PORT default (8090) stays the only place that default
+    lives — see test_image_env_does_not_shadow_a_diverging_code_default for
+    why a duplicated default is the trap this avoids.
+    """
+    import pathlib
+    import re
+
+    root = pathlib.Path(__file__).resolve().parents[1]
+    dockerfile_path = root / "container" / "web.Dockerfile"
+    assert dockerfile_path.is_file(), "container/web.Dockerfile is missing"
+    dockerfile = dockerfile_path.read_text()
+
+    assert "COPY clients/web/" in dockerfile, "web.Dockerfile does not copy clients/web/ into the image"
+
+    image_env = {
+        match.group(1): match.group(2).rstrip("\\").strip()
+        for match in re.finditer(r"^\s*(?:ENV\s+)?([A-Z][A-Z0-9_]+)=(\S+)", dockerfile, re.M)
+    }
+    assert image_env.get("WEB_LISTEN") == "0.0.0.0", (
+        "web.Dockerfile must bind every interface inside its own container, "
+        "same rule container/Dockerfile documents for API_BIND/SESSION_BIND"
+    )
+    assert "WEB_PORT" not in image_env, (
+        "web.Dockerfile must not redeclare WEB_PORT — server.py's own default "
+        "is the only place that value should live (see the diverging-default test above)"
+    )
+    assert "clients/web/server.py" in dockerfile, "web.Dockerfile's ENTRYPOINT must invoke clients/web/server.py"
