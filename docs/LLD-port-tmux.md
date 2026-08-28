@@ -190,7 +190,7 @@ Attachments are never batched into message bursts.
 
 ### Verification and usage-correlation markers
 
-Before pasting a `Message` or `Command` into a `port_type: tmux` window, the
+Before pasting a `Message`, `Command`, or `Attachment` into a `port_type: tmux` window, the
 port writes the same marker to two bounded Redis Streams:
 
 - `<prefix>:agent:<name>:pending.verify` via `XADD MAXLEN ~ 100`, for the
