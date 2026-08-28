@@ -104,6 +104,7 @@ prompts=(
   "Point any agent at a local model provider? [y/N]: "
   "Start the REST API door inside the tenant? [y/N]: "
   "Run the Telegram bot in this tenant? [y/N]: "
+  "Enable Telegram Mini App dashboard? [y/N]: "
   "Reach the REST API from outside the container (0.0.0.0, every host interface)? [y/N]: "
   "Host port for the REST API [8080]: "
   "Reach the session console from outside the container (0.0.0.0, every host interface)? [Y/n]: "
@@ -117,7 +118,7 @@ for p in "${prompts[@]}"; do
   answers+=("$a")
 done
 printf '%s\n' "${answers[@]}" >"$MATRIX_STATE/setup.answers"
-api_port="${answers[13]:-8080}"
+api_port="${answers[14]:-8080}"
 tenant="${answers[1]:-accept}"
 mkdir -p "tenants/$tenant"
 printf 'API_ENABLED=1\nAPI_PORT=%s\nAPI_TOKEN=matrix-token\n' "$api_port" >"tenants/$tenant/.env"
@@ -296,11 +297,11 @@ def test_compatible_suite_pairs_change_their_harness_effect(tmp_path, mode, flag
         assert before_answers[1] == "accept"
         assert after_answers[1] == "matrix-tenant"
     elif flag == "--api-port":
-        assert before_answers[13] == "8080"
-        assert after_answers[13] == "19456"
+        assert before_answers[14] == "8080"
+        assert after_answers[14] == "19456"
     elif flag == "--session-port":
-        assert before_answers[15] == "8081"
-        assert after_answers[15] == "19457"
+        assert before_answers[16] == "8081"
+        assert after_answers[16] == "19457"
     elif flag == "--console-port":
         before_server = next(line for line in before["python.calls"].splitlines() if "server.py" in line)
         after_server = next(line for line in after["python.calls"].splitlines() if "server.py" in line)
@@ -510,3 +511,22 @@ def test_a_dirty_tree_always_rebuilds_and_force_overrides():
 
     assert flag({"FLOCK_IMAGE": "h-flock:dirty"}) == "--build", "dirty is never reused"
     assert flag({"FLOCK_IMAGE": "h-flock:whatever", "FLOCK_FORCE_BUILD": "1"}) == "--build"
+
+
+def test_mini_app_image_uses_parallel_tag_and_participates_in_build_check(tmp_path):
+    lib = ROOT / "container/flock-image.sh"
+    docker = tmp_path / "docker"
+    docker.write_text("#!/bin/sh\n[ \"$3\" = h-flock:abc123 ]\n")
+    docker.chmod(0o755)
+    env = {
+        **os.environ,
+        "PATH": f"{tmp_path}:{os.environ['PATH']}",
+        "FLOCK_IMAGE": "h-flock:abc123",
+        "FLOCK_WEB_IMAGE": "h-flock-web:abc123",
+        "MINI_APP_ENABLED": "1",
+    }
+    out = subprocess.run(
+        ["bash", "-c", f'. "{lib}"\nprintf "%s\\n" "$(flock_web_image_tag)" "$(flock_build_flag)"'],
+        capture_output=True, text=True, cwd=ROOT, env=env,
+    )
+    assert out.stdout.splitlines() == ["h-flock-web:abc123", "--build"]

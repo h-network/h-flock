@@ -60,12 +60,14 @@ printf 'env=%s\n' "$TENANT_ENV_FILE"
     out = subprocess.check_output([str(run_file)], text=True).splitlines()
     assert out == ["-f", f"{tmp_path}/container/compose.yaml", f"env={tenant_dir}/.env"]
 
-    # 2. With ports fragment
+    # 2. With both tenant-scoped optional fragments
     (tenant_dir / "compose.ports.yaml").write_text("services:\n  tenant:\n    ports:\n      - 8080:8080\n")
+    (tenant_dir / "compose.mini-app.yaml").write_text("services:\n  mini-app:\n    image: test-web\n")
     out2 = subprocess.check_output([str(run_file)], text=True).splitlines()
     assert out2 == [
         "-f", f"{tmp_path}/container/compose.yaml",
         "-f", f"{tenant_dir}/compose.ports.yaml",
+        "-f", f"{tenant_dir}/compose.mini-app.yaml",
         f"env={tenant_dir}/.env",
     ]
 

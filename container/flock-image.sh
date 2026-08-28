@@ -33,14 +33,24 @@ flock_image_tag() {
   fi
 }
 
+flock_web_image_tag() {
+  local tenant_image="${FLOCK_IMAGE:-$(flock_image_tag)}"
+  echo "h-flock-web:${tenant_image#h-flock:}"
+}
+
 # `--build` when the image is absent or unnameable, nothing when it is already
 # there. FLOCK_FORCE_BUILD=1 overrides, for when you want it fresh regardless.
 flock_build_flag() {
   local image="${FLOCK_IMAGE:-$(flock_image_tag)}"
-  if [ "${FLOCK_FORCE_BUILD:-0}" = "1" ] || [ "$image" = "h-flock:dirty" ]; then
+  local web_image="${FLOCK_WEB_IMAGE:-$(flock_web_image_tag)}"
+  if [ "${FLOCK_FORCE_BUILD:-0}" = "1" ] || [ "$image" = "h-flock:dirty" ] \
+     || { [ "${MINI_APP_ENABLED:-0}" = "1" ] && [ "$web_image" = "h-flock-web:dirty" ]; }; then
     echo "--build"; return
   fi
-  docker image inspect "$image" >/dev/null 2>&1 || echo "--build"
+  docker image inspect "$image" >/dev/null 2>&1 || { echo "--build"; return; }
+  [ "${MINI_APP_ENABLED:-0}" != "1" ] \
+    || docker image inspect "$web_image" >/dev/null 2>&1 \
+    || echo "--build"
 }
 
 # Say which image a run used, so a surprising result can be traced to the build

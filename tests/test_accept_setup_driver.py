@@ -56,6 +56,7 @@ def test_setup_bool_and_port_validation(tmp_path):
         "no",        # local provider
         "yes",       # api enabled
         "no",        # telegram
+        "no",        # mini app
         "yes",       # api publish
         "18080",     # api port
         "yes",       # session publish
@@ -116,6 +117,62 @@ def test_drive_setup_against_real_setup_sh(tmp_path):
     assert attach.stat().st_mode & 0o111
     assert 'flock_tenant_context "$(basename "$_tenant_dir")"' in attach.read_text()
     assert 'tmux attach -t "$TENANT"' in attach.read_text()
+
+
+def test_setup_provisions_tenant_scoped_mini_app(tmp_path):
+    bin_dir = tmp_path / "bin"
+    _mock_docker(bin_dir)
+    env = os.environ.copy()
+    env["PATH"] = f"{bin_dir}:{env['PATH']}"
+    shutil.copy2(SETUP, tmp_path / "setup.sh")
+    shutil.copytree(ROOT / "container", tmp_path / "container")
+
+    cmd = [
+        "python3", str(tmp_path / "container/drive-setup.py"),
+        "--setup-cmd", str(tmp_path / "setup.sh"),
+        "--tenant", "mini",
+        "--telegram", "y", "--telegram-token", "bot-secret",
+        "--telegram-chat-id", "1234", "--mini-app", "y",
+        "--mini-app-url", "https://mini.example.test/app",
+        "--mini-app-port", "19090", "--mini-app-host", "0.0.0.0",
+        "--publish-api", "n", "--publish-session", "n",
+    ]
+    proc = subprocess.run(cmd, capture_output=True, text=True, cwd=tmp_path, env=env)
+    assert proc.returncode == 0, proc.stdout + proc.stderr
+
+    tenant_dir = tmp_path / "tenants/mini"
+    env_content = (tenant_dir / ".env").read_text()
+    assert "API_ENABLED=1" in env_content
+    assert "MINI_APP_URL=https://mini.example.test/app" in env_content
+    assert "MINI_APP_HOST=0.0.0.0" in env_content
+    assert "MINI_APP_PORT=19090" in env_content
+    secret = next(line.split("=", 1)[1] for line in env_content.splitlines() if line.startswith("HFLOCK_SECRET="))
+    assert len(secret) == 64
+    fragment = (tenant_dir / "compose.mini-app.yaml").read_text()
+    assert 'HFLOCK_API: "http://tenant:8080"' in fragment
+    assert 'HFLOCK_SESSION: "http://tenant:8081"' in fragment
+    assert '"0.0.0.0:19090:8090"' in fragment
+    assert "container/web.Dockerfile" in fragment
+    assert not (tenant_dir / "compose.ports.yaml").exists()
+    assert "reverse proxy must publish" in proc.stdout
+
+    first_secret = secret
+    rerun = subprocess.run(cmd, capture_output=True, text=True, cwd=tmp_path, env=env)
+    assert rerun.returncode == 0, rerun.stdout + rerun.stderr
+    assert f"HFLOCK_SECRET={first_secret}" in (tenant_dir / ".env").read_text()
+
+    disabled_cmd = [
+        "python3", str(tmp_path / "container/drive-setup.py"),
+        "--setup-cmd", str(tmp_path / "setup.sh"), "--tenant", "mini",
+        "--telegram", "n", "--mini-app", "n",
+        "--publish-api", "n", "--publish-session", "n",
+    ]
+    disabled = subprocess.run(disabled_cmd, capture_output=True, text=True, cwd=tmp_path, env=env)
+    assert disabled.returncode == 0, disabled.stdout + disabled.stderr
+    disabled_env = (tenant_dir / ".env").read_text()
+    assert "MINI_APP_URL=" not in disabled_env
+    assert "HFLOCK_SECRET=" not in disabled_env
+    assert not (tenant_dir / "compose.mini-app.yaml").exists()
 
 
 def test_setup_imports_only_matching_legacy_tenant(tmp_path):

@@ -35,6 +35,7 @@ def test_keep_transfers_console_ownership_without_credentials_in_argv(tmp_path):
           "Point any agent at a local model provider?"
           "Start the REST API door inside the tenant?"
           "Run the Telegram bot in this tenant?"
+          "Enable Telegram Mini App dashboard?"
           "Reach the REST API from outside the container"
           "Host port for the REST API"
           "Reach the session console from outside the container"
