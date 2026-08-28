@@ -324,6 +324,14 @@ evidence of a running account and is ignored. If an account ceases to require a
 credential because every user moved to providers, its stale
 `credential.alerted` field is cleared.
 
+⚠ **A Claude account backed by `CLAUDE_OAUTH_TOKEN_<ACCOUNT>` is skipped
+entirely, not read as `absent`.** `tmux.ops` injects that environment value
+straight into the matching window as `CLAUDE_CODE_OAUTH_TOKEN`, so no
+`.credentials.json` is ever written and none is expected — reading the file
+would report a healthy account as missing. **Known limit:** the watchdog has
+no way to tell an expired or revoked token from a live one here; catching that
+would need a remote authentication probe, not a file read, and none exists.
+
 | CLI | source | interpretation |
 |---|---|---|
 | Claude | `claudeAiOauth.refreshTokenExpiresAt` | alert when within the warning window |
