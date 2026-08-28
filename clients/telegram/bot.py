@@ -6,6 +6,7 @@ the 'architect' agent via Telegram.
 
 import argparse
 import asyncio
+import base64
 import html
 import json
 import logging
@@ -82,6 +83,22 @@ class FlockClient:
             "POST",
             f"/agents/{destination}/envelopes",
             {"text": text, "as": self.app_name},
+        )
+
+    def send_attachment(
+        self, destination: str, filename: str, mime_type: str, content_base64: str, caption: str | None = None
+    ) -> tuple[int, dict]:
+        """Send an Attachment-kind envelope (docs/CONTRACTS.md) — file bytes
+        on the bus, not a path shared out of band. The api re-validates and
+        re-checks the decoded size regardless of what this client already
+        checked (a direct bus caller can bypass both the api and here)."""
+        payload = {"filename": filename, "mime_type": mime_type, "content_base64": content_base64}
+        if caption:
+            payload["caption"] = caption
+        return self.request(
+            "POST",
+            f"/agents/{destination}/envelopes",
+            {"kind": "Attachment", "payload": payload, "as": self.app_name},
         )
 
     def get_presence(self, agent: str) -> tuple[int, dict]:
@@ -321,50 +338,36 @@ _ALERT_ICONS = {"blocked": "⊘", "stalled": "⏳", "credential": "🔑"}
 
 # Telegram's own Bot API ceiling for getFile — a "photo" upload is always
 # recompressed by Telegram well under this, so it is cheap insurance rather
-# than an expected case, checked both against PhotoSize's own reported
-# file_size (before downloading anything) and the downloaded byte count
-# (in case that field was absent or wrong).
+# than an expected case, checked against PhotoSize's own reported file_size
+# before downloading anything at all.
 TELEGRAM_MAX_FILE_BYTES = 20 * 1024 * 1024
 
-# Same shape as clients/web/server.py's _enforce_recordings_retention — age
-# cap first, then oldest-first eviction down to a total-size cap — reused
-# here because received photos accumulate under an agent's workdir with
-# nothing else pruning them, the identical problem recordings already
-# solved. Same numbers, since neither has a reason to differ yet.
-PHOTO_RETENTION_MAX_AGE_S = 7 * 86400
-PHOTO_RETENTION_MAX_BYTES = 100 * 1024 * 1024
+# docs/CONTRACTS.md's Attachment section — the strictly decoded content is
+# capped at 10 MiB, smaller than TELEGRAM_MAX_FILE_BYTES above. A photo
+# between 10 and 20MB downloads fine from Telegram but must still be
+# refused as an Attachment, so this is checked separately and is not the
+# same limit reused twice.
+ATTACHMENT_MAX_BYTES = 10 * 1024 * 1024
+
+# filename: non-empty UTF-8 basename, at most 255 UTF-8 bytes, not "." or
+# "..", and none of "/", "\", NUL, another ASCII control character, or
+# U+007F.
+_ATTACHMENT_FILENAME_FORBIDDEN = re.compile(r"[/\\\x00-\x1f\x7f]")
+
+# mime_type: at most 255 ASCII bytes, no parameters/whitespace/controls/wildcards.
+_ATTACHMENT_MIME_TYPE_RE = re.compile(
+    r"^[A-Za-z0-9][A-Za-z0-9!#$&^_.+-]*/[A-Za-z0-9][A-Za-z0-9!#$&^_.+-]*$"
+)
 
 
-def _enforce_photo_retention(
-    photo_dir: pathlib.Path,
-    max_age_s: int = PHOTO_RETENTION_MAX_AGE_S,
-    total_max_bytes: int = PHOTO_RETENTION_MAX_BYTES,
-) -> None:
-    if not photo_dir.exists():
-        return
-    now = time.time()
-    files = []
-    total_size = 0
-    for p in photo_dir.iterdir():
-        if not p.is_file():
-            continue
-        try:
-            stat = p.stat()
-            if now - stat.st_mtime > max_age_s:
-                p.unlink(missing_ok=True)
-            else:
-                files.append((stat.st_mtime, stat.st_size, p))
-                total_size += stat.st_size
-        except OSError:
-            pass
-    files.sort(key=lambda item: item[0])  # oldest first
-    while total_size > total_max_bytes and files:
-        _, size, p = files.pop(0)
-        try:
-            p.unlink(missing_ok=True)
-            total_size -= size
-        except OSError:
-            pass
+def _valid_attachment_filename(name: str) -> bool:
+    if not name or name in (".", "..") or len(name.encode("utf-8")) > 255:
+        return False
+    return not _ATTACHMENT_FILENAME_FORBIDDEN.search(name)
+
+
+def _valid_attachment_mime_type(value: str) -> bool:
+    return bool(value) and len(value) <= 255 and bool(_ATTACHMENT_MIME_TYPE_RE.match(value))
 
 # A leading "@name rest of message" — a one-off destination override for
 # just that one message, unlike 🎯 Message agent's handle_message_agent_pick
@@ -1164,17 +1167,12 @@ class TelegramBot:
         pane_watch_refresh_s: float = 2.0,
         pane_watch_max_duration_s: float = 600.0,
         mini_app_url: str | None = None,
-        photo_dir_root: str = "/workdir",
     ):
         self.flock = flock_client
         self.telegram = telegram_client
         self.cursor_store = cursor_store
         self.target_agent = target_agent
         self.session_url = session_url or os.getenv("FLOCK_SESSION_URL", "")
-        # Where a received photo lands: <photo_dir_root>/<agent>/telegram-photos/
-        # (LLD-tmux-host §5 fixes /workdir/<agent> as an agent's home in
-        # production; overridable so tests don't write into a real one).
-        self.photo_dir_root = photo_dir_root
         # A public HTTPS URL for clients/web/mini.html — Telegram's own
         # requirement for a web_app button, not this codebase's. Unset means
         # no Mini App has been published for this tenant, so the button is
@@ -1643,12 +1641,12 @@ class TelegramBot:
         full original quality is only available for a "document" upload,
         out of scope here.
 
-        The photo is saved under the destination agent's own workdir
-        (`/workdir/<agent>/telegram-photos/`, not its root — identifiable
-        and prunable without touching anything the agent created itself)
-        and the agent is told where to look via a normal `Message` envelope
-        — claude/codex can already read an image from a path once they have
-        one, so this needed no new envelope kind or bus/switch change.
+        Sends a real `Attachment` envelope (`docs/CONTRACTS.md`) — file
+        bytes on the bus, `content_base64`, not a path shared out of band.
+        The tmux opener owns writing it to
+        `/workdir/<recipient>/attachments/<stream_id>/` and everything about
+        that directory's lifecycle (confirmed with tmux directly); this
+        method never touches a filesystem at all.
         """
         cid = str(chat_id)
         caption = (caption or "").strip()
@@ -1681,6 +1679,11 @@ class TelegramBot:
             self.telegram.send_message(cid, reply)
             return reply
 
+        # ⚠ Two different ceilings, checked separately, not the same limit
+        # twice: TELEGRAM_MAX_FILE_BYTES (20MB) is what Telegram will let a
+        # bot download at all; ATTACHMENT_MAX_BYTES (10MB, docs/CONTRACTS.md)
+        # is what the bus will accept as decoded Attachment content. A photo
+        # between the two downloads fine and must still be refused here.
         reported_size = largest.get("file_size")
         if reported_size and reported_size > TELEGRAM_MAX_FILE_BYTES:
             reply = "That photo is too large to fetch (Telegram's own 20MB bot download limit)."
@@ -1701,32 +1704,29 @@ class TelegramBot:
             reply = "Couldn't download that photo from Telegram."
             self.telegram.send_message(cid, reply)
             return reply
-        if len(data) > TELEGRAM_MAX_FILE_BYTES:
-            reply = "That photo is too large to save (Telegram's own 20MB bot download limit)."
+        if len(data) > ATTACHMENT_MAX_BYTES:
+            reply = "That photo is too large to send as an attachment (10MB limit)."
             self.telegram.send_message(cid, reply)
             return reply
 
-        photo_dir = pathlib.Path(self.photo_dir_root) / agent / "telegram-photos"
-        try:
-            photo_dir.mkdir(parents=True, exist_ok=True)
-            dest = photo_dir / f"{int(time.time())}-{uuid.uuid4().hex[:8]}.jpg"
-            dest.write_bytes(data)
-            _enforce_photo_retention(photo_dir)
-        except OSError as exc:
-            reply = f"Failed to save photo for {agent}: {exc}"
-            self.telegram.send_message(cid, reply)
-            return reply
+        # Telegram's own file_path (e.g. "photos/file_123.jpg") is already a
+        # valid basename in practice; still validated with a generated
+        # fallback rather than trusted outright, since the spec's rules are
+        # this client's rules too, not just the far end's.
+        filename = pathlib.Path(file_path).name
+        if not _valid_attachment_filename(filename):
+            filename = f"telegram-photo-{int(time.time())}-{uuid.uuid4().hex[:8]}.jpg"
+        mime_type = "image/jpeg"
 
-        message_lines = [f"📷 Photo received: {dest}"]
-        if body:
-            message_lines.append(body)
-        code, resp = self.flock.send_message(agent, "\n".join(message_lines))
+        code, resp = self.flock.send_attachment(
+            agent, filename, mime_type, base64.b64encode(data).decode("ascii"), caption=body or None,
+        )
         if code != 202:
-            reply = f"Saved the photo but failed to notify {agent}: {resp.get('detail', 'error')}"
+            reply = f"Failed to send that photo to {agent}: {resp.get('detail', 'error')}"
             self.telegram.send_message(cid, reply)
             return reply
 
-        reply = f"✅ Photo saved and sent to {agent}."
+        reply = f"✅ Photo sent to {agent}."
         self.telegram.send_message(cid, reply)
         return reply
 

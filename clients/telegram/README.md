@@ -308,46 +308,53 @@ perpetually "live" after the bot has moved on.
 Sending a photo used to be silently dropped — `_dispatch_update` only ever
 looked at `message.text`, and a photo update carries `message.photo`/
 `message.caption` instead, so it fell through with no reply and no record
-anywhere. It now downloads the photo, saves it under the destination
-agent's own workdir, and sends a normal `Message` envelope naming the path
-— claude/codex can already read an image directly once they have a path to
-it, so this needed no new envelope kind and no bus/switch change.
+anywhere. It now downloads the photo and sends a real `Attachment`-kind
+envelope (`docs/CONTRACTS.md`) — file bytes on the bus, `content_base64`,
+not a path shared out of band. An earlier version of this feature (before
+the Attachment kind existed) saved the file under the agent's own workdir
+and sent a plain `Message` naming the path; that's gone now that there's a
+real envelope kind to send it as, and the tmux opener does the filesystem
+work instead (`/workdir/<recipient>/attachments/<stream_id>/`, entirely its
+own to create/write/clean up — confirmed directly with the tmux lane rather
+than assumed. This client never touches a filesystem for a received photo
+at all).
 
-- **Routing is identical to a text message.** The caption is the message
-  body — the persistent chat target (🎯 Message agent) unless the caption
-  starts with `@agent`, which overrides the destination for this photo only,
-  exactly like [§2a's `@mention`](#2a-menu-a-pinned-keyboard-not-a-one-off-message) (same
-  validation, same "not a persistent change" rule). An unknown `@mention`
-  target is refused before any download is attempted.
+- **Routing is identical to a text message.** The caption is the
+  `Attachment` envelope's `caption` field — the persistent chat target (🎯
+  Message agent) unless the caption starts with `@agent`, which overrides
+  the destination for this photo only, exactly like [§2a's
+  `@mention`](#2a-menu-a-pinned-keyboard-not-a-one-off-message) (same
+  validation, `_validate_mention_target`, shared with the text path rather
+  than reimplemented). An unknown `@mention` target is refused before any
+  download is attempted.
 - **Largest available size**, `photo[-1]` — Telegram's own smallest-to-largest
   ordering for the `PhotoSize` array. This is the best *compressed* copy the
   bot ever sees: Telegram recompresses every "photo" upload itself, so full
   original quality isn't available through this path at all (only a
   "document" upload preserves it, a different message shape, not handled
-  here).
-- **Saved to `<agent-workdir>/telegram-photos/`**, not the agent's root —
-  identifiable and prunable without touching anything the agent created
-  itself. Retention mirrors `clients/web/server.py`'s own
-  `_enforce_recordings_retention` shape exactly (same problem: something
-  accumulates with nothing else pruning it) — age cap first
-  (`PHOTO_RETENTION_MAX_AGE_S`, 7 days), then oldest-first eviction down to
-  a total-size cap (`PHOTO_RETENTION_MAX_BYTES`, 100MB), run on every new
-  save rather than needing a separate maintenance pass.
-- **A defensive size check, twice** — against `PhotoSize`'s own reported
-  `file_size` before downloading anything, and again against the actual
-  downloaded byte count in case that field was absent or wrong — both
-  capped at Telegram's own `getFile` ceiling (`TELEGRAM_MAX_FILE_BYTES`,
-  20MB). In practice a "photo" upload is always well under this; it's cheap
-  insurance, not an expected case.
+  here). `mime_type` is always `image/jpeg` for the same reason — no
+  content-sniffing needed.
+- **`filename`** comes from Telegram's own `getFile` `file_path` (its
+  basename, e.g. `file_123.jpg`), still run through the same basename
+  validation `docs/CONTRACTS.md` specifies rather than trusted outright —
+  falls back to a generated name if that ever fails.
+- **A defensive size check against two different ceilings, not one applied
+  twice.** `TELEGRAM_MAX_FILE_BYTES` (20MB) is what Telegram will let a bot
+  download at all, checked against `PhotoSize`'s own reported `file_size`
+  before downloading anything. `ATTACHMENT_MAX_BYTES` (10MB,
+  `docs/CONTRACTS.md`'s decoded-content cap) is checked against the actual
+  downloaded byte count — smaller than Telegram's own ceiling, so a photo
+  between the two downloads fine and must still be refused here rather than
+  left to the api's own `422`.
 - **`blocked` presence is checked before any download work happens** — same
   as a text prompt, so a blocked agent doesn't cause a photo to be fetched
-  and saved for nothing.
+  for nothing.
 - A **Telegram album** (several photos sent together) arrives as *separate*
   updates sharing a `media_group_id`, not one message with several photos —
-  this is handled without any special casing, one delivery per photo. The
-  port's own batching of consecutive `Message`-kind envelopes (build 92)
-  coalesces same-agent deliveries that land close together, so an album
-  reaching one agent shows up as one paste rather than N separate ones.
+  handled without any special casing, one `Attachment` envelope per photo.
+  ⚠ Unlike a `Message`, **an `Attachment` is never combined into a burst**
+  (`docs/CONTRACTS.md`) — an album reaching one agent shows up as N separate
+  pastes, not one coalesced paste the way consecutive `Message`s would.
 
 ---
 
