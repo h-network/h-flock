@@ -52,6 +52,26 @@ Use TLS at the network edge whenever the console crosses a trusted host. The
 shared secret, session cookie, messages and terminal traffic are sensitive even
 though the tenant API token never enters the browser.
 
+### Running as its own container
+
+`container/web.Dockerfile` packages this server as its own image, separate
+from the tenant image (`container/Dockerfile`) — for running the console
+(and the Mini App auth path it now hosts) as its own container on a tenant's
+docker network, fronted by a reverse proxy, rather than a bare `python3
+server.py` on an operator's own machine. `python:3.12-slim`, no pip install
+(this file is stdlib-only). Binds `WEB_LISTEN=0.0.0.0` inside its own
+container by design — the same rule `API_BIND`/`SESSION_BIND` already
+document for the tenant's doors — which means `HFLOCK_SECRET` is **required**
+for it to start at all (server.py refuses a non-loopback bind without one).
+`WEB_PORT` is deliberately not set in the image, so server.py's own default
+(`8090`) stays the only place that value lives. `HFLOCK_API`/`HFLOCK_SESSION`
+must point at the tenant over whatever network connects the two containers —
+`127.0.0.1` will not reach anything from inside this one. TLS is out of
+scope here; a reverse proxy in front terminates it, same pattern the api and
+session doors already use for their own published ports. See the tenant
+provisioning tooling for how a compose service wires the two containers
+together and publishes a host port.
+
 ## Configuration
 
 Command-line options override the corresponding environment defaults.
