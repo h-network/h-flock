@@ -14,7 +14,8 @@ from clients.telegram.bot import (
     ActivityRender, AlertPusher, CursorStore, DryRunTelegramClient, FlockClient, PaneWatchRender,
     ReplyPusher, TelegramBot, TelegramClient, render_alert, render_reply,
     synthesize_speech, _parse_sse_events, _derive_session_url,
-    _is_transient_chrome_line, _parse_int_overrides, _parse_mention, _pane_tail_window, _strip_ansi,
+    _agent_picker_keyboard, _is_transient_chrome_line, _parse_int_overrides, _parse_mention,
+    _pane_tail_window, _strip_ansi,
 )
 
 
@@ -512,8 +513,9 @@ def test_addticket_full_flow_via_callbacks_and_text():
         bot_instance, flock, telegram = _make_bot(tmpdir=tmpdir)
 
         bot_instance.handle_callback_query(12345, "cb-1", "at")
-        buttons = telegram.sent_messages[-1]["reply_markup"]["inline_keyboard"]
-        assert any(row[0]["callback_data"] == "at:sme-2" for row in buttons)
+        rows = telegram.sent_messages[-1]["reply_markup"]["inline_keyboard"]
+        flat_buttons = [b for row in rows for b in row]
+        assert any(b["callback_data"] == "at:sme-2" for b in flat_buttons)
 
         bot_instance.handle_callback_query(12345, "cb-2", "at:sme-2")
         assert "Ticket title for sme-2" in telegram.sent_messages[-1]["text"]
@@ -586,8 +588,9 @@ def test_lifecycle_full_flow_via_callbacks():
         bot_instance, flock, telegram = _make_bot(tmpdir=tmpdir)
 
         bot_instance.handle_callback_query(12345, "cb-1", "lc")
-        buttons = telegram.sent_messages[-1]["reply_markup"]["inline_keyboard"]
-        assert any(row[0]["callback_data"] == "lc:architect" for row in buttons)
+        rows = telegram.sent_messages[-1]["reply_markup"]["inline_keyboard"]
+        flat_buttons = [b for row in rows for b in row]
+        assert any(b["callback_data"] == "lc:architect" for b in flat_buttons)
 
         bot_instance.handle_callback_query(12345, "cb-2", "lc:architect")
         buttons = telegram.sent_messages[-1]["reply_markup"]["inline_keyboard"]
@@ -793,14 +796,66 @@ def test_hire_failure_reports_detail():
 
 # ── message agent ────────────────────────────────────────────────────────────
 
+# ── agent pickers: grid layout, not one-per-row ─────────────────────────────
+
+def test_agent_picker_keyboard_grids_three_per_row_by_default():
+    markup = _agent_picker_keyboard(["a", "b", "c", "d", "e"], "wp")
+    rows = markup["inline_keyboard"]
+    assert [[b["text"] for b in row] for row in rows] == [
+        ["a", "b", "c"],
+        ["d", "e"],
+        ["◀ Back"],
+    ]
+    assert rows[0][0]["callback_data"] == "wp:a"
+    assert rows[-1][0]["callback_data"] == "menu"
+
+
+def test_agent_picker_keyboard_respects_columns_and_back_callback():
+    markup = _agent_picker_keyboard(["a", "b"], "lc", back_callback="lc", columns=1)
+    assert markup["inline_keyboard"] == [
+        [{"text": "a", "callback_data": "lc:a"}],
+        [{"text": "b", "callback_data": "lc:b"}],
+        [{"text": "◀ Back", "callback_data": "lc"}],
+    ]
+
+
+def test_agent_picker_keyboard_handles_no_agents():
+    markup = _agent_picker_keyboard([], "at")
+    assert markup["inline_keyboard"] == [[{"text": "◀ Back", "callback_data": "menu"}]]
+
+
+def test_addticket_lifecycle_message_watch_pickers_all_use_the_shared_grid():
+    with tempfile.TemporaryDirectory() as tmpdir:
+        flock = DummyFlockClient()
+        flock.roster = {f"agent-{i}": "tmux" for i in range(10)}
+        bot_instance, flock, telegram = _make_bot(flock=flock, tmpdir=tmpdir)
+
+        for handler, prefix in (
+            (bot_instance.handle_addticket_start, "at"),
+            (bot_instance.handle_lifecycle_start, "lc"),
+            (bot_instance.handle_message_agent_start, "ta"),
+            (bot_instance.handle_watch_start, "wp"),
+        ):
+            handler(999)
+            rows = telegram.sent_messages[-1]["reply_markup"]["inline_keyboard"]
+            # ten agents, three per row -> four agent rows plus one Back row
+            assert len(rows) == 5
+            assert all(len(row) <= 3 for row in rows[:-1])
+            flat = [b["callback_data"] for row in rows for b in row]
+            assert f"{prefix}:agent-0" in flat
+            assert f"{prefix}:agent-9" in flat
+            assert rows[-1] == [{"text": "◀ Back", "callback_data": "menu"}]
+
+
 def test_message_agent_picker_and_prompt_routing():
     with tempfile.TemporaryDirectory() as tmpdir:
         bot_instance, flock, telegram = _make_bot(tmpdir=tmpdir)
 
         reply = bot_instance.handle_text_message(12345, "🎯 Message: architect")
         assert "pick a different agent" in reply
-        buttons = telegram.sent_messages[-1]["reply_markup"]["inline_keyboard"]
-        assert any(row[0]["callback_data"] == "ta:sme-2" for row in buttons)
+        rows = telegram.sent_messages[-1]["reply_markup"]["inline_keyboard"]
+        flat_buttons = [b for row in rows for b in row]
+        assert any(b["callback_data"] == "ta:sme-2" for b in flat_buttons)
 
         reply = bot_instance.handle_callback_query(12345, "cb-1", "ta:sme-2")
         assert "Now messaging sme-2" in reply
