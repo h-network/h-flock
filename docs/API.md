@@ -410,6 +410,19 @@ Post an envelope to a specific agent, or to `"all"` for broadcast messages.
 }
 ```
 
+**Example Attachment Envelope Body:**
+```json
+{
+  "kind": "Attachment",
+  "payload": {
+    "filename": "diagram.png",
+    "mime_type": "image/png",
+    "content_base64": "iVBORw0KGgo...",
+    "caption": "current topology"
+  }
+}
+```
+
 **Response (`202 Accepted`):**
 ```json
 {
@@ -849,7 +862,7 @@ Port `:8081` provides WebSocket terminal access for rendering live terminal wind
 | `202 Accepted` | Accepted | Envelope accepted for asynchronous routing | Poll/stream mailbox for reply |
 | `401 Unauthorized` | Unauthorized | Missing or invalid Bearer token | Check `Authorization: Bearer <TOKEN>` header |
 | `404 Not Found` | Not Found | Unknown route, invalid agent segment name, or reading `/messages` for a non-`api` agent | Verify agent name and roster enrolment |
-| `422 Unprocessable Content` | Refused or Invalid | Policy refusal (disjoint tags), non-local unrouted destination, invalid `"as"` identity, or payload exceeding 1MB | Inspect `detail` field; correct request payload or permissions; do not retry without changes |
+| `422 Unprocessable Content` | Refused or Invalid | Policy refusal (disjoint tags), non-local unrouted destination, invalid `"as"` identity, Attachment schema violation, or payload exceeding size limits | Inspect `detail` field; correct request payload or permissions; do not retry without changes |
 | `5xx` | Server Error | Redis database or internal backend failure — not a fault in your request payload | **Retry with backoff.** The same request will succeed once the server/database recovers |
 
 ### Distinguishing 422 Unprocessable Content Causes
@@ -862,7 +875,8 @@ Port `:8081` provides WebSocket terminal access for rendering live terminal wind
 | **Non-Local Route** | `"no route to non-local destination '<destination>'"` | Destination specifies a qualified pod/tenant outside this tenant. Intra-tenant local routing cannot reach foreign nodes without a gateway. |
 | **Invalid Client Identity** | `"invalid 'as' client: must be an enrolled client with port_type 'api'"` | The declared `"as"` client is not enrolled in the tenant roster as an `api` participant. Enrol with `StartAgent` first. |
 | **Malformed Address / Payload** | `"destination must be a qualified pod:tenant:agent address"` or `"payload must be an object"` | Request envelope structure does not conform to the v4 frame specification. |
-| **Payload Too Large** | `"request body too large (max 1MB)"` | Envelope payload exceeded the 1MB limit. |
+| **Payload Too Large** | `"envelope payload exceeds maximum size limit of 1MB"` or `"decoded attachment exceeds maximum size limit of 10MB..."` | Envelope payload exceeded the 1MB default or 10MB Attachment decoded limit. |
+| **Invalid Attachment** | `"invalid attachment filename..."` or `"invalid attachment mime_type..."` or `"invalid attachment content_base64..."` | Attachment payload violates closed schema or field-level validation rules. |
 
 ### Custody Records & Observability
 
@@ -877,7 +891,7 @@ When an envelope is posted to the door or delivered across the bus, the platform
 - **`opened`**: Emitted when the port's kind opener successfully completes processing.
 
 **Request & Payload Size Limits:**
-- **Maximum Envelope Payload:** Envelopes posted to `POST /agents/{agent}/envelopes` are limited to **1 MB (1,048,576 bytes)**. Requests exceeding this limit return `422 Unprocessable Content`.
+- **Maximum Envelope Payload:** Standard envelopes posted to `POST /agents/{agent}/envelopes` are limited to **1 MB (1,048,576 bytes)** of serialized JSON. `Attachment` envelopes are bounded by decoded file content up to **10 MiB (10,485,760 bytes)** (with `content_base64` bounded before decode at `4 * ceil(10,485,760 / 3) = 13,981,016` ASCII bytes). Requests exceeding these limits return `422 Unprocessable Content`.
 - **Stream Query Bounds:** Pagination `limit` parameters on stream providers (`/messages`, `/activity`, `/alerts`) are bounded between `1` and `1000` entries (default `100`).
 
 **Streaming & Socket Error Handling:**

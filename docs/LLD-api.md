@@ -136,9 +136,9 @@ on the same kind removes one. Both can be sent together to rotate in one
 call. `StopAgent` purges the whole `hmac-keys` hash for that client, same as
 every other per-agent state resource.
 
-⚠ **Payload size limit:** Envelopes submitted to `POST /agents/{agent}/envelopes` are bounded at **1 MB (1,048,576 bytes)**. Envelopes exceeding 1 MB are rejected immediately with HTTP `422 Unprocessable Content`.
+⚠ **Payload size limit:** Envelopes submitted to `POST /agents/{agent}/envelopes` are bounded at **1 MB (1,048,576 bytes)** by default. `Attachment` is the one named exception for kind-aware size and shape admission (`CONTRACTS.md` §6): decoded file content is bounded at **10 MiB (10,485,760 bytes)**, with `content_base64` pre-checked against the derived bound `4 * ceil(10,485,760 / 3) = 13,981,016` ASCII bytes before strict RFC 4648 decode and validation against its closed payload schema. Envelopes exceeding their respective limit or violating schema bounds are rejected immediately with HTTP `422 Unprocessable Content`.
 
-⚠ **The api must not know what kinds exist.** It builds an envelope and writes
+⚠ **The api must not know what kinds exist (with the one exception of `Attachment` resource admission).** It builds an envelope and writes
 its own egress; which kinds are openable is a fact about adapters, discovered at
 the far edge. An api that rejects an unknown `kind` becomes a second place to
 update every time one is added, and `LLD-bus-and-switch` §5 keeps that knowledge

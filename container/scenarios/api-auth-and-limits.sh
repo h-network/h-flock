@@ -43,4 +43,18 @@ check "oversized body is refused" 422 \
   --data-binary "@$big" "$HOST/agents/architect/envelopes"
 rm -f "$big"
 
+# Kind-aware Attachment admission: 2MB attachment accepted under 10MB limit
+big_att="$(mktemp)"; python3 -c 'import json,sys,base64; sys.stdout.write(json.dumps({"kind": "Attachment", "payload": {"filename": "test.bin", "mime_type": "application/octet-stream", "content_base64": base64.b64encode(b"x" * (2*1024*1024)).decode()}}))' > "$big_att"
+check "attachment under 10MB is accepted" 202 \
+  -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
+  --data-binary "@$big_att" "$HOST/agents/architect/envelopes"
+rm -f "$big_att"
+
+# Oversized attachment > 10MB rejected
+huge_att="$(mktemp)"; python3 -c 'import json,sys,base64; sys.stdout.write(json.dumps({"kind": "Attachment", "payload": {"filename": "test.bin", "mime_type": "application/octet-stream", "content_base64": base64.b64encode(b"x" * (10*1024*1024 + 100)).decode()}}))' > "$huge_att"
+check "oversized attachment is refused" 422 \
+  -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
+  --data-binary "@$huge_att" "$HOST/agents/architect/envelopes"
+rm -f "$huge_att"
+
 finish api-auth
