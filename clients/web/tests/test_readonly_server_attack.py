@@ -32,7 +32,7 @@ class FakeController:
     async def stop(self):
         pass
 
-    async def update_subscription(self, subscriber, agents):
+    async def update_subscription(self, subscriber, agents, *, refresh=False):
         self.subscribers.append((subscriber, set(agents)))
         subscriber.agents = set(agents)
         for agent in sorted(agents):
