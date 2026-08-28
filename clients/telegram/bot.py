@@ -1102,12 +1102,18 @@ class TelegramBot:
         pane_watch_tail_span: int = 12,
         pane_watch_refresh_s: float = 2.0,
         pane_watch_max_duration_s: float = 600.0,
+        mini_app_url: str | None = None,
     ):
         self.flock = flock_client
         self.telegram = telegram_client
         self.cursor_store = cursor_store
         self.target_agent = target_agent
         self.session_url = session_url or os.getenv("FLOCK_SESSION_URL", "")
+        # A public HTTPS URL for clients/web/mini.html — Telegram's own
+        # requirement for a web_app button, not this codebase's. Unset means
+        # no Mini App has been published for this tenant, so the button is
+        # simply absent (_sticky_keyboard) rather than opening a broken URL.
+        self.mini_app_url = mini_app_url or os.getenv("MINI_APP_URL", "") or None
         # ⚠ Every real inbound update goes through _dispatch_update, which
         # checks this before touching anything. Without it, any Telegram user
         # who finds the bot could hire/retire/pause/resume/broadcast, not
@@ -1300,8 +1306,21 @@ class TelegramBot:
             [target_label],
             last_row,
         ]
+        keyboard = [[{"text": label} for label in row] for row in layout]
+        if self.mini_app_url:
+            # ⚠ web_app is a different button shape than every other sticky
+            # button: tapping it opens the Mini App WebView directly,
+            # client-side, and never arrives as a text message the way a tap
+            # on any STICKY_LABELS button does (handle_text_message never
+            # sees this one). Its own row, not folded into an existing one,
+            # so it reads as a different kind of action, not just another
+            # menu item. Only appears when configured (clients/web's
+            # /mini.html + TELEGRAM_BOT_TOKEN/TELEGRAM_CHAT_ID auth path) --
+            # no URL to open means no button, same "started only when
+            # configured" rule the bot itself follows in entrypoint.sh.
+            keyboard.append([{"text": "📊 Dashboard", "web_app": {"url": self.mini_app_url}}])
         return {
-            "keyboard": [[{"text": label} for label in row] for row in layout],
+            "keyboard": keyboard,
             "resize_keyboard": True,
             "is_persistent": True,
         }
@@ -2261,6 +2280,9 @@ def main() -> None:
     parser.add_argument("--pane-watch-max-duration-seconds", type=float,
                         default=float(os.getenv("PANE_WATCH_MAX_DURATION_SECONDS", "600")),
                         help="/watch: auto-stop a forgotten watch after this many seconds (default: 600)")
+    parser.add_argument("--mini-app-url", default=os.getenv("MINI_APP_URL", ""),
+                        help="Public HTTPS URL for clients/web/mini.html — adds a 📊 Dashboard "
+                             "web_app button to the sticky menu when set; omitted entirely otherwise")
 
     args = parser.parse_args()
 
@@ -2295,6 +2317,7 @@ def main() -> None:
         pane_watch_tail_span=args.pane_watch_tail_lines,
         pane_watch_refresh_s=args.pane_watch_refresh_seconds,
         pane_watch_max_duration_s=args.pane_watch_max_duration_seconds,
+        mini_app_url=args.mini_app_url or None,
     )
 
     # ⚠ Called once here, unconditionally, before any mode below runs — not

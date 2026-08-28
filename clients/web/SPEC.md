@@ -190,6 +190,8 @@ gap is worth stating rather than hiding.
     ui/*.js          panels, one file each
     vendor/          xterm.js and anything else, as files
     style.css
+    mini.html        Telegram Mini App entry — read-only, reuses ui/*.js panels
+    mini-app.js       (README's "Telegram Mini App" section)
     README.md        how to run it, and the decisions behind it
     SPEC.md          this
 ```

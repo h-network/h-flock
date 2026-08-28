@@ -1,0 +1,55 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>h-flock office</title>
+  <!-- Telegram's own Mini App SDK, same telegram.org domain the bot already
+       talks to (api.telegram.org) -- see server.py's login page for why this
+       is loaded directly rather than vendored. Harmless outside Telegram. -->
+  <script src="https://telegram.org/js/telegram-web-app.js"></script>
+  <link rel="stylesheet" href="style.css">
+  <style>
+    /* This page ships only the read-only panels a Telegram Mini App session
+       is allowed to reach (server.py refuses every write for one regardless
+       of what's on screen -- see _session_is_telegram). No hire dialog, no
+       lifecycle buttons, no message composer, no terminal: there is nothing
+       here that could send a write, not just nothing visible that does. */
+    body { margin: 0; min-height: 100vh; }
+    .mini-shell { max-width: 720px; margin: 0 auto; padding: var(--space-4, 1rem); display: flex; flex-direction: column; gap: var(--space-4, 1rem); }
+    .mini-header { display: flex; align-items: baseline; justify-content: space-between; gap: var(--space-2, 0.5rem); }
+    .mini-header h1 { font-size: 1.1rem; margin: 0; }
+    .mini-note { color: var(--text-muted, #94a3b8); font-size: 0.8rem; margin: 0; }
+  </style>
+</head>
+<body>
+  <div class="mini-shell">
+    <header class="mini-header">
+      <h1>h-flock office</h1>
+      <span id="global-connection" class="badge state-loading" role="status">connecting</span>
+    </header>
+    <p class="mini-note">Read-only view — hire, pause/resume/retire, messaging and the terminal aren't available here. Open the full console for those.</p>
+
+    <section id="overview-panel" class="panel">
+      <header class="panel-header"><div><h2>Overview</h2></div></header>
+      <dl class="overview-metrics"><div><dt>Working</dt><dd id="overview-working">—</dd></div><div><dt>Blocked</dt><dd id="overview-blocked">—</dd></div><div><dt>Alerts</dt><dd id="overview-alerts">—</dd></div></dl>
+    </section>
+
+    <section id="agents-panel" class="panel agents-panel">
+      <header class="panel-header"><div><h2>Agents</h2></div><div id="agents-status" role="status"></div></header>
+      <div id="agents" class="agent-list" aria-label="Office participants" aria-live="polite"></div>
+    </section>
+
+    <section id="alerts-panel" class="panel alerts-panel">
+      <header class="panel-header"><div><h2>Alerts</h2></div><div id="alerts-status" role="status"></div></header>
+      <ol id="alerts" class="alert-list" aria-live="assertive" aria-relevant="additions"></ol>
+    </section>
+
+    <section id="boards-panel" class="panel boards-panel">
+      <header class="panel-header"><div><h2>Task board</h2></div><div id="boards-status" role="status"></div></header>
+      <div id="boards" class="board-grid"></div>
+    </section>
+  </div>
+  <script type="module" src="mini-app.js"></script>
+</body>
+</html>

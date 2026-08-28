@@ -510,6 +510,23 @@ def test_menu_command_sends_sticky_keyboard():
         assert set(flat) - {"🎯 Message: architect"} == set(TelegramBot.STICKY_LABELS)
 
 
+def test_dashboard_button_only_appears_when_mini_app_url_is_configured():
+    with tempfile.TemporaryDirectory() as tmpdir:
+        bot_instance, flock, telegram = _make_bot(tmpdir=tmpdir)
+        assert bot_instance.mini_app_url is None
+        markup = bot_instance._sticky_keyboard(12345)
+        flat = [b["text"] for row in markup["keyboard"] for b in row]
+        assert "📊 Dashboard" not in flat
+
+        bot_instance, flock, telegram = _make_bot(
+            tmpdir=tmpdir, mini_app_url="https://mini.example.invalid/mini.html",
+        )
+        markup = bot_instance._sticky_keyboard(12345)
+        rows = markup["keyboard"]
+        dashboard_row = rows[-1]
+        assert dashboard_row == [{"text": "📊 Dashboard", "web_app": {"url": "https://mini.example.invalid/mini.html"}}]
+
+
 def test_handle_text_message_menu_and_status_still_work():
     with tempfile.TemporaryDirectory() as tmpdir:
         bot_instance, flock, telegram = _make_bot(tmpdir=tmpdir)
