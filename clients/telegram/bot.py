@@ -22,6 +22,7 @@ import urllib.error
 import urllib.parse
 import urllib.request
 import uuid
+from websockets.sync.client import connect as ws_connect
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(name)s: %(message)s")
 logger = logging.getLogger("flock_telegram")
@@ -761,9 +762,25 @@ class ChatDict(dict):
         return super().setdefault(self._k(key), default)
 
 
+def _derive_session_url(api_url: str, session_url: str = "") -> str:
+    """Derive the session websocket URL (e.g. ws://localhost:8081/session)
+    from --session-url or by replacing API URL port with 8081."""
+    if session_url:
+        u = urllib.parse.urlsplit(session_url)
+        scheme = "wss" if u.scheme in ("https", "wss") else "ws"
+        netloc = u.netloc or f"{u.hostname or '127.0.0.1'}:{u.port or 8081}"
+        path = u.path if (u.path and u.path != "/") else "/session"
+        return f"{scheme}://{netloc}{path}"
+    u = urllib.parse.urlsplit(api_url)
+    scheme = "wss" if u.scheme == "https" else "ws"
+    host = u.hostname or "127.0.0.1"
+    port = 8081
+    return f"{scheme}://{host}:{port}/session"
+
+
 class ActivityRender:
     """Coalesces real-time agent execution events (input, tool, output)
-    into a single live-updating Telegram message using editMessageText.
+    and liveness pulses into a single live-updating Telegram message using editMessageText.
     """
 
     MAX_LEN = 3800
@@ -776,15 +793,21 @@ class ActivityRender:
         self.completed: bool = False
         self.last_flush_ts: float = 0.0
         self.last_rendered_text: str | None = None
+        self.liveness_ts: float | None = None
         self.lock = threading.Lock()
 
     def add_event(self, event: dict) -> None:
         with self.lock:
             self.events.append(event)
 
+    def touch_liveness(self, ts: float | None = None) -> None:
+        with self.lock:
+            self.liveness_ts = ts if ts is not None else time.time()
+
     def finalize(self) -> None:
         with self.lock:
             self.completed = True
+            self.liveness_ts = None
 
     def render(self) -> str:
         with self.lock:
@@ -819,6 +842,12 @@ class ActivityRender:
                     desc = html.escape(str(kind or "event"))
                 lines.append(f"{i}. {glyph} {desc}")
 
+            if not self.completed and self.liveness_ts is not None:
+                ago = max(0, int(time.time() - self.liveness_ts))
+                ago_str = f"{ago}s ago" if ago > 0 else "just now"
+                lines.append("")
+                lines.append(f"⏳ <i>still working… (updated {ago_str})</i>")
+
             text = "\n".join(lines)
             if len(text) > self.MAX_LEN:
                 text = text[: self.MAX_LEN - 20] + "\n…[truncated]"
@@ -829,7 +858,7 @@ class ActivityRender:
         if not telegram_client:
             return
         with self.lock:
-            if not self.events and self.message_id is None:
+            if not self.events and self.message_id is None and self.liveness_ts is None:
                 return
             now = time.time()
             if not force and self.message_id is not None and not self.completed and (now - self.last_flush_ts < 0.8):
@@ -880,11 +909,13 @@ class TelegramBot:
         default_tts_voice: str | None = None,
         voice_feature_enabled: bool | None = None,
         no_activity_push: bool = False,
+        session_url: str | None = None,
     ):
         self.flock = flock_client
         self.telegram = telegram_client
         self.cursor_store = cursor_store
         self.target_agent = target_agent
+        self.session_url = session_url or os.getenv("FLOCK_SESSION_URL", "")
         # ⚠ Every real inbound update goes through _dispatch_update, which
         # checks this before touching anything. Without it, any Telegram user
         # who finds the bot could hire/retire/pause/resume/broadcast, not
@@ -1510,6 +1541,56 @@ class TelegramBot:
                 render.finalize()
                 render.flush(self.telegram, force=True)
 
+    def _watch_liveness(
+        self,
+        chat_id: int | str,
+        agent: str,
+        render: ActivityRender,
+        timeout_s: float = 300.0,
+        ws_connect_fn=None,
+    ) -> None:
+        """Background thread taking ~5s snapshots of agent pane via session websocket."""
+        try:
+            start_time = time.time()
+            base_url = getattr(self.flock, "base_url", "http://127.0.0.1:8080")
+            token = getattr(self.flock, "token", "")
+            ssl_ctx = getattr(self.flock, "ssl_context", None)
+            ws_url = _derive_session_url(base_url, self.session_url or "")
+
+            def _default_connect():
+                headers = {"Authorization": f"Bearer {token}"}
+                return ws_connect(ws_url, additional_headers=headers, ssl=ssl_ctx)
+
+            connect_fn = ws_connect_fn or _default_connect
+
+            with connect_fn() as ws:
+                # Subscribe to target agent in read-only mode
+                ws.send(json.dumps({"subscribe": [agent], "mode": "read-only"}))
+                try:
+                    ws.recv(timeout=2.0)
+                except Exception:
+                    pass
+
+                while not render.completed and (time.time() - start_time <= timeout_s):
+                    try:
+                        msg = ws.recv(timeout=5.0)
+                        if msg is not None:
+                            while True:
+                                try:
+                                    ws.recv(timeout=0)
+                                except Exception:
+                                    break
+                            if not render.completed:
+                                render.touch_liveness()
+                                render.flush(self.telegram)
+                    except TimeoutError:
+                        pass
+                    except Exception as exc:
+                        logger.debug(f"Session websocket recv error for {agent}: {exc}")
+                        break
+        except Exception as exc:
+            logger.debug(f"Liveness watcher exception for {agent}: {exc}")
+
     def finalize_activity(self, chat_id: int | str, agent: str) -> None:
         """Finalize and flush any live activity message for (chat_id, agent)."""
         key = f"{str(chat_id)}:{agent}"
@@ -1546,7 +1627,7 @@ class TelegramBot:
                 self.telegram.send_message(cid, reply_text)
             return reply_text
 
-        # Start live activity watcher if enabled
+        # Start live activity watcher and liveness pulse if enabled
         if not self.no_activity_push and self.telegram:
             tail_cursor = self._get_activity_tail(agent)
             render = ActivityRender(cid, agent)
@@ -1564,6 +1645,14 @@ class TelegramBot:
                 name=f"activity-watcher-{agent}",
             )
             watcher.start()
+
+            liveness = threading.Thread(
+                target=self._watch_liveness,
+                args=(cid, agent, render),
+                daemon=True,
+                name=f"liveness-pulse-{agent}",
+            )
+            liveness.start()
 
         code, resp = self.flock.send_message(agent, text)
         if code != 202:
@@ -1784,6 +1873,8 @@ def main() -> None:
                         help="Enable spoken voice replies feature for this tenant")
     parser.add_argument("--tts-voice", default=os.getenv("TTS_VOICE", DEFAULT_TTS_VOICE),
                         help=f"Default edge-tts voice for spoken replies (default: {DEFAULT_TTS_VOICE})")
+    parser.add_argument("--session-url", default=os.getenv("FLOCK_SESSION_URL", ""),
+                        help="h-flock Session WebSocket URL (default: derived from --api-url, port 8081)")
 
     args = parser.parse_args()
 
@@ -1812,6 +1903,7 @@ def main() -> None:
         default_tts_voice=args.tts_voice or None,
         voice_feature_enabled=args.voice,
         no_activity_push=args.no_activity_push,
+        session_url=args.session_url or None,
     )
 
     # ⚠ Called once here, unconditionally, before any mode below runs — not
