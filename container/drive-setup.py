@@ -54,6 +54,10 @@ def parse_args():
     parser.add_argument("--telegram-token", default="", help="Telegram Bot Token")
     parser.add_argument("--telegram-chat-id", default="", help="Telegram Chat ID")
     parser.add_argument("--telegram-voice", default="n", help="Enable spoken voice replies? [y/N]")
+    parser.add_argument("--mini-app", default="n", help="Enable Telegram Mini App dashboard? [y/N]")
+    parser.add_argument("--mini-app-url", default="https://flock.example.test", help="Public HTTPS Mini App URL")
+    parser.add_argument("--mini-app-port", default="8090", help="Host port for Mini App")
+    parser.add_argument("--mini-app-host", default="127.0.0.1", help="Host bind address for Mini App")
     parser.add_argument("--publish-api", default="y", help="Reach REST API from outside container? [y/N]")
     parser.add_argument("--api-port", default="8080", help="Host port for REST API")
     parser.add_argument("--publish-session", default="y", help="Reach session console from outside container? [Y/n]")
@@ -109,7 +113,14 @@ def build_expected_prompts(args):
         if getattr(args, "telegram_token", "") and getattr(args, "telegram_chat_id", ""):
             pairs.append((r"Enable spoken voice replies\?", getattr(args, "telegram_voice", "n")))
 
-    api_enabled = is_yes(args.api, default=False) or is_yes(args.telegram, default=False)
+    pairs.append((r"Enable Telegram Mini App dashboard\?", args.mini_app))
+    mini_app_enabled = is_yes(args.mini_app, default=False)
+    if mini_app_enabled:
+        pairs.append((r"Public HTTPS URL for the Mini App", args.mini_app_url))
+        pairs.append((r"Host port for the Mini App", str(args.mini_app_port)))
+        pairs.append((r"Host bind address for the Mini App", args.mini_app_host))
+
+    api_enabled = is_yes(args.api, default=False) or is_yes(args.telegram, default=False) or mini_app_enabled
 
     if api_enabled:
         pairs.append((r"Reach the REST API from outside the container", args.publish_api))

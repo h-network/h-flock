@@ -166,9 +166,24 @@ tenant came up healthy-looking with a door nobody could reach. A port already in
 use is refused rather than written into `.env`.
 
 Each setup is isolated under `tenants/<name>/`: its `.env`, optional published
-ports override, and generated `attach.sh` live together there. The whole
+ports and Mini App Compose overrides, and generated `attach.sh` live together. The whole
 `tenants/` tree is gitignored and created on demand, so one clone can operate
 several tenants without one setup overwriting another's credentials or ports.
+
+`setup.sh` can provision the Telegram Mini App as a separate container. It
+shares the tenant's private Compose network and reaches the API and session
+doors as `tenant:8080` and `tenant:8081`, so those doors need no host ports. The
+web container always listens on 8090 internally; setup chooses a free host port
+and asks for `MINI_APP_HOST`. Loopback is the safe default, but a reverse proxy
+in another container usually needs a host-reachable address such as `0.0.0.0`,
+unless the operator separately joins it to the same Docker network.
+
+`MINI_APP_URL` must be public HTTPS. h-flock publishes only plaintext for the
+web container: the operator's reverse proxy owns the hostname and TLS. Setup
+generates a tenant-specific `HFLOCK_SECRET`, stores it only in the mode-0600
+tenant env, and preserves it on reruns. Mini App mode is incompatible with TLS
+configured directly on the tenant doors because the web proxy deliberately
+uses plaintext on the private network.
 
 ⚠ **Choosing TLS makes `setup.sh` deliver the certificate before the doors
 start** — it creates the container, `docker cp`s the certificate in, then starts

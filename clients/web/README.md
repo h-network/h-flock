@@ -248,6 +248,15 @@ for the bot and `--listen`/TLS termination for this server the same way any
 other exposure decision is made (`SPEC-bundled-clients-and-exposure.md`),
 per-environment, not baked into the code.
 
+For a normal tenant deployment, `setup.sh` can provision this server as the
+separate `mini-app` Compose service. It generates the operator secret, connects
+the service to the tenant's private network, and publishes container port 8090
+on the selected `MINI_APP_HOST` / `MINI_APP_PORT`. The public
+`MINI_APP_URL` still belongs to an operator-managed reverse proxy, which must
+terminate TLS. A proxy in another container cannot reach the Docker host's
+`127.0.0.1`; choose a host-reachable bind address or connect that proxy to the
+tenant's Compose network.
+
 ## Deliberate limitations
 
 The console does **not** currently provide:

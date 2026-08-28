@@ -290,6 +290,7 @@ echo
 echo
 API_ENABLED=0; API_PORT=""; API_PUBLISH=0; TELEGRAM=0; TELEGRAM_VOICE=0
 TELEGRAM_BOT_TOKEN=""; TELEGRAM_CHAT_ID=""
+MINI_APP_ENABLED=0; MINI_APP_URL=""; MINI_APP_PORT=""; MINI_APP_HOST=""; HFLOCK_SECRET=""
 read -rp "Start the REST API door inside the tenant? [y/N]: " WANT_API
 if check_bool "$WANT_API" "n"; then API_ENABLED=1; fi
 
@@ -336,6 +337,35 @@ if check_bool "$WANT_TG" "n"; then
     fi
 fi
 
+read -rp "Enable Telegram Mini App dashboard? [y/N]: " WANT_MINI_APP
+if check_bool "$WANT_MINI_APP" "n"; then
+    if [ "$TELEGRAM" != "1" ]; then
+        echo "error: the Telegram Mini App requires a configured Telegram bot token and chat ID" >&2
+        exit 2
+    fi
+    if [ "$API_ENABLED" = "0" ]; then
+        echo "  (the Mini App talks to the REST API, so that service is enabled inside the container)"
+        API_ENABLED=1
+    fi
+    existing_mini_url="$(grep -s '^MINI_APP_URL=' "$TENANT_ENV_FILE" 2>/dev/null | cut -d= -f2- || true)"
+    existing_mini_port="$(grep -s '^MINI_APP_PORT=' "$TENANT_ENV_FILE" 2>/dev/null | cut -d= -f2- || true)"
+    existing_mini_host="$(grep -s '^MINI_APP_HOST=' "$TENANT_ENV_FILE" 2>/dev/null | cut -d= -f2- || true)"
+    read -rp "  Public HTTPS URL for the Mini App${existing_mini_url:+ [$existing_mini_url]}: " MINI_APP_URL
+    MINI_APP_URL="${MINI_APP_URL:-$existing_mini_url}"
+    case "$MINI_APP_URL" in
+        https://*) ;;
+        *) echo "error: Telegram Mini Apps require a public https:// URL" >&2; exit 2 ;;
+    esac
+    DEF_MINI_APP="${existing_mini_port:-$(free_port 8090)}"
+    read -rp "  Host port for the Mini App [${DEF_MINI_APP}]: " MINI_APP_PORT
+    MINI_APP_PORT="${MINI_APP_PORT:-$DEF_MINI_APP}"
+    [[ "$MINI_APP_PORT" =~ ^[1-9][0-9]*$ ]] || { echo "error: expected a valid port number, got '$MINI_APP_PORT'" >&2; exit 2; }
+    read -rp "  Host bind address for the Mini App [${existing_mini_host:-127.0.0.1}]: " MINI_APP_HOST
+    MINI_APP_HOST="${MINI_APP_HOST:-${existing_mini_host:-127.0.0.1}}"
+    [ -n "$MINI_APP_HOST" ] || { echo "error: the Mini App bind address cannot be empty" >&2; exit 2; }
+    MINI_APP_ENABLED=1
+fi
+
 if [ "$API_ENABLED" = "1" ]; then
     read -rp "Reach the REST API from outside the container (0.0.0.0, every host interface)? [y/N]: " WANT_PUB_API
     if check_bool "$WANT_PUB_API" "n"; then
@@ -363,7 +393,7 @@ else
     SESSION_PORT=""
 fi
 
-for pair in "api:${API_PORT}" "session:${SESSION_PORT}"; do
+for pair in "api:${API_PORT}" "session:${SESSION_PORT}" "mini-app:${MINI_APP_PORT}"; do
     name="${pair%%:*}"; port="${pair#*:}"
     [ -n "$port" ] || continue
     if port_busy "$port"; then
@@ -420,6 +450,11 @@ if [ "$API_PUBLISH" = "1" ] || [ "$SESSION_PUBLISH" = "1" ]; then
 fi
 
 if [ -n "$TLS_CERT_HOST" ]; then
+    if [ "$MINI_APP_ENABLED" = "1" ]; then
+        echo "error: the Mini App reaches the tenant doors over plaintext on the private Docker network" >&2
+        echo "  terminate public TLS at the reverse proxy; do not configure TLS on the tenant doors" >&2
+        exit 2
+    fi
     TLS_CERT_CONTAINER="/home/ubuntu/tlscerts/tls.crt"
     TLS_KEY_CONTAINER="/home/ubuntu/tlscerts/tls.key"
     if [ -z "$TLS_STAGE" ]; then
@@ -447,6 +482,35 @@ else
     rm -f "$TENANT_DIR/compose.ports.yaml"
 fi
 
+if [ "$MINI_APP_ENABLED" = "1" ]; then
+    cat > "$TENANT_DIR/compose.mini-app.yaml" <<EOF
+services:
+  mini-app:
+    build:
+      context: ..
+      dockerfile: container/web.Dockerfile
+    image: \${FLOCK_WEB_IMAGE:-h-flock-web:latest}
+    env_file:
+      - "\${FLOCK_TENANT_ENV_FILE:?resolve a tenant with container/flock-compose.sh}"
+    environment:
+      HFLOCK_API: "http://tenant:8080"
+      HFLOCK_SESSION: "http://tenant:8081"
+      WEB_PORT: "8090"
+    ports:
+      - "${MINI_APP_HOST}:${MINI_APP_PORT}:8090"
+    depends_on:
+      tenant:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python3", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8090/readyz', timeout=3)"]
+      interval: 5s
+      timeout: 4s
+      retries: 12
+EOF
+else
+    rm -f "$TENANT_DIR/compose.mini-app.yaml"
+fi
+
 # Only exceptions travel, so the env stays small and readable.
 for a in "${AGENTS[@]}"; do
     [ -n "$(mget EP "$a")" ] && PROVIDER_MAP+=("${a}=$(mget EP "$a")")
@@ -472,6 +536,10 @@ AGENTS_CSV="${AGENTS_CSV%,}"
 
 TOKEN="$(grep -s '^API_TOKEN=' "$TENANT_ENV_FILE" | cut -d= -f2)"
 [ -n "$TOKEN" ] || TOKEN="$(openssl rand -hex 16)"
+if [ "$MINI_APP_ENABLED" = "1" ]; then
+    HFLOCK_SECRET="$(grep -s '^HFLOCK_SECRET=' "$TENANT_ENV_FILE" | cut -d= -f2)"
+    [ -n "$HFLOCK_SECRET" ] || HFLOCK_SECRET="$(openssl rand -hex 32)"
+fi
 
 # env is what persists; the roster is derived from it at every container start.
 {
@@ -508,6 +576,13 @@ TOKEN="$(grep -s '^API_TOKEN=' "$TENANT_ENV_FILE" | cut -d= -f2)"
     [ -n "$TELEGRAM_BOT_TOKEN" ] && echo "TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN}"
     [ -n "$TELEGRAM_CHAT_ID" ] && echo "TELEGRAM_CHAT_ID=${TELEGRAM_CHAT_ID}"
     [ "$TELEGRAM_VOICE" = "1" ] && echo "TELEGRAM_VOICE=1"
+    if [ "$MINI_APP_ENABLED" = "1" ]; then
+        echo "MINI_APP_ENABLED=1"
+        echo "MINI_APP_URL=${MINI_APP_URL}"
+        echo "MINI_APP_HOST=${MINI_APP_HOST}"
+        echo "MINI_APP_PORT=${MINI_APP_PORT}"
+        echo "HFLOCK_SECRET=${HFLOCK_SECRET}"
+    fi
     [ "${#CLI_MAP[@]}"     -gt 0 ] && echo "AGENT_CLIS=$(IFS=,; echo "${CLI_MAP[*]}")"
     [ "${#PROFILE_MAP[@]}" -gt 0 ] && echo "AGENT_PROFILES=$(IFS=,; echo "${PROFILE_MAP[*]}")"
     if [ "${#PROVIDER_MAP[@]}" -gt 0 ]; then
@@ -544,6 +619,7 @@ COMPOSE=(docker compose -p "$FLOCK_PROJECT" --env-file "$TENANT_ENV_FILE" "${FLO
 . container/flock-image.sh 2>/dev/null || true
 if declare -f flock_image_tag >/dev/null; then
   export FLOCK_IMAGE="${FLOCK_IMAGE:-$(flock_image_tag)}"
+  export FLOCK_WEB_IMAGE="${FLOCK_WEB_IMAGE:-$(flock_web_image_tag)}"
   BUILD_FLAG="$(flock_build_flag)"
 else
   BUILD_FLAG="--build"
@@ -631,6 +707,10 @@ if [ "$TELEGRAM" = "1" ]; then
     voice_suffix=""
     [ "$TELEGRAM_VOICE" = "1" ] && voice_suffix=" (voice replies enabled)"
     echo "  telegram bot running in tenant (chat id: ${TELEGRAM_CHAT_ID})${voice_suffix}"
+fi
+if [ "$MINI_APP_ENABLED" = "1" ]; then
+    echo "  mini app http://${MINI_APP_HOST}:${MINI_APP_PORT} -> ${MINI_APP_URL}"
+    echo "           Your reverse proxy must publish that HTTPS URL and terminate TLS."
 fi
 echo "  attach   ./tenants/${TENANT}/attach.sh"
 if [ -n "$TLS_CERT_CONTAINER" ]; then

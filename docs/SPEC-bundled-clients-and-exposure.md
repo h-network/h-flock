@@ -41,29 +41,25 @@ on container-local `127.0.0.1:8080`.
 ⚠ A bundled client that fails must not take the tenant down. Log the reason and
 leave the tenant serving.
 
-### `clients/web` is deliberately *not* bundled
+### `clients/web` is provisioned as a separate, optional container
 
 `clients/web` is the shipped browser console, and it is not started from the
-entrypoint. It is not the same kind of client as the Telegram bot: it is an
-**operator** tool, started deliberately by a human who wants to drive the
-office from a browser, not a background process that should come up
-unattended alongside redis and the switch.
+tenant entrypoint. It is not the same kind of client as the Telegram bot: it is
+an **operator** service and runs in its own container only when setup explicitly
+enables the Mini App.
 
 `clients/web/server.py` is itself a security boundary, not a static file
 server — shared operator secret, `HttpOnly`/`SameSite` session cookies, TLS
 termination, an audit log, rate-limited login (`clients/web/README.md`,
-`clients/web/SPEC.md` §6b). None of that has a safe unattended default: an
-entrypoint cannot invent an operator secret, and autostarting it without one
-means either a console wide open to anything that can reach the port, or a
-container that refuses to boot over a credential nobody was ever asked for.
-Both are worse than not starting it.
+`clients/web/SPEC.md` §6b). Setup generates and preserves its operator secret,
+asks for the public HTTPS URL and host binding, and leaves TLS termination to
+the operator's reverse proxy.
 
-The image already carries `clients/web` — `container/Dockerfile` copies
-`clients/` wholesale — so nothing stops an operator from running it: `docker
-exec` into the tenant, or run it on the host against a published api door, per
-`clients/web/README.md`. That manual step is the point, not a gap: starting
-the console is the moment the operator sets the secret that makes it safe to
-expose.
+The tenant image still carries `clients/web` because `container/Dockerfile`
+copies `clients/` wholesale, but provisioning builds the smaller, separate
+`container/web.Dockerfile`. The generated service joins the tenant's private
+Compose network, reaches the two doors by service DNS, and publishes only its
+own fixed container port 8090 on the operator-selected host address and port.
 
 ## 2. `setup.sh` asks for Telegram credentials
 

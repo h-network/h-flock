@@ -25,12 +25,13 @@ tenant's ignored directory:
 tenants/<tenant>/
   .env                  configuration and credentials, mode 0600
   compose.ports.yaml    present only when a door is published
+  compose.mini-app.yaml present only when the Mini App is enabled
   attach.sh             generated direct tmux attachment, mode 0755
 ```
 
 `container/flock-compose.sh` is the single resolver for this layout. Given a
 tenant name it derives the directory, Compose project, container name and the
-base-plus-optional-ports file list. Every supported Compose call passes the same
+base-plus-optional-fragments file list. Every supported Compose call passes the same
 absolute tenant env path twice for two different jobs: `--env-file` supplies
 Compose interpolation, while `compose.yaml`'s `env_file` supplies the actual
 container environment (including dynamically named provider variables). Setting
@@ -43,6 +44,26 @@ when the selected tenant has no new env and legacy `container/.env` names that
 exact tenant, it copies the legacy env and ports fragment into the new directory
 before prompting. It never deletes or overwrites the legacy files and never
 imports them for a different tenant.
+
+### 1.2 Optional Mini App container
+
+The Telegram Mini App is a separate `mini-app` Compose service, never another
+process inside the tenant container. `setup.sh` generates the optional fragment,
+builds `container/web.Dockerfile` as `h-flock-web:<commit-or-dirty>`, and attaches
+the service to the same per-project default network. It reaches unpublished
+doors by service DNS at `http://tenant:8080` and `http://tenant:8081`.
+
+The application listens on fixed container port 8090. `MINI_APP_PORT` selects
+the collision-checked host port and `MINI_APP_HOST` selects its bind address.
+Loopback is the safe default, but is configurable because loopback on the Docker
+host is not loopback inside a containerized reverse proxy. Operators may bind a
+host-reachable address or separately connect their proxy to the Compose network.
+
+The container serves plaintext only. The operator's reverse proxy terminates
+TLS for the public HTTPS `MINI_APP_URL`; setup refuses Mini App mode combined
+with TLS on the tenant doors because its internal proxies use plaintext.
+`HFLOCK_SECRET` is generated per tenant, stored in the tenant env at mode 0600,
+and preserved across enabled reruns. `/readyz` checks tenant API reachability.
 
 ⚠ **A rebuild is a new office wearing the same name.** Rebuilding a tenant container
 (`docker compose up --force-recreate`) restarts the office and destroys all runtime

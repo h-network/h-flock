@@ -13,7 +13,7 @@
 # fragment at `tenants/<tenant>/compose.ports.yaml`.
 #
 # Sourcing this helper guarantees every compose invocation includes the
-# fragment when present and omits it when absent, avoiding ten manual
+# fragments when present and omits them when absent, avoiding ten manual
 # `-f` repetitions across setup and testbed scenarios.
 
 FLOCK_REPO_ROOT="${FLOCK_REPO_ROOT:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"
@@ -44,5 +44,8 @@ flock_compose_args() {
   FLOCK_COMPOSE_ARGS=("-f" "$FLOCK_REPO_ROOT/container/compose.yaml")
   if [ -f "$TENANT_DIR/compose.ports.yaml" ]; then
     FLOCK_COMPOSE_ARGS+=("-f" "$TENANT_DIR/compose.ports.yaml")
+  fi
+  if [ -f "$TENANT_DIR/compose.mini-app.yaml" ]; then
+    FLOCK_COMPOSE_ARGS+=("-f" "$TENANT_DIR/compose.mini-app.yaml")
   fi
 }
