@@ -612,6 +612,151 @@ def test_hold_duration_does_nothing_without_a_configured_lead(monkeypatch):
     assert _key("architect", "ingress") not in r.lists
 
 
+def _unreplied_agent(r, agent="sme-2", *, client="telegram", since="2026-08-09T13:59:00Z", count=1):
+    key = _key(agent, "unreplied")
+    r.hashes.setdefault(key, {})[client] = json.dumps({"count": count, "since": since})
+
+
+def test_unreplied_duration_messages_the_lead_directly_not_the_alerts_stream(monkeypatch):
+    r = WatchRedis()
+    _unreplied_agent(r)  # 60s old, at the 60s default
+    _lead(r)
+    kicks = []
+    monkeypatch.setattr(service, "run_tmux", _quiet_windows())
+    monkeypatch.setattr(service.subprocess, "Popen", lambda args: kicks.append(args))
+
+    _watchdog(r).poll(now=NOW)
+
+    assert prefix("acme", "hq", resource="alerts") not in r.streams
+    ingress = r.lists[_key("architect", "ingress")]
+    assert len(ingress) == 1
+    envelope = parse(ingress[0])
+    assert envelope["l2"]["source"] == "watchdog"
+    assert envelope["l2"]["destination"] == "architect"
+    assert envelope["payload"]["text"] == (
+        "[alert from watchdog] sme-2 has 1 unanswered message from telegram, oldest 1 min old"
+    )
+    assert kicks == [["flock.port", "architect"]]
+
+
+def test_unreplied_duration_pluralizes_the_count(monkeypatch):
+    r = WatchRedis()
+    _unreplied_agent(r, count=3)
+    _lead(r)
+    kicks = []
+    monkeypatch.setattr(service, "run_tmux", _quiet_windows())
+    monkeypatch.setattr(service.subprocess, "Popen", lambda args: kicks.append(args))
+
+    _watchdog(r).poll(now=NOW)
+
+    envelope = parse(r.lists[_key("architect", "ingress")][-1])
+    assert "3 unanswered messages from telegram" in envelope["payload"]["text"]
+
+
+def test_unreplied_duration_does_not_fire_before_one_minute(monkeypatch):
+    r = WatchRedis()
+    _unreplied_agent(r, since="2026-08-09T13:59:30Z")  # 30s old, under the 60s default
+    _lead(r)
+    monkeypatch.setattr(service, "run_tmux", _quiet_windows())
+    monkeypatch.setattr(service.subprocess, "Popen", lambda args: (_ for _ in ()).throw(AssertionError("should not kick")))
+
+    _watchdog(r).poll(now=NOW)
+
+    assert _key("architect", "ingress") not in r.lists
+
+
+def test_unreplied_duration_does_not_repeat_before_the_backoff_doubles(monkeypatch):
+    r = WatchRedis()
+    _unreplied_agent(r)  # 60s old at NOW
+    _lead(r)
+    kicks = []
+    monkeypatch.setattr(service, "run_tmux", _quiet_windows())
+    monkeypatch.setattr(service.subprocess, "Popen", lambda args: kicks.append(args))
+    watchdog = _watchdog(r)
+
+    watchdog.poll(now=NOW)
+    watchdog.poll(now=NOW)
+    from datetime import timedelta
+    watchdog.poll(now=NOW + timedelta(seconds=30))  # 90s old, under the next 120s threshold
+
+    assert len(kicks) == 1
+    assert len(r.lists[_key("architect", "ingress")]) == 1
+
+
+def test_unreplied_duration_re_alerts_back_off_exponentially(monkeypatch):
+    """A quick miss still nags fast; a long one does not nag every minute."""
+    from datetime import timedelta
+
+    r = WatchRedis()
+    _unreplied_agent(r)  # 60s old at NOW
+    _lead(r)
+    kicks = []
+    watchdog = _watchdog(r)
+    monkeypatch.setattr(service, "run_tmux", _quiet_windows())
+    monkeypatch.setattr(service.subprocess, "Popen", lambda args: kicks.append(args))
+
+    watchdog.poll(now=NOW)  # age 60s: first nag, next threshold 120s
+    assert len(kicks) == 1
+
+    watchdog.poll(now=NOW + timedelta(seconds=59))  # age 119s: still under 120s
+    assert len(kicks) == 1
+
+    watchdog.poll(now=NOW + timedelta(seconds=60))  # age 120s: second nag, next threshold 240s
+    assert len(kicks) == 2
+    envelope = parse(r.lists[_key("architect", "ingress")][-1])
+    assert "2 min" in envelope["payload"]["text"]
+
+    watchdog.poll(now=NOW + timedelta(seconds=179))  # age 239s: still under 240s
+    assert len(kicks) == 2
+
+    watchdog.poll(now=NOW + timedelta(seconds=180))  # age 240s: third nag, next threshold 480s
+    assert len(kicks) == 3
+    envelope = parse(r.lists[_key("architect", "ingress")][-1])
+    assert "4 min" in envelope["payload"]["text"]
+
+
+def test_unreplied_duration_tracks_each_client_independently(monkeypatch):
+    r = WatchRedis()
+    _unreplied_agent(r, client="telegram", since="2026-08-09T13:57:00Z")  # old enough
+    _unreplied_agent(r, client="signal", since="2026-08-09T13:59:30Z")  # too new
+    _lead(r)
+    kicks = []
+    monkeypatch.setattr(service, "run_tmux", _quiet_windows())
+    monkeypatch.setattr(service.subprocess, "Popen", lambda args: kicks.append(args))
+
+    _watchdog(r).poll(now=NOW)
+
+    assert len(kicks) == 1
+    envelope = parse(r.lists[_key("architect", "ingress")][-1])
+    assert "telegram" in envelope["payload"]["text"]
+
+
+def test_unreplied_duration_drops_state_once_the_agent_replies(monkeypatch):
+    r = WatchRedis()
+    _unreplied_agent(r)
+    _lead(r)
+    monkeypatch.setattr(service, "run_tmux", _quiet_windows())
+    monkeypatch.setattr(service.subprocess, "Popen", lambda args: None)
+    watchdog = _watchdog(r)
+    watchdog.poll(now=NOW)
+    assert r.hashes[_key("sme-2", "unreplied.alerted")] == {"telegram": "60"}
+
+    del r.hashes[_key("sme-2", "unreplied")]["telegram"]  # sme-2 replied
+    watchdog.poll(now=NOW)
+    assert r.hashes[_key("sme-2", "unreplied.alerted")] == {}
+
+
+def test_unreplied_duration_does_nothing_without_a_configured_lead(monkeypatch):
+    r = WatchRedis()
+    _unreplied_agent(r)
+    monkeypatch.setattr(service, "run_tmux", _quiet_windows())
+    monkeypatch.setattr(service.subprocess, "Popen", lambda args: (_ for _ in ()).throw(AssertionError("should not kick")))
+
+    _watchdog(r).poll(now=NOW)
+
+    assert _key("architect", "ingress") not in r.lists
+
+
 def test_credentials_warn_on_claude_refresh_expiry_and_codex_is_unknown(tmp_path, capsys):
     r = WatchRedis()
     r.values[_key("architect", "launch")] = "claude"

@@ -11,6 +11,35 @@
 
 ---
 
+## 2026-08-29 — the watchdog can also message the lead for a client message nobody answered
+
+Fourth rule in the doing/todo/hold-duration family, and the first whose
+trigger is not the board. `bus.send()` itself now tracks, per tmux agent,
+which clients (`api` port_type, e.g. `telegram`) it owes a reply: a client
+message opens or extends `<prefix>:agent:<name>:unreplied` (a HASH keyed by
+client, holding `{"count", "since"}`); anything that agent sends back to the
+same client deletes that client's field outright. Once a field has sat past
+`WATCHDOG_UNREPLIED_ALERT_SEC` (default 60s) the watchdog pastes
+`[alert from watchdog] <agent> has <count> unanswered message(s) from
+<client>, oldest <N> min old` into the tenant `lead`'s pane, via the same
+`_notify_lead` path the other three use. Unlike those three, re-alerts back
+off exponentially (next required age doubles: 60s, 120s, 240s, …) rather than
+repeating at a fixed period — a client reply deserves a fast first nag, but a
+fixed period that short would page the lead every minute for the length of
+any genuinely long task.
+
+**What this made false:** HLD §8c's and LLD-watchdog §4/§7 invariant 6's
+lead-only exception, previously worded to cover three rules, now covers four.
+Also LLD-bus-and-switch §1's "two doors" table, which listed `send`'s effects
+as only the envelope build, egress write and log — it now also updates
+`unreplied` from the L2 header (source/destination port_type), never the
+payload.
+
+New per-agent keys `<prefix>:agent:<name>:unreplied` (written by `send()`,
+not the watchdog) and `<prefix>:agent:<name>:unreplied.alerted` (the
+watchdog's dedupe state, storing the next required age in seconds rather
+than a crossing count).
+
 ## 2026-08-28 — session door's subscribe message accepts `refresh: true`
 
 `{"subscribe": [...], "refresh": true}` on the `/session` WebSocket now

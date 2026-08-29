@@ -770,3 +770,43 @@ def test_a_stream_id_the_caller_passes_is_never_silently_dropped(capsys):
     assert ("opened", "unknown") in by_event, "an allowlisted event always carries the field"
     assert ("payload_verified", "s2") in by_event, "an id the caller passed must survive"
     assert ("started", None) in by_event, "no id is invented for an event that has none"
+
+
+class UnrepliedTrackingTest(unittest.TestCase):
+    """`send()` bookkeeping for LLD-watchdog §2d: does a tmux agent owe a client a reply?"""
+
+    def setUp(self):
+        self.r = FakeRedis()
+        self.roster = prefix("acme", "hq", resource="roster")
+        self.r.hashes[self.roster] = {"alice": "tmux", "bob": "tmux", "telegram": "api"}
+        self.key = prefix("acme", "hq", "alice", "unreplied")
+
+    def test_client_message_opens_a_count_for_the_destination_agent(self):
+        send(self.r, pod="acme", tenant="hq", source="telegram", destination="alice", payload={"text": "hi"})
+        record = json.loads(self.r.hashes[self.key]["telegram"])
+        self.assertEqual(record["count"], 1)
+        self.assertIn("since", record)
+
+    def test_a_second_client_message_before_any_reply_accumulates_and_keeps_the_earliest_since(self):
+        send(self.r, pod="acme", tenant="hq", source="telegram", destination="alice", payload={"text": "one"})
+        first_since = json.loads(self.r.hashes[self.key]["telegram"])["since"]
+        send(self.r, pod="acme", tenant="hq", source="telegram", destination="alice", payload={"text": "two"})
+        record = json.loads(self.r.hashes[self.key]["telegram"])
+        self.assertEqual(record["count"], 2)
+        self.assertEqual(record["since"], first_since)
+
+    def test_the_agents_own_reply_to_the_same_client_clears_the_count(self):
+        send(self.r, pod="acme", tenant="hq", source="telegram", destination="alice", payload={"text": "hi"})
+        send(self.r, pod="acme", tenant="hq", source="alice", destination="telegram", payload={"text": "reply"})
+        self.assertNotIn("telegram", self.r.hashes.get(self.key, {}))
+
+    def test_peer_to_peer_tmux_traffic_never_opens_a_count(self):
+        send(self.r, pod="acme", tenant="hq", source="alice", destination="bob", payload={"text": "hi"})
+        self.assertNotIn(self.key, self.r.hashes)
+
+    def test_a_structured_kind_from_a_client_does_not_open_a_count(self):
+        send(
+            self.r, pod="acme", tenant="hq", source="telegram", destination="alice",
+            kind="Command", payload={"op": "noop"},
+        )
+        self.assertNotIn(self.key, self.r.hashes)

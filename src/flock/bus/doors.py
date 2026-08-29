@@ -2,6 +2,7 @@
 
 import json
 from collections.abc import Callable
+from datetime import datetime, timezone
 
 from .envelope import (
     EnvelopeError,
@@ -15,6 +16,49 @@ from .envelope import (
 from .keys import prefix
 from .logging import emit, log_record
 from .policy import require_allowed
+from .roster import port_type
+
+# Kinds a client can plausibly be owed a reply for. `Command`, `AddTicket` and
+# similar structured kinds are never sent by a client and would only ever
+# reset a count that could not have been opened.
+_UNREPLIED_KINDS = {"Message", "Attachment"}
+
+
+def _unreplied_key(pod: str, tenant: str, agent: str) -> str:
+    return prefix(pod, tenant, agent=agent, resource="unreplied")
+
+
+def _track_unreplied(r, *, pod: str, tenant: str, source: str, destination: str, kind: str) -> None:
+    """Open or clear a tmux agent's per-client unanswered-message count.
+
+    `send` already knows both port types for free — every caller already paid
+    for `require_allowed` above — so this reuses that lookup rather than
+    asking a caller to declare "this needs a reply". A client (`api` port_type,
+    e.g. `telegram`) sending to a tmux agent opens or extends a count; that
+    same agent sending anything back to the same client closes it outright.
+    Peer traffic between two tmux agents never touches this key: ticket age
+    already covers that responsiveness question via the watchdog's
+    doing/todo/hold family (LLD-watchdog §2a-c). See LLD-watchdog §2d.
+    """
+    if kind not in _UNREPLIED_KINDS or destination == "all":
+        return
+    source_type = port_type(r, pod=pod, tenant=tenant, agent=source)
+    destination_type = port_type(r, pod=pod, tenant=tenant, agent=destination)
+    if source_type == "api" and destination_type == "tmux":
+        key = _unreplied_key(pod, tenant, destination)
+        count = 1
+        since = datetime.now(timezone.utc).isoformat(timespec="milliseconds").replace("+00:00", "Z")
+        existing = r.hget(key, source)
+        if existing:
+            try:
+                data = json.loads(existing)
+                count = int(data["count"]) + 1
+                since = data["since"] or since
+            except (TypeError, ValueError, KeyError):
+                pass
+        r.hset(key, source, json.dumps({"count": count, "since": since}, separators=(",", ":")))
+    elif source_type == "tmux" and destination_type == "api":
+        r.hdel(_unreplied_key(pod, tenant, source), destination)
 
 
 class DeadLetter(Exception):
@@ -86,6 +130,9 @@ def send(
         emit(module, "send_unknown", envelope, f"egress write outcome UNKNOWN after {exc}")
         raise
     emit(module, "sent", envelope)
+    _track_unreplied(
+        r, pod=pod, tenant=tenant, source=local_source, destination=local_destination, kind=kind
+    )
     return envelope["stream_id"]
 
 

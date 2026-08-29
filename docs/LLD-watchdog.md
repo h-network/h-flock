@@ -210,6 +210,61 @@ cancelled or deleted), the same pruning §2b's `todo.alerted` does.
 Delivery reuses `_notify_lead` unchanged — same envelope, same direct
 `ingress` write, same kick, same silent no-op with no `tmux` lead.
 
+## 2d. Unreplied-duration: a client message nobody answered
+
+Fourth in the family, and the one member whose trigger is not the board.
+Any tmux agent that has `bus.send` open an `unreplied` entry (below) and left
+it open past `WATCHDOG_UNREPLIED_ALERT_SEC` (default `60`, one minute) is
+reported to the lead the same way as §2a-c: direct pane message, board-only
+delivery mechanism reused unchanged, not the alerts stream.
+
+```
+<prefix>:agent:<name>:unreplied    HASH    { <client>: {"count", "since"} }
+```
+
+**Written by `send()` itself, not by the watchdog.** Both directions of a
+client conversation pass through the same door (`flock.bus.doors.send`): a
+telegram-bot POST to `/agents/<agent>/envelopes` with `as: telegram` calls it
+exactly as `office send` does, just with `source` and `destination` swapped.
+`send` already resolves both port types for `require_allowed`, so it reuses
+that lookup rather than asking a caller to declare "this needs a reply":
+
+- `api` port_type → `tmux` port_type, kind `Message` or `Attachment`: opens or
+  extends the destination agent's `unreplied` field for that client. `count`
+  increments; `since` is kept at the *first* unanswered message's timestamp,
+  not overwritten by each new one.
+- `tmux` port_type → `api` port_type, any tracked kind: deletes the source
+  agent's `unreplied` field for that destination client outright. Any reply
+  closes the whole backlog, not one message at a time.
+- `tmux` → `tmux` traffic never touches this key. Ticket age already covers
+  peer responsiveness through §2a-c; this rule exists only for the one
+  direction those three cannot see — an agent owing a human on the other end
+  of a client, not another agent.
+
+```
+[alert from watchdog] <agent> has <count> unanswered message(s) from <client>, oldest <N> min old
+```
+
+`<N>` is `age_s // 60`, where `age_s` is measured from `since`, so it reflects
+the oldest unanswered message, not the most recent.
+
+⚠ **Re-alerts back off exponentially, unlike §2a-c's fixed period.** Those
+three re-alert at a fixed multiple of their threshold because their
+thresholds are already long (5-60 minutes) — a fixed period there is not
+frequent enough to spam. A client reply is different: it deserves a fast
+*first* nag, and 60 seconds is short enough that a fixed re-alert period at
+that cadence would page the lead once a minute for the entire length of any
+genuinely long task, which optimizes for the wrong failure mode. Instead
+`<prefix>:agent:<name>:unreplied.alerted` stores the threshold that was just
+used per client, and the next required age is double it: 60s, 120s, 240s,
+480s, ... A message still unanswered a minute in surfaces within that
+minute; a five-minute task produces two nags on the way, not five.
+
+**A client the agent has since answered leaves `unreplied` entirely** (the
+whole field, not decremented) — the next pass diffs `unreplied.alerted`'s
+fields against what is still present and drops what no longer matches, same
+pruning §2b and §2c already do for tickets that leave `todo`/`hold`.
+
 ## 3. `blocked`: a retained delivery verdict
 
 The switch, not the watchdog, owns:
@@ -300,8 +355,8 @@ Alert records are facts, not diagnoses. Their common fields are `v`, `ts` and
 `kind`; the remaining fields are specific to `stalled`, `blocked`, or
 `credential` as shown in this document.
 
-⚠ **§2a, §2b and §2c are the exception, and it is to the lead only.** All
-three share one delivery mechanism (`_notify_lead`) and the same scope. HLD
+⚠ **§2a-d are the exception, and it is to the lead only.** All
+four share one delivery mechanism (`_notify_lead`) and the same scope. HLD
 §8c works out
 why the lead does not re-create the symptom-clearing problem above:
 the lead is the one participant in this fabric that a human's own judgment is
@@ -382,6 +437,7 @@ agents.
 | `WATCHDOG_DOING_ALERT_SEC` | `900` | age at which §2a messages the lead directly, and the re-alert period thereafter |
 | `WATCHDOG_TODO_ALERT_SEC` | `300` | age at which §2b messages the lead directly, and the re-alert period thereafter |
 | `WATCHDOG_HOLD_ALERT_SEC` | `3600` | age at which §2c messages the lead directly, and the re-alert period thereafter |
+| `WATCHDOG_UNREPLIED_ALERT_SEC` | `60` | age at which §2d first messages the lead directly; each re-alert doubles this as the next required age |
 
 `REDIS_URL`, `POD` and `TENANT` identify the tenant. `TMUX_SESSION` defaults to
 the tenant name; `TMUX_SOCKET` selects an explicit tmux socket when present.
@@ -401,13 +457,14 @@ the tenant name; `TMUX_SOCKET` selects an explicit tmux socket when present.
    reviewing build 77 — the move updated eight docs for the file *paths* and
    missed the sentence about *ownership*.
 5. `blocked` is a limited delivery-verification verdict, not a diagnosis.
-6. ⚠ **AMENDED — §2a, §2b and §2c are the exception.** Every `stalled`,
+6. ⚠ **AMENDED — §2a, §2b, §2c and §2d are the exception.** Every `stalled`,
    `blocked` and `credential` alert still goes only to the Redis Stream and
    container log, never into any agent's ingress queue. §2a's doing-duration,
-   §2b's todo-duration and §2c's hold-duration messages are the exception, and
-   it is narrower than "an agent's ingress queue" in general: all three are
-   addressed only to whichever participant is currently the tenant's `lead`
-   (HLD §8c), never to the agent the ticket names, and never to any other
-   peer. If there is no lead, or the lead is not `tmux`, none of the three
-   fall back to any other participant — they send nothing.
+   §2b's todo-duration, §2c's hold-duration and §2d's unreplied-duration
+   messages are the exception, and it is narrower than "an agent's ingress
+   queue" in general: all four are addressed only to whichever participant is
+   currently the tenant's `lead` (HLD §8c), never to the agent the ticket or
+   message names, and never to any other peer. If there is no lead, or the
+   lead is not `tmux`, none of the four fall back to any other participant —
+   they send nothing.
 7. No terminal content is captured or parsed.
