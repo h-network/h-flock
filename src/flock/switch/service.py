@@ -13,6 +13,22 @@ from flock.bus.queues import admit_ingress
 from .retention import RetentionTrimmer
 from .windowlog import WindowLogTailer
 
+
+def _emit_observation(event: str, envelope: dict, reason=None, count=None) -> None:
+    """Keep stdout observation from changing switch custody decisions."""
+    try:
+        emit("switch", event, envelope, reason, count)
+    except Exception:
+        pass
+
+
+def _log_observation(event: str, **fields) -> None:
+    """Best-effort structured observation after a custody operation."""
+    try:
+        log_record("switch", event, **fields)
+    except Exception:
+        pass
+
 # ⚠ activity, presence and verification are NOT here. They observe agents; the
 # watchdog owns them. What is left runs on the forwarding thread because it is
 # the switch's own housekeeping — the window spool it tails into its own stdout,
@@ -48,8 +64,7 @@ class Switch:
         stream_id = candidate.get("stream_id")
         correlation_id = candidate.get("correlation_id")
         destination = candidate.get("destination")
-        log_record(
-            "switch",
+        _log_observation(
             "popped",
             stream_id=stream_id if isinstance(stream_id, str) else None,
             correlation_id=correlation_id if isinstance(correlation_id, str) else None,
@@ -61,8 +76,7 @@ class Switch:
         self, sender: str, destination: str, raw, envelope: dict, depth: int
     ) -> None:
         self.r.rpush(prefix(self.pod, self.tenant, sender, "dead"), raw)
-        log_record(
-            "switch",
+        _log_observation(
             "dead_lettered",
             stream_id=envelope.get("stream_id"),
             correlation_id=envelope.get("correlation_id"),
@@ -92,8 +106,7 @@ class Switch:
         try:
             subprocess.Popen(["flock.port", agent])
         except OSError as exc:
-            log_record(
-                "switch",
+            _log_observation(
                 "kick_unknown",
                 stream_id=envelope.get("stream_id"),
                 correlation_id=envelope.get("correlation_id"),
@@ -104,8 +117,7 @@ class Switch:
             return
         # Popen success proves only that the switch started a delivery attempt;
         # it does not claim that the child reached or popped the ingress queue.
-        log_record(
-            "switch",
+        _log_observation(
             "kick_started",
             stream_id=envelope.get("stream_id"),
             correlation_id=envelope.get("correlation_id"),
@@ -137,7 +149,7 @@ class Switch:
         except EnvelopeError as exc:
             dead = prefix(self.pod, self.tenant, sender, "dead")
             self.r.rpush(dead, raw)
-            emit("switch", "dead_lettered", {}, str(exc))
+            _emit_observation("dead_lettered", {}, str(exc))
             return True
         # The forwarding decision reads L2 and the roster only. L3 rides through
         # untouched for a future switch; this local switch never parses it.
@@ -149,8 +161,7 @@ class Switch:
             envelope["l2"]["source"] = sender
             raw = stamp_source(raw, sender)
         if claimed_producer != sender:
-            emit(
-                "switch",
+            _emit_observation(
                 "source_stamped",
                 envelope,
                 reason=f"claimed source {claimed_producer!r} stamped from egress sender {sender!r}",
@@ -159,49 +170,49 @@ class Switch:
             raw = advance_hop(raw, envelope)
         except EnvelopeError as exc:
             self.r.rpush(prefix(self.pod, self.tenant, sender, "dead"), raw)
-            emit("switch", "dead_lettered", envelope, str(exc))
+            _emit_observation("dead_lettered", envelope, str(exc))
             return True
         if envelope["ttl"] == 0:
             self.r.rpush(prefix(self.pod, self.tenant, sender, "dead"), raw)
-            emit("switch", "dead_lettered", envelope, "ttl expired at forward")
+            _emit_observation("dead_lettered", envelope, "ttl expired at forward")
             return True
         destination = envelope["l2"]["destination"]
         if destination == "all":
             recipients = sorted(self._agents() - {sender})
             if not recipients:
-                emit("switch", "forwarded", envelope, count=0)
+                _emit_observation("forwarded", envelope, count=0)
                 return True
             try:
                 admitted, _, depth = self._admit(recipients, raw)
             except Exception as exc:
-                emit(
-                    "switch", "forward_unknown", envelope,
+                _emit_observation(
+                    "forward_unknown", envelope,
                     f"broadcast ingress write outcome UNKNOWN after {exc}",
                 )
                 raise
             if not admitted:
                 self._dead_letter_full(sender, "all", raw, envelope, depth)
                 return True
-            emit("switch", "forwarded", envelope, count=len(recipients))
+            _emit_observation("forwarded", envelope, count=len(recipients))
             for agent in recipients:
                 self._kick(agent, envelope)
             return True
         if not is_member(self.r, pod=self.pod, tenant=self.tenant, agent=destination):
             self.r.rpush(prefix(self.pod, self.tenant, sender, "dead"), raw)
-            emit("switch", "dead_lettered", envelope, "destination is not in tenant roster")
+            _emit_observation("dead_lettered", envelope, "destination is not in tenant roster")
             return True
         try:
             admitted, _, depth = self._admit([destination], raw)
         except Exception as exc:
-            emit(
-                "switch", "forward_unknown", envelope,
+            _emit_observation(
+                "forward_unknown", envelope,
                 f"ingress write outcome UNKNOWN after {exc}",
             )
             raise
         if not admitted:
             self._dead_letter_full(sender, destination, raw, envelope, depth)
             return True
-        emit("switch", "forwarded", envelope)
+        _emit_observation("forwarded", envelope)
         self._kick(destination, envelope)
         return True
 
@@ -227,14 +238,18 @@ class Switch:
                         agents = self._agents()
                         retention_trimmer.poll(agents)
                     except Exception as exc:
-                        emit("switch", "error", {},
-                             reason=f"retention pass failed: {type(exc).__name__}: {exc}")
+                        _emit_observation(
+                            "error", {},
+                            reason=f"retention pass failed: {type(exc).__name__}: {exc}",
+                        )
                 if window_log_tailer is not None:
                     try:
                         window_log_tailer.poll()
                     except Exception as exc:
-                        emit("switch", "error", {},
-                             reason=f"window log pass failed: {type(exc).__name__}: {exc}")
+                        _emit_observation(
+                            "error", {},
+                            reason=f"window log pass failed: {type(exc).__name__}: {exc}",
+                        )
                 next_maintenance = now + maintenance_poll_seconds
             timeout = min(self.poll_seconds, max(0.1, next_maintenance - time.monotonic()))
             self.step(timeout=timeout)

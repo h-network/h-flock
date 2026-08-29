@@ -84,6 +84,12 @@ attempted and is never called `send_unknown`. Once `RPUSH` returns, custody has
 changed: a logging or unreplied-bookkeeping failure is swallowed so observation
 cannot make a committed send look failed to the caller.
 
+The switch treats custody logging as observation, never control flow. Once
+`BLPOP`, ingress admission, dead-letter append, or `Popen` has returned, a
+stdout/logging exception is swallowed and routing continues. A Redis admission
+exception remains `forward_unknown` and is still re-raised; failure to emit that
+record cannot replace the original Redis exception.
+
 For registered VABs, each check therefore has one logical home. An envelope
 built by `send` cannot be structurally malformed because only one thing builds
 it. The `receive()` library function implements the one-envelope control path;

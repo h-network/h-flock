@@ -712,6 +712,28 @@ class DoorsAndRouterTest(unittest.TestCase):
         self.assertNotIn("forwarded", [record["event"] for record in records])
         self.popen.assert_not_called()
 
+    def test_logging_failures_after_pop_and_admission_do_not_stop_forwarding(self):
+        send(
+            self.r,
+            pod="acme",
+            tenant="hq",
+            source="alice",
+            destination="bob",
+            payload={"text": "still forward"},
+        )
+        with (
+            patch("flock.switch.service.log_record", side_effect=OSError("stdout closed")),
+            patch("flock.switch.service.emit", side_effect=OSError("stdout closed")),
+        ):
+            self.assertTrue(Switch(self.r, pod="acme", tenant="hq").step())
+
+        ingress = self.r.lists[prefix("acme", "hq", "bob", "ingress")]
+        self.assertEqual(len(ingress), 1)
+        self.assertEqual(
+            self.r.lists[prefix("acme", "hq", "alice", "egress")], []
+        )
+        self.popen.assert_called_once_with(["flock.port", "bob"])
+
     def test_broadcast_is_all_or_none_when_one_recipient_is_full(self):
         bob_ingress = prefix("acme", "hq", "bob", "ingress")
         self.r.rpush(bob_ingress, "bob is full")
