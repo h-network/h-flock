@@ -966,3 +966,97 @@ def test_attachment_burst_isolation(mock_messages, mock_attachment):
     # attachment_opener called once individually
     assert mock_attachment.call_count == 1
 
+
+@patch("flock.port.openers.list_windows")
+@patch("flock.tmux.ops.run_tmux")
+def test_messages_opener_client_reply_trailer(mock_run_tmux, mock_list_windows):
+    mock_list_windows.return_value = {"bob"}
+    mock_run_tmux.return_value = (0, "", "")
+
+    r = FakeRespRedis()
+    r.hset("pod:acme:tenant:hq:roster", "telegram", "api")
+
+    env = build_envelope(kind="Message", source="telegram", destination="bob", payload={"text": "status check"})
+    messages_opener(
+        r,
+        pod="acme",
+        tenant="hq",
+        agent="bob",
+        envelopes=[env],
+        session_name="hq",
+    )
+
+    load_buffer_calls = [call for call in mock_run_tmux.call_args_list if "load-buffer" in call[0]]
+    assert len(load_buffer_calls) == 1
+    input_data = load_buffer_calls[0][1].get("input_data", "")
+    assert input_data == "[message from telegram] status check\n[reply to telegram]\n"
+
+
+@patch("flock.port.openers.list_windows")
+@patch("flock.tmux.ops.run_tmux")
+def test_messages_opener_peer_no_trailer(mock_run_tmux, mock_list_windows):
+    mock_list_windows.return_value = {"bob"}
+    mock_run_tmux.return_value = (0, "", "")
+
+    r = FakeRespRedis()
+    r.hset("pod:acme:tenant:hq:roster", "alice", "tmux")
+
+    env = build_envelope(kind="Message", source="alice", destination="bob", payload={"text": "peer msg"})
+    messages_opener(
+        r,
+        pod="acme",
+        tenant="hq",
+        agent="bob",
+        envelopes=[env],
+        session_name="hq",
+    )
+
+    load_buffer_calls = [call for call in mock_run_tmux.call_args_list if "load-buffer" in call[0]]
+    assert len(load_buffer_calls) == 1
+    input_data = load_buffer_calls[0][1].get("input_data", "")
+    assert input_data == "[message from alice] peer msg\n"
+    assert "[reply to" not in input_data
+
+
+@patch("flock.port.openers.list_windows")
+@patch("flock.tmux.ops.run_tmux")
+def test_messages_opener_mixed_batch_trailer(mock_run_tmux, mock_list_windows):
+    mock_list_windows.return_value = {"bob"}
+    mock_run_tmux.return_value = (0, "", "")
+
+    r = FakeRespRedis()
+    r.hset("pod:acme:tenant:hq:roster", "telegram", "api")
+    r.hset("pod:acme:tenant:hq:roster", "web", "api")
+    r.hset("pod:acme:tenant:hq:roster", "alice", "tmux")
+
+    envelopes = [
+        build_envelope(kind="Message", source="telegram", destination="bob", payload={"text": "from telegram 1"}),
+        build_envelope(kind="Message", source="alice", destination="bob", payload={"text": "from alice"}),
+        build_envelope(kind="Message", source="telegram", destination="bob", payload={"text": "from telegram 2"}),
+        build_envelope(kind="Message", source="web", destination="bob", payload={"text": "from web"}),
+    ]
+
+    messages_opener(
+        r,
+        pod="acme",
+        tenant="hq",
+        agent="bob",
+        envelopes=envelopes,
+        session_name="hq",
+    )
+
+    load_buffer_calls = [call for call in mock_run_tmux.call_args_list if "load-buffer" in call[0]]
+    assert len(load_buffer_calls) == 1
+    input_data = load_buffer_calls[0][1].get("input_data", "")
+    expected = (
+        "[message from telegram] from telegram 1\n"
+        "[reply to telegram]\n"
+        "[message from alice] from alice\n"
+        "[message from telegram] from telegram 2\n"
+        "[reply to telegram]\n"
+        "[message from web] from web\n"
+        "[reply to web]\n"
+    )
+    assert input_data == expected
+
+

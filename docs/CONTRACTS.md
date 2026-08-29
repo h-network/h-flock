@@ -628,7 +628,7 @@ shape admission, described below.
 
 | `kind` | port_type that opens it | Payload | Does |
 |---|---|---|---|
-| `Message` | `tmux` | `{"text": "..."}` | pastes `[message from <source>] <text>` |
+| `Message` | `tmux` | `{"text": "..."}` | pastes `[message from <source>] <text>` (with trailing `[reply to <client>]` when source is a `port_type: api` client) |
 | `Command` | `tmux` | `{"text": "..."}` | pastes `<text>` **bare** — it executes |
 | `Attachment` | `tmux` | `{"filename", "mime_type", "content_base64", "caption"?}` | writes decoded bytes into the recipient's workspace, then pastes an inert attributed notice naming the file |
 | `StartAgent` | `control` | `{"agent": "networking", "cli": "claude", "port_type": "tmux", "resume": true}` | publishes desired launch state, enrols (tmuxhost reconciles window and CLI, auto-resuming history) |
