@@ -2,7 +2,9 @@
 
 > The web UI for running an office. Judge it as a product someone pays for, not
 > as a demo. this file is the bar. The build spec it was written against has been
-> retired — the clients are demos now, not a workstream.
+> retired. ⚠ **`clients/` is no longer closed to development** — `TODO.md:19` and
+> `SPRINTS.md:299-304` record the reversal (2026-08-29, by the operator): clients are
+> in active use as the primary user interface and ordinary in-scope work.
 
 ⚠ **Status: Parts I–V have all shipped.** Every numbered requirement below —
 design tokens, command palette, global search, keyboard shortcuts, density
