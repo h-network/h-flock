@@ -1043,6 +1043,7 @@ the entry shape matches the single-agent route exactly.
   <prefix>:agent:<name>:hold.alerted      HASH     { <ticket_id>: <crossing>, … }, set by the watchdog
   <prefix>:agent:<name>:unreplied         HASH     { <client>: {"count","since"} }, set by `send()`
   <prefix>:agent:<name>:unreplied.alerted HASH     { <client>: <next_threshold_s>, … }, set by the watchdog
+  <prefix>:agent:<name>:acks              HASH     { <peer>: {"streak","last_ts"} }, set by `send()`
   <prefix>:alerts                         STREAM   tenant-level, MAXLEN ~ 1000
 ```
 
@@ -1081,6 +1082,24 @@ Opening or extending one client field is a single Lua execution: it decodes the
 existing value, increments `count`, preserves the earliest valid `since`, and
 writes the replacement atomically. Malformed prior state recovers to count 1
 with the current timestamp rather than pinning the field or losing the send.
+
+Peer acknowledgment-loop state is also written by `send()` after the egress
+append. For a `Message` between two `tmux` ports it stores no content, only:
+
+```
+<prefix>:agent:<source>:acks  HASH  <destination> -> {"streak":N,"last_ts":"…"}
+```
+
+The edge is directed. An ack-shaped message increments atomically when the
+previous timestamp is within 120 seconds, otherwise resets to 1; a non-ack
+`Message` deletes that edge. The v1 classifier requires string text, at most 80
+trimmed Unicode code points and 12 whitespace-delimited words, no `?`, then
+collapses whitespace, case-folds, strips trailing `.`/`!` plus exposed trailing
+space, and exact-matches one of: `ack`, `acknowledged`, `appreciate it`, `got
+it`, `much appreciated`, `no problem`, `noted`, `np`, `ok`, `okay`, `roger`,
+`roger that`, `sounds good`, `thank you`, `thanks`, `thanks a lot`,
+`understood`, `will do`. API traffic, broadcasts, and non-`Message` kinds never
+touch this state. Tracking failure is logged and swallowed after committed send.
 
 ⚠ **`blocked` is written by the WATCHDOG.** It is a delivery verdict retained
 instead of discarded: set on `unverified`, deleted on `verified`. One writer, and

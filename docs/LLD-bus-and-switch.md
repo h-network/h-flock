@@ -101,6 +101,13 @@ output failure cannot prevent opener dispatch, interrupt a drained batch, or
 escape after a dead-letter/opened outcome. Both `receive()` and the tmux/api
 burst delivery paths use this helper.
 
+As secondary post-egress bookkeeping, `send()` also classifies closing
+acknowledgments on directed tmux-to-tmux `Message` edges. It stores only a
+streak and timestamp in the source agent's `acks` hash; content never enters
+Redis. The atomic 120-second update and exact frozen classifier are specified in
+CONTRACTS. Non-ack peer messages delete the directed field, and any tracking
+fault is observed without changing the already-committed send result.
+
 For registered VABs, each check therefore has one logical home. An envelope
 built by `send` cannot be structurally malformed because only one thing builds
 it. The `receive()` library function implements the one-envelope control path;

@@ -650,6 +650,21 @@ class FakeRespRedis:
                 {"count": count, "since": since}, separators=(",", ":")
             )
             return count
+        if "flock ack streak v1" in script:
+            key, destination, now_ts, cutoff_ts = args
+            streak = 1
+            existing = self.hashes.get(key, {}).get(destination)
+            if existing:
+                try:
+                    data = json.loads(existing)
+                    if cutoff_ts <= data["last_ts"] <= now_ts:
+                        streak = int(data["streak"]) + 1
+                except (TypeError, ValueError, KeyError, json.JSONDecodeError):
+                    streak = 1
+            self.hashes.setdefault(key, {})[destination] = json.dumps(
+                {"streak": streak, "last_ts": now_ts}, separators=(",", ":")
+            )
+            return streak
         if numkeys == 2 and len(args) == 5:
             cause_key, roster_key, correlation_id, agent, agent_port_type = args
             self.values[cause_key] = correlation_id

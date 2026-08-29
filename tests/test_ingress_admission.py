@@ -12,7 +12,7 @@ import pytest
 import redis
 
 from flock.bus import prefix
-from flock.bus.doors import _increment_unreplied
+from flock.bus.doors import _increment_unreplied, _update_ack_streak
 from flock.bus.queues import admit_ingress
 
 
@@ -154,4 +154,29 @@ def test_concurrent_unreplied_increments_preserve_count_and_first_since(real_red
     assert json.loads(real_redis.hget(key, "telegram")) == {
         "count": 11,
         "since": first_since,
+    }
+
+
+def test_concurrent_ack_streak_updates_are_atomic(real_redis):
+    key = prefix("acme", "hq", "alice", "acks")
+    barrier = threading.Barrier(11)
+
+    def update():
+        barrier.wait()
+        _update_ack_streak(
+            real_redis, key=key, destination="bob",
+            now_ts="2026-08-29T16:00:30.000Z",
+            cutoff_ts="2026-08-29T15:58:30.000Z",
+        )
+
+    threads = [threading.Thread(target=update) for _ in range(10)]
+    for thread in threads:
+        thread.start()
+    barrier.wait()
+    for thread in threads:
+        thread.join()
+
+    assert json.loads(real_redis.hget(key, "bob")) == {
+        "streak": 10,
+        "last_ts": "2026-08-29T16:00:30.000Z",
     }
