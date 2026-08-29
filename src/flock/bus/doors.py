@@ -31,9 +31,11 @@ def _unreplied_key(pod: str, tenant: str, agent: str) -> str:
 def _track_unreplied(r, *, pod: str, tenant: str, source: str, destination: str, kind: str) -> None:
     """Open or clear a tmux agent's per-client unanswered-message count.
 
-    `send` already knows both port types for free — every caller already paid
-    for `require_allowed` above — so this reuses that lookup rather than
-    asking a caller to declare "this needs a reply". A client (`api` port_type,
+    ⚠ Reads both port types itself, via two fresh roster HGETs — it does NOT
+    reuse work `require_allowed` above already did. That call checks policy
+    export/import *tags*, a separate hash, and never touches port_type. This
+    docstring previously claimed otherwise; corrected after `bus`'s
+    module-boundary sweep caught the discrepancy. A client (`api` port_type,
     e.g. `telegram`) sending to a tmux agent opens or extends a count; that
     same agent sending anything back to the same client closes it outright.
     Peer traffic between two tmux agents never touches this key: ticket age

@@ -1064,10 +1064,26 @@ directions of a client conversation pass through that one door: `office
 send` and a client's `POST /agents/<agent>/envelopes` both call it, just
 with `source`/`destination` swapped. It opens or extends the destination's
 field when an `api` port_type sends a `tmux` agent a `Message` or
-`Attachment`, and deletes the field outright the moment that agent sends
-anything back to the same client. Peer `tmux`-to-`tmux` traffic never
-touches it — ticket age already covers that responsiveness question via
+`Attachment`, and — as of this writing, same restriction, not "anything" —
+deletes the field the moment that agent sends a `Message` or `Attachment`
+back to the same client. Peer `tmux`-to-`tmux` traffic never touches it —
+ticket age already covers that responsiveness question via
 `doing.alerted`/`todo.alerted`/`hold.alerted`.
+
+⚠ **Known gap, tracked as bus ticket 41bf62f2.** The clearing side is
+restricted to the same kind allowlist as the opening side by a single shared
+early return, which was not the intent — a reply of any kind should close
+the backlog, the same way any incoming `Message`/`Attachment` opens it. In
+practice this rarely matters (an agent replies via `office send`/`office
+send-file`, both `Message`/`Attachment`), but a reply sent as some other
+kind currently would not clear `unreplied`.
+
+⚠ **Known gap, tracked as bus ticket 95c9b4ce.** Opening a count is a plain
+HGET-then-HSET, not atomic — two client messages arriving within the same
+short window can race, undercounting or picking a later `since` than the
+true earliest message. `hold.alerted`/`todo.alerted`'s per-ticket writes
+don't have this exposure because concurrent writers to the same ticket id
+are not an expected case; concurrent client messages to the same agent are.
 
 ⚠ **`blocked` is written by the WATCHDOG.** It is a delivery verdict retained
 instead of discarded: set on `unverified`, deleted on `verified`. One writer, and

@@ -226,8 +226,11 @@ delivery mechanism reused unchanged, not the alerts stream.
 client conversation pass through the same door (`flock.bus.doors.send`): a
 telegram-bot POST to `/agents/<agent>/envelopes` with `as: telegram` calls it
 exactly as `office send` does, just with `source` and `destination` swapped.
-`send` already resolves both port types for `require_allowed`, so it reuses
-that lookup rather than asking a caller to declare "this needs a reply":
+`send` reads both port types itself, via two roster lookups — ⚠ not a reuse
+of `require_allowed`'s work, which checks policy export/import tags and
+never touches port_type (corrected after `bus`'s module-boundary sweep;
+LLD-bus-and-switch §1 carries the same correction). Reading it directly
+rather than asking a caller to declare "this needs a reply":
 
 - `api` port_type → `tmux` port_type, kind `Message` or `Attachment`: opens or
   extends the destination agent's `unreplied` field for that client. `count`
