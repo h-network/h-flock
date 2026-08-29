@@ -11,8 +11,11 @@
 ## 1. What a lane is
 
 `HLD` §3's "a lane own a module outright" is the whole idea: one agent, one
-module, its own branch (`<lane>/<short-description>`), its own PR. Nothing
-here is enforced by the framework — `office hire <name>` takes any name —
+module, its own branch (`<lane>/<short-description>`). ⚠ **Updated
+2026-08-30: a lane pushes its branch and tells the lead — it does not open
+its own PR.** The lead opens the pull request into `develop`, reviews it,
+and merges once CI passes; `develop` promotes to `main` on its own release
+cadence. Nothing here is enforced by the framework — `office hire <name>` takes any name —
 it is a working convention this tenant's operator and lead settled on, the
 same way `office broadcast` vs. `destination: "all"` is a convention about
 who counts as a colleague (`HLD` §6) rather than something the switch

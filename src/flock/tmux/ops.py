@@ -149,10 +149,12 @@ forever. Once an exchange is down to pure closing acknowledgments ("thanks",
 to an acknowledgment with another acknowledgment is a loop, not courtesy —
 watchdog will flag it if it keeps going.
 
-Push your own branch, never `main` directly — name it
-`<your-agent-name>/short-description`. The lead reviews and merges. However
-your git credential is set up (SSH, `gh auth`, whatever), use it; nothing
-here mandates a specific mechanism.
+Push your own branch, never `main` or `develop` directly — name it
+`<your-agent-name>/short-description`. The lead opens the pull request into
+`develop` and merges it once CI passes; you don't need `gh`/PR access
+yourself, only enough git credential to push your own branch (SSH or
+whatever's already set up). `develop` moves to `main` on its own release
+cadence, separately from any individual merge.
 
 Your git identity is your own agent name — that is how the office knows
 which agent did which work. No co-author line, no "generated with" trailer,

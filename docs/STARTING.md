@@ -51,11 +51,14 @@ The operating conventions that aren't in the generated guide but matter for
 picking this up specifically:
 
 - **One ticket, one branch, one focused change.** Branch as
-  `<lane>/<short-description>`, push, the lead reviews and merges via a real
-  merge commit (not squash), then **deletes the branch on both sides** —
-  remote and local. A pile of stale merged branches is a recurring failure
-  mode here, not a hypothetical one; check `git branch -r --merged
-  origin/main` before assuming the branch list is clean.
+  `<lane>/<short-description>`, push, tell the lead. **The lead opens the pull
+  request into `develop`**, reviews it there, and merges once CI passes — a
+  lane never opens its own PR and never merges into `develop` or `main`
+  directly. `develop` moves to `main` on its own release cadence, separate
+  from any individual PR. The lead **deletes the branch on both sides** —
+  remote and local — once merged. A pile of stale merged branches is a
+  recurring failure mode here, not a hypothetical one; check `git branch -r
+  --merged origin/develop` before assuming the branch list is clean.
 - **A behaviour change ships with its docs, in the same branch.** Not a
   follow-up sweep — the sweep is for staleness that already happened, not a
   substitute for keeping docs current as you go.

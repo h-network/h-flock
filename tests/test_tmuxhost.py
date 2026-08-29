@@ -261,7 +261,9 @@ def test_generate_agents_md():
     assert "A short reply that reads like the last line of a conversation" in content
     assert "it does not mean every message needs a reply" in content
     assert "to an acknowledgment with another acknowledgment is a loop, not courtesy" in content
-    assert "Push your own branch, never `main` directly — name it" in content
+    assert "Push your own branch, never `main` or `develop` directly — name it" in content
+    assert "The lead opens the pull request into" in content
+    assert "you don't need `gh`/PR access" in content
     assert "Your git identity is your own agent name" in content
     assert "When a ticket is done, message the lead a summary before or alongside" in content
     assert "Never dump a credential's actual value to check whether it is set" in content
