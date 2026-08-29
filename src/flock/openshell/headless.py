@@ -12,17 +12,27 @@ The message text itself is never interpolated into argv: it is always
 carried on stdin, both to avoid shell-quoting/length limits and so
 delivered text can never be read as a flag.
 
-Flag names/spellings below were read directly from each installed CLI's own
-`--help` (claude, codex) — not guessed, not taken from external docs. That
-is a weaker claim than "verified": nothing here has actually been executed
-end-to-end yet (no sandbox to run it in), so behavior implied by the help
-text — e.g. that omitting `[prompt]` truly reads it from stdin, or that
-`-c`/`--continue` composes cleanly with `-p`/`--print` — is still an
-inference from the flag descriptions, not an observed result. Confirm with
-a real run before relying on it. `agy` is weaker still: its `--print`/
-`--prompt` split was ambiguous even in `--help` (unclear which one takes
-the prompt as a value vs. which is the mode switch), so treat that branch
-as a placeholder, not even inferred-and-likely.
+`claude` and `codex` argv below have been executed end-to-end against a
+real OpenShell sandbox on the office's test gateway (2026-08-29): both
+parse and run without argument errors, `claude -p`/`-p -c` fail cleanly on
+"Not logged in" (expected — no credential was injected for this check, see
+docs/LLD-port-openshell.md's credential-transfer rule), and `codex exec
+--skip-git-repo-check resume --last -` was confirmed to actually resume the
+session created by a prior `codex exec --skip-git-repo-check -` call in
+the same sandbox — real evidence that session continuity across separate
+one-shot `exec()` invocations works the way this whole design assumes.
+
+`--skip-git-repo-check` was not in the original inference from `--help`
+alone and was only found necessary by actually running the command: codex
+refuses to run in a directory it doesn't trust, and a fresh sandbox's
+default workdir is not one. This is exactly why the module docstring used
+to warn that help-text inference is weaker than an observed result — here
+is a case where that gap was real.
+
+`agy` remains an unverified placeholder — its `--print`/`--prompt` split
+was ambiguous even in its own `--help`, and it isn't installed in the
+default sandbox image at all (checked directly: `which agy` exits 1), so
+there's nothing to run it against yet regardless.
 """
 
 from __future__ import annotations
@@ -51,7 +61,16 @@ def headless_command(cli: str, *, resume: bool) -> list[str]:
         # `codex exec` is the documented non-interactive entry point;
         # `codex exec resume --last` resumes the most recent recorded
         # session for this cwd without needing its session id.
-        return ["codex", "exec", "resume", "--last", "-"] if resume else ["codex", "exec", "-"]
+        #
+        # --skip-git-repo-check: codex refuses to run at all otherwise,
+        # because a sandbox's default workdir is not a trusted git
+        # checkout. Found by actually running this against a real
+        # sandbox, not from --help (see module docstring).
+        return (
+            ["codex", "exec", "--skip-git-repo-check", "resume", "--last", "-"]
+            if resume
+            else ["codex", "exec", "--skip-git-repo-check", "-"]
+        )
 
     if cli == "agy":
         # UNVERIFIED — see module docstring. Best reading of `agy --help`:

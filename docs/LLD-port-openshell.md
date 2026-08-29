@@ -1,12 +1,16 @@
 # LLD — the openshell port
 
-> **Status: designed, not built.** `src/flock/openshell/client.py` and
-> `src/flock/openshell/headless.py` exist and are unit-tested against an
-> injected fake; nothing in `flock.port` or `flock.control` is wired to
-> them yet, and nothing here has run against a live OpenShell gateway.
-> Depends on [`LLD-bus-and-switch.md`](LLD-bus-and-switch.md) for the
-> address scheme and [`LLD-port-tmux.md`](LLD-port-tmux.md) for the
-> receiving-edge shape this port_type parallels.
+> **Status: SDK layer verified against a live gateway; delivery/lifecycle
+> wiring not built.** `src/flock/openshell/client.py` and
+> `src/flock/openshell/headless.py` exist, are unit-tested against an
+> injected fake, and — as of 2026-08-29 — have also been exercised for
+> real against the office's OpenShell test VM (`172.16.10.101`, gateway
+> `openshell-gateway` 0.0.116): real `create` → `wait_ready` → `exec` →
+> `delete` cycle, real health check, real per-CLI headless invocation.
+> `flock.port`/`flock.control` are still not wired to any of this. Depends
+> on [`LLD-bus-and-switch.md`](LLD-bus-and-switch.md) for the address
+> scheme and [`LLD-port-tmux.md`](LLD-port-tmux.md) for the receiving-edge
+> shape this port_type parallels.
 
 This document exists to keep design decisions and open questions in one
 place while the gateway is unavailable, so building doesn't restart from
@@ -63,6 +67,53 @@ not even inferred-and-likely (its `--print`/`--prompt` split was ambiguous
 in its own `--help`); do not ship that branch as trustworthy without
 checking real `agy` behavior first.
 
+## 2a. Live verification (2026-08-29) and two real corrections it produced
+
+Run against the office's real OpenShell test VM (an isolated EVE-NG lab
+instance, gateway reachable at `172.16.10.101:17670` with mTLS; a separate,
+still-open question is whether this integration needs its own mTLS
+identity distinct from the lab's local CLI registration — not resolved
+here, flagged to architect). No CLI credential (`ANTHROPIC_API_KEY` etc.)
+was injected for this — that requires asking `telegram` first, per this
+ticket's standing rule, and wasn't needed to validate the pieces below.
+
+Confirmed for real:
+- `SandboxClient.health()` → real `SERVICE_STATUS_HEALTHY`, mTLS handshake
+  succeeds.
+- Full `create()` → `wait_ready()` → `exec()` → `delete()` →
+  `wait_deleted()` cycle completes against the live gateway, not a mock.
+- The default sandbox image is Ubuntu 24.04 and already has `claude`
+  (`/usr/local/bin/claude`) and `codex` (`/usr/bin/codex`) installed. It
+  does **not** have `agy` — `which agy` exits 1. This resolves half of the
+  "what image, whose job is provisioning it" open question from §4: for
+  claude/codex, nothing extra is needed; for `agy`, either the image needs
+  it added or that CLI isn't usable under this port_type yet.
+- `claude -p` and `claude -p -c` (§2's headless argv) run and parse
+  correctly — fail cleanly with `"Not logged in · Please run /login"`,
+  which is the expected, correct result of a real un-credentialed sandbox,
+  not a bug.
+- Session continuity across separate `exec()` calls in the same sandbox —
+  the whole basis of §2's design — is real for codex: a fresh
+  `codex exec ... -` in one call, followed by `codex exec ... resume --last -`
+  in a second, separate `exec()` call against the same sandbox, actually
+  resumed the first call's session.
+
+Two real corrections this produced, now reflected in the code:
+- **`codex exec` needed `--skip-git-repo-check`.** Not discoverable from
+  `--help` alone — a fresh sandbox's workdir isn't a trusted git checkout,
+  and codex refuses to run at all without it. `headless_command` now
+  includes this flag; see its module docstring for the exact failure this
+  fixed.
+- **`SandboxSpec`/`CreateSandboxRequest.name` has a real 19-character
+  maximum** (`INVALID_ARGUMENT: name exceeds maximum length (20 > 19)`,
+  observed directly). Flock agent names allow up to 63 characters
+  (`SEGMENT_REGEX` in `src/flock/bus/keys.py`), so **`name=agent` is not a
+  safe assumption** for `create_sandbox` the way earlier text in this
+  document implied. Not yet resolved — needs either a deterministic
+  short-name derivation (and the real agent name kept in `labels`, which
+  has no such length limit observed) or confirmation from OpenShell docs
+  of the exact limit's shape before picking one. Flagged, not fixed.
+
 ## 3. Client wrapper (`src/flock/openshell/client.py`)
 
 `OpenShellClient` wraps `openshell.SandboxClient` (the real SDK class, not
@@ -88,9 +139,13 @@ reachable:
   and that deserves review once the actual delivery path is being built,
   not speculatively now.
 - Sandbox image/template selection is untouched — `SandboxTemplate.image`
-  exists in the proto but nothing here sets it. Whatever image is used has
-  to already contain the target CLI (claude/codex/opencode/copilot); which
-  image, and who controls it, is unresolved.
+  exists in the proto but nothing here sets it. The default image
+  (confirmed live, §2a) already has claude/codex; `agy` and
+  opencode/copilot are unconfirmed and likely need image changes someone
+  else owns.
+- **`create_sandbox`'s `name` parameter needs a real fix, not just a
+  caveat** — see §2a's 19-character finding. This wrapper currently passes
+  `name` straight through with no length handling at all.
 
 ## 4. Open questions (asked of, and answered by, architect on 2026-08-29)
 
@@ -109,10 +164,24 @@ reachable:
   word for an unrelated concept (model backend selected for tmux agents,
   `PROVIDER_<NAME>_URL`). See `NAMING-openshell.md`.
 
+- **Gateway endpoint (corrected 2026-08-29):** the gateway was widened to
+  bind `0.0.0.0` and the tenant container is back on normal (non-host)
+  networking. Real integration code should use
+  `OPENSHELL_GATEWAY_ENDPOINT=https://host.docker.internal:17670`, which
+  requires `extra_hosts: ["host.docker.internal:host-gateway"]` on the
+  tenant container (already applied on the test VM by `acceptance`) — not
+  the VM's raw bridge IP, which isn't stable across container recreates.
+
 Still open, not yet asked:
-- The exact sandbox image / how the target CLI gets into it.
+- The exact sandbox image / how `agy` (and opencode/copilot) get into it,
+  if they need to.
 - The `AGENT_STATE_RESOURCES` change needed to persist a sandbox id per
   agent (or an alternative that avoids it).
+- **The 19-character sandbox name limit vs. 63-character flock agent
+  names** (§2a) — needs a real decision, not just a flag.
+- **Whether this integration needs its own mTLS client identity**,
+  separate from the lab's local `openshell` CLI registration used for the
+  §2a verification run — raised by architect, not yet decided.
 
 ## 5. Not built yet
 
