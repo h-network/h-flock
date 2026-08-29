@@ -51,9 +51,12 @@ Tier A is documentation, B internal code, C Redis/environment, and D wire.
 | `port` | `src/flock/port/send.py:9`, `src/flock/port/deliver.py:265` | doc term | Names both outbound agent sending and inbound per-envelope delivery—opposite sides of the switch. | Two different NIC directions collapsed into one component name. | B |
 | `send` CLI | `src/flock/port/send.py:5` | identifier | Agent-facing command that constructs an envelope and writes its own egress. | Transmit-side NIC operation. | B |
 | `run_port` | `src/flock/port/deliver.py:265` | identifier | Acquires per-agent serialization, delivers one ingress envelope, and exits. | Receive-side port service. | B |
-| `deliver_one` | `src/flock/port/deliver.py:112` | identifier | Dispatches one destination ingress item according to its port_type. | Frame delivery to a selected port type. | B |
+| `deliver_one` | `src/flock/port/deliver.py:283` | identifier | Dispatches one destination ingress item by looking up handler in port registry. | Frame delivery entrypoint. | B |
+| `deliver_tmux` | `src/flock/port/deliver.py:110` | identifier | Delivers queued ingress envelopes to a tmux window. | Tmux frame delivery. | B |
 | `deliver_api` | `src/flock/port/deliver.py:58` | identifier | Moves one ingress envelope to an enrolled client's mailbox stream. | Delivery to a different port medium. | B |
 | `deliver_unroutable` | `src/flock/port/deliver.py:88` | identifier | Pops and dead-letters an envelope whose port_type has no implementation. | Unsupported-port drop. | B |
+| `get_delivery_handler` | `src/flock/port/registry.py:38` | identifier | Resolves delivery function or lazy module spec for a port_type. | Port registry lookup. | B |
+| `register_port_type` | `src/flock/port/registry.py:24` | identifier | Registers a callable or lazy (module, attr) handler for a port_type. | Port registration. | B |
 | `messages_opener` / `message_opener` | `src/flock/port/openers.py:82`, `src/flock/port/openers.py:119` | identifier | Terminal action selected for a `Message` (batched or single). | Protocol handler. | B |
 | `command_opener` | `src/flock/port/openers.py:144` | identifier | Terminal action selected for a `Command`. | Protocol handler. | B |
 | `add_ticket_opener` | `src/flock/port/openers.py:175` | identifier | Board action selected for an `AddTicket`. | Protocol handler. | B |

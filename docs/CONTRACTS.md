@@ -216,26 +216,20 @@ window-creation implementation. tmuxhost passes the resolved environment and
 
 ### A delivery routine per port_type
 
-`flock.port.deliver` dispatches on the port_type and calls one of these. The
-tmux path is inline; API and control have delivery routines with the same
-single-envelope contract, so adding a base is adding a routine and a branch:
+`flock.port.deliver` looks up the `port_type` in `flock.port.registry` and dispatches to its registered delivery handler. The registry supports direct callables as well as lazy `(module_path, attribute_name)` specs so port modules are only imported when an envelope for that port type is actively being delivered.
 
 ```python
 def deliver_one(r, *, pod, tenant, agent, session_name, socket=None) -> None
 ```
 
-| port_type | Module | Owner |
+| port_type | Registered Handler | Owner |
 |---|---|---|
-| `tmux` | `flock.port.deliver` (inline) | `tmux` lane |
+| `tmux` | `flock.port.deliver.deliver_tmux` | `tmux` lane |
 | `api` | `flock.port.deliver.deliver_api` | `api` lane |
-| `control` | `flock.control` | `bus` lane |
+| `control` | `flock.control.runner.deliver_one` (lazy import) | `bus` lane |
+| `openshell` | `flock.port.openshell.deliver_openshell` (lazy import) | `openshell` lane |
 
-⚠ **This is a named exception to the rule above.** `flock.port` imports
-`flock.control`, which is a module and not a shared library. It is done as a
-*lazy* import inside the dispatch branch, so a port with no control module
-installed logs and carries on rather than failing to start. Any further
-cross-module import needs the same explicit justification, or the layer split
-stops meaning anything.
+`flock.port.registry` maintains lazy import specs, so non-tmux port modules (control, openshell, ramp) are only imported when that specific port_type is encountered in the roster. If an unregistered or unroutable port_type is received, `deliver_unroutable` drains and dead-letters the snapshot cleanly.
 
 ## 3. What a log record is
 

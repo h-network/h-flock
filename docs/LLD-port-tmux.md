@@ -108,10 +108,13 @@ here.
 
 ## 3. Opening & Delivery Routines
 
-`flock.port` checks the destination's port_type in the roster:
+`flock.port` checks the destination's port_type in the roster and resolves its handler via `flock.port.registry.get_delivery_handler(port_type)`:
 
-- **`port_type: "tmux"` (`deliver_one`)**: dispatches on `kind` to select an opener (`Message`, `Command`, `AddTicket`, `Attachment`) and pastes into the agent's window (or mutates the board for `AddTicket`).
+- **`port_type: "tmux"` (`deliver_tmux`)**: dispatches on `kind` to select an opener (`Message`, `Command`, `AddTicket`, `Attachment`) and pastes into the agent's window (or mutates the board for `AddTicket`).
 - **`port_type: "api"` (`deliver_api`)**: pops the envelope from `ingress`, logs `received` and `opened`, and appends the envelope verbatim as JSON to the client's mailbox Redis Stream (`<prefix>:agent:<client>:inbox`) via `XADD MAXLEN ~ 1000 * envelope '<verbatim JSON>'`. Every kind is stored; nothing dead-letters for being uninteresting.
+- **`port_type: "control"` (`flock.control.runner.deliver_one`)**: pops and processes lifecycle control envelopes (`StartAgent`, `StopAgent`, `PauseAgent`, `ResumeAgent`).
+- **`port_type: "openshell"` (`flock.port.openshell.deliver_openshell`)**: executes envelopes against an isolated OpenShell sandbox container.
+- **Unregistered / Unroutable (`deliver_unroutable`)**: pops all envelopes from `ingress` and routes them to the agent's dead queue (`<prefix>:agent:<name>:dead`) with `reason="unroutable port_type: <type>"`.
 
 For a tmux message, the rendered line names the sender:
 
