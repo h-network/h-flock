@@ -216,18 +216,18 @@ window-creation implementation. tmuxhost passes the resolved environment and
 
 ### A delivery routine per port_type
 
-`flock.port.deliver` looks up the `port_type` in `flock.port.registry` and dispatches to its registered delivery handler. The registry supports direct callables as well as lazy `(module_path, attribute_name)` specs so port modules are only imported when an envelope for that port type is actively being delivered.
+`flock.port.deliver` looks up the `port_type` in `flock.port.registry` and dispatches to its registered delivery handler (see [`LLD-port-delivery.md`](LLD-port-delivery.md)). The registry supports direct callables as well as lazy `(module_path, attribute_name)` specs so port modules are only imported when an envelope for that port type is actively being delivered.
 
 ```python
 def deliver_one(r, *, pod, tenant, agent, session_name, socket=None) -> None
 ```
 
-| port_type | Registered Handler | Owner |
-|---|---|---|
-| `tmux` | `flock.port.deliver.deliver_tmux` | `tmux` lane |
-| `api` | `flock.port.deliver.deliver_api` | `api` lane |
-| `control` | `flock.control.runner.deliver_one` (lazy import) | `bus` lane |
-| `openshell` | `flock.port.openshell.deliver_openshell` (lazy import) | `openshell` lane |
+| port_type | Registered Handler | Owner | Spec |
+|---|---|---|---|
+| `tmux` | `flock.port.deliver.deliver_tmux` | `tmux` lane | [`LLD-port-tmux.md`](LLD-port-tmux.md) |
+| `api` | `flock.port.deliver.deliver_api` | `api` lane | [`LLD-api.md`](LLD-api.md) |
+| `control` | `flock.control.runner.deliver_one` (lazy import) | `bus` lane | [`LLD-control.md`](LLD-control.md) |
+| `openshell` | `flock.port.openshell.deliver_openshell` (lazy import) | `openshell` lane | [`LLD-port-openshell.md`](LLD-port-openshell.md) |
 
 `flock.port.registry` maintains lazy import specs, so non-tmux port modules (control, openshell, ramp) are only imported when that specific port_type is encountered in the roster. If an unregistered or unroutable port_type is received, `deliver_unroutable` drains and dead-letters the snapshot cleanly.
 
