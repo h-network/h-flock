@@ -132,7 +132,7 @@ Handlers are registered as either direct callables or lazy-import `(module_path,
 |---|---|---|---|
 | `tmux` | `("flock.port.deliver", "deliver_tmux")` | `tmux` lane | [`LLD-port-tmux.md`](LLD-port-tmux.md) |
 | `api` | `("flock.port.deliver", "deliver_api")` | `api` lane | [`LLD-api.md`](LLD-api.md) |
-| `control` | `("flock.control.runner", "deliver_one")` | `bus` lane | not yet written |
+| `control` | `("flock.control.runner", "deliver_one")` | `ports` lane | this document, §"The control handler" above |
 | `openshell` | `("flock.port.openshell", "deliver_openshell")` | `openshell` lane | [`LLD-port-openshell.md`](LLD-port-openshell.md) |
 
 **Lazy-import property:** Handlers registered as tuple specs are only resolved on demand when an
