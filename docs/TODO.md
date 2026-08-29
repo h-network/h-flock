@@ -16,9 +16,15 @@ Things decided-but-not-done, so they live somewhere other than a chat log.
 batched with what else, and against which test run.** Rows here are unordered on
 purpose — pick from the sprint plan, not from the top of this table.
 
-⚠ **`clients/` is finished.** The Telegram bot and the browser console stay as
-**demos** — two working examples someone can run on day one. No further client
-development happens in this repository; the framework is the product.
+~~⚠ **`clients/` is finished.**~~ **REVERSED 2026-08-29, by the operator.**
+This said the Telegram bot and the browser console stay as demos, two working
+examples someone can run on day one, with no further client development in
+this repository. That framing no longer held even the night it was
+reconsidered: `/run` (allowlisted raw pane injection) and the
+`[reply to <client>]` delivery trailer both landed in `clients/telegram/bot.py`
+the same session, driven directly by real operator use, not framework work
+that happened to touch a client file. Client development continues here when
+it serves real use, same as any other lane's work — not frozen as a demo.
 
 | | |
 |---|---|
