@@ -151,10 +151,20 @@ flock reads the whole JSON blob from one env var per CLI+profile —
 `CLAUDE_OAUTH_TOKEN_<PROFILE>`'s existing naming shape
 (`flock.tmux.ops.window_env`), just holding a full JSON string instead of
 one bare token, since that's the real shape these two files take.
-Profile support itself is not wired up anywhere yet for openshell agents
-(no `profile` lookup in `control/openers.py`'s `start_agent` branch) —
-`_exec_headless` accepts a `profile` parameter for when that lands, and
-defaults to `"DEFAULT"` until then.
+**Update 2026-08-29 (ticket f6b9f6fe) — profile support built.**
+`control/openers.py`'s `start_agent` openshell branch now validates
+`payload.profile` (identical shape to the tmux branch's own validation —
+`available_profiles` check, segment-string requirement) and publishes it
+to the same `profile` Redis resource tmux already uses. `deliver_openshell`
+reads it (`_agent_profile`, mirroring `_agent_cli`'s read of `launch`) and
+threads it through every `_exec_headless` call, which now genuinely looks
+up `CLAUDE_OAUTH_TOKEN_<PROFILE>`/`CODEX_AUTH_JSON_<PROFILE>`/
+`AGY_AUTH_JSON_<PROFILE>` instead of always reading the bare `_DEFAULT`
+suffix. **Confirmed against the live gateway**: `start_agent` with
+`profile: "work"` published the key, delivery correctly read a
+`work`-profile-specific (fake) token and passed it to the real
+`exec_sandbox` call, and the whole StartAgent → Message delivery →
+StopAgent cycle completed cleanly.
 
 **Verified against the live gateway with a dummy (non-functional)
 credential value** — no real secret needed for this, since it only tests
@@ -170,16 +180,26 @@ Two RPCs of real overhead per codex/agy delivery (write, wipe) beyond the
 one Message/Command/Attachment already needed — cheap relative to the
 actual CLI invocation.
 
+**Resolved since first written:**
+- The real-credential test happened (2026-08-29, telegram's own real
+  codex/agy files, scoped one-time authorization) — **codex's credential
+  genuinely authenticated**, reaching OpenAI's real API and getting back
+  a real models-list response; the exec still exited non-zero, but from
+  an unrelated codex-CLI-version parsing bug (a `"max"` reasoning-effort
+  value this codex build's schema didn't know), not a credential or
+  transfer problem. `agy` couldn't be meaningfully tested — not installed
+  in the default sandbox image at all. Both real credential files were
+  confirmed deleted from the VM afterward, explicitly, per a hard
+  requirement attached to this test.
+- Profile support is built (see the update above) — no longer open.
+
 **Still open:**
-- Whether the exact JSON above (plus whatever `auth_mode`/`last_refresh`
-  values flock would need to supply) is sufficient for codex to actually
-  authenticate, and the equivalent for agy — needs a real, working
-  credential to settle, per telegram's second scoped, one-time
-  authorization (same handling discipline as the claude test: never
-  printed/logged, shredded after, not reused). Telegram is placing the
-  real files and will specify where; not yet done as of this writing.
 - `agy`'s own native provider profile, if one exists, is now moot given
   the Candidate B decision applies uniformly to both CLIs regardless.
+- Whether the exact credential JSON shape needs `auth_mode`/`last_refresh`
+  values flock would have to actively construct (vs. copy verbatim from
+  wherever the real credential comes from) for a from-scratch flock-issued
+  credential, as opposed to the copied-real-file shape this test used.
 
 ## 4. What this design explicitly does not cover
 
@@ -187,5 +207,3 @@ actual CLI invocation.
   Candidate A wasn't chosen, left as-written for the record.
 - Rotation — if a token expires mid-lifetime of a long-lived sandbox,
   nothing here addresses refreshing it. Out of scope for this pass.
-- Profile support for openshell agents in general (`_exec_headless`
-  accepts the parameter; nothing populates it yet).

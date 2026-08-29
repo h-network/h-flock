@@ -43,6 +43,11 @@ def _agent_cli(r, pod: str, tenant: str, agent: str) -> str:
     return cli or "claude"
 
 
+def _agent_profile(r, pod: str, tenant: str, agent: str) -> str | None:
+    raw_profile = r.get(prefix(pod, tenant, agent=agent, resource="profile"))
+    return raw_profile.decode() if isinstance(raw_profile, bytes) else raw_profile
+
+
 # Real file paths a credentialed CLI reads from, confirmed directly against
 # real credential files already present in this office's environment --
 # their JSON *structure* was inspected (key names only, via a script that
@@ -153,17 +158,17 @@ def _reply(r, pod: str, tenant: str, agent: str, destination: str, envelope: dic
     )
 
 
-def _deliver_message(r, pod: str, tenant: str, agent: str, envelope: dict, client: OpenShellClient, sbx_name: str, cli: str) -> None:
+def _deliver_message(r, pod: str, tenant: str, agent: str, envelope: dict, client: OpenShellClient, sbx_name: str, cli: str, profile: str | None) -> None:
     source = envelope.get("l2", {}).get("source", "unknown")
     payload = envelope.get("payload", {})
     text = payload.get("text", "") if isinstance(payload, dict) else str(payload)
     prompt = f"[message from {source}] {text}"
 
-    result = _exec_headless(client, sbx_name, cli, prompt)
+    result = _exec_headless(client, sbx_name, cli, prompt, profile=profile)
     _reply(r, pod, tenant, agent, source, envelope, result)
 
 
-def _deliver_command(r, pod: str, tenant: str, agent: str, envelope: dict, client: OpenShellClient, sbx_name: str, cli: str) -> None:
+def _deliver_command(r, pod: str, tenant: str, agent: str, envelope: dict, client: OpenShellClient, sbx_name: str, cli: str, profile: str | None) -> None:
     # No "[message from ...]" prefix -- same distinction tmux's Command
     # opener makes (docs/LLD-port-tmux.md §"Command — text to run, not text
     # to read"): the same one-shot exec, just unwrapped text.
@@ -171,7 +176,7 @@ def _deliver_command(r, pod: str, tenant: str, agent: str, envelope: dict, clien
     payload = envelope.get("payload", {})
     text = payload.get("text", "") if isinstance(payload, dict) else str(payload)
 
-    result = _exec_headless(client, sbx_name, cli, text)
+    result = _exec_headless(client, sbx_name, cli, text, profile=profile)
     _reply(r, pod, tenant, agent, source, envelope, result)
 
 
@@ -215,7 +220,7 @@ def _write_attachment(
     return final_path
 
 
-def _deliver_attachment(r, pod: str, tenant: str, agent: str, envelope: dict, client: OpenShellClient, sbx_name: str, cli: str) -> None:
+def _deliver_attachment(r, pod: str, tenant: str, agent: str, envelope: dict, client: OpenShellClient, sbx_name: str, cli: str, profile: str | None) -> None:
     payload = envelope.get("payload")
     if not isinstance(payload, dict):
         raise DeadLetter("attachment payload must be a dict")
@@ -294,7 +299,7 @@ def _deliver_attachment(r, pod: str, tenant: str, agent: str, envelope: dict, cl
     if caption:
         notice += f"\n[attachment caption] {caption}"
 
-    result = _exec_headless(client, sbx_name, cli, notice)
+    result = _exec_headless(client, sbx_name, cli, notice, profile=profile)
     _reply(r, pod, tenant, agent, source, envelope, result)
 
 
@@ -340,6 +345,7 @@ def deliver_openshell(
         return
 
     cli = _agent_cli(r, pod, tenant, agent)
+    profile = _agent_profile(r, pod, tenant, agent)
     sbx_name = sandbox_name(agent)
     owns_client = client is None
     client = client or OpenShellClient(workspace_name(pod, tenant))
@@ -349,16 +355,16 @@ def deliver_openshell(
             kind = envelope.get("kind")
             try:
                 if kind == "Message":
-                    _deliver_message(r, pod, tenant, agent, envelope, client, sbx_name, cli)
+                    _deliver_message(r, pod, tenant, agent, envelope, client, sbx_name, cli, profile)
                 elif kind == "Command":
-                    _deliver_command(r, pod, tenant, agent, envelope, client, sbx_name, cli)
+                    _deliver_command(r, pod, tenant, agent, envelope, client, sbx_name, cli, profile)
                 elif kind == "AddTicket":
                     add_ticket_opener(
                         r=r, pod=pod, tenant=tenant, agent=agent, envelope=envelope,
                         session_name=session_name, socket=socket,
                     )
                 elif kind == "Attachment":
-                    _deliver_attachment(r, pod, tenant, agent, envelope, client, sbx_name, cli)
+                    _deliver_attachment(r, pod, tenant, agent, envelope, client, sbx_name, cli, profile)
                 else:
                     raise DeadLetter(f"unknown kind: {kind}")
             except DeadLetter as exc:

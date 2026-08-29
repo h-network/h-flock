@@ -423,3 +423,31 @@ def test_agy_uses_its_own_file_path_and_env_var(monkeypatch):
     exec_calls = [c for c in fake_sdk.calls if c[0] == "exec"]
     write_command = exec_calls[0][2]
     assert "antigravity-oauth-token" in " ".join(write_command)
+
+
+def test_agent_profile_selects_which_credential_env_var_is_read(monkeypatch):
+    # ticket f6b9f6fe: an agent's profile (published by start_agent, read
+    # here the same way _agent_cli reads "launch") selects
+    # CLAUDE_OAUTH_TOKEN_<PROFILE>, not the "default" one, mirroring
+    # flock.tmux.ops.window_env's existing per-profile convention.
+    monkeypatch.setenv("CLAUDE_OAUTH_TOKEN_DEFAULT", "wrong-profile-token")
+    monkeypatch.setenv("CLAUDE_OAUTH_TOKEN_WORK", "right-profile-token")
+    r = FakeRespRedis()
+    _setup(r, "acme", "hq", "backend", "alice", "Message", {"text": "hi"}, cli="claude")
+    r.set(prefix("acme", "hq", agent="backend", resource="profile"), "work")
+    fake_client, fake_sdk = _client(exec_result=ExecResult(exit_code=0, stdout="ok", stderr=""))
+
+    deliver_openshell(r, pod="acme", tenant="hq", agent="backend", client=fake_client)
+
+    assert fake_sdk.exec_env_by_call[0] == {"CLAUDE_CODE_OAUTH_TOKEN": "right-profile-token"}
+
+
+def test_no_profile_set_falls_back_to_default():
+    r = FakeRespRedis()
+    _setup(r, "acme", "hq", "backend", "alice", "Message", {"text": "hi"}, cli="claude")
+    # No profile key written -- _agent_profile should read None cleanly.
+    fake_client, fake_sdk = _client(exec_result=ExecResult(exit_code=0, stdout="ok", stderr=""))
+
+    deliver_openshell(r, pod="acme", tenant="hq", agent="backend", client=fake_client)
+
+    assert fake_sdk.exec_env_by_call[0] is None

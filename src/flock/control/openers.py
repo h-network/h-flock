@@ -239,6 +239,23 @@ def start_agent(
         if not isinstance(cli, str) or not cli:
             raise ValueError("StartAgent payload.cli must be a non-empty string")
 
+        # Same validation as the generic (tmux) branch below -- an
+        # openshell agent's profile selects which CLAUDE_OAUTH_TOKEN_*/
+        # CODEX_AUTH_JSON_*/AGY_AUTH_JSON_* env var `deliver_openshell`
+        # reads at delivery time (flock/port/openshell.py's
+        # `_exec_headless`), same naming convention `window_env` already
+        # uses for tmux agents.
+        profile = payload.get("profile")
+        if profile:
+            prefix("check", "check", agent=profile, resource="profile")
+            profiles = available_profiles(r, pod=pod, tenant=tenant)
+            if profiles is not None and profile not in profiles:
+                raise ValueError(
+                    f"unknown account {profile!r}; available accounts: {', '.join(profiles)}"
+                )
+        elif profile not in (None, ""):
+            raise ValueError("StartAgent payload.profile must be a segment string")
+
         if policy_supplied:
             policy_key = tags_key(pod, tenant, agent)
             _write_desired(
@@ -255,6 +272,12 @@ def start_agent(
         _write_desired(
             committed, "launch published", "launch publish", lambda: r.set(launch_key, cli)
         )
+        if profile:
+            profile_key = prefix(pod, tenant, agent=agent, resource="profile")
+            _write_desired(
+                committed, "profile published", "profile publish",
+                lambda: r.set(profile_key, profile),
+            )
         _write_desired(
             committed, "roster row published", "roster row publish",
             lambda: r.hset(roster_key, agent, agent_port_type),
