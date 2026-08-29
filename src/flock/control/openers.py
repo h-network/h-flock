@@ -20,7 +20,7 @@ _FIXED_PARTICIPANTS = {"api", "host"}
 _START_AGENT_KEYS = frozenset(
     {
         "agent", "port_type", "cli", "profile", "provider", "export", "import", "resume",
-        "hmac_secret", "kid", "revoke_kid",
+        "skip_permissions", "claude_tools", "hmac_secret", "kid", "revoke_kid",
     }
 )
 _MIN_HMAC_SECRET_LEN = 16
@@ -379,6 +379,36 @@ def start_agent(
         _write_desired(
             committed, "resume published", "resume publish",
             lambda: r.set(resume_key, desired_resume),
+        )
+
+    skip_permissions = payload.get("skip_permissions")
+    if skip_permissions is not None:
+        if not isinstance(skip_permissions, bool):
+            raise ValueError("StartAgent payload.skip_permissions must be a boolean")
+        skip_key = prefix(pod, tenant, agent=agent, resource="skip-permissions")
+        old_skip = r.get(skip_key) if existing_port_type == "tmux" else None
+        old_skip = old_skip.decode() if isinstance(old_skip, bytes) else old_skip
+        desired_skip = "1" if skip_permissions else "0"
+        config_changed = config_changed or (existing_port_type == "tmux" and old_skip != desired_skip)
+        _write_desired(
+            committed, "skip_permissions published", "skip_permissions publish",
+            lambda: r.set(skip_key, desired_skip),
+        )
+
+    # ⚠ Presence, not truthiness: `""` (unrestricted tools) is a valid desired
+    # value, distinct from the key being absent from the payload at all — same
+    # "absent is not empty" rule `window_env` applies on the way out.
+    if "claude_tools" in payload:
+        claude_tools = payload["claude_tools"]
+        if not isinstance(claude_tools, str):
+            raise ValueError("StartAgent payload.claude_tools must be a string")
+        tools_key = prefix(pod, tenant, agent=agent, resource="claude-tools")
+        old_tools = r.get(tools_key) if existing_port_type == "tmux" else None
+        old_tools = old_tools.decode() if isinstance(old_tools, bytes) else old_tools
+        config_changed = config_changed or (existing_port_type == "tmux" and old_tools != claude_tools)
+        _write_desired(
+            committed, "claude_tools published", "claude_tools publish",
+            lambda: r.set(tools_key, claude_tools),
         )
     if policy_supplied:
         policy_key = tags_key(pod, tenant, agent)

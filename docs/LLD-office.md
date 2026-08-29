@@ -209,6 +209,25 @@ what history exists. The mechanism — which native resume command each CLI gets
 launched with, and why `StopAgent` leaves history on disk deliberately — is
 `CONTRACTS` §6, not repeated here.
 
+⚠ **`--skip-permissions`/`--no-skip-permissions` and `--claude-tools` are the
+same "omitted means the fabric decides" shape, one layer further down: the
+fabric they defer to here is the base image's `startAgent`, not `tmuxhost`.**
+`--skip-permissions`/`--no-skip-permissions` are a second mutually exclusive
+pair (`cli.py:522`, immediately after `--resume`/`--fresh`); neither
+sets `payload["skip_permissions"]` unless given (`cli.py:553`), which is what
+leaves `startAgent`'s own default (`1`, approval prompts bypassed) untouched
+by a hire that never mentions it. `--claude-tools <list>` sets
+`payload["claude_tools"]` (`cli.py:557`) to whatever string follows —
+including the empty string, which is a real, distinct value meaning "no
+restriction", never confused with the flag being omitted. Both are `office`
+concerns only as far as building the payload; what they do once `StartAgent`
+lands is `LLD-tmux-host.md`'s "may opt out of `startAgent`'s own defaults"
+note and `CONTRACTS` §5/§6, not here. Unlike `--profile`, neither is validated
+client-side — `--cli`'s choices and `--profile`'s account check exist because
+a typo there fails inside the window looking like something else; a typo in a
+tool name or an unexpected boolean has no such disguise, so there is nothing
+here worth checking twice.
+
 ## 6. The board: `add`, `list`, `take`, `done`, `cancel`, `hold`, `delete`
 
 **Board mechanics — one open ticket, pull not push, `AddTicket` as the only

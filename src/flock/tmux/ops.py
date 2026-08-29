@@ -309,6 +309,8 @@ def window_env(
     cwd: str | None = None,
     profile: str | None = None,
     provider: dict | None = None,
+    skip_permissions: bool | None = None,
+    claude_tools: str | None = None,
 ) -> list[str]:
     """Single place where a window environment is constructed for all execution paths."""
     cwd = cwd or f"/workdir/{agent_name}"
@@ -341,6 +343,21 @@ def window_env(
     )
     if token:
         env_vars.append(f"CLAUDE_CODE_OAUTH_TOKEN={token}")
+
+    # ⚠ Both are `startAgent`'s own knobs (base image, not h-flock's), threaded
+    # through per window rather than left tenant-wide. Absent is not the same
+    # as off/empty for either: `startAgent` reads `AGENT_SKIP_PERMISSIONS`
+    # with a default of `1` and `AGENT_CLAUDE_TOOLS` with bash's `${VAR-default}`
+    # (unset only), so leaving the variable out entirely is what preserves its
+    # own default rather than this layer silently re-deciding it.
+    if skip_permissions is not None:
+        env_vars.append(f"AGENT_SKIP_PERMISSIONS={'1' if skip_permissions else '0'}")
+    # ⚠ `""` is a real, distinct value here — "no restriction" — not "unset".
+    # `startAgent` only falls back to its limited default when the variable is
+    # completely absent, so a hire that asked for the full tool set must set
+    # the variable to empty, never omit it.
+    if claude_tools is not None:
+        env_vars.append(f"AGENT_CLAUDE_TOOLS={claude_tools}")
     # A local model instead of the vendor's. claude reads these itself; nothing
     # in h-flock talks to the model, so an agent on a local provider is an agent
     # like any other — same window, same paste, same activity file.
