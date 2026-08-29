@@ -862,11 +862,15 @@ is per-participant and not shared. Those triples retain the envelope address
 per-destination delivery records and cannot be distinguished from each other by
 destination field alone. The `forwarded.count` field is the fan-out cardinality.
 
-The `popped` record is emitted only after the destructive `BLPOP`, structural
-parse and source stamp. It therefore carries the corrected source when the
-claim differed from the egress queue. A malformed envelope has no trustworthy
-structural fields, so its `popped` record contains none and is followed by
-`dead_lettered`.
+The `popped` record is emitted immediately after the destructive `BLPOP`,
+**before** structural parsing or the source stamp — `_record_popped` fills it
+from `header_record_fields()`'s best-effort, fixed-offset read of the raw
+frame, deliberately ahead of any validation that could itself fail
+(`test_popped_is_recorded_before_frame_validation`). `source` is still
+trustworthy either way, since it comes from the queue the envelope was popped
+from rather than the frame. `destination`, for a malformed frame, is whatever
+unvalidated bytes sat at that header offset — not guaranteed empty — and the
+record is followed by `dead_lettered` once parsing actually fails.
 
 **The switch does not read payloads or L3.** It forwards on L2 `destination`, and derives
 the sender from the queue the envelope was popped from. Nothing else in the

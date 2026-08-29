@@ -74,7 +74,7 @@ def prefix(pod: str, tenant: str, agent: str | None = None,
 def build(kind: str, source: str, destination: str, payload: dict,
           correlation_id: str | None = None, *, pod="default",
           tenant="default") -> dict
-    # returns a v3 frame with L2 source/destination and qualified L3 addresses;
+    # returns a v4 frame with L2 source/destination and qualified L3 addresses;
     # mints stream_id and mints correlation_id when not given (propagate-or-mint)
 def parse(raw: str) -> dict          # validates the full frame at the port
 def parse_for_switch(raw: str) -> dict
