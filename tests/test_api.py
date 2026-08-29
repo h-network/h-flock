@@ -8,7 +8,7 @@ import json
 import pytest
 from flock.api import Settings, create_app
 from flock.api import app as api_module
-from flock.bus import prefix
+from flock.bus import parse, prefix
 
 
 
@@ -138,6 +138,46 @@ def test_envelope_passes_unknown_kind_and_payload_without_validation(client, mon
     }
     assert len(response_body["correlation_id"]) == 32
     int(response_body["correlation_id"], 16)
+
+
+def test_post_envelope_qualified_destination_http_routing(client):
+    app, redis = client
+
+    status_code, body = request(
+        app,
+        "POST",
+        "/agents/test:office:alice/envelopes",
+        token="secret",
+        body={"text": "hello"},
+    )
+    assert status_code == 202
+    assert "stream_id" in body
+    assert "correlation_id" in body
+    queued = parse(redis.lists[prefix("test", "office", "api", "egress")][0])
+    assert queued["l2"]["destination"] == "alice"
+    assert queued["l3"]["destination"] == "test:office:alice"
+
+    status_code, body = request(
+        app,
+        "POST",
+        "/agents/other:office:alice/envelopes",
+        token="secret",
+        body={"text": "hello"},
+    )
+    assert status_code == 422
+    assert body == {
+        "detail": "no route to non-local destination 'other:office:alice'"
+    }
+
+    status_code, body = request(
+        app,
+        "POST",
+        "/agents/test:office:alice:extra/envelopes",
+        token="secret",
+        body={"text": "hello"},
+    )
+    assert status_code == 404
+    assert body == {"detail": "invalid agent"}
 
 
 def test_text_only_body_is_message_sugar(client, monkeypatch):
@@ -1121,8 +1161,6 @@ def test_restdoc_html_includes_attachment_and_qualified_notice(client):
     assert status_code == 200
     assert "Attachment" in body
     assert "The API server does NOT validate <code>kind</code> or <code>payload</code> (with the one named exception of <code>Attachment</code>" in body
-
-
 
 
 

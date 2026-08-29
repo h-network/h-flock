@@ -70,8 +70,13 @@ the request/response operations that OpenAPI can describe usefully.
 
 ## 3. Sending
 
-Build a `v=4` layered wire frame with the `destination` from the path, check tag-based policy, `send` it, return
-`202` with the `stream_id` and the `correlation_id`. A policy refusal or unrouted non-local destination returns `422 Unprocessable Content` synchronously before anything is enqueued.
+Resolve the path `destination` as either a local agent name or a qualified
+`pod:tenant:agent` address, check roster membership against the resolved local
+name, build a `v=4` layered wire frame preserving the path destination, check
+tag-based policy, `send` it, and return `202` with the `stream_id` and the
+`correlation_id`. A well-formed but non-local qualified destination returns
+`422 Unprocessable Content`; a structurally invalid address returns `404 Not
+Found`. Both fail synchronously before anything is enqueued.
 
 **The body carries `kind` and `payload`, and the api validates neither (with the one documented exception of `Attachment` resource admission).**
 
@@ -193,6 +198,8 @@ segment.
   An unenrolled agent returns `404 Not Found`. All `{agent}` segment parameters are validated via `keys.prefix()`
   (which rejects reserved names `"pod"`, `"tenant"`, `"agent"`, `"all"`, all-digit names such as `"2"`, and invalid characters).
   An enrolled agent holding no tasks, mailbox messages, activity, or presence returns `200 OK` with empty structures.
+  For `POST /agents/{agent}/envelopes`, a qualified path address is resolved first and membership is checked against its
+  local agent component; malformed addresses return 404, while well-formed non-local addresses return 422.
   `POST /agents/all/envelopes` is explicitly exempt from roster membership checks because `all` is the reserved broadcast address.
 
 Reads are point-in-time — no subscriptions, no watches. That applies to *state* (boards, roster, queue depths, presence);
