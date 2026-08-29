@@ -4,6 +4,21 @@
 > as a demo. this file is the bar. The build spec it was written against has been
 > retired — the clients are demos now, not a workstream.
 
+⚠ **Status: Parts I–V have all shipped.** Every numbered requirement below —
+design tokens, command palette, global search, keyboard shortcuts, density
+modes, persisted preferences, desktop notifications, the composer, the audit
+trail, `/healthz`/`/readyz`, structured logging, graceful shutdown, a config
+file, scrollback search, multi-terminal split/grid, session recording and
+replay, the sidebar/hash-routed application shell, and the conversation-first
+agent page (§24–26) — is built and present in `clients/web/ui/*.js`,
+`clients/web/style.css` and `clients/web/server.py`. This reads like an open
+work order because that is what it originally was, written across several
+rounds as each prior round shipped; the imperative "build X"/"must" language
+below is preserved as the record of what was asked for and why, corrected in
+place rather than silently rewritten (`docs/TEST-SIGNOFF.md`'s rule for a
+living document). Two specific claims this left behind are corrected below,
+at §13 and §27, where they had gone furthest from stating the truth.
+
 ⚠ **Treat `src/flock/` as frozen, but not sealed.** The framework is finished for
 this build. If the console needs something the api does not offer, **say so
 first** — a gap is a finding. Small, reviewed additions are allowed when the
@@ -133,6 +148,16 @@ until it appears in `/agents`, and do not present a spinner that implies failure
 if it takes a few seconds.
 
 ## 6b. The console has no access control, and that is the biggest hole
+
+⚠ **CORRECTED — this is built, all four items below.** `clients/web/server.py`
+refuses a non-loopback `--listen` without `HFLOCK_SECRET` configured (item 1),
+the shared operator secret sets an opaque `Secure`/`HttpOnly`/`SameSite=Strict`
+session cookie (item 2), secret and session-token comparisons are constant-time
+with no credential ever in a query string (item 3), and the terminal
+WebSocket upgrade is refused without a valid session cookie the same as any
+other authenticated route (item 4). `clients/web/README.md`'s "Security
+model" section describes the shipped shape; §6b below is the requirement it
+was built against, kept for that reason.
 
 ⚠ **Anyone who can reach the port has full control of the office.** No login, no
 session, nothing. Through this page a stranger can read every message, hire and
@@ -295,6 +320,14 @@ server, never in the browser.
 ⚠ No one has rendered this. Say "unverified — no browser available" for anything
 visual, every time. A build that lies about what it has seen is worth less than
 one that admits the gap.
+
+⚠ **CORRECTED — this was rendered.** `clients/web/README.md`'s "Demo and
+verification" section records the Part II visual harness run in Chromium,
+light and dark, at three viewport sizes, with measured cumulative layout
+shift (0.018–0.025) and screenshots inspected for the overview, activity
+column and alert history. The caution above held at the time it was written
+and stayed true through several rounds after — it stopped being true once
+that harness ran, and nothing came back afterward to say so.
 
 
 ---
@@ -526,3 +559,11 @@ means *talk to the blocked agent*, which is what a person came to do.
 ⚠ **Can a person hire an agent, ask it something, watch it work and read the
 answer — without ever opening a terminal?** Today they cannot. That is the whole
 product, and it is the one path we never built.
+
+⚠ **CORRECTED — this path is built.** `ui/lifecycle.js`'s hire dialog, the
+`#/agents/<name>` conversation view's composer (`ui/messages.js`), inline
+activity streaming under the agent's turn (`ui/activity.js`, §25's own
+requirement), and the reply arriving via `/messages/stream` are all present;
+`ui/terminal.js`'s watch panel sits beside the conversation as §26 describes,
+not in front of it. This line was the document's own final verdict and the
+sharpest claim in it to leave uncorrected once the answer changed.

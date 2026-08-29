@@ -31,11 +31,11 @@ A Telegram bot client that talks to an **h-flock** tenant over HTTP, allowing a 
 | `ALERTS_CURSOR_FILE` | derived from `CURSOR_FILE` | Path to store the alerts-stream cursor, kept separate from the mailbox cursor |
 | `NO_ALERT_PUSH` | unset | Set to `1` to disable live alert push even when `TELEGRAM_CHAT_ID` is set |
 | `NO_ACTIVITY_PUSH` | unset | Set to `1` to disable live-updating progress messages while agents execute tools |
-| `FLOCK_SESSION_URL` | derived from `FLOCK_API_URL` (`:8081`) | Base WebSocket URL for the Session door, used by `/watch` (§2c) |
+| `FLOCK_SESSION_URL` | derived from `FLOCK_API_URL` (`:8081`) | Base WebSocket URL for the Session door, used by `/watch` (§2d) |
 | `TELEGRAM_VOICE` | `0` | Set to `1` to enable the spoken TTS voice replies feature in this tenant |
 | `TTS_VOICE` | `en-GB-RyanNeural` | Default Microsoft neural TTS voice for spoken replies (e.g. `en-GB-RyanNeural`) via `edge-tts` |
 | `PANE_WATCH_CHROME_DEFAULT` | `4` | `/watch`: bottom pane rows cropped as UI chrome (input box, shortcut hint, separators) |
-| `PANE_WATCH_CHROME_OVERRIDES` | unset | `/watch`: per-agent chrome-row exceptions, `"agent=n,agent2=n"` — see §2c, Codex needs `5` |
+| `PANE_WATCH_CHROME_OVERRIDES` | unset | `/watch`: per-agent chrome-row exceptions, `"agent=n,agent2=n"` — see §2d, Codex needs `5` |
 | `PANE_WATCH_TAIL_LINES` | `12` | `/watch`: how many rows back from the bottom of the pane to look before cropping chrome |
 | `PANE_WATCH_REFRESH_SECONDS` | `2.0` | `/watch`: seconds between pane refreshes |
 | `PANE_WATCH_MAX_DURATION_SECONDS` | `600` | `/watch`: auto-stop a forgotten watch after this many seconds |
@@ -484,7 +484,7 @@ never silently dropped.
 
 - **Global, not per-CLI or per-agent.** `GET /agents/{agent}` exposes no
   field for which CLI an agent runs (the same limitation
-  `PANE_WATCH_CHROME_OVERRIDES`, §2c, exists for), and `claude`/`codex`/
+  `PANE_WATCH_CHROME_OVERRIDES`, §2d, exists for), and `claude`/`codex`/
   `agy`'s actual slash-command grammars are not something this client can
   verify without a live agent of each kind to check against. An operator
   running CLIs where `/clear`/`/compact` mean something else, or wanting a
