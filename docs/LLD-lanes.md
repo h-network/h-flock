@@ -36,13 +36,16 @@ concluding a name split means a lane split.
 
 ## 3. This tenant's lanes
 
-Nine lanes were hired for, mapped from the module table in `HLD` §3 plus one
-cross-cutting exception:
+Nine lanes were originally hired for, mapped from the module table in `HLD`
+§3 plus one cross-cutting exception. Two more split off since (`ports` from
+`bus`'s original scope, `openshell` as a new port_type):
 
 | lane | owns | maps to |
 |---|---|---|
-| `bus` | switch + port delivery | `flock.bus`, `flock.switch`, `flock.port` — one LLD (`LLD-bus-and-switch.md`) covers both |
-| `tmux` | the tmux server, windows, paste | `flock.tmuxhost`, `LLD-tmux-host.md` + `LLD-port-tmux.md` |
+| `bus` | switch + `bus.doors.send`/tracking | `flock.bus`, `flock.switch` — `LLD-bus-and-switch.md` |
+| `ports` | the generic port delivery framework | `flock.port`'s registry/dispatch/openers shared across port_types — `LLD-port-delivery.md`, split off from `tmux`'s original scope (§2's rename-vs-split test applies: this was a genuine split, `tmux` kept the tmux-specific delivery, `ports` took the generic framework `deliver_one` dispatches through) |
+| `tmux` | the tmux server, windows, paste | `flock.tmuxhost`, `LLD-tmux-host.md` + `LLD-port-tmux.md` (the tmux-specific half of what used to be one doc with `LLD-port-delivery.md`) |
+| `openshell` | disposable sandbox agents (`port_type: openshell`) | `flock.openshell`, the `openshell` branches of `flock.port`/`flock.control` — `LLD-port-openshell.md` |
 | `api` | the REST door | `flock.api`, `LLD-api.md` |
 | `interface` | the websocket door + bundled clients | `flock.session`, `LLD-session.md`, plus `clients/telegram` and `clients/web` (`SPEC-bundled-clients-and-exposure.md`) |
 | `watchdog` | observation, alerts | `flock.watchdog`, `LLD-watchdog.md` |
