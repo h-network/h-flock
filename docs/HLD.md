@@ -616,5 +616,6 @@ documentation audit went looking for exactly this kind of claim.
 | [`LLD-office.md`](LLD-office.md) | the agent-facing command — the board, lifecycle, and what crosses the bus versus a direct Redis op |
 | [`LLD-port-tmux.md`](LLD-port-tmux.md) | how text actually gets into a terminal |
 | [`LLD-tmux-host.md`](LLD-tmux-host.md) · [`LLD-container.md`](LLD-container.md) | windows, and the tenant |
+| [`LLD-port-openshell.md`](LLD-port-openshell.md) | hosting an agent in an OpenShell sandbox instead — designed, not yet built |
 | [`LLD-api.md`](LLD-api.md) · [`LLD-session.md`](LLD-session.md) | the two doors |
 | [`TODO.md`](TODO.md) | what is parked, and why |
