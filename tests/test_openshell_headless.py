@@ -9,8 +9,10 @@ def test_claude_fresh_and_resume():
 
 
 def test_codex_fresh_and_resume():
-    assert headless_command("codex", resume=False) == ["codex", "exec", "-"]
-    assert headless_command("codex", resume=True) == ["codex", "exec", "resume", "--last", "-"]
+    assert headless_command("codex", resume=False) == ["codex", "exec", "--skip-git-repo-check", "-"]
+    assert headless_command("codex", resume=True) == [
+        "codex", "exec", "--skip-git-repo-check", "resume", "--last", "-",
+    ]
 
 
 def test_unknown_cli_raises_instead_of_guessing():

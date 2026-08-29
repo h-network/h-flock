@@ -1,9 +1,13 @@
 # LLD — the openshell port
 
-> **Status: designed, not built.** `src/flock/openshell/client.py` and
-> `src/flock/openshell/headless.py` exist and are unit-tested against an
-> injected fake; nothing in `flock.port` or `flock.control` is wired to
-> them yet, and nothing here has run against a live OpenShell gateway.
+> **Status: built — `flock.port`/`flock.control` wiring done, unit-tested;
+> the delivery/lifecycle wiring itself has NOT yet been run against the
+> live gateway (only its SDK layer has — see §2a).**
+> `src/flock/openshell/client.py`, `headless.py`, and `naming.py`;
+> `src/flock/port/openshell.py` (registered lazily via
+> `flock.port.registry`, added by the `tmux` lane in anticipation — no
+> `deliver.py` edit needed); `control/openers.py`'s `start_agent`/
+> `stop_agent` openshell branches. All unit-tested against injected fakes.
 > Depends on [`LLD-bus-and-switch.md`](LLD-bus-and-switch.md) for the
 > address scheme and [`LLD-port-tmux.md`](LLD-port-tmux.md) for the
 > receiving-edge shape this port_type parallels.
@@ -17,9 +21,10 @@ zero once it is. Ticket: `ff0f4516` in the office board.
 `port_type: openshell` hosts a roster agent inside an NVIDIA OpenShell
 sandbox — a policy-governed, isolated container — instead of a tmux window.
 Same switch/bus, same `flock.port` binary, same one-shot-per-delivery
-model; a different `deliver_one` branch in `src/flock/port/deliver.py`
-(not built yet) and a different pair of lifecycle actions in
-`src/flock/control/openers.py` (also not built yet).
+model; delivery lives in `src/flock/port/openshell.py`, registered with
+`flock.port.registry` (not a `deliver.py` edit), and lifecycle lives in a
+dedicated pair of branches inside `src/flock/control/openers.py`'s
+existing `start_agent`/`stop_agent`.
 
 **Hard constraint, unconditionally honored by this design:** zero changes
 to `src/flock/switch/service.py` or anything under `src/flock/bus/`. The
@@ -63,6 +68,71 @@ not even inferred-and-likely (its `--print`/`--prompt` split was ambiguous
 in its own `--help`); do not ship that branch as trustworthy without
 checking real `agy` behavior first.
 
+## 2a. Live verification (2026-08-29) and two real corrections it produced
+
+Run against the office's real OpenShell test VM (an isolated EVE-NG lab
+instance, gateway reachable at `172.16.10.101:17670` with mTLS; a separate,
+still-open question is whether this integration needs its own mTLS
+identity distinct from the lab's local CLI registration — not resolved
+here, flagged to architect). No CLI credential (`ANTHROPIC_API_KEY` etc.)
+was injected for this — that requires asking `telegram` first, per this
+ticket's standing rule, and wasn't needed to validate the pieces below.
+
+Confirmed for real:
+- `SandboxClient.health()` → real `SERVICE_STATUS_HEALTHY`, mTLS handshake
+  succeeds.
+- Full `create()` → `wait_ready()` → `exec()` → `delete()` →
+  `wait_deleted()` cycle completes against the live gateway, not a mock.
+- The default sandbox image is Ubuntu 24.04 and already has `claude`
+  (`/usr/local/bin/claude`) and `codex` (`/usr/bin/codex`) installed. It
+  does **not** have `agy` — `which agy` exits 1. This resolves half of the
+  "what image, whose job is provisioning it" open question from §4: for
+  claude/codex, nothing extra is needed; for `agy`, either the image needs
+  it added or that CLI isn't usable under this port_type yet.
+- `claude -p` and `claude -p -c` (§2's headless argv) run and parse
+  correctly — fail cleanly with `"Not logged in · Please run /login"`,
+  which is the expected, correct result of a real un-credentialed sandbox,
+  not a bug.
+- Session continuity across separate `exec()` calls in the same sandbox —
+  the whole basis of §2's design — is real for codex: a fresh
+  `codex exec ... -` in one call, followed by `codex exec ... resume --last -`
+  in a second, separate `exec()` call against the same sandbox, actually
+  resumed the first call's session.
+
+**Update 2026-08-29, second pass — `OpenShellClient` itself run for real
+(not the raw SDK, and not a mock)**, at telegram's request: injected a real
+`openshell.SandboxClient.from_active_cluster()` into `OpenShellClient` via
+its `sandbox_client=` test seam and ran `create_sandbox` → `get_sandbox` →
+`exec_sandbox` → `delete_sandbox` against the live gateway, plus the
+not-found error path. Found a real bug the first pass didn't exercise:
+`create_sandbox` returned immediately after `CreateSandboxRequest`, while
+the gateway still reports the sandbox as `PROVISIONING` — an immediate
+`exec_sandbox` against that ref fails with
+`FAILED_PRECONDITION: sandbox is not ready` (observed directly). Fixed:
+`create_sandbox` now calls `wait_ready()` internally and returns the READY
+ref, the same thing the SDK's own `Sandbox` context manager already does.
+Confirmed fixed by rerunning the same real sequence successfully
+end-to-end. Unit tests updated (`FakeSandboxClient.wait_ready`) to match.
+
+Three real corrections this produced, now reflected in the code:
+- **`codex exec` needed `--skip-git-repo-check`.** Not discoverable from
+  `--help` alone — a fresh sandbox's workdir isn't a trusted git checkout,
+  and codex refuses to run at all without it. `headless_command` now
+  includes this flag; see its module docstring for the exact failure this
+  fixed.
+- **`SandboxSpec`/`CreateSandboxRequest.name` has a real 19-character
+  maximum** (`INVALID_ARGUMENT: name exceeds maximum length (20 > 19)`,
+  observed directly). Flock agent names allow up to 63 characters
+  (`SEGMENT_REGEX` in `src/flock/bus/keys.py`), so **`name=agent` is not a
+  safe assumption** for `create_sandbox` the way earlier text in this
+  document implied. Not yet resolved — needs either a deterministic
+  short-name derivation (and the real agent name kept in `labels`, which
+  has no such length limit observed) or confirmation from OpenShell docs
+  of the exact limit's shape before picking one. Flagged, not fixed.
+- **`create_sandbox` did not wait for READY before returning** (this
+  second pass's finding, described above) — fixed in
+  `src/flock/openshell/client.py`.
+
 ## 3. Client wrapper (`src/flock/openshell/client.py`)
 
 `OpenShellClient` wraps `openshell.SandboxClient` (the real SDK class, not
@@ -88,9 +158,104 @@ reachable:
   and that deserves review once the actual delivery path is being built,
   not speculatively now.
 - Sandbox image/template selection is untouched — `SandboxTemplate.image`
-  exists in the proto but nothing here sets it. Whatever image is used has
-  to already contain the target CLI (claude/codex/opencode/copilot); which
-  image, and who controls it, is unresolved.
+  exists in the proto but nothing here sets it. The default image
+  (confirmed live, §2a) already has claude/codex; `agy` and
+  opencode/copilot are unconfirmed and likely need image changes someone
+  else owns.
+- **`create_sandbox`'s `name` parameter needs a real fix, not just a
+  caveat** — see §2a's 19-character finding. This wrapper currently passes
+  `name` straight through with no length handling at all.
+
+**Update 2026-08-29, third pass — workspaces must be created explicitly.**
+Verified directly against the live gateway: `SandboxClient.create()`
+against a workspace name that was never explicitly created fails with
+`NOT_FOUND: workspace '<name>' not found` — there is no implicit/lazy
+workspace creation. Also confirmed the same 19-character cap applies to
+workspace names, not just sandbox names
+(`INVALID_ARGUMENT: workspace name exceeds maximum length (24 > 19)`).
+Both real constraints are now handled:
+- `src/flock/openshell/naming.py`: `short_name()` deterministically
+  shortens any value to 19 characters (`value[:N]-<6-hex-digest>`), used
+  by both `sandbox_name(agent)` and `workspace_name(pod, tenant)`. Pure
+  function of its input, so nothing needs to persist it — every caller
+  recomputes the same short name from the same agent/pod/tenant.
+- `OpenShellClient.ensure_workspace()`: get-or-create, called automatically
+  from `create_sandbox()` so callers never need to know about the two-step
+  requirement.
+
+**Update 2026-08-29, fourth pass — a real, previously-hidden gap: the real
+construction path had no way to authenticate at all.** `OpenShellClient`'s
+non-injected path built a bare `SandboxClient(endpoint, timeout=timeout)`
+with no `tls=`/`bearer_token=` — which would fail outright against this
+gateway's mTLS requirement (confirmed real: a plaintext attempt gets a TLS
+"certificate required" alert, §2a). Every prior real-gateway check up to
+this point used the `sandbox_client=`/injection seam specifically to work
+around this, which is legitimate for testing `OpenShellClient`'s own logic
+but never actually exercised its real construction path end to end. Fixed:
+added `OPENSHELL_GATEWAY_TLS_CA`/`_CERT`/`_KEY` and
+`OPENSHELL_GATEWAY_BEARER_TOKEN` env vars, wired into the real
+`SandboxClient(...)` call. **Confirmed fixed for real**: ran a fully real
+`OpenShellClient("acme-hq")` (zero injected fakes) against the live
+gateway using the lab's own mTLS cert files
+(`~/.config/openshell/gateways/openshell/mtls/*`) — `create_sandbox` →
+`exec_sandbox` → `delete_sandbox` all succeeded genuinely (real sandbox
+id, real `echo` output, real deletion). This is the first time the
+wrapper's actual production construction path — not just its logic against
+an injected fake — has been run against the live gateway.
+
+Still open: which mTLS identity the real integration should use — the
+lab's local CLI registration (used only for this check) or a separate one
+provisioned for flock itself. Unresolved either way; the mechanism works
+with whatever cert paths it's given.
+
+## 3a. Delivery (`src/flock/port/openshell.py`) and lifecycle
+(`control/openers.py`)
+
+Built, unit-tested against injected fakes, not yet run against the live
+gateway as a whole (only the client layer underneath it has — §2a/§3).
+
+- **`Message`**: wraps the text as `[message from <source>] <text>`
+  (mirrors tmux's own framing) and runs it as one headless invocation
+  (`headless_command(cli, resume=True)`, stdin-only — see §2/§2a on why
+  `resume=True` unconditionally). The result's stdout (or stdout+stderr on
+  a non-zero exit) is sent back to the source via `bus.doors.send` — the
+  step the prior attempt's branch never did.
+- **`Command`**: same one-shot exec, but the raw text goes to stdin
+  *unwrapped* — no `[message from ...]` prefix. This mirrors
+  `docs/LLD-port-tmux.md`'s own characterization of `Command` exactly
+  ("the same paste sequence... one difference... no prefix"): removing the
+  prefix is what turns an inert message into something the CLI executes,
+  and it is a deliberate capability here too, not a new risk this port_type
+  introduces.
+- **`AddTicket`**: reuses `flock.port.openers.add_ticket_opener` completely
+  unchanged — it never touches the sandbox client at all, matching tmux's
+  own "no window check" behavior for this kind.
+- **`Attachment`**: dead-lettered as not yet implemented (see §5) — no
+  base64-exec-and-mv workaround has been built or tested yet.
+- **Sandbox id resolution**: no Redis state added (would have required
+  touching `AGENT_STATE_RESOURCES` in `src/flock/bus/resources.py`, which
+  the hard constraint forbids). Instead, every delivery calls
+  `get_sandbox(sbx_name)` to learn the current `.id` before `exec_sandbox`
+  — one extra RPC per delivery, in exchange for touching zero files under
+  `src/flock/bus/`.
+- **`start_agent`**: publishes `launch`/roster state exactly like the
+  `api` branch's shape (its own explicit branch, not a fallthrough into
+  the generic tmux code — that code manages `profile`/`provider`/
+  `window.cause`/`replace_window`, none of which apply here), then
+  synchronously calls `create_sandbox`. Unlike tmux, which defers window
+  creation to `tmuxhost`'s async reconciler, this is synchronous because
+  sandbox creation is one gRPC call with no equivalent staged startup — no
+  new reconciler process needed or built.
+- **`stop_agent`**: calls `delete_sandbox` synchronously, following the
+  file's existing `_write_desired`/`_actual_unknown` accounting — not the
+  prior attempt's bare `except Exception: pass`, which silently reported a
+  failed teardown as clean.
+- Both control branches import `flock.openshell` lazily, inside their
+  `if agent_port_type == "openshell":` block — flagged by architect: this
+  file is loaded for every control delivery regardless of port_type, and
+  grpc/protobuf aren't cheap imports to pay unconditionally. Mirrors how
+  `control/runner.py` already lazily imports `flock.tmux` and how
+  `deliver.py`'s old `control` branch lazily imported `flock.control`.
 
 ## 4. Open questions (asked of, and answered by, architect on 2026-08-29)
 
@@ -109,26 +274,52 @@ reachable:
   word for an unrelated concept (model backend selected for tmux agents,
   `PROVIDER_<NAME>_URL`). See `NAMING-openshell.md`.
 
+- **Gateway endpoint (corrected 2026-08-29):** the gateway was widened to
+  bind `0.0.0.0` and the tenant container is back on normal (non-host)
+  networking. Real integration code should use
+  `OPENSHELL_GATEWAY_ENDPOINT=https://host.docker.internal:17670`, which
+  requires `extra_hosts: ["host.docker.internal:host-gateway"]` on the
+  tenant container (already applied on the test VM by `acceptance`) — not
+  the VM's raw bridge IP, which isn't stable across container recreates.
+
 Still open, not yet asked:
-- The exact sandbox image / how the target CLI gets into it.
-- The `AGENT_STATE_RESOURCES` change needed to persist a sandbox id per
-  agent (or an alternative that avoids it).
+- The exact sandbox image / how `agy` (and opencode/copilot) get into it,
+  if they need to.
+- **Whether this integration needs its own mTLS client identity**,
+  separate from the lab's local `openshell` CLI registration used for the
+  §2a verification run — raised by architect, not yet decided.
+- **`resume=True` unconditionally, for every CLI, on every delivery**
+  (§2/§3a) is confirmed safe for codex (a fresh sandbox's `resume --last`
+  silently starts new instead of erroring — observed directly) but only
+  *inferred* safe for claude (`-c` with nothing to continue) from
+  documented CLI ergonomics, not observed — no credential was injected to
+  test it for real, per this ticket's standing rule. Confirm with a real
+  credentialed run before fully trusting this for claude.
+
+Resolved since the last update:
+- ~~The 19-character sandbox name limit vs. 63-character flock agent
+  names~~ — resolved via `naming.short_name()` (§3).
+- ~~The `AGENT_STATE_RESOURCES` change needed to persist a sandbox id~~ —
+  avoided entirely: no new resource added, `get_sandbox` is called fresh
+  before every `exec` instead (§3a).
 
 ## 5. Not built yet
 
-- `src/flock/port/openshell.py` and the `deliver.py` branch that reaches it.
-- `control/openers.py`'s `start_agent`/`stop_agent` branches for
-  `port_type: openshell` (`create_sandbox` / `delete_sandbox`, following the
-  file's existing acknowledged/unknown/failed accounting — not a bare
-  `except: pass`, which is what the prior attempt did for teardown).
 - Attachment delivery (base64-exec-and-mv via `exec_sandbox`, the same
   approach the prior attempt sketched — plausible given `exec` is
-  confirmed real, but unverified end-to-end).
+  confirmed real, but unverified end-to-end, and not implemented — see
+  §3a).
 - `pending.verify`/`delivery.markers` are expected to be skipped for this
   port_type, same reasoning the prior attempt gave and which still holds:
   `ExecSandbox` is synchronous and returns a real result directly, and this
   container's `ActivityTailer` cannot see inside an external sandbox, so
-  those markers would only produce false "unverified" alerts.
+  those markers would only produce false "unverified" alerts. (Trivially
+  true here: this module never calls `mark_delivery_pending` at all.)
+- **The delivery/lifecycle wiring as a whole has not been run against the
+  live gateway** — only the client layer underneath it has (§2a/§3). A
+  real end-to-end run (StartAgent → a real Message delivery → StopAgent
+  against the actual test VM) is the next honesty-critical step before
+  this can be called done, not just unit-tested.
 
 All of the above needs a reachable gateway to build against honestly, per
 the standing instruction on this ticket: report what's verified versus
