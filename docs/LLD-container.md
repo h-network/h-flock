@@ -13,8 +13,11 @@ inside belongs to it, every key written inside sits under its prefix, and
 reaching a different tenant means reaching a different container.
 
 This is a deliberate simplification, not a limit discovered later: co-locating
-Redis, the switch and the agents means they address each other over loopback,
-nothing needs discovery, and the whole tenant starts and stops as one thing.
+Redis, the switch and the tmux agents means they address each other over
+loopback, nothing needs discovery, and the whole tenant starts and stops as one
+thing. An `openshell` agent is the deliberate exception: its sandbox lives
+behind an external OpenShell gateway, while its bus identity and transient port
+delivery process remain in this tenant.
 
 ### 1.1 Host-side state is tenant-scoped
 
@@ -97,6 +100,11 @@ tenant container instead.
                     the two published ports, one each
 ```
 
+An `openshell` delivery takes a fourth route not drawn inside that box:
+`flock.port` makes an outbound gRPC call to the configured OpenShell gateway,
+which executes the target CLI in that agent's long-lived external sandbox. No
+OpenShell daemon or sandbox runs in the tenant container.
+
 ## 2. What is inside
 
 | Process | Module | Notes |
@@ -104,11 +112,12 @@ tenant container instead.
 | redis | — | the bus. Loopback, AOF persistence enabled; ephemeral transport queues purged at boot (BUILD-63) |
 | switch | `LLD-bus-and-switch` | one per tenant, therefore one per container |
 | tmux host | `LLD-tmux-host` | creates the server, session and windows for `port_type: tmux` entries |
-| `flock.port` | `LLD-port-tmux` | kicked per delivery; pastes into windows (`port_type: tmux`), appends to mailbox stream (`port_type: api`), writes pending.verify marker, exits |
+| `flock.port` (transient) | `LLD-port-delivery` | kicked per delivery; resolves the current `port_type` through the registry and dispatches to tmux paste, api mailbox, control, or OpenShell delivery, then exits |
 | watchdog | `flock.watchdog` | background process; samples presence, tasks, activity; writes alerts for human operator |
 | api | `LLD-api` | envelopes in, state out, client mailbox polling & SSE streaming |
 | session | `LLD-session` | terminal output and keystrokes. Its own port |
-| agents | — | one per tmux window for `port_type: tmux` roster entries |
+| Telegram client (optional) | `clients/telegram` | started only when credentials are configured and the API is enabled; failure is logged but does not stop or restart the tenant |
+| agents | — | one resident CLI per tmux window for `port_type: tmux`; OpenShell CLIs run headlessly in external sandboxes per delivery |
 
 ## 2.1 The custody log outlives the container
 
@@ -203,7 +212,8 @@ an installer that reported success and a tenant that crash-looped on
 is `0700`, so the door could only traverse it when the operator happened to be
 uid 1000. Stage `0755`.
 
-Two processes are reachable from outside, on separate ports:
+Two processes in the tenant container can be reachable from outside, on
+separate ports:
 
 | | Carries | Publish it when |
 |---|---|---|
@@ -224,11 +234,32 @@ neither process learns the proxy exists, and it is also where TLS belongs
 (`LLD-api` §7 — terminate it outside the process). Do it once there is something
 to put behind it.
 
-Together they are the entire attack surface, and both take the same token, which
-is why it is not optional. ⚠ Both can execute arbitrary code in an agent's
-window — the api through the `Command` kind, the session through keystrokes — so
-neither is the "safe" one. Everything else talks over loopback and has no reason
-to leave the container.
+Together they are the tenant container's inbound attack surface, and both take
+the same token, which is why it is not optional. ⚠ Both can execute arbitrary
+code in an agent's window — the api through the `Command` kind, the session
+through keystrokes — so neither is the "safe" one. The optional Mini App adds a
+separately authenticated, separately published surface in its own container
+(§1.2). OpenShell uses outbound gateway calls only; it does not add an inbound
+tenant port.
+
+### 3.3 OpenShell gateway reachability is operator configuration
+
+OpenShell delivery is installed in the tenant image and selected by the generic
+port registry, but `setup.sh` does not provision a gateway. The tenant env may
+provide `OPENSHELL_GATEWAY_ENDPOINT`, `OPENSHELL_GATEWAY_TLS_CA`,
+`OPENSHELL_GATEWAY_TLS_CERT`, `OPENSHELL_GATEWAY_TLS_KEY`, and
+`OPENSHELL_GATEWAY_BEARER_TOKEN`; Compose's tenant `env_file` passes them to the
+transient port process unchanged.
+
+Those values are container-side configuration. The endpoint must resolve and be
+reachable from inside the tenant container, and TLS paths must name files that
+exist inside it. Base `compose.yaml` does not add a Linux
+`host.docker.internal:host-gateway` mapping, and setup neither copies OpenShell
+mTLS files nor asks for these settings. An operator using a host gateway must
+provide that network mapping (or another container-reachable endpoint) and make
+the chosen credentials available inside the container. Missing or unreachable
+configuration fails the OpenShell lifecycle/delivery operation; it does not
+fabricate a sandbox or silently fall back to tmux.
 
 ## 4. Identity comes from the environment
 
@@ -251,6 +282,10 @@ The same channel carries the one setting more than one module has to agree on:
 | `TMUX_TMPDIR` | where the tenant's tmux socket lives. `/home/ubuntu/.flock/tmux` |
 | `REDIS_BIND`, `REDIS_PASSWORD` | Redis bind host (`127.0.0.1`) and password. Non-loopback bind requires `REDIS_PASSWORD` |
 | `REDIS_READY_SECONDS` | maximum Redis startup wait. Default 30; expiry stops the tenant rather than hanging boot |
+| `SERVICE_RESTART_SECONDS` | delay before an independently supervised peer service restarts. Default 1 |
+| `OPENSHELL_GATEWAY_ENDPOINT` | outbound OpenShell gateway used by `port_type: openshell`; no default |
+| `OPENSHELL_GATEWAY_TLS_CA`, `OPENSHELL_GATEWAY_TLS_CERT`, `OPENSHELL_GATEWAY_TLS_KEY` | optional gateway TLS and client identity; file paths are container-local |
+| `OPENSHELL_GATEWAY_BEARER_TOKEN` | optional gateway bearer authentication |
 
 `TMUX_TMPDIR` is inherited rather than passed per invocation, which is the whole
 reason `LLD-tmux-host` §4 chose it. It is listed here because anything attaching
@@ -290,7 +325,12 @@ rather than duplicating. A container restart is different: Redis persistence (AO
 replays durable boards and stream history, while `container/entrypoint.sh` purges
 ephemeral transport queues at boot before services launch.
 
-Enrolling an external application client (`StartAgent` with `port_type: "api"`) adds a roster row only, creating no window or CLI process.
+Enrolling an external application client (`StartAgent` with `port_type: "api"`)
+adds a roster row only, creating no window or CLI process. Starting an
+`openshell` agent also creates no tmux window: its control opener publishes the
+desired state and synchronously provisions the external sandbox through the
+gateway before reporting success. Later envelope deliveries invoke a fresh
+headless CLI process in that long-lived sandbox.
 
 ### Entrypoint CLI Defaulting & Credential Verification
 
