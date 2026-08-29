@@ -462,7 +462,7 @@ so the "re-slot" instruction isn't read as still applying to them.
 | | |
 |---|---|
 | **profile logins** | ⚠ **softened, `TODO.md:25`: DECIDED 2026-08-26, not solved but settled.** A person still has to sit at a browser once — but a minted `CLAUDE_OAUTH_TOKEN_<PROFILE>` (claude) or a persisted `seed-home.sh out`/`in` credential (codex, agy) means that happens at most once per account, not once per rebuild. Not buildable as a zero-human-step flow; the "once per rebuild" cost it originally named is gone |
-| **the console cannot reach TLS doors** | real, ~30 lines, and `clients/` is closed to development. Recorded, not scheduled |
+| **the console cannot reach TLS doors** | real, ~30 lines. Recorded, not scheduled — no longer blocked on the `clients/` freeze, which was reversed 2026-08-29 (`TODO.md`); just not picked up yet |
 | **not ours: the model and the CLI** | listed so nobody hunts an h-flock bug when they see it |
 | **the permission mode lives only in argv** | probably closed by the base image, and the original trigger was never reproduced, so there is nothing to test a fix against |
 | **a naming review** | ⚠ **must come after sprints 1, 2 and 7**, or it reviews vocabulary that is about to move. What was already inventoried lived in `BUILD-45-naming-inventory.md` and `BUILD-49-vocabulary.md`, both deleted from the tree in `6dd3f1f` along with the other disposable build docs — recover them from git history (`git show 6dd3f1f~1:docs/BUILD-45-naming-inventory.md`, `...BUILD-49-vocabulary.md`) rather than re-inventorying from scratch when this is unblocked |
