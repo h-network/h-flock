@@ -885,7 +885,11 @@ def _clone_to_all_command(argv: list[str]) -> None:
         return
 
     cloned = skipped = failed = 0
-    local_source = next((target for _, target in targets if target.exists()), None)
+    # A source is only ever a target CLONED DURING THIS CALL (set below on
+    # success), never a target that already existed before it started — a
+    # pre-existing agent mixed into the same -a list as fresh ones must not
+    # become the source those fresh clones are made from.
+    local_source = None
     for agent, target in targets:
         if target.exists():
             skipped += 1

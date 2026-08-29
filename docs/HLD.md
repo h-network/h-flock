@@ -39,6 +39,7 @@ Everything addressable is a name in the roster. What is *behind* the name is its
 | `tmux` | an AI CLI in a terminal window | having it pasted into the window |
 | `api` | an app — web, phone, Telegram bot | having it stored in a mailbox it reads |
 | `control` | the tenant's own lifecycle provider (`host`) | acting on it |
+| `openshell` | an AI CLI in a real, disposable OpenShell sandbox — its own container, not this one | a one-shot headless exec against the sandbox, reply sent back over the bus |
 
 ⚠ **The switch cannot see this column.** It reads roster *fields*, never values
 (the *roster fields, never values* invariant) — so it forwards to a name and something at the far edge decides
@@ -98,7 +99,7 @@ wrong since. It also predated the v4 wire.
   ╚═══════════════════════════════════╤═════════════════════════════════════╝
                                       ▼
                         pod:…:agent:<dest>:ingress           (list)
-                                      │  atomic burst drain (tmux/api)
+                                      │  atomic burst drain (tmux/api/openshell)
                                       │  or LPOP one (control)
                                       ▼
   ┌─────────────────────────────────────────────────────────────────────────┐
@@ -113,6 +114,10 @@ wrong since. It also predated the v4 wire.
                  tmux pane   mailbox      board     workspace file
                  (paste)     (a stream)   (lists)   + pane notice
 ```
+
+An `openshell` far edge uses the same ingress/busy-tag boundary, executes the
+body in its disposable sandbox, and sends Message/Command output back through
+`bus.send`; it has neither a tmux pane nor an API mailbox.
 
 **The v4 frame on the wire** — `bus/envelope.py:9‥17`:
 
@@ -155,11 +160,14 @@ successor; a rejected admission ends earlier with `dead_lettered`.
 | `flock.office` | the one agent-facing command | imports `flock.bus` only |
 | `flock.api` | REST — `:8080` | |
 | `flock.session` | WebSocket terminals — `:8081` | |
+| `flock.openshell` | OpenShell gateway client, sandbox naming, headless execution | imported only by OpenShell lifecycle/delivery paths |
+| `flock.watchdog` | observation and alerts daemon | never participates in routing custody |
 
-`flock.bus` and `flock.tmux` are the only shared libraries. Nothing else imports
-anything else, which is what lets a lane own a module outright. ⚠ **One named
-exception:** the port lazily imports `flock.control` to open control kinds —
-recorded in `CONTRACTS` §5 rather than left as a rule everybody quietly breaks.
+Cross-lane imports are explicit at the far edge rather than hidden in the
+switch. The port registry lazily imports `flock.control` or the OpenShell
+delivery module only for that registered port_type; OpenShell lifecycle likewise
+imports its gateway client only inside the OpenShell branch. The switch remains
+structurally independent of every delivery implementation.
 
 ## 4. Why adapters are kicked, not running
 
@@ -168,9 +176,9 @@ Agents produce whenever they like, so something must wait on their output. But
 the switch *writes* ingress — it already knows an envelope arrived, so waiting on
 it would be waiting to be told something it just did. Instead it `RPUSH`es and
 spawns `flock.port <agent>` fire-and-forget. The port acquires that
-participant's busy tag, delivers its finite unit of work, and exits. For a tmux
-or api participant that unit is an atomic snapshot of every envelope currently
-on ingress; for control it remains one envelope. Consecutive tmux `Message`s in
+participant's busy tag, delivers its finite unit of work, and exits. For a tmux,
+api, or OpenShell participant that unit is an atomic snapshot of every envelope
+currently on ingress; for control it remains one envelope. Consecutive tmux `Message`s in
 the snapshot share one paste, while other kinds open individually in order.
 
 ⚠ **A long-running consumer would move an open-ended backlog into RAM.** The
@@ -237,11 +245,11 @@ a destination can open the kind.
 
 | kind | opened by | does |
 |---|---|---|
-| `Message` | `tmux` | `[message from …] <text>` into the window |
-| `Command` | `tmux` | pasted bare — **it executes** |
-| `AddTicket` | `tmux` | writes a ticket to that agent's board, and **pastes nothing** |
-| `Attachment` | `tmux` | writes decoded file bytes to recipient's workspace, then pastes an inert notice naming the file |
-| `StartAgent` | `control` | enrols: roster row, and for a tmux agent a home, window and CLI (auto-resumes prior session history if present) |
+| `Message` | `tmux`, `openshell` | pasted into tmux, or run as an attributed headless sandbox prompt whose output returns over the bus |
+| `Command` | `tmux`, `openshell` | bare text — pasted or passed to headless execution |
+| `AddTicket` | `tmux`, `openshell` | writes a ticket to that agent's board, and **pastes nothing** |
+| `Attachment` | `tmux`, `openshell` | writes decoded file bytes to the recipient's workspace/sandbox; tmux also receives an inert notice |
+| `StartAgent` | `control` | enrols: tmux desired/window state, an API roster row, or a real OpenShell sandbox according to port_type |
 | `StopAgent` | `control` | reverses whatever `StartAgent` created for that port_type (retaining workdir and CLI session history) |
 | `PauseAgent` | `control` | stops the CLI, keeps the agent, its queues and its board |
 | `ResumeAgent` | `control` | starts the CLI again and drains what queued while it was paused |
@@ -614,7 +622,8 @@ documentation audit went looking for exactly this kind of claim.
 | [`CONTRACTS.md`](CONTRACTS.md) | what more than one module depends on |
 | [`LLD-bus-and-switch.md`](LLD-bus-and-switch.md) | addressing, the envelope, the invariants in full |
 | [`LLD-office.md`](LLD-office.md) | the agent-facing command — the board, lifecycle, and what crosses the bus versus a direct Redis op |
-| [`LLD-port-tmux.md`](LLD-port-tmux.md) | how text actually gets into a terminal |
+| [`LLD-port-delivery.md`](LLD-port-delivery.md) · [`LLD-port-tmux.md`](LLD-port-tmux.md) | the port delivery framework and how text gets into a terminal |
 | [`LLD-tmux-host.md`](LLD-tmux-host.md) · [`LLD-container.md`](LLD-container.md) | windows, and the tenant |
+| [`LLD-port-openshell.md`](LLD-port-openshell.md) | hosting an agent in a real, disposable OpenShell sandbox — built and verified against a live gateway |
 | [`LLD-api.md`](LLD-api.md) · [`LLD-session.md`](LLD-session.md) | the two doors |
 | [`TODO.md`](TODO.md) | what is parked, and why |

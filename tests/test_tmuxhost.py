@@ -259,6 +259,8 @@ def test_generate_agents_md():
     assert "Always reply through `office send`, not just in your own terminal output." in content
     assert "Text you write as your own response is only visible to whoever is directly" in content
     assert "A short reply that reads like the last line of a conversation" in content
+    assert "it does not mean every message needs a reply" in content
+    assert "to an acknowledgment with another acknowledgment is a loop, not courtesy" in content
     assert "Push your own branch, never `main` directly — name it" in content
     assert "Your git identity is your own agent name" in content
     assert "When a ticket is done, message the lead a summary before or alongside" in content
@@ -271,6 +273,7 @@ def test_generate_agents_md():
     lead_content = generate_agents_md("zeus", "hq", lead="zeus")
     assert "You are the lead of this office. The other agents follow your direction, and yours is the account that decides when something is done." in lead_content
     assert "Before you hand out work, check `office status`. An agent that is `blocked` will not receive it — hold the work and say so. Do not try to fix the agent." in lead_content
+    assert "`office cloneToAll` only ever reuses a copy it made during that same call" in lead_content
     assert "## Working in this office" in lead_content
 
     peer_content = generate_agents_md("dave", "hq", lead="zeus")

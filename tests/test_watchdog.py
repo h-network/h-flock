@@ -340,6 +340,131 @@ def test_notify_lead_logs_unknown_and_does_not_kick_on_a_redis_fault(monkeypatch
     assert not any(event.get("event") == "lead_alert_sent" for event in events)
 
 
+def _ack(r, source, destination, *, streak, last_ts="2026-08-09T13:59:00Z"):
+    r.hashes.setdefault(_key(source, "acks"), {})[destination] = json.dumps(
+        {"streak": streak, "last_ts": last_ts}
+    )
+
+
+def test_ack_loop_fires_when_both_directions_cross_the_threshold(monkeypatch):
+    r = WatchRedis()
+    _lead(r)
+    _ack(r, "frontend", "backend", streak=3)
+    _ack(r, "backend", "frontend", streak=3)
+    kicks = []
+    monkeypatch.setattr(service, "run_tmux", _quiet_windows())
+    monkeypatch.setattr(service.subprocess, "Popen", lambda args: kicks.append(args))
+
+    _watchdog(r).poll(now=NOW)
+
+    assert len(kicks) == 1
+    envelope = parse(r.lists[_key("architect", "ingress")][0])
+    assert envelope["l2"]["source"] == "watchdog"
+    assert "backend" in envelope["payload"]["text"]
+    assert "frontend" in envelope["payload"]["text"]
+    assert "ack-looping" in envelope["payload"]["text"]
+    assert "3 closing replies" in envelope["payload"]["text"]
+
+
+def test_ack_loop_does_not_fire_when_only_one_direction_crosses_the_threshold(monkeypatch):
+    r = WatchRedis()
+    _lead(r)
+    _ack(r, "frontend", "backend", streak=5)
+    _ack(r, "backend", "frontend", streak=1)
+    monkeypatch.setattr(service, "run_tmux", _quiet_windows())
+    monkeypatch.setattr(service.subprocess, "Popen", lambda args: (_ for _ in ()).throw(AssertionError("should not kick")))
+
+    _watchdog(r).poll(now=NOW)
+
+    assert _key("architect", "ingress") not in r.lists
+
+
+def test_ack_loop_ignores_a_stale_streak(monkeypatch):
+    from datetime import timedelta
+
+    r = WatchRedis()
+    _lead(r)
+    stale = (NOW - timedelta(seconds=300)).isoformat().replace("+00:00", "Z")
+    _ack(r, "frontend", "backend", streak=3, last_ts=stale)
+    _ack(r, "backend", "frontend", streak=3, last_ts=stale)
+    monkeypatch.setattr(service, "run_tmux", _quiet_windows())
+    monkeypatch.setattr(service.subprocess, "Popen", lambda args: (_ for _ in ()).throw(AssertionError("should not kick")))
+
+    _watchdog(r).poll(now=NOW)
+
+    assert _key("architect", "ingress") not in r.lists
+
+
+def test_ack_loop_does_not_repeat_within_the_same_crossing(monkeypatch):
+    r = WatchRedis()
+    _lead(r)
+    _ack(r, "frontend", "backend", streak=3)
+    _ack(r, "backend", "frontend", streak=3)
+    kicks = []
+    monkeypatch.setattr(service, "run_tmux", _quiet_windows())
+    monkeypatch.setattr(service.subprocess, "Popen", lambda args: kicks.append(args))
+    watchdog = _watchdog(r)
+
+    watchdog.poll(now=NOW)
+    watchdog.poll(now=NOW)
+
+    assert len(kicks) == 1
+
+
+def test_ack_loop_re_alerts_after_the_streak_doubles(monkeypatch):
+    r = WatchRedis()
+    _lead(r)
+    _ack(r, "frontend", "backend", streak=3)
+    _ack(r, "backend", "frontend", streak=3)
+    kicks = []
+    monkeypatch.setattr(service, "run_tmux", _quiet_windows())
+    monkeypatch.setattr(service.subprocess, "Popen", lambda args: kicks.append(args))
+    watchdog = _watchdog(r)
+    watchdog.poll(now=NOW)
+    assert len(kicks) == 1
+
+    _ack(r, "frontend", "backend", streak=6)
+    _ack(r, "backend", "frontend", streak=6)
+    watchdog.poll(now=NOW)
+    assert len(kicks) == 2
+
+    # Still below the next crossing (12) -- no third alert.
+    _ack(r, "frontend", "backend", streak=7)
+    _ack(r, "backend", "frontend", streak=7)
+    watchdog.poll(now=NOW)
+    assert len(kicks) == 2
+
+
+def test_ack_loop_clears_state_once_a_side_sends_real_content(monkeypatch):
+    r = WatchRedis()
+    _lead(r)
+    _ack(r, "frontend", "backend", streak=3)
+    _ack(r, "backend", "frontend", streak=3)
+    kicks = []
+    monkeypatch.setattr(service, "run_tmux", _quiet_windows())
+    monkeypatch.setattr(service.subprocess, "Popen", lambda args: kicks.append(args))
+    watchdog = _watchdog(r)
+    watchdog.poll(now=NOW)
+    assert len(kicks) == 1
+
+    # backend sent something substantive -- send() would have hdel'd this edge.
+    del r.hashes[_key("backend", "acks")]["frontend"]
+    _ack(r, "frontend", "backend", streak=4)
+    watchdog.poll(now=NOW)
+    assert len(kicks) == 1
+    assert not r.hashes.get(_key("frontend", "ack-loop.alerted"))
+
+
+def test_ack_loop_does_nothing_without_a_configured_lead(monkeypatch):
+    r = WatchRedis()
+    _ack(r, "frontend", "backend", streak=3)
+    _ack(r, "backend", "frontend", streak=3)
+    monkeypatch.setattr(service, "run_tmux", _quiet_windows())
+    monkeypatch.setattr(service.subprocess, "Popen", lambda args: (_ for _ in ()).throw(AssertionError("should not kick")))
+
+    _watchdog(r).poll(now=NOW)
+
+
 def _todo_agent(r, agent="sme-2", *, created="2026-08-09T13:55:00Z", ticket_id="ticket-1", title="pick up the auth review", append=False):
     entry = json.dumps({"id": ticket_id, "title": title, "created_ts": created})
     key = _key(agent, "tasks.todo")

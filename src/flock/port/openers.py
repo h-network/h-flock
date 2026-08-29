@@ -6,7 +6,7 @@ import re
 from datetime import datetime, timezone
 from typing import Set
 
-from flock.bus import DeadLetter, log_record, prefix, record_task_event
+from flock.bus import DeadLetter, log_record, port_type, prefix, record_task_event
 from flock.tmux import list_windows, paste_text, run_tmux
 
 # Attachment constants
@@ -110,6 +110,12 @@ def messages_opener(
         payload = envelope.get("payload", {})
         text = payload.get("text", "") if isinstance(payload, dict) else str(payload)
         blocks.append(f"[message from {source}] {text}\n")
+        try:
+            pt = port_type(r, pod=pod, tenant=tenant, agent=source)
+        except Exception:
+            pt = None
+        if pt == "api":
+            blocks.append(f"[reply to {source}]\n")
 
     combined_msg = "".join(blocks)
 

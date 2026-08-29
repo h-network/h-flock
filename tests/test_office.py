@@ -818,6 +818,39 @@ def test_clone_to_all_fetches_once_then_resets_every_origin(office_env, monkeypa
     assert "summary: cloned=0 skipped=3 failed=0" in capsys.readouterr().out
 
 
+def test_clone_to_all_never_sources_a_fresh_clone_from_a_pre_existing_one(office_env, monkeypatch, tmp_path, capsys):
+    """A target that already existed BEFORE this call is skipped, not reused
+    as a local source for a fresh clone in the same call -- only a copy made
+    DURING this call is ever reused that way."""
+    office_env.roster["worker"] = "tmux"
+    workdir = tmp_path / "workdir"
+    for agent in ("backend", "frontend", "worker"):
+        (workdir / agent).mkdir(parents=True)
+    upstream = tmp_path / "upstream" / "project.git"
+    upstream.parent.mkdir()
+    subprocess.run(["git", "init", "--bare", str(upstream)], check=True, capture_output=True)
+    monkeypatch.setattr(cli, "_WORKDIR_ROOT", workdir)
+
+    # "backend" already has a clone from a previous, unrelated call -- this
+    # must never be used as a source for the fresh agents below.
+    subprocess.run(["git", "clone", str(upstream), str(workdir / "backend" / "project")], check=True, capture_output=True)
+
+    real_run = subprocess.run
+    clone_sources = []
+
+    def recording_run(command, **kwargs):
+        if command[:2] == ["git", "clone"]:
+            clone_sources.append(command[2])
+        return real_run(command, **kwargs)
+
+    monkeypatch.setattr(cli.subprocess, "run", recording_run)
+    cli.main(["cloneToAll", str(upstream)])
+
+    first_fresh = workdir / "frontend" / "project"
+    assert clone_sources == [str(upstream), str(first_fresh)]
+    assert "summary: cloned=2 skipped=1 failed=0" in capsys.readouterr().out
+
+
 def test_clone_to_all_dry_run_filters_roster_and_writes_nothing(office_env, monkeypatch, tmp_path, capsys):
     workdir = tmp_path / "workdir"
     (workdir / "backend" / "project").mkdir(parents=True)

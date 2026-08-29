@@ -78,6 +78,8 @@ class Watchdog:
         hold_alert_seconds: float = 3600,
         unreplied_alert_seconds: float = 60,
         ingress_max: int = 300,
+        ack_loop_threshold: int = 3,
+        ack_loop_window_seconds: float = 120,
         home_root: str | Path = "/home/ubuntu",
     ):
         self.r = r
@@ -94,6 +96,8 @@ class Watchdog:
         self.hold_alert_seconds = hold_alert_seconds
         self.unreplied_alert_seconds = unreplied_alert_seconds
         self.ingress_max = ingress_max
+        self.ack_loop_threshold = ack_loop_threshold
+        self.ack_loop_window_seconds = ack_loop_window_seconds
         self.home_root = Path(home_root)
         self._reported_blocks: set[tuple[str, str, str]] = set()
 
@@ -560,6 +564,109 @@ class Watchdog:
             if stale:
                 self.r.hdel(state_key, *stale)
 
+    def _ack_edge(self, source: str, destination: str) -> dict | None:
+        raw = _text(self.r.hget(prefix(self.pod, self.tenant, source, "acks"), destination))
+        if raw is None:
+            return None
+        try:
+            data = json.loads(raw)
+            streak = int(data["streak"])
+            last_ts = _timestamp(data["last_ts"])
+        except (TypeError, ValueError, KeyError, json.JSONDecodeError):
+            return None
+        if last_ts is None:
+            return None
+        return {"streak": streak, "last_ts": last_ts}
+
+    def _check_ack_loop(self, agents: list[str], now: datetime) -> None:
+        """Tell the lead directly when two peers are only exchanging closing acks.
+
+        Fifth in the family, and the first not driven by the board or a
+        single agent's own state — it is `acks`, a HASH `bus.send()` itself
+        writes on each directed tmux-to-tmux `Message` edge (`CONTRACTS.md`),
+        counting a streak of closing-acknowledgment-shaped replies with no
+        raw text ever stored. Detection here only reads that streak/timestamp
+        pair; it never sees what either agent actually typed.
+
+        **Both directions must cross the threshold, not just one.** A single
+        chatty-but-terse agent replying "ok" three times to three different
+        substantive messages is not a loop; two agents each only ever
+        replying to the other's closing ack is. Requiring both directed
+        edges to independently reach `ack_loop_threshold` is what tells those
+        apart without reading either side's actual words.
+
+        **Freshness matters because the streak never expires on its own.**
+        `bus.send()` only touches an edge on a new message — it does not
+        clear it when a conversation simply ends. A loop that stopped an
+        hour ago must not still read as a loop, so an edge whose newer
+        `last_ts` is older than `ack_loop_window_seconds` is treated as no
+        longer live, the same 120s window `bus.send()` itself uses to decide
+        whether an incoming ack continues or restarts a streak.
+
+        Delivery is `_notify_lead`, unchanged, and the exponential re-alert
+        backoff is the same shape `_check_unreplied_duration` uses — a loop
+        that keeps going should nudge the lead again, but not on every poll.
+        Unlike the other four, the state key names an unordered pair rather
+        than one board entry, so it is stored once under whichever of the two
+        agent names sorts first, keyed by the other's name.
+        """
+        lead = self._lead()
+        if not lead:
+            return
+        agent_set = set(agents)
+        seen_pairs = set()
+        for agent in agents:
+            raw_fields = _fields(self.r.hgetall(prefix(self.pod, self.tenant, agent, "acks")) or {})
+            for peer in raw_fields:
+                if peer == agent:
+                    continue
+                pair = tuple(sorted((agent, peer)))
+                if pair in seen_pairs:
+                    continue
+                seen_pairs.add(pair)
+                first, second = pair
+                state_key = prefix(self.pod, self.tenant, first, "ack-loop.alerted")
+
+                if peer not in agent_set:
+                    # A retired peer leaves a stale field in `acks` (the same
+                    # limitation `unreplied` already has for a retired
+                    # client); at least don't keep alerting on it here.
+                    if self.r.hexists(state_key, second):
+                        self.r.hdel(state_key, second)
+                    continue
+
+                forward = self._ack_edge(first, second)
+                backward = self._ack_edge(second, first)
+                if forward is None or backward is None:
+                    if self.r.hexists(state_key, second):
+                        self.r.hdel(state_key, second)
+                    continue
+                most_recent = max(forward["last_ts"], backward["last_ts"])
+                if (now - most_recent).total_seconds() > self.ack_loop_window_seconds:
+                    if self.r.hexists(state_key, second):
+                        self.r.hdel(state_key, second)
+                    continue
+
+                streak = min(forward["streak"], backward["streak"])
+                if streak < self.ack_loop_threshold:
+                    continue
+
+                previous = _text(self.r.hget(state_key, second))
+                if previous is not None and previous.isdigit():
+                    next_required = int(previous) * 2
+                else:
+                    next_required = self.ack_loop_threshold
+                if streak < next_required:
+                    continue
+
+                text = (
+                    f'[alert from watchdog] {first} and {second} look like they are '
+                    f'ack-looping ({streak} closing replies each way, nothing new) — '
+                    f'check whether the thread is actually done'
+                )
+                self._notify_lead(lead, text)
+                self.r.hset(state_key, second, str(next_required))
+
     def poll(self, *, now: datetime | None = None) -> None:
         now = (now or datetime.now(timezone.utc)).astimezone(timezone.utc)
         agents = self._agents()
@@ -592,6 +699,10 @@ class Watchdog:
             self._check_unreplied_duration(agents, now)
         except Exception as exc:
             self._error("unreplied_duration", exc)
+        try:
+            self._check_ack_loop(agents, now)
+        except Exception as exc:
+            self._error("ack_loop", exc)
 
     def _credential_accounts(self) -> list[tuple[str, str, Path]]:
         """Return each CLI account used by an enrolled terminal agent once."""
@@ -734,6 +845,8 @@ def main() -> None:
         hold_alert_seconds=float(os.environ.get("WATCHDOG_HOLD_ALERT_SEC", "3600")),
         unreplied_alert_seconds=float(os.environ.get("WATCHDOG_UNREPLIED_ALERT_SEC", "60")),
         ingress_max=int(os.environ.get("INGRESS_MAX", "300")),
+        ack_loop_threshold=int(os.environ.get("WATCHDOG_ACK_LOOP_THRESHOLD", "3")),
+        ack_loop_window_seconds=float(os.environ.get("WATCHDOG_ACK_LOOP_WINDOW_SEC", "120")),
     )
     # ⚠ These three moved out of the switch's forwarding loop. They observe
     # agents — CLI transcripts, presence, whether a paste was followed by input

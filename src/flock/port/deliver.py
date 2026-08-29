@@ -8,6 +8,7 @@ from flock.bus.envelope import parse_for_switch
 # Minimal hand-rolled RESP client (flock.bus.resp.Redis), not redis-py, for fast transient process startup
 from flock.bus import resp as redis
 from .openers import add_ticket_opener, attachment_opener, command_opener, message_opener, messages_opener
+from .registry import get_delivery_handler, register_port_type, reset_registry, unregister_port_type
 
 
 _DRAIN_INGRESS = """
@@ -61,6 +62,7 @@ def deliver_api(
     tenant: str,
     agent: str,
     timeout: int = 1,
+    **kwargs,
 ) -> None:
     ingress_key = prefix(pod, tenant, agent, "ingress")
     dead_key = prefix(pod, tenant, agent, "dead")
@@ -92,6 +94,7 @@ def deliver_unroutable(
     agent: str,
     port_type_name: str | None,
     timeout: int = 1,
+    **kwargs,
 ) -> None:
     ingress_key = prefix(pod, tenant, agent, "ingress")
     dead_key = prefix(pod, tenant, agent, "dead")
@@ -109,45 +112,16 @@ def deliver_unroutable(
         _emit_for_recipient("port", "dead_lettered", envelope, agent, reason)
 
 
-def deliver_one(
+def deliver_tmux(
     r,
     pod: str,
     tenant: str,
     agent: str,
     session_name: str,
     socket: str | None = None,
+    timeout: int = 1,
+    **kwargs,
 ) -> None:
-    paused_key = prefix(pod, tenant, agent=agent, resource="paused")
-    if r.get(paused_key):
-        return
-
-    roster_key = prefix(pod, tenant, resource="roster")
-    raw_port_type = r.hget(roster_key, agent)
-    agent_port_type = raw_port_type.decode() if isinstance(raw_port_type, bytes) else raw_port_type
-
-    if agent_port_type == "control":
-        try:
-            from flock.control import deliver_one as control_deliver_one
-            control_deliver_one(
-                r,
-                pod=pod,
-                tenant=tenant,
-                agent=agent,
-                session_name=session_name,
-                socket=socket,
-            )
-        except ImportError:
-            log_record("port", "error", destination=agent, reason="flock.control module not available")
-        return
-
-    if agent_port_type == "api":
-        deliver_api(r, pod=pod, tenant=tenant, agent=agent)
-        return
-
-    if agent_port_type is not None and agent_port_type != "tmux":
-        deliver_unroutable(r, pod=pod, tenant=tenant, agent=agent, port_type_name=agent_port_type)
-        return
-
     ingress_key = prefix(pod, tenant, agent, "ingress")
     dead_key = prefix(pod, tenant, agent, "dead")
 
@@ -281,6 +255,37 @@ def deliver_one(
                 _emit_for_recipient("port", "dead_lettered", envelope, agent, f"unknown kind: {kind}")
 
     flush_messages()
+
+
+def deliver_one(
+    r,
+    pod: str,
+    tenant: str,
+    agent: str,
+    session_name: str,
+    socket: str | None = None,
+) -> None:
+    paused_key = prefix(pod, tenant, agent=agent, resource="paused")
+    if r.get(paused_key):
+        return
+
+    roster_key = prefix(pod, tenant, resource="roster")
+    raw_port_type = r.hget(roster_key, agent)
+    agent_port_type = raw_port_type.decode() if isinstance(raw_port_type, bytes) else raw_port_type
+
+    handler = get_delivery_handler(agent_port_type) if agent_port_type else None
+    if handler is None:
+        deliver_unroutable(r, pod=pod, tenant=tenant, agent=agent, port_type_name=agent_port_type)
+        return
+
+    handler(
+        r=r,
+        pod=pod,
+        tenant=tenant,
+        agent=agent,
+        session_name=session_name,
+        socket=socket,
+    )
 
 
 def run_port(

@@ -13,9 +13,9 @@ The entrypoint starts the watchdog beside the switch. It is a separate process
 with its own cadence and failure boundary:
 
 ```
-Redis board, presence and blocked state ─┐
-tmux window-activity metadata ───────────┼─> flock.watchdog ─> alerts Stream
-CLI credential files ───────────────────┘                    └> container log
+Redis board, presence and blocked state ─┐   ┌─> alerts Stream
+tmux window-activity metadata ───────────┼─> flock.watchdog ─┼─> container log
+CLI credential files, `acks`, `unreplied` ┘   └─> the lead's pane (paste)
 ```
 
 The switch is the tenant's data path. Watchdog policy, external observations or
@@ -23,18 +23,27 @@ a slow tmux call must not delay forwarding, so none of this work runs in the
 switch's pass. The watchdog imports shared bus and tmux library functions, but
 it neither receives nor sends envelopes.
 
-Each ordinary pass:
+Each ordinary pass (every `WATCHDOG_INTERVAL` seconds):
 
 1. reads roster fields and keeps participants whose port_type is `tmux`;
 2. obtains all window activity timestamps with one tmux `list-windows` call;
-3. evaluates ticket stalls; and
-4. reports retained `blocked` verdicts.
+3. evaluates the three-signal stall rule (§2) and reports retained `blocked`
+   verdicts (§3) — both to the alerts stream; and
+4. independently evaluates each member of the doing/todo/hold/unreplied/
+   ack-loop family (§2a-e), messaging the lead directly for any that cross
+   its own threshold.
 
-Credential accounts are checked at most once an hour within the same process.
-The window lookup, stall check, blocked check and credential check have separate
-failure boundaries. One failing job writes a lifecycle error to stdout with the
-job name and both exception class and message; independent jobs still run in the
-same pass, and the process continues.
+Credential accounts (§5) are checked separately, at most once an hour within
+the same process — cheaper to run rarely than to fold into every 30-second
+pass. A second, faster loop (`ACTIVITY_POLL_SECONDS`, default `2`, decoupled
+from `WATCHDOG_INTERVAL`) independently tails CLI activity, samples presence
+and judges delivery-verification markers on its own cadence, since a
+`blocked` verdict is only as timely as the marker check that feeds it.
+
+Every job above has its own failure boundary: one failing job writes a
+lifecycle error to stdout with the job name and both exception class and
+message; independent jobs still run in the same pass, and the process
+continues.
 
 ## 2. Stall rule: three signals together
 
@@ -284,18 +293,95 @@ whole field, not decremented) — the next pass diffs `unreplied.alerted`'s
 fields against what is still present and drops what no longer matches, same
 pruning §2b and §2c already do for tickets that leave `todo`/`hold`.
 
+## 2e. Ack-loop: two peers only exchanging closing acknowledgments
+
+Fifth in the family, and the first not driven by the board or a single
+agent's own state. A live incident (2026-08-29) had two tmux agents replying
+to each other's closing "got it"/"thanks" forever, with nothing substantive
+left to say — caught only because the lead happened to be watching. §2e
+exists so that noticing does not depend on luck.
+
+**Classification lives in `bus.send()`, not here** (`CONTRACTS.md`,
+`LLD-bus-and-switch.md` §"secondary post-egress bookkeeping"), for the same
+reason `unreplied` does: the switch never opens a payload (invariant 1), and
+`ActivityTailer` is deliberately argument-blind — it extracts a tool-use
+block's *name*, never its `input` (`watchdog/activity.py`), so a CLI
+transcript could not expose message text here without breaking that rule
+too. `send()` is the only place already legitimately holding the text, for a
+`Message` between two `tmux` ports:
+
+```
+<prefix>:agent:<source>:acks   HASH   <destination>: {"streak", "last_ts"}
+```
+
+The edge is directed and stores no content, ever — only a streak count and a
+timestamp. `send()`'s classifier is a small **frozen, exact-match** phrase
+set — `ack`, `acknowledged`, `appreciate it`, `got it`, `much appreciated`,
+`no problem`, `noted`, `np`, `ok`, `okay`, `roger`, `roger that`, `sounds
+good`, `thank you`, `thanks`, `thanks a lot`, `understood`, `will do`
+(`bus/doors.py`) — deliberately excluding bare "yes"/"no"/"cool"/"great"/
+"perfect"/"alright", which read as substantive answers as often as closers; a
+false negative here just delays a nag, but a false positive on an ordinary
+short reply would make the alert noise. A non-ack `Message` deletes the
+directed field outright, same "leaves entirely" semantics `unreplied` uses.
+
+**Both directed edges must independently cross `WATCHDOG_ACK_LOOP_THRESHOLD`
+(default `3`), not just one.** An agent that is simply terse — replying "ok"
+to three different substantive messages from the same peer — is not a loop;
+requiring the *reverse* edge to also be at or past the threshold is what
+tells that apart from an actual ping-pong, without ever reading either
+side's words. The reported count is `min()` of the two directed streaks — a
+conservative "at least this many, each way."
+
+⚠ **A streak never expires on its own — `bus.send()` only touches an edge on
+a new message.** A loop that stopped an hour ago must not still read as
+current, so §2e also requires the more recent of the two edges' `last_ts` to
+be within `WATCHDOG_ACK_LOOP_WINDOW_SEC` (default `120`, matching the same
+120-second window `bus.send()` itself uses to decide whether an incoming ack
+continues a streak or restarts it at 1). An edge older than that — or a pair
+where either direction's field is simply absent — is treated as not
+currently looping, and any state stored for it is dropped.
+
+```
+[alert from watchdog] <a> and <b> look like they are ack-looping
+(<N> closing replies each way, nothing new) — check whether the thread is
+actually done
+```
+
+Delivery is `_notify_lead`, unchanged. Re-alerts back off exponentially, the
+same shape §2d uses and for the same reason: a loop found early deserves a
+fast first nag, not a wait for a long fixed period, but a loop that keeps
+going should not re-page the lead on every 30-second poll either. Unlike
+§2a-d, the identity here is an **unordered pair**, not one board entry or one
+client, so the crossing state is stored once — under whichever of the two
+agent names sorts first — keyed by the other's name:
+
+```
+<prefix>:agent:<first-of-pair>:ack-loop.alerted   HASH   <second-of-pair>: <next_streak>
+```
+
+**No agent is ever messaged directly — only the lead**, same restriction as
+every other rule in this family (§4). The watchdog does not decide the
+conversation is actually finished; it only reports that neither side has
+said anything new in a while. A retired peer leaves the same kind of stale
+field `unreplied` already tolerates for a retired client — `acks` and
+`ack-loop.alerted` are not swept clean of a name that has left the roster,
+only skipped going forward.
+
 ## 3. `blocked`: a retained delivery verdict
 
-The switch, not the watchdog, owns:
+⚠ **The watchdog owns this key, not the switch** — see §7 invariant 4 for the
+2026-08-19 correction; this section previously said the opposite and was
+missed when that correction landed.
 
 ```
 <prefix>:agent:<name>:blocked    HASH    { since, stream_id }
 ```
 
-After the verification delay, the switch writes this key on the first delivery
-it judges unverified. A later verified delivery deletes it. The first `since`
-is retained so duration means how long the condition has existed, not how
-recently it was noticed.
+After the verification delay, `DeliveryVerifier` (`watchdog/verification.py`)
+writes this key on the first delivery it judges unverified. A later verified
+delivery deletes it. The first `since` is retained so duration means how long
+the condition has existed, not how recently it was noticed.
 
 `blocked` means exactly: **a delivery was judged unverified and no verified
 delivery has been observed since**. It does not mean that the agent is stuck,
@@ -374,8 +460,8 @@ Alert records are facts, not diagnoses. Their common fields are `v`, `ts` and
 `kind`; the remaining fields are specific to `stalled`, `blocked`, or
 `credential` as shown in this document.
 
-⚠ **§2a-d are the exception, and it is to the lead only.** All
-four share one delivery mechanism (`_notify_lead`) and the same scope. HLD
+⚠ **§2a-e are the exception, and it is to the lead only.** All
+five share one delivery mechanism (`_notify_lead`) and the same scope. HLD
 §8c works out
 why the lead does not re-create the symptom-clearing problem above:
 the lead is the one participant in this fabric that a human's own judgment is
@@ -432,7 +518,7 @@ The tenant `credential.alerted` hash stores the last reported status under an
 - When a previously alerted credential recovers or is refreshed to healthy (`present`), the watchdog emits a retraction record with `status: "present"` to the alert stream and deletes its field from `credential.alerted`. A steady-state healthy account emits nothing on subsequent passes.
 - If an account is no longer in use, its stale `credential.alerted` field is cleared.
 
-Per `BUILD-38-durable` §2, emitting `status: "present"` was chosen over §1's cursor-based clearable alerts because clearable alerts do not exist in the append-only stream. Emitting `status: "present"` enables stream consumers and console monitors to determine the current state by taking the latest record per `(account, cli)`.
+Per `SPRINTS.md` Sprint 4 §2 (originally `BUILD-38-durable.md` §2, deleted in `6dd3f1f`), emitting `status: "present"` was chosen over §1's cursor-based clearable alerts because clearable alerts do not exist in the append-only stream. Emitting `status: "present"` enables stream consumers and console monitors to determine the current state by taking the latest record per `(account, cli)`.
 
 The existing per-agent `alerted` key cannot hold this state: it contains a ticket ID, expires
 with the stall cooldown, and one credential account may be shared by several
@@ -458,6 +544,11 @@ agents.
 | `WATCHDOG_HOLD_ALERT_SEC` | `3600` | age at which §2c messages the lead directly, and the re-alert period thereafter |
 | `WATCHDOG_UNREPLIED_ALERT_SEC` | `60` | age at which §2d first messages the lead directly; each re-alert doubles this as the next required age |
 | `INGRESS_MAX` | `300` | bound `_notify_lead` passes to `admit_ingress` for the lead's ingress list — the switch's own variable (`LLD-bus-and-switch`), read here too so both processes honor the same cap without a shared config source |
+| `WATCHDOG_ACK_LOOP_THRESHOLD` | `3` | per-direction ack streak required, both ways, before §2e messages the lead; each re-alert doubles this as the next required streak |
+| `WATCHDOG_ACK_LOOP_WINDOW_SEC` | `120` | an ack edge older than this is no longer treated as a live loop — matches the window `bus.send()` itself uses to continue vs. restart a streak |
+| `ACTIVITY_POLL_SECONDS` | `2` | cadence of the faster observer loop (§1) — activity, presence and verification, decoupled from `WATCHDOG_INTERVAL` |
+| `PRESENCE_WORKING_SECONDS` | `30` | how recent an activity event must be for `PresenceSampler` to report `working` |
+| `VERIFY_AFTER_SECONDS` | `120` | delay `DeliveryVerifier` waits before judging a delivery marker verified or `blocked` (§3) |
 
 `REDIS_URL`, `POD` and `TENANT` identify the tenant. `TMUX_SESSION` defaults to
 the tenant name; `TMUX_SOCKET` selects an explicit tmux socket when present.
@@ -477,14 +568,14 @@ the tenant name; `TMUX_SOCKET` selects an explicit tmux socket when present.
    reviewing build 77 — the move updated eight docs for the file *paths* and
    missed the sentence about *ownership*.
 5. `blocked` is a limited delivery-verification verdict, not a diagnosis.
-6. ⚠ **AMENDED — §2a, §2b, §2c and §2d are the exception.** Every `stalled`,
-   `blocked` and `credential` alert still goes only to the Redis Stream and
-   container log, never into any agent's ingress queue. §2a's doing-duration,
-   §2b's todo-duration, §2c's hold-duration and §2d's unreplied-duration
-   messages are the exception, and it is narrower than "an agent's ingress
-   queue" in general: all four are addressed only to whichever participant is
-   currently the tenant's `lead` (HLD §8c), never to the agent the ticket or
-   message names, and never to any other peer. If there is no lead, or the
-   lead is not `tmux`, none of the four fall back to any other participant —
-   they send nothing.
+6. ⚠ **AMENDED — §2a, §2b, §2c, §2d and §2e are the exception.** Every
+   `stalled`, `blocked` and `credential` alert still goes only to the Redis
+   Stream and container log, never into any agent's ingress queue. §2a's
+   doing-duration, §2b's todo-duration, §2c's hold-duration, §2d's
+   unreplied-duration and §2e's ack-loop messages are the exception, and it is
+   narrower than "an agent's ingress queue" in general: all five are
+   addressed only to whichever participant is currently the tenant's `lead`
+   (HLD §8c) — for §2e, never to either agent in the looping pair — and never
+   to any other peer. If there is no lead, or the lead is not `tmux`, none of
+   the five fall back to any other participant — they send nothing.
 7. No terminal content is captured or parsed.

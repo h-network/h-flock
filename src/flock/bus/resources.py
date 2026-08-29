@@ -19,6 +19,8 @@ AGENT_STATE_RESOURCES = frozenset(
         "hold.alerted",
         "unreplied",
         "unreplied.alerted",
+        "acks",
+        "ack-loop.alerted",
         "presence",
         "pending.verify",
         "delivery.markers",

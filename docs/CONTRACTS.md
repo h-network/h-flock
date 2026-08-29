@@ -32,17 +32,22 @@ is imported, never vendored.
   container/     Dockerfile, entrypoint, compose file
 ```
 
-Every process is `python -m flock.<module>`. Dependencies: `redis`, `fastapi`,
-`uvicorn`, `websockets`. Nothing else without saying why.
+Every process is `python -m flock.<module>`. Runtime dependencies are declared
+in `pyproject.toml`; the notable non-framework additions are `websockets` for
+the session door, `edge-tts` for the bundled voice client, and the real
+`openshell` SDK for gateway-backed sandbox agents.
 
 ⚠ `websockets` is not optional. `uvicorn` has no WebSocket implementation of its
 own, and without one `flock.session`'s route answers **404** while logging only a
 warning — which looks like a wrong path, not a missing package. FastAPI's
 `TestClient` does not need it, so unit tests pass either way.
 
-**`flock.bus` and `flock.tmux` are the only shared libraries.** `switch`,
-`port`, `tmuxhost` and `api` never import *each other* — the layer split in
-`LLD-bus-and-switch` §1 is enforced by that rule and is checkable by grep.
+The switch imports only exact `flock.bus` submodules and never a delivery
+implementation. Cross-component imports occur at explicit far-edge seams: the
+port registry lazily resolves control/OpenShell handlers, and OpenShell control
+branches lazily import the gateway client. This keeps optional gRPC cost and
+delivery knowledge out of the switching path without pretending modules never
+import one another.
 
 `flock.tmux` holds the low-level operations — `create_window`, `kill_window`,
 `list_windows`, and the paste sequence — because both the tmux host and the
@@ -120,7 +125,7 @@ one is how a kind becomes deliverable; `LLD-port-tmux` §3 is the tmux
 implementation of one.
 
 ⚠ **Port burst batching is port_type-specific.** After acquiring the busy tag,
-`tmux`, `api`, and unknown-port delivery atomically drain the ingress snapshot
+`tmux`, `api`, `openshell`, and unknown-port delivery atomically drain the ingress snapshot
 with `_DRAIN_INGRESS` (`LRANGE` + `DEL` in one Lua execution). `control` keeps
 the one-envelope `receive(..., blocking=False)` path. On tmux, consecutive
 `Message` envelopes are concatenated into ONE combined bracketed paste in
@@ -216,26 +221,20 @@ window-creation implementation. tmuxhost passes the resolved environment and
 
 ### A delivery routine per port_type
 
-`flock.port.deliver` dispatches on the port_type and calls one of these. The
-tmux path is inline; API and control have delivery routines with the same
-single-envelope contract, so adding a base is adding a routine and a branch:
+`flock.port.deliver` looks up the `port_type` in `flock.port.registry` and dispatches to its registered delivery handler (see [`LLD-port-delivery.md`](LLD-port-delivery.md)). The registry supports direct callables as well as lazy `(module_path, attribute_name)` specs so port modules are only imported when an envelope for that port type is actively being delivered.
 
 ```python
 def deliver_one(r, *, pod, tenant, agent, session_name, socket=None) -> None
 ```
 
-| port_type | Module | Owner |
-|---|---|---|
-| `tmux` | `flock.port.deliver` (inline) | `tmux` lane |
-| `api` | `flock.port.deliver.deliver_api` | `api` lane |
-| `control` | `flock.control` | `bus` lane |
+| port_type | Registered Handler | Owner | Spec |
+|---|---|---|---|
+| `tmux` | `flock.port.deliver.deliver_tmux` | `tmux` lane | [`LLD-port-tmux.md`](LLD-port-tmux.md) |
+| `api` | `flock.port.deliver.deliver_api` | `api` lane | [`LLD-api.md`](LLD-api.md) |
+| `control` | `flock.control.runner.deliver_one` (lazy import) | `ports` lane | [`LLD-port-delivery.md`](LLD-port-delivery.md) |
+| `openshell` | `flock.port.openshell.deliver_openshell` (lazy import) | `openshell` lane | [`LLD-port-openshell.md`](LLD-port-openshell.md) |
 
-⚠ **This is a named exception to the rule above.** `flock.port` imports
-`flock.control`, which is a module and not a shared library. It is done as a
-*lazy* import inside the dispatch branch, so a port with no control module
-installed logs and carries on rather than failing to start. Any further
-cross-module import needs the same explicit justification, or the layer split
-stops meaning anything.
+`flock.port.registry` maintains lazy import specs, so non-tmux port modules (control, openshell, ramp) are only imported when that specific port_type is encountered in the roster. If an unregistered or unroutable port_type is received, `deliver_unroutable` drains and dead-letters the snapshot cleanly.
 
 ## 3. What a log record is
 
@@ -514,8 +513,8 @@ nothing between deliveries. On start it:
    back into a check followed by a write.
 2. `HGET`s the roster for this agent's port_type, and dispatches to that base's
    delivery routine
-3. consumes according to port_type: tmux/api/unknown drain the current ingress
-   snapshot; control pops one envelope
+3. consumes according to port_type: tmux/api/openshell/unknown drain the current
+   ingress snapshot; control pops one envelope
 4. `HDEL`s the busy tag and exits
 
 A crash between 1 and 4 leaves the tag set. Nothing expires it and nothing takes
@@ -628,14 +627,14 @@ shape admission, described below.
 
 | `kind` | port_type that opens it | Payload | Does |
 |---|---|---|---|
-| `Message` | `tmux` | `{"text": "..."}` | pastes `[message from <source>] <text>` |
-| `Command` | `tmux` | `{"text": "..."}` | pastes `<text>` **bare** — it executes |
-| `Attachment` | `tmux` | `{"filename", "mime_type", "content_base64", "caption"?}` | writes decoded bytes into the recipient's workspace, then pastes an inert attributed notice naming the file |
+| `Message` | `tmux`, `openshell` | `{"text": "..."}` | tmux pastes attributed text; OpenShell runs one attributed headless prompt and sends its output back over the bus |
+| `Command` | `tmux`, `openshell` | `{"text": "..."}` | executes bare text: pasted into tmux or passed to one headless sandbox invocation |
+| `Attachment` | `tmux`, `openshell` | `{"filename", "mime_type", "content_base64", "caption"?}` | writes decoded bytes into the recipient's workspace/sandbox; tmux also pastes an inert notice |
 | `StartAgent` | `control` | `{"agent": "networking", "cli": "claude", "port_type": "tmux", "resume": true}` | publishes desired launch state, enrols (tmuxhost reconciles window and CLI, auto-resuming history) |
 | `StopAgent` | `control` | `{"agent": "networking"}` | removes roster row, purges identity state, kills window inline (tmuxhost cleans up on reconcile) |
 | `PauseAgent` | `control` | `{"agent": "networking"}` | marks paused in Redis and interrupts CLI |
 | `ResumeAgent` | `control` | `{"agent": "networking"}` | clears pause in Redis, resumes CLI, kicks pending ingress |
-| `AddTicket` | `tmux` | `{"title", "description", "priority", "related"}` | writes a ticket to that agent's `tasks.todo` — and **pastes nothing** |
+| `AddTicket` | `tmux`, `openshell` | `{"title", "description", "priority", "related"}` | writes a ticket to that agent's `tasks.todo` — and **pastes nothing** |
 
 ### `Attachment` — file bytes on the bus
 
@@ -764,7 +763,8 @@ neither creates a
 `pending.verify` marker or a `blocked` state because no CLI consumption is
 expected for a board write.
 
-`port_type` defaults to `tmux` and accepts `tmux` or `api`; `cli` defaults to `claude`.
+`port_type` defaults to `tmux` and accepts `tmux`, `api`, or `openshell`; `cli`
+defaults to `claude`.
 
 ⚠ **`port_type: "api"` enrols a client, and creates no window.** A phone app, a web
 front end and a Telegram wrapper are each a roster row and a mailbox — nothing
@@ -848,6 +848,16 @@ roster row and stops: no launch key, no home, no window, no CLI. `StopAgent`
 removes the row and purges classified identity state, touching no tmux; retained
 data such as its inbox survives re-enrolment. Unqualified, the sentence above
 is false for half the participants.
+
+⚠ **For `port_type: "openshell"`, lifecycle is synchronous and sandbox-specific.**
+`StartAgent` validates/publishes optional policy, launch CLI, and optional
+profile, publishes the roster row, then creates the real sandbox through the
+OpenShell gateway. It creates no tmux window. `StopAgent` removes the roster row
+and classified agent state, clears the delivery lock, then deletes that agent's
+sandbox. Gateway exceptions after acknowledged Redis writes use the control
+path's incomplete/unknown outcome rather than pretending the whole operation
+did not occur. Naming, credentials, and delivery details live in
+[`LLD-port-openshell.md`](LLD-port-openshell.md).
 
 ⚠ **"the mailbox" was too narrow, and naming keys here would go stale the same
 way.** Build 22 replaced the enumeration with a classified set — `flock.bus`
@@ -1049,6 +1059,7 @@ the entry shape matches the single-agent route exactly.
   <prefix>:agent:<name>:hold.alerted      HASH     { <ticket_id>: <crossing>, … }, set by the watchdog
   <prefix>:agent:<name>:unreplied         HASH     { <client>: {"count","since"} }, set by `send()`
   <prefix>:agent:<name>:unreplied.alerted HASH     { <client>: <next_threshold_s>, … }, set by the watchdog
+  <prefix>:agent:<name>:acks              HASH     { <peer>: {"streak","last_ts"} }, set by `send()`
   <prefix>:alerts                         STREAM   tenant-level, MAXLEN ~ 1000
 ```
 
@@ -1087,6 +1098,24 @@ Opening or extending one client field is a single Lua execution: it decodes the
 existing value, increments `count`, preserves the earliest valid `since`, and
 writes the replacement atomically. Malformed prior state recovers to count 1
 with the current timestamp rather than pinning the field or losing the send.
+
+Peer acknowledgment-loop state is also written by `send()` after the egress
+append. For a `Message` between two `tmux` ports it stores no content, only:
+
+```
+<prefix>:agent:<source>:acks  HASH  <destination> -> {"streak":N,"last_ts":"…"}
+```
+
+The edge is directed. An ack-shaped message increments atomically when the
+previous timestamp is within 120 seconds, otherwise resets to 1; a non-ack
+`Message` deletes that edge. The v1 classifier requires string text, at most 80
+trimmed Unicode code points and 12 whitespace-delimited words, no `?`, then
+collapses whitespace, case-folds, strips trailing `.`/`!` plus exposed trailing
+space, and exact-matches one of: `ack`, `acknowledged`, `appreciate it`, `got
+it`, `much appreciated`, `no problem`, `noted`, `np`, `ok`, `okay`, `roger`,
+`roger that`, `sounds good`, `thank you`, `thanks`, `thanks a lot`,
+`understood`, `will do`. API traffic, broadcasts, and non-`Message` kinds never
+touch this state. Tracking failure is logged and swallowed after committed send.
 
 ⚠ **`blocked` is written by the WATCHDOG.** It is a delivery verdict retained
 instead of discarded: set on `unverified`, deleted on `verified`. One writer, and

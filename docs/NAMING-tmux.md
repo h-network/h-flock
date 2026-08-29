@@ -51,9 +51,12 @@ Tier A is documentation, B internal code, C Redis/environment, and D wire.
 | `port` | `src/flock/port/send.py:9`, `src/flock/port/deliver.py:265` | doc term | Names both outbound agent sending and inbound per-envelope delivery—opposite sides of the switch. | Two different NIC directions collapsed into one component name. | B |
 | `send` CLI | `src/flock/port/send.py:5` | identifier | Agent-facing command that constructs an envelope and writes its own egress. | Transmit-side NIC operation. | B |
 | `run_port` | `src/flock/port/deliver.py:265` | identifier | Acquires per-agent serialization, delivers one ingress envelope, and exits. | Receive-side port service. | B |
-| `deliver_one` | `src/flock/port/deliver.py:112` | identifier | Dispatches one destination ingress item according to its port_type. | Frame delivery to a selected port type. | B |
+| `deliver_one` | `src/flock/port/deliver.py:283` | identifier | Dispatches one destination ingress item by looking up handler in port registry. | Frame delivery entrypoint. | B |
+| `deliver_tmux` | `src/flock/port/deliver.py:110` | identifier | Delivers queued ingress envelopes to a tmux window. | Tmux frame delivery. | B |
 | `deliver_api` | `src/flock/port/deliver.py:58` | identifier | Moves one ingress envelope to an enrolled client's mailbox stream. | Delivery to a different port medium. | B |
 | `deliver_unroutable` | `src/flock/port/deliver.py:88` | identifier | Pops and dead-letters an envelope whose port_type has no implementation. | Unsupported-port drop. | B |
+| `get_delivery_handler` | `src/flock/port/registry.py:38` | identifier | Resolves delivery function or lazy module spec for a port_type. | Port registry lookup. | B |
+| `register_port_type` | `src/flock/port/registry.py:24` | identifier | Registers a callable or lazy (module, attr) handler for a port_type. | Port registration. | B |
 | `messages_opener` / `message_opener` | `src/flock/port/openers.py:82`, `src/flock/port/openers.py:119` | identifier | Terminal action selected for a `Message` (batched or single). | Protocol handler. | B |
 | `command_opener` | `src/flock/port/openers.py:144` | identifier | Terminal action selected for a `Command`. | Protocol handler. | B |
 | `add_ticket_opener` | `src/flock/port/openers.py:175` | identifier | Board action selected for an `AddTicket`. | Protocol handler. | B |
@@ -75,7 +78,7 @@ Tier A is documentation, B internal code, C Redis/environment, and D wire.
 | name | where it lives | kind | what it means, in one line | networking analogue, if any | tier |
 |---|---|---|---|---|---|
 | `control` | `src/flock/control/runner.py:1` | doc term | port_type that opens tenant lifecycle envelopes addressed to fixed participant `host`. | Control plane. | A |
-| `port_type` | `src/flock/control/openers.py:9` | doc term | Selects the receiving implementation (`tmux`, `api`, or `control`); its intended expansion is not recoverable here. | Port/media type, but the acronym does not convey it. | A |
+| `port_type` | `src/flock/control/openers.py:9` | doc term | Selects the receiving implementation (`tmux`, `api`, `control`, or `openshell`); its intended expansion is not recoverable here. | Port/media type, but the acronym does not convey it. | A |
 | `host` | `src/flock/control/openers.py:10` | identifier | Fixed roster participant/address for lifecycle operations, not tmuxhost. | Control-plane destination address. | B |
 | `deliver_one` | `src/flock/control/runner.py:23` | identifier | Pops and opens one lifecycle envelope; same name as port's port_type dispatcher. | Control-plane receive operation. | B |
 | `StartAgent` / `StopAgent` | `src/flock/control/runner.py:102` | wire | Envelope kinds that add/remove participant desired state and port_type-specific state. | Provision/deprovision a port. | D |
@@ -85,7 +88,7 @@ Tier A is documentation, B internal code, C Redis/environment, and D wire.
 | `replace_window` | `src/flock/control/openers.py:115` | identifier | Callback that kills stale actual state so tmuxhost recreates it. | Rebind a port attachment. | B |
 | `*_accepted` | `src/flock/control/openers.py:53-56` | record | Every desired-state write committed; claims nothing about asynchronously reconciled actual state. | Accepted control-plane intent. | B |
 | `*_incomplete` | `src/flock/control/openers.py:39-45` | record | A write outcome is unknown, only a subset was acknowledged, or an inline actual-state attempt failed; names facts separately from uncertainty. | Indeterminate or partial control outcome requiring operator action. | B |
-| `_STARTABLE_VABS` | `src/flock/control/openers.py:17` | identifier | port_type values lifecycle control accepts for new participants. | Supported port/media types. | B |
+| `_STARTABLE_VABS` | `src/flock/control/openers.py:17` | identifier | port_type values lifecycle control accepts for new participants (`tmux`, `api`, `openshell`). | Supported port/media types. | B |
 | `_FIXED_PARTICIPANTS` | `src/flock/control/openers.py:18` | identifier | Built-in addresses that `StopAgent` cannot remove. | Reserved control-plane addresses. | B |
 | `provider` | `src/flock/control/openers.py:172` | wire | `StartAgent` payload field selecting a named model service. | Model uplink selection, not participant provider. | D |
 | `cli` | `src/flock/control/openers.py:157` | wire | `StartAgent` payload name for the desired agent program. | Attachment implementation. | D |
