@@ -241,12 +241,33 @@ class OpenShellClient:
         supplied — never set `policy` at all if nothing was, so a sandbox
         created without any of these keeps discovering the image's own
         baked-in default exactly as before.
+
+        Confirmed directly against the live gateway: setting `policy` at
+        all replaces the ENTIRE baked-in default, including whatever
+        network access it implicitly grants — `run_as_user="sandbox"`
+        alone (no `network_allow`) creates a sandbox that immediately
+        exits (`ContainerExited`, seen only via the raw
+        `SandboxCondition`, not surfaced as a creation-time error at all),
+        while the identical policy plus one valid `network_allow` rule
+        creates and reaches READY normally. So `filesystem`/`run_as_user`/
+        `run_as_group` without `network_allow` fails silently at the
+        gateway, past what this wrapper can catch as a clean error — this
+        raises `ValueError` up front instead, before ever calling the
+        gateway, rather than let a caller hit that opaquely later.
         """
         has_filesystem = bool(filesystem_read_only) or bool(filesystem_read_write) or include_workdir is not None
         has_process = run_as_user is not None or run_as_group is not None
         has_network = bool(network_allow)
         if not (has_filesystem or has_process or has_network):
             return None
+        if (has_filesystem or has_process) and not has_network:
+            raise ValueError(
+                "create_sandbox: setting a filesystem or process policy without network_allow "
+                "replaces the sandbox's baked-in default network policy with nothing, which "
+                "causes the sandbox's container to exit immediately on creation (confirmed "
+                "directly against the live gateway) -- pass network_allow explicitly, even if "
+                "it only re-grants what the default already allowed"
+            )
 
         policy_kwargs: dict[str, object] = {}
         if has_filesystem:
@@ -425,6 +446,7 @@ class OpenShellClient:
         """
         try:
             provider = datamodel_pb2.Provider(
+                metadata=datamodel_pb2.ObjectMeta(name=name),
                 type=provider_type,
                 credentials=dict(credentials or {}),
                 config=dict(config or {}),

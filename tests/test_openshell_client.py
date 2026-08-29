@@ -454,6 +454,11 @@ def test_create_provider_sends_type_and_credentials():
     (call,) = fake._stub.calls
     name, request = call
     assert name == "CreateProvider"
+    # Real gateway check found this silently discarded: without setting
+    # metadata.name, the gateway auto-assigns a random name instead of the
+    # one passed here, so a later attach_sandbox_provider(that name) fails
+    # with "provider not found".
+    assert request.provider.metadata.name == "anthropic"
     assert request.provider.type == "claude-code"
     assert request.workspace == "pod:acme:tenant:hq"
 
@@ -541,12 +546,37 @@ def test_create_sandbox_omits_policy_when_nothing_supplied():
     ) is None
 
 
-def test_build_policy_sets_filesystem_fields():
+def test_build_policy_rejects_filesystem_without_network_allow():
+    # Confirmed directly against the live gateway: filesystem/process
+    # policy without network_allow replaces the sandbox's baked-in default
+    # network policy with nothing, and its container exits immediately --
+    # this must fail fast here, not silently produce a broken sandbox.
+    from flock.openshell.client import OpenShellClient as _C
+
+    with pytest.raises(ValueError, match="network_allow"):
+        _C._build_policy(
+            filesystem_read_only=["/etc"], filesystem_read_write=(), include_workdir=None,
+            run_as_user=None, run_as_group=None, network_allow=None,
+        )
+
+
+def test_build_policy_rejects_process_without_network_allow():
+    from flock.openshell.client import OpenShellClient as _C
+
+    with pytest.raises(ValueError, match="network_allow"):
+        _C._build_policy(
+            filesystem_read_only=(), filesystem_read_write=(), include_workdir=None,
+            run_as_user="sandbox", run_as_group=None, network_allow=None,
+        )
+
+
+def test_build_policy_sets_filesystem_fields_when_network_allow_present():
     from flock.openshell.client import OpenShellClient as _C
 
     policy = _C._build_policy(
         filesystem_read_only=["/etc"], filesystem_read_write=["/workdir"], include_workdir=True,
-        run_as_user=None, run_as_group=None, network_allow=None,
+        run_as_user=None, run_as_group=None,
+        network_allow={"pypi": [{"host": "pypi.org", "port": 443, "protocol": "tcp"}]},
     )
 
     assert policy is not None
@@ -555,19 +585,20 @@ def test_build_policy_sets_filesystem_fields():
     assert policy.filesystem.include_workdir is True
 
 
-def test_build_policy_sets_process_fields():
+def test_build_policy_sets_process_fields_when_network_allow_present():
     from flock.openshell.client import OpenShellClient as _C
 
     policy = _C._build_policy(
         filesystem_read_only=(), filesystem_read_write=(), include_workdir=None,
-        run_as_user="ubuntu", run_as_group="ubuntu", network_allow=None,
+        run_as_user="sandbox", run_as_group="sandbox",
+        network_allow={"pypi": [{"host": "pypi.org", "port": 443, "protocol": "tcp"}]},
     )
 
-    assert policy.process.run_as_user == "ubuntu"
-    assert policy.process.run_as_group == "ubuntu"
+    assert policy.process.run_as_user == "sandbox"
+    assert policy.process.run_as_group == "sandbox"
 
 
-def test_build_policy_sets_network_allow_pass_through():
+def test_build_policy_network_allow_alone_needs_no_other_field():
     from flock.openshell.client import OpenShellClient as _C
 
     policy = _C._build_policy(
