@@ -78,7 +78,7 @@ python3 clients/telegram/bot.py \
 Sending `/menu` (registered with Telegram, so it's in the client's `/` picker
 too) shows a **sticky keyboard** — `ReplyKeyboardMarkup`, pinned at the bottom
 of the chat across messages, rather than an inline keyboard attached to one
-message that scrolls away. Its eight buttons are the top-level office options
+message that scrolls away. Its buttons are the top-level office options
 — built against `CONTRACTS.md`/`API.md`/`control/openers.py`, not `office`'s
 own (narrower) argparse surface, per office-sme:
 
@@ -141,6 +141,14 @@ own (narrower) argparse surface, per office-sme:
   way every other sticky-keyboard tap does. Read-only — see
   `clients/web/README.md`'s Telegram Mini App section for the auth flow
   and what it can and can't do.
+- **🙈 Hide menu** — actually dismisses the sticky keyboard. A persistent
+  `ReplyKeyboardMarkup` (`is_persistent: true`, what every keyboard this bot
+  sends already sets) can't be dismissed from the phone itself — Telegram's
+  own "collapse" gesture is a temporary panel toggle, not a removal, and the
+  keyboard reappears on the next refresh. This button is the one thing that
+  actually does it, by replying with `reply_markup: {"remove_keyboard":
+  true}` (`ReplyKeyboardRemove`) instead of the normal keyboard.
+  `/menu` (unchanged) brings it straight back.
 
 ⚠ **`Command` is deliberately not exposed here**, same as the web console
 (`clients/web/SPEC.md` §6): it pastes bare text into a pane and *executes*

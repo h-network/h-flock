@@ -1465,6 +1465,7 @@ class TelegramBot:
         "🔔 Alerts": "al",
         "➕ Hire": "hi",
         "📢 Broadcast": "bc",
+        "🙈 Hide menu": "hm",
     }
 
     def _sticky_keyboard(self, chat_id: int | str) -> dict:
@@ -1478,6 +1479,7 @@ class TelegramBot:
             ["🔔 Alerts", "➕ Hire"],
             [target_label],
             last_row,
+            ["🙈 Hide menu"],
         ]
         keyboard = [[{"text": label} for label in row] for row in layout]
         if self.mini_app_url:
@@ -1541,6 +1543,8 @@ class TelegramBot:
             return self.handle_broadcast_start(chat_id)
         if code == "vt":
             return self.handle_voice_toggle(chat_id)
+        if code == "hm":
+            return self.handle_hide_menu_command(chat_id)
         return ""
 
     def _tmux_agents(self) -> list[str]:
@@ -1561,6 +1565,19 @@ class TelegramBot:
         text = "h-flock menu — pinned below, always one tap away:"
         if self.telegram:
             self.telegram.send_message(chat_id, text, reply_markup=self._sticky_keyboard(chat_id))
+        return text
+
+    def handle_hide_menu_command(self, chat_id: int | str) -> str:
+        """A persistent `ReplyKeyboardMarkup` (`is_persistent: true`, what
+        `/menu` sends) cannot actually be dismissed from the phone —
+        Telegram's own "collapse" gesture is a temporary panel toggle, and
+        the keyboard comes back on the next refresh. The only real removal
+        is the bot explicitly sending `reply_markup: {"remove_keyboard":
+        true}` (`ReplyKeyboardRemove`) — nothing did that before this.
+        `/menu` (unchanged) brings it straight back."""
+        text = "Menu hidden. Send /menu to bring it back."
+        if self.telegram:
+            self.telegram.send_message(chat_id, text, reply_markup={"remove_keyboard": True})
         return text
 
     def handle_overview_command(self, chat_id: int | str) -> str:
