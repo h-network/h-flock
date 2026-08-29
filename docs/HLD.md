@@ -130,7 +130,8 @@ wrong since. It also predated the v4 wire.
 so `HEADER_WIDTH` stays 256, the body offset does not move, and older readers
 still parse the fields they know. Build 73.
 
-⚠ **Ingress admission is atomic and count-bounded.** `_ADMIT_INGRESS` checks
+⚠ **Ingress admission is atomic and count-bounded.** The shared
+`flock.bus.queues.admit_ingress()` primitive checks
 every target against `INGRESS_MAX` and appends all accepted copies in one Lua
 execution. A full unicast target, or any full member of a broadcast, rejects the
 whole operation: the raw envelope is parked once under the sender's dead queue,

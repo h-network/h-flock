@@ -9,28 +9,9 @@ import redis
 
 from flock.bus import EnvelopeError, emit, is_member, log_record, members, prefix
 from flock.bus.envelope import advance_hop, header_record_fields, parse_for_switch, stamp_source
+from flock.bus.queues import admit_ingress
 from .retention import RetentionTrimmer
 from .windowlog import WindowLogTailer
-
-
-# Check every destination and append every copy in one Redis execution.  This
-# keeps both unicast admission and broadcast's all-or-none promise true while a
-# port is concurrently consuming ingress.
-_ADMIT_INGRESS = """
--- flock ingress admission v1
-local limit = tonumber(ARGV[1])
-for index, key in ipairs(KEYS) do
-    local depth = redis.call('LLEN', key)
-    if depth >= limit then
-        return {0, index, depth}
-    end
-end
-local result = {1}
-for _, key in ipairs(KEYS) do
-    table.insert(result, redis.call('RPUSH', key, ARGV[2]))
-end
-return result
-"""
 
 # ⚠ activity, presence and verification are NOT here. They observe agents; the
 # watchdog owns them. What is left runs on the forwarding thread because it is
@@ -93,19 +74,18 @@ class Switch:
             ),
         )
 
-    def _admit(self, destinations: list[str], raw) -> tuple[bool, int, int]:
-        """Atomically admit all copies, or none; return rejection locus."""
-        keys = [
-            prefix(self.pod, self.tenant, agent, "ingress")
-            for agent in destinations
-        ]
-        result = self.r.eval(
-            _ADMIT_INGRESS, len(keys), *keys, self.ingress_max, raw
+    def _admit(
+        self, destinations: list[str], raw
+    ) -> tuple[bool, str | None, int | None]:
+        """Apply shared atomic admission with this switch's configured bound."""
+        return admit_ingress(
+            self.r,
+            pod=self.pod,
+            tenant=self.tenant,
+            destinations=destinations,
+            raw=raw,
+            limit=self.ingress_max,
         )
-        admitted = bool(result[0])
-        if admitted:
-            return True, -1, -1
-        return False, int(result[1]) - 1, int(result[2])
 
     @staticmethod
     def _kick(agent: str, envelope: dict) -> None:
