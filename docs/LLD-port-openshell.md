@@ -98,7 +98,22 @@ Confirmed for real:
   in a second, separate `exec()` call against the same sandbox, actually
   resumed the first call's session.
 
-Two real corrections this produced, now reflected in the code:
+**Update 2026-08-29, second pass — `OpenShellClient` itself run for real
+(not the raw SDK, and not a mock)**, at telegram's request: injected a real
+`openshell.SandboxClient.from_active_cluster()` into `OpenShellClient` via
+its `sandbox_client=` test seam and ran `create_sandbox` → `get_sandbox` →
+`exec_sandbox` → `delete_sandbox` against the live gateway, plus the
+not-found error path. Found a real bug the first pass didn't exercise:
+`create_sandbox` returned immediately after `CreateSandboxRequest`, while
+the gateway still reports the sandbox as `PROVISIONING` — an immediate
+`exec_sandbox` against that ref fails with
+`FAILED_PRECONDITION: sandbox is not ready` (observed directly). Fixed:
+`create_sandbox` now calls `wait_ready()` internally and returns the READY
+ref, the same thing the SDK's own `Sandbox` context manager already does.
+Confirmed fixed by rerunning the same real sequence successfully
+end-to-end. Unit tests updated (`FakeSandboxClient.wait_ready`) to match.
+
+Three real corrections this produced, now reflected in the code:
 - **`codex exec` needed `--skip-git-repo-check`.** Not discoverable from
   `--help` alone — a fresh sandbox's workdir isn't a trusted git checkout,
   and codex refuses to run at all without it. `headless_command` now
@@ -113,6 +128,9 @@ Two real corrections this produced, now reflected in the code:
   short-name derivation (and the real agent name kept in `labels`, which
   has no such length limit observed) or confirmation from OpenShell docs
   of the exact limit's shape before picking one. Flagged, not fixed.
+- **`create_sandbox` did not wait for READY before returning** (this
+  second pass's finding, described above) — fixed in
+  `src/flock/openshell/client.py`.
 
 ## 3. Client wrapper (`src/flock/openshell/client.py`)
 

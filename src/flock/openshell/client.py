@@ -27,6 +27,7 @@ from openshell._proto import openshell_pb2
 
 OPENSHELL_GATEWAY_ENDPOINT_ENV = "OPENSHELL_GATEWAY_ENDPOINT"
 DEFAULT_TIMEOUT_SECONDS = 30.0
+DEFAULT_READY_TIMEOUT_SECONDS = 120.0
 
 
 class OpenShellUnavailable(RuntimeError):
@@ -87,8 +88,18 @@ class OpenShellClient:
         providers: Sequence[str] = (),
         environment: Mapping[str, str] | None = None,
         labels: Mapping[str, str] | None = None,
+        ready_timeout: float = DEFAULT_READY_TIMEOUT_SECONDS,
     ) -> SandboxRef:
-        """Create a sandbox named `name` in this client's workspace.
+        """Create a sandbox named `name` in this client's workspace, and
+        block until it is ready to accept `exec_sandbox`.
+
+        Creation is asynchronous on the gateway side: a freshly created
+        sandbox reports phase PROVISIONING, and calling `exec` before it
+        reaches READY fails with `FAILED_PRECONDITION: sandbox is not
+        ready` — observed directly against the real gateway, not assumed.
+        So this method waits, the same way the SDK's own `Sandbox` context
+        manager does internally, rather than handing back a ref that isn't
+        actually usable yet.
 
         `providers` names OpenShell's own credential-bundle mechanism
         (`SandboxSpec.providers`) — unrelated to flock's own "provider"
@@ -100,8 +111,11 @@ class OpenShellClient:
                 environment=dict(environment or {}),
                 providers=list(providers),
             )
-            return self._client.create(
+            self._client.create(
                 workspace=self.workspace, spec=spec, name=name, labels=labels
+            )
+            return self._client.wait_ready(
+                name, workspace=self.workspace, timeout_seconds=ready_timeout
             )
         except (grpc.RpcError, SandboxError) as exc:
             raise OpenShellUnavailable(f"create_sandbox({name!r}) failed: {exc}") from exc

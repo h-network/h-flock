@@ -26,6 +26,8 @@ class FakeSandboxClient:
         self.calls = []
         self.create_result = None
         self.create_exc = None
+        self.wait_ready_result = None
+        self.wait_ready_exc = None
         self.get_result = None
         self.get_exc = None
         self.delete_result = None
@@ -39,6 +41,12 @@ class FakeSandboxClient:
         if self.create_exc:
             raise self.create_exc
         return self.create_result
+
+    def wait_ready(self, name, *, workspace, timeout_seconds):
+        self.calls.append(("wait_ready", workspace, name, timeout_seconds))
+        if self.wait_ready_exc:
+            raise self.wait_ready_exc
+        return self.wait_ready_result
 
     def get(self, name, *, workspace):
         self.calls.append(("get", workspace, name))
@@ -73,16 +81,22 @@ def test_requires_nonempty_workspace():
 
 def test_create_sandbox_passes_workspace_name_and_providers():
     fake = FakeSandboxClient()
-    fake.create_result = _ref()
+    fake.create_result = _ref(phase=1)  # PROVISIONING, matches a real create() response
+    fake.wait_ready_result = _ref(phase=2)  # READY, matches a real wait_ready() response
     client = OpenShellClient("pod:acme:tenant:hq", sandbox_client=fake)
 
     result = client.create_sandbox("dave", providers=["anthropic-oauth"], environment={"AGENT_NAME": "dave"})
 
-    assert result is fake.create_result
-    ((kind, workspace, name, labels),) = fake.calls
+    # create_sandbox waits for READY before returning -- a real gateway run
+    # showed exec() fails with FAILED_PRECONDITION against a PROVISIONING
+    # sandbox, so the raw create() response is not what callers should get.
+    assert result is fake.wait_ready_result
+    (create_call, wait_call) = fake.calls
+    kind, workspace, name, labels = create_call
     assert kind == "create"
     assert workspace == "pod:acme:tenant:hq"
     assert name == "dave"
+    assert wait_call[:3] == ("wait_ready", "pod:acme:tenant:hq", "dave")
 
 
 def test_create_sandbox_wraps_sandbox_error():
@@ -101,6 +115,16 @@ def test_create_sandbox_wraps_grpc_error():
         pass
 
     fake.create_exc = _Unavailable()
+    client = OpenShellClient("pod:acme:tenant:hq", sandbox_client=fake)
+
+    with pytest.raises(OpenShellUnavailable):
+        client.create_sandbox("dave")
+
+
+def test_create_sandbox_wraps_not_ready_in_time():
+    fake = FakeSandboxClient()
+    fake.create_result = _ref(phase=1)
+    fake.wait_ready_exc = SandboxError("sandbox dave was not ready within timeout")
     client = OpenShellClient("pod:acme:tenant:hq", sandbox_client=fake)
 
     with pytest.raises(OpenShellUnavailable):
