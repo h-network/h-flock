@@ -547,6 +547,21 @@ def test_get_messages_non_api_agent_returns_404(client):
     assert status_code == 404
 
 
+def test_message_routes_reject_invalid_enrolled_client_name(client):
+    app, redis = client
+    # A corrupt or legacy roster row must not turn key validation into a 500.
+    redis.roster[b"bad:name"] = b"api"
+
+    assert request(app, "GET", "/agents/bad:name/messages", token="secret") == (
+        404,
+        {"detail": "invalid client agent"},
+    )
+    assert request(app, "GET", "/agents/bad:name/messages/stream", token="secret") == (
+        404,
+        {"detail": "invalid client agent"},
+    )
+
+
 def test_hyphenated_agent_names_with_digits(client):
     app, redis = client
     # Set up sme-2 in roster as api client
@@ -1106,7 +1121,6 @@ def test_restdoc_html_includes_attachment_and_qualified_notice(client):
     assert status_code == 200
     assert "Attachment" in body
     assert "The API server does NOT validate <code>kind</code> or <code>payload</code> (with the one named exception of <code>Attachment</code>" in body
-
 
 
 
