@@ -42,11 +42,15 @@ def _track_unreplied(r, *, pod: str, tenant: str, source: str, destination: str,
     already covers that responsiveness question via the watchdog's
     doing/todo/hold family (LLD-watchdog §2a-c). See LLD-watchdog §2d.
     """
-    if kind not in _UNREPLIED_KINDS or destination == "all":
+    if destination == "all":
         return
     source_type = port_type(r, pod=pod, tenant=tenant, agent=source)
     destination_type = port_type(r, pod=pod, tenant=tenant, agent=destination)
-    if source_type == "api" and destination_type == "tmux":
+    if (
+        source_type == "api"
+        and destination_type == "tmux"
+        and kind in _UNREPLIED_KINDS
+    ):
         key = _unreplied_key(pod, tenant, destination)
         count = 1
         since = datetime.now(timezone.utc).isoformat(timespec="milliseconds").replace("+00:00", "Z")

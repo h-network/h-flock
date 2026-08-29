@@ -916,6 +916,17 @@ class UnrepliedTrackingTest(unittest.TestCase):
         send(self.r, pod="acme", tenant="hq", source="alice", destination="telegram", payload={"text": "reply"})
         self.assertNotIn("telegram", self.r.hashes.get(self.key, {}))
 
+    def test_an_agent_reply_of_any_kind_clears_the_count(self):
+        send(
+            self.r, pod="acme", tenant="hq", source="telegram",
+            destination="alice", payload={"text": "hi"},
+        )
+        send(
+            self.r, pod="acme", tenant="hq", source="alice",
+            destination="telegram", kind="Command", payload={"op": "ack"},
+        )
+        self.assertNotIn("telegram", self.r.hashes.get(self.key, {}))
+
     def test_peer_to_peer_tmux_traffic_never_opens_a_count(self):
         send(self.r, pod="acme", tenant="hq", source="alice", destination="bob", payload={"text": "hi"})
         self.assertNotIn(self.key, self.r.hashes)
