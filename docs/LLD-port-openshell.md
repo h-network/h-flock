@@ -1,20 +1,33 @@
 # LLD — the openshell port
 
-> **Status: built — `flock.port`/`flock.control` wiring done, unit-tested;
-> the delivery/lifecycle wiring itself has NOT yet been run against the
-> live gateway (only its SDK layer has — see §2a).**
-> `src/flock/openshell/client.py`, `headless.py`, and `naming.py`;
-> `src/flock/port/openshell.py` (registered lazily via
-> `flock.port.registry`, added by the `tmux` lane in anticipation — no
-> `deliver.py` edit needed); `control/openers.py`'s `start_agent`/
-> `stop_agent` openshell branches. All unit-tested against injected fakes.
-> Depends on [`LLD-bus-and-switch.md`](LLD-bus-and-switch.md) for the
-> address scheme and [`LLD-port-tmux.md`](LLD-port-tmux.md) for the
-> receiving-edge shape this port_type parallels.
+> **Status: built and real-gateway-verified end to end, not just
+> unit-tested.** All four envelope kinds (`Message`, `Command`,
+> `AddTicket`, `Attachment`) and the full `StartAgent`/`StopAgent`
+> lifecycle, including per-profile credential lookup, have each been run
+> against the live gateway for real (§2a–§5). `src/flock/openshell/`
+> (`client.py`, `headless.py`, `naming.py`); `src/flock/port/openshell.py`
+> (registered lazily via `flock.port.registry`, added by the `tmux` lane
+> in anticipation — no `deliver.py` edit needed); `control/openers.py`'s
+> `start_agent`/`stop_agent` openshell branches, including `profile`
+> validation/publishing (ticket `f6b9f6fe`). Depends on
+> [`LLD-bus-and-switch.md`](LLD-bus-and-switch.md) for the address scheme
+> and [`LLD-port-tmux.md`](LLD-port-tmux.md) for the receiving-edge shape
+> this port_type parallels. See also
+> [`openshell-credential-transfer-design.md`](openshell-credential-transfer-design.md)
+> (per-CLI credential shape) and
+> [`openshell-sdk-surface-inventory.md`](openshell-sdk-surface-inventory.md)
+> (full SDK/gRPC surface vs. what's used).
+>
+> **What's genuinely still open, not stale claims left over from
+> drafting** — see §6 for the current list. The sections below keep the
+> chronological build history (useful for *why* a decision was made);
+> §6 is the one section to trust for *current* state without reading the
+> rest.
 
-This document exists to keep design decisions and open questions in one
-place while the gateway is unavailable, so building doesn't restart from
-zero once it is. Ticket: `ff0f4516` in the office board.
+This document exists to keep design decisions in one place as this
+port_type was built. Ticket: `ff0f4516` (closed), continued under
+`655ebeac` (closed) and `f6b9f6fe` (closed) — see git history for the
+office board tickets if the numbers need re-deriving later.
 
 ## 1. What this is
 
@@ -125,10 +138,8 @@ Three real corrections this produced, now reflected in the code:
   observed directly). Flock agent names allow up to 63 characters
   (`SEGMENT_REGEX` in `src/flock/bus/keys.py`), so **`name=agent` is not a
   safe assumption** for `create_sandbox` the way earlier text in this
-  document implied. Not yet resolved — needs either a deterministic
-  short-name derivation (and the real agent name kept in `labels`, which
-  has no such length limit observed) or confirmation from OpenShell docs
-  of the exact limit's shape before picking one. Flagged, not fixed.
+  document implied. Resolved in a later pass — see §3's third update:
+  `naming.short_name()`.
 - **`create_sandbox` did not wait for READY before returning** (this
   second pass's finding, described above) — fixed in
   `src/flock/openshell/client.py`.
@@ -211,8 +222,9 @@ with whatever cert paths it's given.
 ## 3a. Delivery (`src/flock/port/openshell.py`) and lifecycle
 (`control/openers.py`)
 
-Built, unit-tested against injected fakes, not yet run against the live
-gateway as a whole (only the client layer underneath it has — §2a/§3).
+Built, unit-tested, and confirmed against the live gateway as a whole —
+a real `StartAgent` → real `Message`/`Command`/`Attachment` delivery →
+real `StopAgent` cycle, not just the client layer underneath it.
 
 - **`Message`**: wraps the text as `[message from <source>] <text>`
   (mirrors tmux's own framing) and runs it as one headless invocation
@@ -230,22 +242,25 @@ gateway as a whole (only the client layer underneath it has — §2a/§3).
 - **`AddTicket`**: reuses `flock.port.openers.add_ticket_opener` completely
   unchanged — it never touches the sandbox client at all, matching tmux's
   own "no window check" behavior for this kind.
-- **`Attachment`**: dead-lettered as not yet implemented (see §5) — no
-  base64-exec-and-mv workaround has been built or tested yet.
+- **`Attachment`**: implemented via base64-exec-and-mv (see §5) — built
+  and confirmed genuinely real end to end.
 - **Sandbox id resolution**: no Redis state added (would have required
   touching `AGENT_STATE_RESOURCES` in `src/flock/bus/resources.py`, which
   the hard constraint forbids). Instead, every delivery calls
   `get_sandbox(sbx_name)` to learn the current `.id` before `exec_sandbox`
   — one extra RPC per delivery, in exchange for touching zero files under
   `src/flock/bus/`.
-- **`start_agent`**: publishes `launch`/roster state exactly like the
-  `api` branch's shape (its own explicit branch, not a fallthrough into
-  the generic tmux code — that code manages `profile`/`provider`/
-  `window.cause`/`replace_window`, none of which apply here), then
-  synchronously calls `create_sandbox`. Unlike tmux, which defers window
-  creation to `tmuxhost`'s async reconciler, this is synchronous because
-  sandbox creation is one gRPC call with no equivalent staged startup — no
-  new reconciler process needed or built.
+- **`start_agent`**: its own explicit branch, not a fallthrough into the
+  generic tmux code (that code also manages `provider`/`window.cause`/
+  `replace_window`, none of which apply here). Publishes `launch`/roster
+  state, plus `profile` (added later, ticket `f6b9f6fe`: validated the
+  same way the tmux branch validates it — `available_profiles` check,
+  segment-string requirement — and published to the same shared
+  `profile` Redis resource, no new resource needed), then synchronously
+  calls `create_sandbox`. Unlike tmux, which defers window creation to
+  `tmuxhost`'s async reconciler, this is synchronous because sandbox
+  creation is one gRPC call with no equivalent staged startup — no new
+  reconciler process needed or built.
 - **`stop_agent`**: calls `delete_sandbox` synchronously, following the
   file's existing `_write_desired`/`_actual_unknown` accounting — not the
   prior attempt's bare `except Exception: pass`, which silently reported a
@@ -345,3 +360,61 @@ module never calls `mark_delivery_pending` at all.)
 All four envelope kinds (Message, Command, AddTicket, Attachment) and the
 full StartAgent/StopAgent lifecycle are now built and have each been run
 against the live gateway for real, not just unit-tested.
+
+## 6. Current status, in one place (2026-08-29 docs sweep)
+
+Everything above this line is the chronological build record — useful for
+*why*, kept as-is rather than rewritten into a single narrative. This
+section is what to trust for *current* state without reading the rest.
+
+**Built and real-gateway-verified end to end:**
+- Full lifecycle: `StartAgent` → real sandbox create, `StopAgent` → real
+  sandbox delete (§2a, §3a).
+- All four envelope kinds: `Message`, `Command` (§3a), `AddTicket` (reuses
+  the shared tmux opener unchanged), `Attachment` (§5).
+- Per-profile credential lookup (`f6b9f6fe`): `start_agent` validates and
+  publishes `payload.profile`; delivery reads it and passes
+  `CLAUDE_OAUTH_TOKEN_<PROFILE>` as `exec_sandbox`'s per-call `env=` for
+  claude, or writes/wipes `CODEX_AUTH_JSON_<PROFILE>`/
+  `AGY_AUTH_JSON_<PROFILE>`'s JSON content as a file immediately around
+  the exec for codex/agy — see
+  [`openshell-credential-transfer-design.md`](openshell-credential-transfer-design.md).
+  Claude's env-var path and codex's file path were both confirmed with a
+  **real, working credential** (one-time, scoped authorizations); agy's
+  file path could not be exercised the same way because `agy` is not
+  installed in the default sandbox image at all.
+- Real, previously-hidden bugs found this way and fixed: `create_sandbox`
+  not waiting for READY before returning (§2a); the real (non-injected)
+  client construction path having no mTLS support at all (§3); OpenShell
+  resource names (sandboxes *and* workspaces) capping at 19 characters,
+  shorter than flock's 63-character agent names (§3); workspaces needing
+  explicit creation before first use (§3); `create_provider`'s `name`
+  argument being silently discarded server-side (found while expanding
+  the SDK surface, ticket `655ebeac` — see the inventory doc); the
+  `/workdir` vs. real `/sandbox` base-path assumption for Attachment
+  writes (§5); setting any `SandboxSpec.policy` field replacing the
+  sandbox's entire baked-in default policy including its implicit network
+  access (found expanding the SDK surface — see the inventory doc).
+- Zero changes to `src/flock/switch/service.py` or anything under
+  `src/flock/bus/`, confirmed directly, throughout every pass above.
+
+**Genuinely still open** (not stale — these are real, unresolved as of
+this sweep):
+- Whether this integration needs its own mTLS client identity, separate
+  from the lab's local `openshell` CLI registration used for every
+  verification pass so far (§3, §4).
+- `resume=True` unconditionally is confirmed safe for codex (observed
+  directly) but only *inferred* safe for claude from documented CLI
+  ergonomics — not observed, since every real-credential claude test so
+  far used a fresh sandbox with `resume=True` already baked into the argv
+  by `headless_command`, never isolating the "nothing to continue" case
+  specifically (§2, §4).
+- `agy` is not in the default sandbox image at all — confirmed directly,
+  repeatedly. Its headless argv (`headless.py`) remains an unverified
+  placeholder, and its credential-file path has never been exercised for
+  real, for the same reason.
+- Whether `SandboxSpec.policy`'s fuller L7 network-policy surface (MCP/
+  GraphQL-aware rules, credential binding, middleware) is worth building
+  beyond the plain filesystem/process/host+port slice already shipped —
+  see the SDK inventory doc's own "worth building next" opinion.
+- Credential rotation for a long-lived sandbox — not addressed anywhere.
