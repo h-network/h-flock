@@ -15,7 +15,7 @@ from __future__ import annotations
 
 import os
 import pathlib
-from typing import Mapping, Sequence
+from typing import Iterator, Mapping, Sequence
 
 import grpc
 from openshell import ExecResult, SandboxClient, SandboxError, SandboxRef, TlsConfig, WorkspaceClient
@@ -23,8 +23,12 @@ from openshell import ExecResult, SandboxClient, SandboxError, SandboxRef, TlsCo
 # `_proto` is underscore-private in the SDK's own naming, but it is the only
 # way to build a `SandboxSpec` carrying providers/environment — the SDK's
 # public surface has no non-proto spec builder, and `sandbox.py` reaches
-# into the same module internally (`_default_spec`).
-from openshell._proto import openshell_pb2
+# into the same module internally (`_default_spec`). Also used below for
+# every RPC the SDK's own high-level wrappers don't cover at all (service
+# exposure, provider CRUD, watch, logs) — those have no wrapper to call,
+# only the raw stub (`self._client._stub`), which the SDK's own client
+# object already carries.
+from openshell._proto import datamodel_pb2, openshell_pb2, sandbox_pb2
 
 OPENSHELL_GATEWAY_ENDPOINT_ENV = "OPENSHELL_GATEWAY_ENDPOINT"
 # mTLS material, all optional -- the real test gateway requires client-cert
@@ -159,6 +163,12 @@ class OpenShellClient:
         environment: Mapping[str, str] | None = None,
         labels: Mapping[str, str] | None = None,
         ready_timeout: float = DEFAULT_READY_TIMEOUT_SECONDS,
+        filesystem_read_only: Sequence[str] = (),
+        filesystem_read_write: Sequence[str] = (),
+        include_workdir: bool | None = None,
+        run_as_user: str | None = None,
+        run_as_group: str | None = None,
+        network_allow: Mapping[str, Sequence[Mapping[str, object]]] | None = None,
     ) -> SandboxRef:
         """Create a sandbox named `name` in this client's workspace, and
         block until it is ready to accept `exec_sandbox`.
@@ -175,13 +185,39 @@ class OpenShellClient:
         (`SandboxSpec.providers`) — unrelated to flock's own "provider"
         concept (a model backend selected for tmux agents). See
         docs/NAMING-openshell.md for the collision.
+
+        The filesystem/process/network_allow parameters are a deliberately
+        partial slice of the real `SandboxPolicy` — see
+        docs/LLD-port-openshell.md for what's covered and what isn't.
+        Omitting all of them (the default) omits `SandboxSpec.policy`
+        entirely, unchanged from before this was added: the sandbox then
+        discovers its policy from the image's own baked-in default, exactly
+        as it always has. `network_allow` maps a rule name to a list of
+        endpoint dicts passed through close to verbatim as
+        `NetworkEndpoint` fields (`host`, `port`, `protocol`, ...) — this
+        method does not attempt to default or validate them beyond what the
+        proto itself requires, since the full `NetworkEndpoint` shape (L7
+        rules, GraphQL/MCP-specific options, credential binding) is real
+        but not verified here; only the plain `host`/`port`/`protocol`
+        fields have actually been exercised against the live gateway.
         """
         self.ensure_workspace()
         try:
-            spec = openshell_pb2.SandboxSpec(
-                environment=dict(environment or {}),
-                providers=list(providers),
+            spec_kwargs: dict[str, object] = {
+                "environment": dict(environment or {}),
+                "providers": list(providers),
+            }
+            policy = self._build_policy(
+                filesystem_read_only=filesystem_read_only,
+                filesystem_read_write=filesystem_read_write,
+                include_workdir=include_workdir,
+                run_as_user=run_as_user,
+                run_as_group=run_as_group,
+                network_allow=network_allow,
             )
+            if policy is not None:
+                spec_kwargs["policy"] = policy
+            spec = openshell_pb2.SandboxSpec(**spec_kwargs)
             self._client.create(
                 workspace=self.workspace, spec=spec, name=name, labels=labels
             )
@@ -191,11 +227,89 @@ class OpenShellClient:
         except (grpc.RpcError, SandboxError) as exc:
             raise OpenShellUnavailable(f"create_sandbox({name!r}) failed: {exc}") from exc
 
+    @staticmethod
+    def _build_policy(
+        *,
+        filesystem_read_only: Sequence[str],
+        filesystem_read_write: Sequence[str],
+        include_workdir: bool | None,
+        run_as_user: str | None,
+        run_as_group: str | None,
+        network_allow: Mapping[str, Sequence[Mapping[str, object]]] | None,
+    ) -> sandbox_pb2.SandboxPolicy | None:
+        """Build a `SandboxPolicy` only from whatever the caller actually
+        supplied — never set `policy` at all if nothing was, so a sandbox
+        created without any of these keeps discovering the image's own
+        baked-in default exactly as before.
+        """
+        has_filesystem = bool(filesystem_read_only) or bool(filesystem_read_write) or include_workdir is not None
+        has_process = run_as_user is not None or run_as_group is not None
+        has_network = bool(network_allow)
+        if not (has_filesystem or has_process or has_network):
+            return None
+
+        policy_kwargs: dict[str, object] = {}
+        if has_filesystem:
+            policy_kwargs["filesystem"] = sandbox_pb2.FilesystemPolicy(
+                include_workdir=include_workdir if include_workdir is not None else True,
+                read_only=list(filesystem_read_only),
+                read_write=list(filesystem_read_write),
+            )
+        if has_process:
+            policy_kwargs["process"] = sandbox_pb2.ProcessPolicy(
+                run_as_user=run_as_user or "", run_as_group=run_as_group or ""
+            )
+        if has_network:
+            policy_kwargs["network_policies"] = {
+                rule_name: sandbox_pb2.NetworkPolicyRule(
+                    name=rule_name,
+                    endpoints=[sandbox_pb2.NetworkEndpoint(**endpoint) for endpoint in endpoints],
+                )
+                for rule_name, endpoints in network_allow.items()
+            }
+        return sandbox_pb2.SandboxPolicy(**policy_kwargs)
+
     def get_sandbox(self, name: str) -> SandboxRef:
         try:
             return self._client.get(name, workspace=self.workspace)
         except (grpc.RpcError, SandboxError) as exc:
             raise OpenShellUnavailable(f"get_sandbox({name!r}) failed: {exc}") from exc
+
+    def list_sandboxes(
+        self,
+        *,
+        limit: int = 100,
+        offset: int = 0,
+        label_selector: str | None = None,
+    ) -> list[SandboxRef]:
+        """List sandboxes in this client's workspace."""
+        try:
+            return self._client.list(
+                workspace=self.workspace, limit=limit, offset=offset, label_selector=label_selector
+            )
+        except (grpc.RpcError, SandboxError) as exc:
+            raise OpenShellUnavailable(f"list_sandboxes() failed: {exc}") from exc
+
+    def stop_sandbox(self, name: str) -> SandboxRef:
+        """Stop a sandbox without deleting it — its filesystem survives a
+        later `start_sandbox`, unlike `delete_sandbox`. Real lifecycle
+        counterpart for `PauseAgent` (`flock.control`), which currently has
+        no openshell-side implementation.
+        """
+        try:
+            return self._client.stop(name, workspace=self.workspace)
+        except (grpc.RpcError, SandboxError) as exc:
+            raise OpenShellUnavailable(f"stop_sandbox({name!r}) failed: {exc}") from exc
+
+    def start_sandbox(self, name: str, *, ready_timeout: float = DEFAULT_READY_TIMEOUT_SECONDS) -> SandboxRef:
+        """Resume a previously stopped sandbox. Real counterpart for
+        `ResumeAgent`.
+        """
+        try:
+            self._client.start(name, workspace=self.workspace)
+            return self._client.wait_ready(name, workspace=self.workspace, timeout_seconds=ready_timeout)
+        except (grpc.RpcError, SandboxError) as exc:
+            raise OpenShellUnavailable(f"start_sandbox({name!r}) failed: {exc}") from exc
 
     def delete_sandbox(self, name: str) -> bool:
         try:
@@ -230,3 +344,199 @@ class OpenShellClient:
             )
         except (grpc.RpcError, SandboxError) as exc:
             raise OpenShellUnavailable(f"exec_sandbox({sandbox_id!r}) failed: {exc}") from exc
+
+    # -- Service exposure -------------------------------------------------
+    # No high-level SDK wrapper exists for any of these; the SDK only ships
+    # convenience methods for the sandbox/workspace lifecycle and exec. All
+    # four go through the raw stub the SDK's own SandboxClient already
+    # holds (`self._client._stub`) building the proto request directly, the
+    # same way `create_sandbox` already has to for `SandboxSpec`.
+
+    def expose_service(
+        self, sandbox_name: str, service_name: str, target_port: int, *, domain: bool = False
+    ) -> str:
+        """Expose a port inside a sandbox as a reachable service; returns its URL."""
+        try:
+            response = self._client._stub.ExposeService(
+                openshell_pb2.ExposeServiceRequest(
+                    sandbox=sandbox_name, service=service_name, target_port=target_port,
+                    domain=domain, workspace=self.workspace,
+                ),
+                timeout=self.timeout,
+            )
+            return response.url
+        except (grpc.RpcError, SandboxError) as exc:
+            raise OpenShellUnavailable(f"expose_service({sandbox_name!r}, {service_name!r}) failed: {exc}") from exc
+
+    def get_service(self, sandbox_name: str, service_name: str) -> str:
+        try:
+            response = self._client._stub.GetService(
+                openshell_pb2.GetServiceRequest(sandbox=sandbox_name, service=service_name, workspace=self.workspace),
+                timeout=self.timeout,
+            )
+            return response.url
+        except (grpc.RpcError, SandboxError) as exc:
+            raise OpenShellUnavailable(f"get_service({sandbox_name!r}, {service_name!r}) failed: {exc}") from exc
+
+    def list_services(self, sandbox_name: str, *, limit: int = 100, offset: int = 0) -> list[str]:
+        try:
+            response = self._client._stub.ListServices(
+                openshell_pb2.ListServicesRequest(
+                    sandbox=sandbox_name, limit=limit, offset=offset, workspace=self.workspace
+                ),
+                timeout=self.timeout,
+            )
+            return [item.url for item in response.services]
+        except (grpc.RpcError, SandboxError) as exc:
+            raise OpenShellUnavailable(f"list_services({sandbox_name!r}) failed: {exc}") from exc
+
+    def delete_service(self, sandbox_name: str, service_name: str) -> bool:
+        try:
+            response = self._client._stub.DeleteService(
+                openshell_pb2.DeleteServiceRequest(
+                    sandbox=sandbox_name, service=service_name, workspace=self.workspace
+                ),
+                timeout=self.timeout,
+            )
+            return response.deleted
+        except (grpc.RpcError, SandboxError) as exc:
+            raise OpenShellUnavailable(f"delete_service({sandbox_name!r}, {service_name!r}) failed: {exc}") from exc
+
+    # -- Provider CRUD ------------------------------------------------------
+    # This is OpenShell's own "provider" (named credential bundle) concept
+    # (see docs/NAMING-openshell.md) — always call it "openshell provider"
+    # in code/docs to avoid colliding with flock's unrelated model-backend
+    # "provider". `create_sandbox`'s `providers` parameter only *references*
+    # a provider that must already exist; these methods are what actually
+    # define/manage one.
+
+    def create_provider(
+        self,
+        name: str,
+        provider_type: str,
+        *,
+        credentials: Mapping[str, str] | None = None,
+        config: Mapping[str, str] | None = None,
+    ) -> None:
+        """Define a named openshell provider (e.g. type "claude-code").
+
+        `credentials` values are real secret material — see this ticket's
+        standing rule on not moving credentials without asking first.
+        """
+        try:
+            provider = datamodel_pb2.Provider(
+                type=provider_type,
+                credentials=dict(credentials or {}),
+                config=dict(config or {}),
+            )
+            self._client._stub.CreateProvider(
+                openshell_pb2.CreateProviderRequest(provider=provider, workspace=self.workspace),
+                timeout=self.timeout,
+            )
+        except (grpc.RpcError, SandboxError) as exc:
+            raise OpenShellUnavailable(f"create_provider({name!r}) failed: {exc}") from exc
+
+    def list_providers(self) -> list:
+        try:
+            response = self._client._stub.ListProviders(
+                openshell_pb2.ListProvidersRequest(workspace=self.workspace),
+                timeout=self.timeout,
+            )
+            return list(response.providers)
+        except (grpc.RpcError, SandboxError) as exc:
+            raise OpenShellUnavailable(f"list_providers() failed: {exc}") from exc
+
+    def delete_provider(self, name: str) -> bool:
+        try:
+            response = self._client._stub.DeleteProvider(
+                openshell_pb2.DeleteProviderRequest(name=name, workspace=self.workspace),
+                timeout=self.timeout,
+            )
+            return response.deleted
+        except (grpc.RpcError, SandboxError) as exc:
+            raise OpenShellUnavailable(f"delete_provider({name!r}) failed: {exc}") from exc
+
+    def attach_sandbox_provider(self, sandbox_name: str, provider_name: str) -> bool:
+        """Attach a provider to an already-running sandbox, without recreating it."""
+        try:
+            response = self._client._stub.AttachSandboxProvider(
+                openshell_pb2.AttachSandboxProviderRequest(
+                    sandbox_name=sandbox_name, provider_name=provider_name, workspace=self.workspace
+                ),
+                timeout=self.timeout,
+            )
+            return response.attached
+        except (grpc.RpcError, SandboxError) as exc:
+            raise OpenShellUnavailable(
+                f"attach_sandbox_provider({sandbox_name!r}, {provider_name!r}) failed: {exc}"
+            ) from exc
+
+    def detach_sandbox_provider(self, sandbox_name: str, provider_name: str) -> bool:
+        try:
+            response = self._client._stub.DetachSandboxProvider(
+                openshell_pb2.DetachSandboxProviderRequest(
+                    sandbox_name=sandbox_name, provider_name=provider_name, workspace=self.workspace
+                ),
+                timeout=self.timeout,
+            )
+            return response.detached
+        except (grpc.RpcError, SandboxError) as exc:
+            raise OpenShellUnavailable(
+                f"detach_sandbox_provider({sandbox_name!r}, {provider_name!r}) failed: {exc}"
+            ) from exc
+
+    def list_sandbox_providers(self, sandbox_name: str) -> list:
+        try:
+            response = self._client._stub.ListSandboxProviders(
+                openshell_pb2.ListSandboxProvidersRequest(sandbox_name=sandbox_name, workspace=self.workspace),
+                timeout=self.timeout,
+            )
+            return list(response.providers)
+        except (grpc.RpcError, SandboxError) as exc:
+            raise OpenShellUnavailable(f"list_sandbox_providers({sandbox_name!r}) failed: {exc}") from exc
+
+    # -- Observability ------------------------------------------------------
+
+    def get_sandbox_logs(
+        self, sandbox_id: str, *, lines: int = 100, since_ms: int = 0, min_level: str = ""
+    ) -> list:
+        try:
+            response = self._client._stub.GetSandboxLogs(
+                openshell_pb2.GetSandboxLogsRequest(
+                    sandbox_id=sandbox_id, lines=lines, since_ms=since_ms, min_level=min_level,
+                    workspace=self.workspace,
+                ),
+                timeout=self.timeout,
+            )
+            return list(response.logs)
+        except (grpc.RpcError, SandboxError) as exc:
+            raise OpenShellUnavailable(f"get_sandbox_logs({sandbox_id!r}) failed: {exc}") from exc
+
+    def watch_sandbox(
+        self,
+        sandbox_id: str,
+        *,
+        follow_status: bool = True,
+        follow_logs: bool = False,
+        follow_events: bool = False,
+        stop_on_terminal: bool = True,
+    ) -> Iterator:
+        """Stream real-time status/log/event updates for a sandbox.
+
+        A generator: iterate it to receive `SandboxStreamEvent`s as they
+        arrive, instead of polling `get_sandbox`/`get_sandbox_logs`. Unlike
+        every other method here, this does not eagerly perform the RPC —
+        it's lazy, only starting the stream once iteration begins, since a
+        caller may want to hold the object before committing to consume it.
+        """
+        try:
+            stream = self._client._stub.WatchSandbox(
+                openshell_pb2.WatchSandboxRequest(
+                    id=sandbox_id, follow_status=follow_status, follow_logs=follow_logs,
+                    follow_events=follow_events, stop_on_terminal=stop_on_terminal,
+                ),
+                timeout=self.timeout,
+            )
+            yield from stream
+        except (grpc.RpcError, SandboxError) as exc:
+            raise OpenShellUnavailable(f"watch_sandbox({sandbox_id!r}) failed: {exc}") from exc
