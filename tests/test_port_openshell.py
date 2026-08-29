@@ -29,6 +29,11 @@ class FakeSandboxClient:
         # -- consumed in order; falls back to exec_result/exec_exc once
         # exhausted (or if never set).
         self.exec_results = []
+        # Parallel to `calls`, but only for "exec" entries -- the env=
+        # dict passed to each exec() call, in order. Separate from `calls`
+        # itself so existing tests that unpack `("exec", id, command, stdin)`
+        # tuples don't need to change shape.
+        self.exec_env_by_call = []
 
     def get(self, name, *, workspace):
         self.calls.append(("get", workspace, name))
@@ -38,6 +43,7 @@ class FakeSandboxClient:
 
     def exec(self, sandbox_id, command, *, env=None, stdin=None, timeout_seconds=None, stream_output=False, workdir=None):
         self.calls.append(("exec", sandbox_id, list(command), stdin))
+        self.exec_env_by_call.append(env)
         if self.exec_results:
             outcome = self.exec_results.pop(0)
             if isinstance(outcome, Exception):
@@ -287,3 +293,133 @@ def test_default_cli_is_claude_when_launch_unset():
 
 def test_workspace_name_derived_from_pod_and_tenant():
     assert workspace_name("acme", "hq") == "acme-hq"
+
+
+# -- Per-CLI credential transfer (docs/openshell-credential-transfer-design.md) --
+
+import os
+
+import pytest
+
+
+@pytest.fixture(autouse=True)
+def _clean_credential_env(monkeypatch):
+    # None of these tests should ever depend on -- or leak into -- whatever
+    # real credential env vars this office's own shell happens to carry.
+    for name in list(os.environ):
+        if name.startswith(("CLAUDE_OAUTH_TOKEN_", "CODEX_AUTH_JSON_", "AGY_AUTH_JSON_")):
+            monkeypatch.delenv(name, raising=False)
+
+
+def test_claude_passes_token_as_env_not_file(monkeypatch):
+    monkeypatch.setenv("CLAUDE_OAUTH_TOKEN_DEFAULT", "fake-token-for-this-test-only")
+    r = FakeRespRedis()
+    _setup(r, "acme", "hq", "backend", "alice", "Message", {"text": "hi"}, cli="claude")
+    fake_client, fake_sdk = _client(exec_result=ExecResult(exit_code=0, stdout="ok", stderr=""))
+
+    deliver_openshell(r, pod="acme", tenant="hq", agent="backend", client=fake_client)
+
+    exec_calls = [c for c in fake_sdk.calls if c[0] == "exec"]
+    assert len(exec_calls) == 1  # no separate write/wipe calls for claude
+    assert fake_sdk.exec_env_by_call[0] == {"CLAUDE_CODE_OAUTH_TOKEN": "fake-token-for-this-test-only"}
+
+
+def test_claude_passes_no_env_when_token_unset():
+    r = FakeRespRedis()
+    _setup(r, "acme", "hq", "backend", "alice", "Message", {"text": "hi"}, cli="claude")
+    fake_client, fake_sdk = _client(exec_result=ExecResult(exit_code=0, stdout="ok", stderr=""))
+
+    deliver_openshell(r, pod="acme", tenant="hq", agent="backend", client=fake_client)
+
+    assert fake_sdk.exec_env_by_call[0] is None
+
+
+def test_codex_writes_credential_file_then_execs_then_wipes(monkeypatch):
+    monkeypatch.setenv("CODEX_AUTH_JSON_DEFAULT", '{"tokens": {"access_token": "fake-for-this-test"}}')
+    r = FakeRespRedis()
+    _setup(r, "acme", "hq", "backend", "alice", "Message", {"text": "hi"}, cli="codex")
+    fake_client, fake_sdk = _client()
+    fake_sdk.exec_results = [
+        ExecResult(exit_code=0, stdout="", stderr=""),  # write
+        ExecResult(exit_code=0, stdout="ok", stderr=""),  # the actual exec
+        ExecResult(exit_code=0, stdout="", stderr=""),  # wipe
+    ]
+
+    deliver_openshell(r, pod="acme", tenant="hq", agent="backend", client=fake_client)
+
+    exec_calls = [c for c in fake_sdk.calls if c[0] == "exec"]
+    assert len(exec_calls) == 3
+    write_command, write_stdin = exec_calls[0][2], exec_calls[0][3]
+    assert write_command[:2] == ["/bin/sh", "-c"]
+    assert "auth.json" in " ".join(write_command)
+    import base64 as _b64
+    assert _b64.b64decode(write_stdin) == b'{"tokens": {"access_token": "fake-for-this-test"}}'
+
+    main_command = exec_calls[1][2]
+    assert main_command[0] == "codex"
+
+    wipe_command = exec_calls[2][2]
+    assert "shred" in " ".join(wipe_command)
+    assert "auth.json" in " ".join(wipe_command)
+
+
+def test_codex_wipes_credential_file_even_when_exec_fails(monkeypatch):
+    monkeypatch.setenv("CODEX_AUTH_JSON_DEFAULT", '{"tokens": {}}')
+    r = FakeRespRedis()
+    _setup(r, "acme", "hq", "backend", "alice", "Message", {"text": "hi"}, cli="codex")
+    fake_client, fake_sdk = _client()
+    fake_sdk.exec_results = [
+        ExecResult(exit_code=0, stdout="", stderr=""),  # write succeeds
+        ExecResult(exit_code=1, stdout="", stderr="boom"),  # the actual exec fails
+        ExecResult(exit_code=0, stdout="", stderr=""),  # wipe must still run
+    ]
+
+    deliver_openshell(r, pod="acme", tenant="hq", agent="backend", client=fake_client)
+
+    exec_calls = [c for c in fake_sdk.calls if c[0] == "exec"]
+    assert len(exec_calls) == 3  # write, exec (failed), wipe -- wipe still ran
+    assert "shred" in " ".join(exec_calls[2][2])
+
+
+def test_codex_write_failure_dead_letters_without_exec_or_wipe(monkeypatch):
+    monkeypatch.setenv("CODEX_AUTH_JSON_DEFAULT", '{"tokens": {}}')
+    r = FakeRespRedis()
+    _setup(r, "acme", "hq", "backend", "alice", "Message", {"text": "hi"}, cli="codex")
+    fake_client, fake_sdk = _client()
+    fake_sdk.exec_results = [ExecResult(exit_code=1, stdout="", stderr="disk full")]
+
+    deliver_openshell(r, pod="acme", tenant="hq", agent="backend", client=fake_client)
+
+    exec_calls = [c for c in fake_sdk.calls if c[0] == "exec"]
+    assert len(exec_calls) == 1  # only the failed write -- no exec, no wipe attempt
+    dead_key = prefix("acme", "hq", "backend", "dead")
+    assert len(r.lists.get(dead_key, [])) == 1
+
+
+def test_codex_skips_file_transfer_entirely_when_no_credential_configured():
+    r = FakeRespRedis()
+    _setup(r, "acme", "hq", "backend", "alice", "Message", {"text": "hi"}, cli="codex")
+    fake_client, fake_sdk = _client(exec_result=ExecResult(exit_code=0, stdout="ok", stderr=""))
+
+    deliver_openshell(r, pod="acme", tenant="hq", agent="backend", client=fake_client)
+
+    exec_calls = [c for c in fake_sdk.calls if c[0] == "exec"]
+    assert len(exec_calls) == 1  # no write, no wipe -- nothing configured to transfer
+
+
+def test_agy_uses_its_own_file_path_and_env_var(monkeypatch):
+    monkeypatch.setenv("AGY_AUTH_JSON_DEFAULT", '{"token": {"access_token": "fake-for-this-test"}}')
+    r = FakeRespRedis()
+    _setup(r, "acme", "hq", "backend", "alice", "Message", {"text": "hi"}, cli="agy")
+    fake_client, fake_sdk = _client()
+    fake_sdk.exec_results = [
+        ExecResult(exit_code=0, stdout="", stderr=""),
+        ExecResult(exit_code=0, stdout="ok", stderr=""),
+        ExecResult(exit_code=0, stdout="", stderr=""),
+    ]
+
+    deliver_openshell(r, pod="acme", tenant="hq", agent="backend", client=fake_client)
+
+    exec_calls = [c for c in fake_sdk.calls if c[0] == "exec"]
+    write_command = exec_calls[0][2]
+    assert "antigravity-oauth-token" in " ".join(write_command)

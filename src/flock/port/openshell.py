@@ -43,7 +43,54 @@ def _agent_cli(r, pod: str, tenant: str, agent: str) -> str:
     return cli or "claude"
 
 
-def _exec_headless(client: OpenShellClient, sbx_name: str, cli: str, stdin_text: str):
+# Real file paths a credentialed CLI reads from, confirmed directly against
+# real credential files already present in this office's environment --
+# their JSON *structure* was inspected (key names only, via a script that
+# never printed a value), never their contents. See
+# docs/openshell-credential-transfer-design.md §3b.
+_CODEX_AUTH_PATH = "/sandbox/.codex/auth.json"
+_AGY_AUTH_PATH = "/sandbox/.gemini/antigravity-cli/antigravity-oauth-token"
+_CREDENTIAL_FILE_PATHS = {"codex": _CODEX_AUTH_PATH, "agy": _AGY_AUTH_PATH}
+# Env var flock reads the whole credential file's content from, one profile
+# at a time -- mirrors CLAUDE_OAUTH_TOKEN_<PROFILE>'s existing naming shape
+# (flock.tmux.ops.window_env), just holding a full JSON blob instead of one
+# bare token, since that's the real shape both files take.
+_CREDENTIAL_ENV_VARS = {"codex": "CODEX_AUTH_JSON", "agy": "AGY_AUTH_JSON"}
+
+
+def _profile_env_suffix(profile: str | None) -> str:
+    return (profile or "default").upper().replace("-", "_")
+
+
+def _write_credential_file(client: OpenShellClient, sandbox_id: str, path: str, content: bytes) -> None:
+    dir_path = path.rsplit("/", 1)[0]
+    b64_content = base64.b64encode(content).decode("ascii")
+    script = 'mkdir -p "$1" && base64 -d > "$2"'
+    result = client.exec_sandbox(
+        sandbox_id, ["/bin/sh", "-c", script, "sh", dir_path, path], stdin=b64_content.encode("ascii")
+    )
+    if result.exit_code != 0:
+        raise OpenShellUnavailable(f"failed to write credential file {path!r}: {result.stderr or result.stdout}")
+
+
+def _wipe_credential_file(client: OpenShellClient, sandbox_id: str, path: str) -> None:
+    """Best-effort: a failed wipe is not raised, matching
+    `container/seed-home.sh`'s own `shred` (fallback `rm`) shape — a
+    delivery that already succeeded or failed on its own terms should not
+    also fail because cleanup couldn't run (e.g. the sandbox died mid-exec).
+    Still attempted unconditionally, from a `finally`, precisely because it
+    must run even when the actual delivery raised.
+    """
+    script = 'shred -u "$1" 2>/dev/null || rm -f "$1" 2>/dev/null || true'
+    try:
+        client.exec_sandbox(sandbox_id, ["/bin/sh", "-c", script, "sh", path])
+    except OpenShellUnavailable:
+        pass
+
+
+def _exec_headless(
+    client: OpenShellClient, sbx_name: str, cli: str, stdin_text: str, profile: str | None = None
+):
     """Resolve the sandbox's current id and run one headless invocation.
 
     Always resumes (see docs/LLD-port-openshell.md §2a): confirmed safe for
@@ -54,10 +101,39 @@ def _exec_headless(client: OpenShellClient, sbx_name: str, cli: str, stdin_text:
     test it, per this ticket's standing rule — so this is INFERRED correct
     for claude from documented CLI ergonomics, not observed. Confirm with a
     real credentialed run before trusting this claim.
+
+    Credential shape is per-CLI (docs/openshell-credential-transfer-design.md):
+    claude authenticates via `CLAUDE_CODE_OAUTH_TOKEN` passed only as this
+    one `exec_sandbox` call's `env=` — proven for real against the live
+    gateway, nothing ever written to disk. codex and agy are file-based
+    (confirmed: no per-invocation env-var auth path exists for either), so
+    for them the credential file is written immediately before this exec
+    and wiped immediately after, in a `finally` — never persisted in
+    `SandboxSpec.environment` at creation, never left behind if the exec
+    itself fails.
     """
     ref = client.get_sandbox(sbx_name)
     command = headless_command(cli, resume=True)
-    return client.exec_sandbox(ref.id, command, stdin=stdin_text.encode("utf-8"))
+
+    if cli == "claude":
+        token = os.environ.get(f"CLAUDE_OAUTH_TOKEN_{_profile_env_suffix(profile)}")
+        env = {"CLAUDE_CODE_OAUTH_TOKEN": token} if token else None
+        return client.exec_sandbox(ref.id, command, stdin=stdin_text.encode("utf-8"), env=env)
+
+    file_path = _CREDENTIAL_FILE_PATHS.get(cli)
+    env_var_name = _CREDENTIAL_ENV_VARS.get(cli)
+    if file_path is None or env_var_name is None:
+        return client.exec_sandbox(ref.id, command, stdin=stdin_text.encode("utf-8"))
+
+    credential_json = os.environ.get(f"{env_var_name}_{_profile_env_suffix(profile)}")
+    if not credential_json:
+        return client.exec_sandbox(ref.id, command, stdin=stdin_text.encode("utf-8"))
+
+    _write_credential_file(client, ref.id, file_path, credential_json.encode("utf-8"))
+    try:
+        return client.exec_sandbox(ref.id, command, stdin=stdin_text.encode("utf-8"))
+    finally:
+        _wipe_credential_file(client, ref.id, file_path)
 
 
 def _reply(r, pod: str, tenant: str, agent: str, destination: str, envelope: dict, result) -> None:
