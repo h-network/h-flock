@@ -38,10 +38,13 @@ framework is the receiving framework that:
 its delivery action, and exits immediately. Nothing sits polling in process memory,
 and an office of idle agents consumes zero CPU or RAM.
 
-**The backlog stays in Redis.** Delivering envelopes takes real time (terminal pastes,
-mailbox writes, or external RPCs). A persistent process popping eagerly would buffer
-unboundedly in process memory, invisible to monitoring and lost on restart. By leaving
-queued envelopes in Redis, queue depth is always inspectable.
+**The backlog stays in Redis until a delivery attempt begins.** Delivering envelopes takes
+real time (terminal pastes, mailbox writes, or external RPCs). A persistent process popping
+eagerly would buffer unboundedly in process memory, invisible to monitoring and lost on
+restart. Instead, queued envelopes remain inspectable in Redis until a transient port process
+snapshot-drains them. That snapshot then lives in the process while its handler runs; a process
+crash after the drain can therefore lose the snapshot rather than replay it. This is the
+deliberate at-most-once boundary, not a durable work queue.
 
 **Mutual exclusion per agent (`delivering` lock).** Concurrent delivery processes for the
 same agent are serialized using an atomic `HSETNX` loop against `<prefix>:delivering`:
@@ -62,6 +65,11 @@ finally:
 
 Deliveries for *different* agents execute completely independently in parallel.
 
+The lock is a non-expiring busy tag, not a lease: it contains a start timestamp but has no TTL
+or ownership token. If a port process exits without reaching its `finally` block, the stale tag
+blocks later processes for that agent until operational cleanup removes it. A waiting process
+does not time out or take the tag over.
+
 ## 3. Atomic Snapshot Draining (`drain_ingress`)
 
 Upon acquiring the `delivering` lock, the port snapshot-drains whatever is currently
@@ -80,13 +88,19 @@ return items
 This ensures zero race conditions with incoming switch deliveries: envelopes arriving
 after the snapshot remain safely queued in Redis and trigger a subsequent delivery run.
 
+The atomic guarantee describes the normal Redis path. `drain_ingress` also supports clients
+without a working `EVAL` command (principally test doubles) by repeatedly calling `LPOP`.
+That compatibility fallback drains safely but is not an atomic snapshot; it is also used if
+`EVAL` raises an exception.
+
 If the agent has a `paused` marker (`<prefix>:agent:<name>:paused`), `deliver_one` returns
 immediately without draining ingress, leaving messages safely queued until resumed.
 
 ## 4. Port Type Registry (`flock.port.registry`)
 
 `deliver_one` contains **zero hardcoded port_type branches**. It looks up the destination's
-`port_type` from the roster hash (`<prefix>:roster`) in `flock.port.registry`:
+`port_type` from the roster hash (`<prefix>:roster`), then asks `flock.port.registry` for
+its handler:
 
 ```python
 def deliver_one(r, pod: str, tenant: str, agent: str, session_name: str, socket: str | None = None) -> None:
@@ -115,9 +129,12 @@ Handlers are registered as either direct callables or lazy-import `(module_path,
 | `control` | `("flock.control.runner", "deliver_one")` | `bus` lane | not yet written |
 | `openshell` | `("flock.port.openshell", "deliver_openshell")` | `openshell` lane | [`LLD-port-openshell.md`](LLD-port-openshell.md) |
 
-**Lazy-import property:** Handlers registered as tuple specs are only imported on-demand when an
-envelope for that specific `port_type` is actively being delivered. A port delivery for `tmux`
-never imports `flock.control`, `openshell`, or external dependencies like gRPC.
+**Lazy-import property:** Handlers registered as tuple specs are only resolved on demand when an
+envelope for that specific `port_type` is actively being delivered. The registry retains the
+tuple rather than replacing it with the resolved callable, so it performs `import_module` and
+`getattr` on each lookup (Python's module cache normally makes repeat imports cheap). A port
+delivery for `tmux` never imports `flock.control`, `openshell`, or external dependencies like
+gRPC.
 
 ### Registry API
 
@@ -130,7 +147,9 @@ never imports `flock.control`, `openshell`, or external dependencies like gRPC.
 
 If an envelope's destination `port_type` is unlisted in the roster or has no registered handler,
 `deliver_unroutable` drains the ingress snapshot, emits `received`, pushes each envelope to
-`<prefix>:agent:<name>:dead`, and emits a `dead_lettered` record with `reason="unroutable port_type: <name>"`:
+`<prefix>:agent:<name>:dead`, and emits a `dead_lettered` record with a reason such as
+`unroutable port_type: 'unknown_type'` (or `unroutable port_type: None` when the roster entry
+is absent):
 
 ```
   ingress ──drain──► [ parse ] ──► emit 'received'
@@ -138,4 +157,7 @@ If an envelope's destination `port_type` is unlisted in the roster or has no reg
                            └──► push to :dead queue ──► emit 'dead_lettered' (unroutable)
 ```
 
-Malformed envelopes that fail schema parsing are dead-lettered immediately before dispatch.
+Parsing belongs to the selected handler and therefore happens after registry dispatch. Every
+built-in delivery handler dead-letters malformed envelopes while processing its drained
+snapshot. Because a malformed envelope has no validated envelope to receive, it gets a
+`dead_lettered` record but no `received` record.
