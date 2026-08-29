@@ -296,9 +296,12 @@ those come from the mailbox).
 ⚠ **The console half skips silently without a playwright venv**, which is how
 acceptance ran green for weeks without ever exercising it. See
 `BUILD-CONVENTION.md` §3.0b.
-⚠ **`--audit-log` touches `clients/`, which is closed to development.** It is a
-flag rather than a feature, so it is in scope — but say so out loud when it
-lands, or the next reader will think the freeze broke.
+⚠ **`clients/` is no longer closed to development** — `TODO.md:19` records the
+freeze reversed 2026-08-29, by the operator: real client work (`/run`, the
+reply trailer) landed in `clients/telegram/bot.py` the same session the
+freeze was reconsidered. `--audit-log` no longer needs the "it's just a flag"
+argument this line used to make for touching a frozen directory — it's
+ordinary in-scope work now, same as everything else in `clients/`.
 
 ---
 
@@ -395,10 +398,18 @@ credentials do not survive `--force-recreate`* · the precedence half of
 agents depend on*
 
 `swap` needs no new machinery — the CLI is a Redis value and the host already
-rebuilds a missing window from it. The open questions are behavioural: drain or
-discard the ingress, what presence reads during the gap, and what happens to a
-ticket already in `doing`. ⚠ **Not stop-then-start** — that destroys an api
-client's unread mailbox.
+rebuilds a missing window from it. ⚠ **UPDATED, `TODO.md:37`: the underlying
+mechanism is CONFIRMED LIVE 2026-08-29**, not just theorized — `office letGo`
+then `office hire --cli codex --resume` brought full prior conversation
+history back verbatim, verified by capturing the pane directly. Still two
+manual commands and the operator has to already remember which cli/profile a
+retired agent ran, since nothing durable records it (`purge_agent` clears
+that on retirement) — that's the actual remaining gap, not whether the
+mechanism works. The behavioural open questions this row originally raised —
+drain or discard the ingress, what presence reads during the gap, and what
+happens to a ticket already in `doing` — weren't part of that test and are
+still open. ⚠ **Not stop-then-start** — that destroys an api client's unread
+mailbox.
 
 ⚠ **agy has no per-profile support anywhere**, so a tenant gets **one agy
 account** however many are configured, and nothing says so at setup. That is a
@@ -407,6 +418,23 @@ sentence, not a feature.
 ⚠ **Precedence is one test and one sentence**: when a profile has both a token
 and a seeded credential file, which wins? It decides whether the help text says
 *"paste a token"* or *"paste a token, and it replaces any login you seeded"*.
+
+⚠ **The "seeded credentials" row grew up, `TODO.md:36`: it's now a converged
+upgrade-path design, not just a credentials question.** Three independent
+drafts (`api`, `bus`, `acceptance`) landed on the same sequence 2026-08-29 —
+stop the old container (never `rm`), rename it out of the way (a plain
+`docker compose up` on a bumped image tag recreates in place otherwise,
+destroying the rollback artifact), stage state to a host directory rather
+than inventing a volume, create the new container (custody's named volume
+reattaches automatically), restore staged state, re-hire from a pre-upgrade
+roster snapshot letting `has_session_history` auto-resume pick it back up,
+verify per-agent with `seed-home.sh check` plus a real message round-trip,
+keep the renamed old container until an explicit finalize. In scope now:
+`/workdir/<agent>` (git trees, uncommitted files) and CLI session history,
+not just credential files. **Still open and still the operator's call**:
+whether the board refuses the upgrade by default on a non-empty
+`todo`/`doing`/`hold`, matching `send_refused`'s shape, rather than silently
+dropping tickets. **Not yet routed as an implementation ticket.**
 
 ---
 
@@ -454,6 +482,14 @@ so the "re-slot" instruction isn't read as still applying to them.
 - acceptance never exercises `office usage` or `office status`
 - codex `rate_limits` has never been seen working live
 - ~~`office status` says `unknown` for an agy agent~~ — **answered, 2026-08-27**
+
+⚠ **Two more opened 2026-08-29, also unslotted**: *a held ticket has no way
+back* (`TODO.md:99` — `office hold` has no matching resume/unhold, and
+`done`/`delete` can't reach a held ticket except destructively) and *office
+performance table* (`TODO.md:100` — a single good-and-bad performance table,
+not yet built, existing numbers to pull together rather than re-measure). A
+third, *agents ack-loop on pure acknowledgments*, opened and shipped the same
+day (`TODO.md:101`) — never needed a sprint.
 
 ---
 
