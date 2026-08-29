@@ -252,7 +252,7 @@ rather than asking a caller to declare "this needs a reply":
   extends the destination agent's `unreplied` field for that client. `count`
   increments; `since` is kept at the *first* unanswered message's timestamp,
   not overwritten by each new one.
-- `tmux` port_type → `api` port_type, any tracked kind: deletes the source
+- `tmux` port_type → `api` port_type, any envelope kind: deletes the source
   agent's `unreplied` field for that destination client outright. Any reply
   closes the whole backlog, not one message at a time.
 - `tmux` → `tmux` traffic never touches this key. Ticket age already covers
