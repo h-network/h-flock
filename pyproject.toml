@@ -18,6 +18,10 @@ dependencies = [
     # because TestClient does not need one.
     "websockets>=12,<16",
     "edge-tts>=7.0.0,<8",
+    # Real NVIDIA OpenShell SDK (grpc-backed SandboxClient) for port_type:
+    # openshell. No fake/stub transport is shipped alongside this — an
+    # unreachable gateway must raise, never report a fabricated success.
+    "openshell>=0.0.116,<1",
 ]
 
 [project.scripts]
