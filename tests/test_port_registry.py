@@ -13,6 +13,7 @@ from flock.port.registry import (
     reset_registry,
     unregister_port_type,
 )
+from flock.port import registry as port_registry
 
 
 @pytest.fixture(autouse=True)
@@ -57,15 +58,33 @@ def test_register_and_dispatch_custom_callable():
 
 
 def test_register_and_resolve_lazy_import():
-    register_port_type("lazy_port", ("flock.port.deliver", "deliver_api"))
+    spec = ("flock.port.deliver", "deliver_api")
+    register_port_type("lazy_port", spec)
+    assert port_registry._PORT_REGISTRY["lazy_port"] == spec
     handler = get_delivery_handler("lazy_port")
     assert handler is deliver_api
 
 
-def test_lazy_import_failure_returns_none(caplog):
-    register_port_type("broken_port", ("nonexistent.module", "missing_func"))
-    handler = get_delivery_handler("broken_port")
-    assert handler is None
+def test_register_rejects_unresolvable_lazy_import():
+    with pytest.raises(ValueError, match="cannot resolve nonexistent.module.missing_func"):
+        register_port_type("broken_port", ("nonexistent.module", "missing_func"))
+
+
+def test_register_rejects_non_callable_handler():
+    with pytest.raises(ValueError, match="handler must be callable"):
+        register_port_type("broken_port", object())
+
+
+def test_register_rejects_lazy_import_of_non_callable_attribute():
+    with pytest.raises(ValueError, match="handler must be callable"):
+        register_port_type("broken_port", ("flock.port.registry", "_DEFAULT_REGISTRY"))
+
+
+def test_lazy_non_callable_handler_returns_none(caplog):
+    port_registry._PORT_REGISTRY["broken_port"] = ("flock.port.registry", "_DEFAULT_REGISTRY")
+
+    assert get_delivery_handler("broken_port") is None
+    assert "is not callable" in caplog.text
 
 
 def test_deliver_one_dispatches_tmux(capsys):
