@@ -37,6 +37,11 @@ without knowing anything about how the receiving agent is implemented or
 hosted.** If routing and delivery live in one component, the bus can only ever
 reach the kind of agent that component knows how to drive.
 
+That independence is structural at import time. Switch modules import specific
+bus submodules, and the stable `flock.bus` facade resolves exports lazily, so a
+fresh import of `flock.switch.service` does not load `flock.bus.doors` (and
+cannot acquire `send` or unreplied tracking as an accidental startup dependency).
+
 **Everything reaches the bus through a port.** Not a workaround for agents
 that cannot speak Redis — the rule for all of them. For registered VABs, `send`
 writes what its participant emits onto egress and the receive boundary takes

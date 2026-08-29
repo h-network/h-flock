@@ -1,6 +1,6 @@
 """Apply count-based retention in the switch's existing tenant pass."""
 
-from flock.bus import prefix
+from flock.bus.keys import prefix
 
 
 class RetentionTrimmer:

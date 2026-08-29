@@ -3,7 +3,8 @@
 import json
 from pathlib import Path
 
-from flock.bus import log_record, mirror, prefix
+from flock.bus.keys import prefix
+from flock.bus.logging import log_record, mirror
 
 
 class WindowLogTailer:
