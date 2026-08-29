@@ -7,9 +7,13 @@ should never come to rest on the sandbox's own persisted state at all;
 h-flock (the tenant container) holds it, and transfers it only for the
 duration of one `exec_sandbox` call.
 
-**Status: claude's shape is settled and proven for real. Codex/agy's
-shape has two real candidate designs and is intentionally left open,
-pending telegram's call on which to build — see §3.**
+**Status: built. Both claude's shape (env var per call) and codex/agy's
+shape (Candidate B — write-then-wipe file transfer, telegram's decision:
+credentials must stay in h-flock, not rest in OpenShell's own `Provider`
+object even server-side, so Candidate A was ruled out without a real
+test) are implemented in `flock/port/openshell.py`'s `_exec_headless`,
+unit-tested, and verified against the live gateway with dummy (non-real)
+credential values — see §3b.**
 
 ## 1. The real constraint that shapes everything here
 
@@ -60,7 +64,7 @@ that authorization does not cover reuse (see
 [[feedback-no-unasked-credential-transfer]]). Wiring the plumbing itself
 doesn't need a live token — only *testing* it again would.
 
-## 3. codex / agy: not settled — two real candidates
+## 3. codex / agy: decided — Candidate B (write-then-wipe)
 
 **Confirmed directly (not assumed): codex and agy are both file-based,
 not env-var-based, unlike claude.** `container/seed-home.sh`'s own
@@ -77,7 +81,12 @@ invocation env-var auth path for codex at all — `--with-api-key`/
 login` step whose entire purpose is writing `~/.codex/auth.json`. There
 is no `CODEX_CODE_OAUTH_TOKEN`-shaped equivalent to skip that file.
 
-### 3a. Candidate A — OpenShell's own native provider mechanism
+**Decision (telegram, via architect, 2026-08-29): Candidate B.**
+Credentials must stay in h-flock, not rest in OpenShell's own `Provider`
+object even server-side — the §3a tension below was disqualifying on its
+own, so no real-credential test of Candidate A was run.
+
+### 3a. Candidate A — OpenShell's own native provider mechanism (not chosen)
 
 OpenShell ships a built-in `codex`-typed provider profile (`openshell
 provider list-profiles`), wanting `access_token`/`refresh_token`/
@@ -113,48 +122,70 @@ real question this design doc can't answer on flock's behalf; flagging it
 explicitly rather than assuming Candidate A trivially satisfies the goal
 just because it avoids touching the sandbox's filesystem.
 
-### 3b. Candidate B — transient write-then-wipe file transfer
+### 3b. Candidate B — transient write-then-wipe file transfer (built)
 
-Guaranteed to work (no dependency on an unconfirmed OpenShell-internal
-mechanism), at the cost of more code and more RPCs on flock's side. Per
-delivery needing codex/agy auth:
+Implemented in `flock/port/openshell.py`'s `_exec_headless`. Per delivery
+needing codex/agy auth:
 
-1. `exec_sandbox(["sh", "-c", "mkdir -p ~/.codex && base64 -d > ~/.codex/auth.json"], stdin=base64(credential_json))` — write the credential file.
-2. `exec_sandbox(headless_command("codex", resume=True), stdin=prompt)` — the actual delivery.
-3. `exec_sandbox(["sh", "-c", "shred -u ~/.codex/auth.json 2>/dev/null || rm -f ~/.codex/auth.json"])` — wipe it, **in a `finally`-equivalent** so step 2 failing (including a timeout) still triggers cleanup. `shred` first, falling back to plain `rm`, mirrors `container/seed-home.sh`'s own handling for the equivalent tmux case.
+1. `_write_credential_file`: `exec_sandbox(["/bin/sh", "-c", 'mkdir -p "$1" && base64 -d > "$2"', "sh", dir, path], stdin=base64(credential_json))` — write the credential file. Path as a shell positional parameter, not interpolated, same reasoning as the Attachment delivery write.
+2. `exec_sandbox(headless_command(cli, resume=True), stdin=prompt)` — the actual delivery.
+3. `_wipe_credential_file`, in a real `finally`: `exec_sandbox(["/bin/sh", "-c", 'shred -u "$1" 2>/dev/null || rm -f "$1" 2>/dev/null || true', "sh", path])` — best-effort, never raises, so a wipe failure never masks or replaces whatever the actual delivery's own outcome was. Runs even when step 2 fails.
 
-Three `exec_sandbox` RPCs per delivery instead of one — real overhead,
-though each is cheap relative to the actual CLI invocation. The
-credential genuinely never lives anywhere but flock's own environment and
-the sandbox's ephemeral filesystem for the few seconds between steps 1
-and 3 — the literal shape telegram described ("transient write-then-wipe
-per exec call, not zero-touch"), and the one architect flagged as the
-likely fallback if claude turns out to be the exception rather than the
-rule.
+The credential's real JSON shape, inspected safely (key names only, via a
+script that never printed a value, against real files already present in
+this office's environment — never guessed):
 
-**Open, not yet answered:**
-- Which of 3a/3b to build for codex/agy — pending telegram, intentionally
-  left open per architect's instruction not to block this doc on it.
-- The exact shape of the credential file content flock would need to
-  construct for `.codex/auth.json` (its real JSON schema — access token,
-  refresh token, account id, expiry, in what field names) and for agy's
-  bare-token file, if Candidate B is chosen. Not yet inspected.
-- `agy`'s own native provider profile, if one exists — `openshell
-  provider list-profiles` did not show an `agy`-specific entry among the
-  AGENT-category profiles seen so far (`claude-code`, `codex`, `copilot`,
-  `cursor`); if there's genuinely none, Candidate A isn't available for
-  `agy` regardless of what's decided for codex, and Candidate B would be
-  the only option there.
+```
+codex ~/.codex/auth.json:
+  {auth_mode, OPENAI_API_KEY, tokens: {id_token, access_token, refresh_token, account_id}, last_refresh}
+
+agy ~/.gemini/antigravity-cli/antigravity-oauth-token:
+  {token: {access_token, token_type, refresh_token, expiry}, auth_method}
+```
+
+(agy's file is JSON too, despite its filename suggesting a bare token —
+correcting an earlier assumption in this doc.)
+
+flock reads the whole JSON blob from one env var per CLI+profile —
+`CODEX_AUTH_JSON_<PROFILE>` / `AGY_AUTH_JSON_<PROFILE>` — mirroring
+`CLAUDE_OAUTH_TOKEN_<PROFILE>`'s existing naming shape
+(`flock.tmux.ops.window_env`), just holding a full JSON string instead of
+one bare token, since that's the real shape these two files take.
+Profile support itself is not wired up anywhere yet for openshell agents
+(no `profile` lookup in `control/openers.py`'s `start_agent` branch) —
+`_exec_headless` accepts a `profile` parameter for when that lands, and
+defaults to `"DEFAULT"` until then.
+
+**Verified against the live gateway with a dummy (non-functional)
+credential value** — no real secret needed for this, since it only tests
+the write/exec/wipe mechanics, not whether a credential actually
+authenticates anything: the file was written with exactly the given
+content (read back via `cat`), and confirmed absent afterward in three
+separate scenarios — a clean wipe call on its own, the full write→exec→wipe
+sequence when the exec succeeds, and critically also when the write
+succeeds but the exec itself fails, proving the `finally`-based wipe runs
+regardless of the delivery's own outcome.
+
+Two RPCs of real overhead per codex/agy delivery (write, wipe) beyond the
+one Message/Command/Attachment already needed — cheap relative to the
+actual CLI invocation.
+
+**Still open:**
+- Whether the exact JSON above (plus whatever `auth_mode`/`last_refresh`
+  values flock would need to supply) is sufficient for codex to actually
+  authenticate, and the equivalent for agy — needs a real, working
+  credential to settle, per telegram's second scoped, one-time
+  authorization (same handling discipline as the claude test: never
+  printed/logged, shredded after, not reused). Telegram is placing the
+  real files and will specify where; not yet done as of this writing.
+- `agy`'s own native provider profile, if one exists, is now moot given
+  the Candidate B decision applies uniformly to both CLIs regardless.
 
 ## 4. What this design explicitly does not cover
 
-- Provider-attachment persistence semantics beyond what's described in
-  §3a — e.g., whether a `Provider` object can be scoped so tightly
-  (single-use, single-sandbox) that it approximates "per-call" even
-  though it's stored server-side. Not investigated.
+- Provider-attachment persistence semantics from §3a — moot now that
+  Candidate A wasn't chosen, left as-written for the record.
 - Rotation — if a token expires mid-lifetime of a long-lived sandbox,
   nothing here addresses refreshing it. Out of scope for this pass.
-- Any actual code changes. This document is deliberately design-only, per
-  the ticket's own framing ("doesn't need to be code yet") — wiring
-  either candidate into `deliver_openshell`/`control/openers.py` is
-  follow-on work once the codex/agy branch is decided.
+- Profile support for openshell agents in general (`_exec_headless`
+  accepts the parameter; nothing populates it yet).
