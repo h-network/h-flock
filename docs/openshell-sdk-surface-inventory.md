@@ -273,6 +273,57 @@ logs, reporting the main process's exit, relaying streams), not something
 an external client like flock should ever call directly. Listed for
 completeness of the RPC inventory, not as a candidate.
 
+## 11a. Update 2026-08-29 — built and real-gateway-verified (ticket 655ebeac)
+
+Added to `flock.openshell.client.OpenShellClient`: `list_sandboxes`,
+`stop_sandbox`/`start_sandbox`, `expose_service`/`get_service`/
+`list_services`/`delete_service`, `create_provider`/`list_providers`/
+`delete_provider`/`attach_sandbox_provider`/`detach_sandbox_provider`/
+`list_sandbox_providers`, `get_sandbox_logs`, `watch_sandbox`, and a
+deliberately partial opt-in `SandboxSpec.policy` slice on `create_sandbox`
+(filesystem read-only/read-write/include_workdir, process run_as_user/
+group, and a pass-through `network_allow`). Unit-tested against fakes,
+then run for real against the live gateway. Two real, previously-unknown
+findings from that live run, not visible from proto reading alone:
+
+- **Setting *any* `SandboxPolicy` field replaces the entire baked-in
+  default policy, including whatever network access it implicitly
+  grants.** `run_as_user="sandbox"` alone (no `network_allow`) creates a
+  sandbox whose container exits immediately
+  (`SandboxCondition{reason: "ContainerExited"}`, only visible via a raw
+  `GetSandbox` call — not surfaced as a creation-time error at all,
+  `create()` succeeds and only `wait_ready()` eventually reports "entered
+  error phase"). The identical policy plus one valid `network_allow` rule
+  creates and reaches READY normally. `create_sandbox` now raises
+  `ValueError` up front if filesystem/process policy is set without
+  `network_allow`, rather than let a caller hit this opaquely.
+  `run_as_user` also turned out to have real semantic validation beyond
+  the proto's own string type: must be `"sandbox"` or a numeric UID/GID,
+  not an arbitrary username (`"ubuntu"` was rejected outright,
+  cleanly, at creation time — unlike the network-omission failure above).
+- **`create_provider`'s `name` argument was silently discarded** — without
+  setting `Provider.metadata.name` explicitly (a nested `ObjectMeta`
+  field, not top-level on `Provider`), the gateway auto-assigns a random
+  name instead (observed: passed `"verify-dummy2"`, got back
+  `"belxyr"`), so a later `attach_sandbox_provider("verify-dummy2")`
+  failed with "provider not found" — a bug only a real round trip could
+  have caught. Fixed.
+- **Confirmed real and working, unmodified from first pass**: sandbox
+  create-with-policy (`whoami` genuinely returned the policy-specified
+  user), list/stop/start, all four service-exposure operations (got a
+  real reachable URL back), `get_sandbox_logs`, `watch_sandbox` (received
+  a real streamed event).
+- **A further, more specific constraint found on `attach_sandbox_provider`
+  specifically** (post-creation attach, not `providers=[...]` at
+  creation): the gateway refused to attach a `claude-code`-typed provider
+  to a sandbox using the plain baked-in default policy —
+  `FAILED_PRECONDITION: credentialed endpoint 'statsig.anthropic.com:443'
+  ... uses L4-only; configure L7 inspection or explicitly set
+  allow_uninspected_credentials: true`. Attaching `providers=[...]` at
+  `CreateSandbox` time, by contrast, did *not* hit this in an earlier
+  check (§6a) — the two paths appear to validate differently. Not fully
+  reconciled; noted as a real nuance rather than resolved.
+
 ## 12. What seems worth building next (opinion, not a decision)
 
 In rough order of how directly they'd serve flock's actual needs, not
