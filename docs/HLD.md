@@ -39,6 +39,7 @@ Everything addressable is a name in the roster. What is *behind* the name is its
 | `tmux` | an AI CLI in a terminal window | having it pasted into the window |
 | `api` | an app — web, phone, Telegram bot | having it stored in a mailbox it reads |
 | `control` | the tenant's own lifecycle provider (`host`) | acting on it |
+| `openshell` | an AI CLI in a real, disposable OpenShell sandbox — its own container, not this one | a one-shot headless exec against the sandbox, reply sent back over the bus |
 
 ⚠ **The switch cannot see this column.** It reads roster *fields*, never values
 (the *roster fields, never values* invariant) — so it forwards to a name and something at the far edge decides
@@ -616,6 +617,6 @@ documentation audit went looking for exactly this kind of claim.
 | [`LLD-office.md`](LLD-office.md) | the agent-facing command — the board, lifecycle, and what crosses the bus versus a direct Redis op |
 | [`LLD-port-delivery.md`](LLD-port-delivery.md) · [`LLD-port-tmux.md`](LLD-port-tmux.md) | the port delivery framework and how text gets into a terminal |
 | [`LLD-tmux-host.md`](LLD-tmux-host.md) · [`LLD-container.md`](LLD-container.md) | windows, and the tenant |
-| [`LLD-port-openshell.md`](LLD-port-openshell.md) | hosting an agent in an OpenShell sandbox instead — designed, not yet built |
+| [`LLD-port-openshell.md`](LLD-port-openshell.md) | hosting an agent in a real, disposable OpenShell sandbox — built and verified against a live gateway |
 | [`LLD-api.md`](LLD-api.md) · [`LLD-session.md`](LLD-session.md) | the two doors |
 | [`TODO.md`](TODO.md) | what is parked, and why |

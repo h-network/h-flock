@@ -1,20 +1,27 @@
 # LLD — the openshell port
 
-> **Status: built — `flock.port`/`flock.control` wiring done, unit-tested;
-> the delivery/lifecycle wiring itself has NOT yet been run against the
-> live gateway (only its SDK layer has — see §2a).**
-> `src/flock/openshell/client.py`, `headless.py`, and `naming.py`;
-> `src/flock/port/openshell.py` (registered lazily via
-> `flock.port.registry`, added by the `tmux` lane in anticipation — no
-> `deliver.py` edit needed); `control/openers.py`'s `start_agent`/
-> `stop_agent` openshell branches. All unit-tested against injected fakes.
-> Depends on [`LLD-bus-and-switch.md`](LLD-bus-and-switch.md) for the
-> address scheme and [`LLD-port-tmux.md`](LLD-port-tmux.md) for the
+> **Status: built and real-gateway-verified, ticket 655ebeac closed.**
+> All four kinds (`Message`/`Command`/`AddTicket`/`Attachment`), the full
+> `start_agent`/`stop_agent` lifecycle, an expanded SDK client surface
+> (policy-aware sandbox creation, list/stop/start, service exposure,
+> provider CRUD, logs/watch), per-CLI credential transfer (claude via a
+> per-call env var, codex via write-then-wipe file transfer, both proven
+> against the live gateway with a real credential — see §5 and
+> `docs/openshell-credential-transfer-design.md`), and per-profile
+> credential lookup are all live on `main`. `src/flock/openshell/client.py`,
+> `headless.py`, and `naming.py`; `src/flock/port/openshell.py`; the
+> `openshell` branches of `control/openers.py`'s `start_agent`/
+> `stop_agent`. Depends on [`LLD-bus-and-switch.md`](LLD-bus-and-switch.md)
+> for the address scheme and [`LLD-port-tmux.md`](LLD-port-tmux.md) for the
 > receiving-edge shape this port_type parallels.
 
-This document exists to keep design decisions and open questions in one
-place while the gateway is unavailable, so building doesn't restart from
-zero once it is. Ticket: `ff0f4516` in the office board.
+This document keeps design decisions and open questions in one place as
+the port_type evolved — §2a and §5 record what live-gateway testing
+corrected along the way, and §4 records what's still genuinely open
+(agy not installed in the default sandbox image, whose mTLS identity a
+real deployment should use, among others). Ticket: `ff0f4516` (original
+build), `655ebeac` (SDK expansion + credential transfer), both closed on
+the office board.
 
 ## 1. What this is
 
@@ -230,8 +237,9 @@ gateway as a whole (only the client layer underneath it has — §2a/§3).
 - **`AddTicket`**: reuses `flock.port.openers.add_ticket_opener` completely
   unchanged — it never touches the sandbox client at all, matching tmux's
   own "no window check" behavior for this kind.
-- **`Attachment`**: dead-lettered as not yet implemented (see §5) — no
-  base64-exec-and-mv workaround has been built or tested yet.
+- **`Attachment`**: implemented via the same base64-exec-and-mv approach
+  as `Message`/`Command` — see §5 for the build and its real-gateway
+  verification.
 - **Sandbox id resolution**: no Redis state added (would have required
   touching `AGENT_STATE_RESOURCES` in `src/flock/bus/resources.py`, which
   the hard constraint forbids). Instead, every delivery calls
@@ -283,18 +291,22 @@ gateway as a whole (only the client layer underneath it has — §2a/§3).
   the VM's raw bridge IP, which isn't stable across container recreates.
 
 Still open, not yet asked:
-- The exact sandbox image / how `agy` (and opencode/copilot) get into it,
-  if they need to.
 - **Whether this integration needs its own mTLS client identity**,
   separate from the lab's local `openshell` CLI registration used for the
   §2a verification run — raised by architect, not yet decided.
-- **`resume=True` unconditionally, for every CLI, on every delivery**
-  (§2/§3a) is confirmed safe for codex (a fresh sandbox's `resume --last`
-  silently starts new instead of erroring — observed directly) but only
-  *inferred* safe for claude (`-c` with nothing to continue) from
-  documented CLI ergonomics, not observed — no credential was injected to
-  test it for real, per this ticket's standing rule. Confirm with a real
-  credentialed run before fully trusting this for claude.
+- `agy` and opencode/copilot's presence in the default sandbox image, if
+  they need to be there. Confirmed (§5, credential-transfer testing):
+  `agy` is **not** installed in the default image at all (`which agy`
+  exits 1) — not chased further, tracked as a known gap rather than fixed
+  here.
+
+Resolved since the last update (continued):
+- ~~`resume=True` unconditionally, for every CLI, on every delivery is only
+  *inferred* safe for claude, not observed~~ — now observed for real: the
+  codex/agy credential-transfer test (§5) used claude's real
+  `CLAUDE_CODE_OAUTH_TOKEN` with `resume=True` and got a genuine reply, so
+  this is confirmed for claude the same way it already was for codex, not
+  just inferred from CLI ergonomics.
 
 Resolved since the last update:
 - ~~The 19-character sandbox name limit vs. 63-character flock agent
