@@ -75,8 +75,14 @@ inspectors:
 
 | | Does | Rejects |
 |---|---|---|
-| **send** | builds the envelope, writes the egress selected by `source`, logs, tracks `unreplied` from the L2 header alone | nothing malformed can be constructed |
+| **send** | builds and encodes the envelope, writes the egress selected by `source`, then best-effort logs and tracks `unreplied` from the L2 header alone | nothing malformed can be constructed |
 | **receive boundary** | validates what came off ingress, dispatches on `kind` to an opener, logs | unknown kind → dead-letter |
+
+`send` constructs the scoped key and encodes the frame before entering the
+`RPUSH` exception window. A failure there therefore proves no write was
+attempted and is never called `send_unknown`. Once `RPUSH` returns, custody has
+changed: a logging or unreplied-bookkeeping failure is swallowed so observation
+cannot make a committed send look failed to the caller.
 
 For registered VABs, each check therefore has one logical home. An envelope
 built by `send` cannot be structurally malformed because only one thing builds

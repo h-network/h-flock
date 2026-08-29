@@ -67,6 +67,18 @@ class DeadLetter(Exception):
     """Signal that an opener rejected an envelope after receive took custody."""
 
 
+def _emit_observation(
+    module: str, event: str, envelope: dict, reason: str | None = None
+) -> None:
+    """Keep a logging fault from replacing the observed operation's result."""
+    try:
+        emit(module, event, envelope, reason)
+    except Exception:
+        # Logging is secondary observation: it must neither turn a committed
+        # handover into failure nor replace an outcome-unknown Redis exception.
+        pass
+
+
 def _emit_for_recipient(
     module: str,
     event: str,
@@ -123,15 +135,22 @@ def send(
             reason=str(exc),
         )
         raise
+    # Finish every operation that can provably fail before Redis is called.
+    # Only RPUSH belongs inside the outcome-unknown window: prefix/encoding
+    # errors prove that no queue write was attempted.
+    egress_key = prefix(pod, tenant, source, "egress")
+    raw = encode(envelope)
     try:
-        r.rpush(
-            prefix(pod, tenant, source, "egress"),
-            encode(envelope),
-        )
+        r.rpush(egress_key, raw)
     except Exception as exc:
-        emit(module, "send_unknown", envelope, f"egress write outcome UNKNOWN after {exc}")
+        _emit_observation(
+            module,
+            "send_unknown",
+            envelope,
+            f"egress write outcome UNKNOWN after {exc}",
+        )
         raise
-    emit(module, "sent", envelope)
+    _emit_observation(module, "sent", envelope)
     # The message is already durably enqueued above; this bookkeeping is a
     # secondary effect and must never make a successful send look failed to
     # the caller, so a fault here is logged and swallowed, not raised.
@@ -140,7 +159,12 @@ def send(
             r, pod=pod, tenant=tenant, source=local_source, destination=local_destination, kind=kind
         )
     except Exception as exc:
-        emit(module, "unreplied_tracking_failed", envelope, f"unreplied bookkeeping failed: {exc}")
+        _emit_observation(
+            module,
+            "unreplied_tracking_failed",
+            envelope,
+            f"unreplied bookkeeping failed: {exc}",
+        )
     return envelope["stream_id"]
 
 
