@@ -911,6 +911,16 @@ class UnrepliedTrackingTest(unittest.TestCase):
         self.assertEqual(record["count"], 2)
         self.assertEqual(record["since"], first_since)
 
+    def test_malformed_unreplied_state_recovers_to_a_fresh_count(self):
+        self.r.hashes[self.key] = {"telegram": "not-json"}
+        send(
+            self.r, pod="acme", tenant="hq", source="telegram",
+            destination="alice", payload={"text": "recover"},
+        )
+        record = json.loads(self.r.hashes[self.key]["telegram"])
+        self.assertEqual(record["count"], 1)
+        self.assertTrue(record["since"].endswith("Z"))
+
     def test_the_agents_own_reply_to_the_same_client_clears_the_count(self):
         send(self.r, pod="acme", tenant="hq", source="telegram", destination="alice", payload={"text": "hi"})
         send(self.r, pod="acme", tenant="hq", source="alice", destination="telegram", payload={"text": "reply"})
@@ -941,7 +951,7 @@ class UnrepliedTrackingTest(unittest.TestCase):
     def test_a_bookkeeping_fault_is_logged_but_never_fails_the_send(self):
         """The message is already durably enqueued by the time this runs (LLD-bus-and-switch §1)."""
         output = io.StringIO()
-        with patch.object(self.r, "hset", side_effect=ConnectionError("redis down")), redirect_stdout(output):
+        with patch.object(self.r, "eval", side_effect=ConnectionError("redis down")), redirect_stdout(output):
             stream_id = send(
                 self.r, pod="acme", tenant="hq", source="telegram", destination="alice", payload={"text": "hi"}
             )
@@ -954,7 +964,7 @@ class UnrepliedTrackingTest(unittest.TestCase):
 
     def test_a_bookkeeping_fault_remains_swallowed_when_its_log_also_fails(self):
         with (
-            patch.object(self.r, "hset", side_effect=ConnectionError("redis down")),
+            patch.object(self.r, "eval", side_effect=ConnectionError("redis down")),
             patch("flock.bus.doors.emit", side_effect=OSError("stdout closed")),
         ):
             stream_id = send(
