@@ -20,7 +20,7 @@ from fastapi.responses import HTMLResponse, StreamingResponse
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
 from flock.bus.doors import send
-from flock.bus.envelope import EnvelopeError
+from flock.bus.envelope import EnvelopeError, resolve_destination
 from flock.bus.keys import prefix
 from flock.bus.roster import is_member, members, port_type
 
@@ -798,12 +798,22 @@ def create_app(*, settings: Settings | None = None, redis_client: Any = None) ->
 
     @app.post("/agents/{agent}/envelopes", status_code=status.HTTP_202_ACCEPTED)
     def post_envelope(agent: str, envelope: dict[str, Any]) -> dict[str, str]:
-        if agent != "all":
-            try:
-                prefix(settings.pod, settings.tenant, agent)
-            except KeyError as exc:
-                raise HTTPException(status_code=404, detail="invalid agent") from exc
-            if not is_member(client, pod=settings.pod, tenant=settings.tenant, agent=agent):
+        try:
+            _, local_agent = resolve_destination(
+                pod=settings.pod,
+                tenant=settings.tenant,
+                destination=agent,
+            )
+        except EnvelopeError as exc:
+            detail = str(exc)
+            if detail.startswith("no route to non-local destination"):
+                raise HTTPException(
+                    status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+                    detail=detail,
+                ) from exc
+            raise HTTPException(status_code=404, detail="invalid agent") from exc
+        if local_agent != "all":
+            if not is_member(client, pod=settings.pod, tenant=settings.tenant, agent=local_agent):
                 raise HTTPException(status_code=404, detail="unknown agent")
         source = "api"
         if "as" in envelope:

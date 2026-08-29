@@ -385,6 +385,7 @@ Post an envelope to a specific agent, or to `"all"` for broadcast messages.
   - Local agent name: e.g. `backend`, `frontend`, `all`.
   - Qualified address: `pod:tenant:agent` (e.g. `acme:hq:backend`). Qualified addresses within the local tenant resolve to the local agent.
   - ⚠ **Non-Local Destinations:** Addresses naming a foreign pod or tenant (e.g. `otherpod:othertenant:backend`) are refused synchronously with `422 Unprocessable Content` (`"no route to non-local destination 'otherpod:othertenant:backend'"`). The current fabric routes intra-tenant traffic.
+  - Structurally invalid path addresses (wrong segment count or invalid characters) return `404 Not Found`; qualified addresses are checked for roster membership using their resolved local agent name.
 - **Request Body Fields:**
   - `text` (optional string): Text message shorthand (implies `kind: "Message"`).
   - `as` (optional string): Enrolled application client name to declare as `source`. Must name an enrolled `port_type: "api"` client.
@@ -874,7 +875,7 @@ Port `:8081` provides WebSocket terminal access for rendering live terminal wind
 | **Policy Denial** | `"policy denied '<source>' -> '<destination>': no shared export/import tag"` | Senders and recipients have disjoint policy tags. **Nothing was sent or enqueued.** Verify and update `export` / `import` tags via `StartAgent`. |
 | **Non-Local Route** | `"no route to non-local destination '<destination>'"` | Destination specifies a qualified pod/tenant outside this tenant. Intra-tenant local routing cannot reach foreign nodes without a gateway. |
 | **Invalid Client Identity** | `"invalid 'as' client: must be an enrolled client with port_type 'api'"` | The declared `"as"` client is not enrolled in the tenant roster as an `api` participant. Enrol with `StartAgent` first. |
-| **Malformed Address / Payload** | `"destination must be a qualified pod:tenant:agent address"` or `"payload must be an object"` | Request envelope structure does not conform to the v4 frame specification. |
+| **Malformed Payload** | `"payload must be an object"` | Request envelope structure does not conform to the v4 frame specification. A malformed destination in the `{agent}` path is instead a `404 Not Found`. |
 | **Payload Too Large** | `"envelope payload exceeds maximum size limit of 1MB"` or `"decoded attachment exceeds maximum size limit of 10MB..."` | Envelope payload exceeded the 1MB default or 10MB Attachment decoded limit. |
 | **Invalid Attachment** | `"invalid attachment filename..."` or `"invalid attachment mime_type..."` or `"invalid attachment content_base64..."` | Attachment payload violates closed schema or field-level validation rules. |
 
