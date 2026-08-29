@@ -14,6 +14,8 @@ Tier A is documentation, B internal code, C Redis/environment, and D wire.
 | **`openshell provider`** | `src/flock/openshell/client.py` (`SandboxSpec.providers`) | identifier | OpenShell's own named credential-bundle mechanism, attached to a sandbox at creation. | Injected upstream credentials. | B |
 | `headless_command` | `src/flock/openshell/headless.py` | identifier | Builds the non-interactive argv for one CLI invocation inside `ExecSandbox`; mirrors `start_agent_command`'s per-CLI branching for interactive tmux launch. | Non-interactive protocol handler selection. | B |
 | `UNVERIFIED_HEADLESS_CLIS` | `src/flock/openshell/headless.py` | identifier | CLIs whose headless argv is a placeholder guess, not even a help-text-derived inference — currently `agy` only. | None. | B |
+| `short_name`/`sandbox_name`/`workspace_name` | `src/flock/openshell/naming.py` | identifier | Deterministic shortening to OpenShell's real 19-character resource name limit. | Address/name compression under a protocol length limit. | B |
+| `deliver_openshell` | `src/flock/port/openshell.py` | identifier | The registered delivery handler for `port_type: openshell`, resolved lazily by `flock.port.registry`. | Port-side receive implementation, parallel to `deliver_tmux`. | B |
 
 ## The naming collision this lane must not repeat
 

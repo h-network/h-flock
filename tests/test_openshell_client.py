@@ -74,6 +74,35 @@ def _ref(name="dave", sandbox_id="sbx-123", phase=2):
     return SandboxRef(id=sandbox_id, name=name, workspace="pod:acme:tenant:hq", status=SandboxStatusRef(phase=phase, current_policy_version=1))
 
 
+class FakeWorkspaceClient:
+    def __init__(self):
+        self.calls = []
+        self.get_exc = None
+        self.create_exc = None
+
+    def get(self, name):
+        self.calls.append(("get", name))
+        if self.get_exc:
+            raise self.get_exc
+        return object()
+
+    def create(self, name):
+        self.calls.append(("create", name))
+        if self.create_exc:
+            raise self.create_exc
+        return object()
+
+
+def _existing_workspace():
+    """A FakeWorkspaceClient reporting the workspace as already present.
+
+    Used by tests that aren't exercising ensure_workspace's own logic, so
+    create_sandbox's internal ensure_workspace() call doesn't try to build
+    a real WorkspaceClient from a fake SandboxClient with no _channel.
+    """
+    return FakeWorkspaceClient()
+
+
 def test_requires_nonempty_workspace():
     with pytest.raises(ValueError):
         OpenShellClient("", sandbox_client=FakeSandboxClient())
@@ -83,7 +112,9 @@ def test_create_sandbox_passes_workspace_name_and_providers():
     fake = FakeSandboxClient()
     fake.create_result = _ref(phase=1)  # PROVISIONING, matches a real create() response
     fake.wait_ready_result = _ref(phase=2)  # READY, matches a real wait_ready() response
-    client = OpenShellClient("pod:acme:tenant:hq", sandbox_client=fake)
+    client = OpenShellClient(
+        "pod:acme:tenant:hq", sandbox_client=fake, workspace_client=_existing_workspace()
+    )
 
     result = client.create_sandbox("dave", providers=["anthropic-oauth"], environment={"AGENT_NAME": "dave"})
 
@@ -102,7 +133,9 @@ def test_create_sandbox_passes_workspace_name_and_providers():
 def test_create_sandbox_wraps_sandbox_error():
     fake = FakeSandboxClient()
     fake.create_exc = SandboxError("gateway refused")
-    client = OpenShellClient("pod:acme:tenant:hq", sandbox_client=fake)
+    client = OpenShellClient(
+        "pod:acme:tenant:hq", sandbox_client=fake, workspace_client=_existing_workspace()
+    )
 
     with pytest.raises(OpenShellUnavailable):
         client.create_sandbox("dave")
@@ -115,7 +148,9 @@ def test_create_sandbox_wraps_grpc_error():
         pass
 
     fake.create_exc = _Unavailable()
-    client = OpenShellClient("pod:acme:tenant:hq", sandbox_client=fake)
+    client = OpenShellClient(
+        "pod:acme:tenant:hq", sandbox_client=fake, workspace_client=_existing_workspace()
+    )
 
     with pytest.raises(OpenShellUnavailable):
         client.create_sandbox("dave")
@@ -125,7 +160,9 @@ def test_create_sandbox_wraps_not_ready_in_time():
     fake = FakeSandboxClient()
     fake.create_result = _ref(phase=1)
     fake.wait_ready_exc = SandboxError("sandbox dave was not ready within timeout")
-    client = OpenShellClient("pod:acme:tenant:hq", sandbox_client=fake)
+    client = OpenShellClient(
+        "pod:acme:tenant:hq", sandbox_client=fake, workspace_client=_existing_workspace()
+    )
 
     with pytest.raises(OpenShellUnavailable):
         client.create_sandbox("dave")
@@ -193,6 +230,64 @@ def test_close_delegates_to_underlying_client():
     client.close()
 
     assert fake.closed is True
+
+
+class _NotFound(grpc.RpcError, grpc.Call):
+    def code(self):
+        return grpc.StatusCode.NOT_FOUND
+
+    def details(self):
+        return "workspace not found"
+
+
+def test_ensure_workspace_is_a_noop_when_workspace_already_exists():
+    fake_ws = FakeWorkspaceClient()
+    client = OpenShellClient(
+        "pod:acme:tenant:hq", sandbox_client=FakeSandboxClient(), workspace_client=fake_ws
+    )
+
+    client.ensure_workspace()
+
+    assert fake_ws.calls == [("get", "pod:acme:tenant:hq")]
+
+
+def test_ensure_workspace_creates_on_not_found():
+    fake_ws = FakeWorkspaceClient()
+    fake_ws.get_exc = _NotFound()
+    client = OpenShellClient(
+        "pod:acme:tenant:hq", sandbox_client=FakeSandboxClient(), workspace_client=fake_ws
+    )
+
+    client.ensure_workspace()
+
+    assert fake_ws.calls == [("get", "pod:acme:tenant:hq"), ("create", "pod:acme:tenant:hq")]
+
+
+def test_ensure_workspace_does_not_swallow_other_errors():
+    fake_ws = FakeWorkspaceClient()
+    fake_ws.get_exc = SandboxError("gateway refused")
+    client = OpenShellClient(
+        "pod:acme:tenant:hq", sandbox_client=FakeSandboxClient(), workspace_client=fake_ws
+    )
+
+    with pytest.raises(OpenShellUnavailable):
+        client.ensure_workspace()
+
+    # A non-NOT_FOUND failure must not be treated as "go ahead and create".
+    assert fake_ws.calls == [("get", "pod:acme:tenant:hq")]
+
+
+def test_create_sandbox_ensures_workspace_first():
+    fake_ws = FakeWorkspaceClient()
+    fake_ws.get_exc = _NotFound()
+    fake = FakeSandboxClient()
+    fake.create_result = _ref(phase=1)
+    fake.wait_ready_result = _ref(phase=2)
+    client = OpenShellClient("pod:acme:tenant:hq", sandbox_client=fake, workspace_client=fake_ws)
+
+    client.create_sandbox("dave")
+
+    assert fake_ws.calls == [("get", "pod:acme:tenant:hq"), ("create", "pod:acme:tenant:hq")]
 
 
 def test_missing_endpoint_raises_before_touching_network():

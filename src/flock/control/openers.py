@@ -15,7 +15,7 @@ from flock.bus import (
     tags_key,
 )
 
-_STARTABLE_VABS = {"tmux", "api"}
+_STARTABLE_VABS = {"tmux", "api", "openshell"}
 _FIXED_PARTICIPANTS = {"api", "host"}
 _START_AGENT_KEYS = frozenset(
     {
@@ -172,7 +172,7 @@ def start_agent(
 
     agent_port_type = payload.get("port_type", "tmux")
     if agent_port_type not in _STARTABLE_VABS:
-        raise ValueError("StartAgent payload.port_type must be 'tmux' or 'api'")
+        raise ValueError(f"StartAgent payload.port_type must be one of: {', '.join(sorted(_STARTABLE_VABS))}")
 
     hmac_secret = payload.get("hmac_secret")
     kid = payload.get("kid")
@@ -232,6 +232,58 @@ def start_agent(
             committed, "roster row published", "roster row publish",
             lambda: r.hset(roster_key, agent, agent_port_type),
         )
+        return
+
+    if agent_port_type == "openshell":
+        cli = payload.get("cli", "claude")
+        if not isinstance(cli, str) or not cli:
+            raise ValueError("StartAgent payload.cli must be a non-empty string")
+
+        if policy_supplied:
+            policy_key = tags_key(pod, tenant, agent)
+            _write_desired(
+                committed, "policy reset", "policy reset", lambda: r.delete(policy_key)
+            )
+            for side, values in policy.items():
+                _write_desired(
+                    committed, f"{side} policy published", f"{side} policy publish",
+                    lambda side=side, values=values: r.hset(
+                        policy_key, side, json.dumps(values, separators=(",", ":"))
+                    ),
+                )
+        launch_key = prefix(pod, tenant, agent=agent, resource="launch")
+        _write_desired(
+            committed, "launch published", "launch publish", lambda: r.set(launch_key, cli)
+        )
+        _write_desired(
+            committed, "roster row published", "roster row publish",
+            lambda: r.hset(roster_key, agent, agent_port_type),
+        )
+        # Actual-state: provision the real sandbox now, synchronously.
+        # Unlike tmux, which defers window creation to tmuxhost's async
+        # reconciler (a window needs a session/server that may not exist
+        # yet), an OpenShell sandbox is a single gRPC call with no
+        # equivalent staged startup, so there is nothing to gain by
+        # deferring it to a separate reconciler process.
+        #
+        # Imported here, not at module top: flock.openshell pulls in
+        # grpc/protobuf, and this file is loaded for every control
+        # delivery regardless of port_type.
+        from flock.openshell import OpenShellClient, OpenShellUnavailable
+        from flock.openshell.naming import sandbox_name, workspace_name
+
+        client = OpenShellClient(workspace_name(pod, tenant))
+        try:
+            try:
+                client.create_sandbox(
+                    sandbox_name(agent),
+                    environment={"AGENT_NAME": agent, "TENANT": tenant},
+                    labels={"agent": agent},
+                )
+            except OpenShellUnavailable as exc:
+                raise _actual_unknown(committed, "creating the sandbox", exc) from exc
+        finally:
+            client.close()
         return
 
     cli = payload.get("cli", "claude")
@@ -384,7 +436,22 @@ def stop_agent(
         committed, "delivery lock cleared", "delivery lock clear",
         lambda: r.hdel(prefix(pod, tenant, resource="delivering"), agent),
     )
-    if agent_port_type != "api":
+    if agent_port_type == "openshell":
+        # Imported here, not at module top -- see start_agent's openshell
+        # branch for why (flock.openshell pulls in grpc/protobuf, paid only
+        # for openshell deliveries/control actions, not every one).
+        from flock.openshell import OpenShellClient, OpenShellUnavailable
+        from flock.openshell.naming import sandbox_name, workspace_name
+
+        client = OpenShellClient(workspace_name(pod, tenant))
+        try:
+            try:
+                client.delete_sandbox(sandbox_name(agent))
+            except OpenShellUnavailable as exc:
+                raise _actual_unknown(committed, "deleting the sandbox", exc) from exc
+        finally:
+            client.close()
+    elif agent_port_type != "api":
         try:
             kill_window(agent)
         except Exception as exc:

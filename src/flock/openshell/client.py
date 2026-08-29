@@ -17,7 +17,7 @@ import os
 from typing import Mapping, Sequence
 
 import grpc
-from openshell import ExecResult, SandboxClient, SandboxError, SandboxRef
+from openshell import ExecResult, SandboxClient, SandboxError, SandboxRef, WorkspaceClient
 
 # `_proto` is underscore-private in the SDK's own naming, but it is the only
 # way to build a `SandboxSpec` carrying providers/environment — the SDK's
@@ -65,12 +65,17 @@ class OpenShellClient:
         endpoint: str | None = None,
         timeout: float = DEFAULT_TIMEOUT_SECONDS,
         sandbox_client: SandboxClient | None = None,
+        workspace_client: WorkspaceClient | None = None,
     ) -> None:
         if not workspace:
             raise ValueError("workspace must be a non-empty string")
         self.workspace = workspace
         self.timeout = timeout
         self._client = sandbox_client or SandboxClient(_endpoint(endpoint), timeout=timeout)
+        # Built lazily from `self._client` in the real case (needs its live
+        # grpc channel); accepted directly here so tests can inject a fake
+        # without needing a fake that also mimics `SandboxClient._channel`.
+        self._workspace_client = workspace_client
 
     def close(self) -> None:
         self._client.close()
@@ -80,6 +85,34 @@ class OpenShellClient:
 
     def __exit__(self, *args: object) -> None:
         self.close()
+
+    def ensure_workspace(self) -> None:
+        """Create this client's workspace if it doesn't already exist.
+
+        Real gateway behavior, confirmed directly: a sandbox `create()` in
+        a workspace that was never explicitly created fails with
+        `NOT_FOUND: workspace '<name>' not found` — there is no implicit,
+        lazy workspace creation the way there might be for a namespace in
+        some other systems. `create_sandbox` calls this itself, so callers
+        never need to know about the two-step requirement.
+        """
+        if self._workspace_client is None:
+            self._workspace_client = WorkspaceClient.from_sandbox_client(self._client)
+        ws_client = self._workspace_client
+        try:
+            ws_client.get(self.workspace)
+            return
+        except (grpc.RpcError, SandboxError) as exc:
+            if not (isinstance(exc, grpc.Call) and exc.code() == grpc.StatusCode.NOT_FOUND):
+                raise OpenShellUnavailable(
+                    f"ensure_workspace({self.workspace!r}) failed: {exc}"
+                ) from exc
+        try:
+            ws_client.create(self.workspace)
+        except (grpc.RpcError, SandboxError) as exc:
+            raise OpenShellUnavailable(
+                f"ensure_workspace({self.workspace!r}) failed: {exc}"
+            ) from exc
 
     def create_sandbox(
         self,
@@ -106,6 +139,7 @@ class OpenShellClient:
         concept (a model backend selected for tmux agents). See
         docs/NAMING-openshell.md for the collision.
         """
+        self.ensure_workspace()
         try:
             spec = openshell_pb2.SandboxSpec(
                 environment=dict(environment or {}),
