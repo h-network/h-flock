@@ -4,8 +4,8 @@
 >
 > Depends on [`LLD-bus-and-switch.md`](LLD-bus-and-switch.md) for the address
 > scheme, the envelope, and the ingress door. One transient process (`flock.port`)
-> is invoked per kick from the switch to drain queued envelopes and dispatch to
-> the registered handler for the destination agent's `port_type`.
+> is invoked per kick from the switch to dispatch ingress work to the registered
+> handler for the destination agent's `port_type`.
 
 ## 1. Purpose
 
@@ -14,9 +14,10 @@ without knowing or caring how a destination agent is hosted. The port delivery
 framework is the receiving framework that:
 
 1. Serializes delivery per agent via an atomic Redis lock (`delivering`).
-2. Atomically drains the agent's queued ingress envelopes.
+2. Checks whether delivery to the agent is paused.
 3. Resolves the destination's `port_type` using a decoupled registry (`flock.port.registry`).
-4. Dispatches the batch to the registered delivery handler, or dead-letters cleanly if unroutable.
+4. Dispatches ingress work to the registered delivery handler, or snapshot-drains and
+   dead-letters it if unroutable.
 
 ```
                   ┌───────────────────────────────────────────────────────────┐
@@ -24,9 +25,8 @@ framework is the receiving framework that:
                   │                                                           │
   switch ──kick──►│ 1. Acquire 'delivering' lock (HSETNX)                     │
                   │ 2. Check 'paused' marker                                  │
-                  │ 3. Atomic snapshot-drain (drain_ingress Lua)              │
-                  │ 4. Lookup port_type in flock.port.registry ───────────────┼──► Handler dispatch
-                  │ 5. Release 'delivering' lock (HDEL) & exit                │    - tmux (LLD-port-tmux.md)
+                  │ 3. Lookup port_type in flock.port.registry ───────────────┼──► Handler consumes ingress
+                  │ 4. Release 'delivering' lock (HDEL) & exit                │    - tmux (LLD-port-tmux.md)
                   └───────────────────────────────────────────────────────────┘    - api (LLD-api.md)
                                                                                    - control (not yet written)
                                                                                    - openshell (LLD-port-openshell.md)
@@ -70,10 +70,11 @@ or ownership token. If a port process exits without reaching its `finally` block
 blocks later processes for that agent until operational cleanup removes it. A waiting process
 does not time out or take the tag over.
 
-## 3. Atomic Snapshot Draining (`drain_ingress`)
+## 3. Handler Ingress Consumption (`drain_ingress`)
 
-Upon acquiring the `delivering` lock, the port snapshot-drains whatever is currently
-queued in `<prefix>:agent:<name>:ingress` using an atomic Lua script:
+After `deliver_one` resolves and invokes a handler, the tmux, API, OpenShell, and
+unroutable handlers snapshot-drain whatever is currently queued in
+`<prefix>:agent:<name>:ingress` using an atomic Lua script:
 
 ```lua
 -- flock ingress drain all v1
@@ -87,6 +88,11 @@ return items
 
 This ensures zero race conditions with incoming switch deliveries: envelopes arriving
 after the snapshot remain safely queued in Redis and trigger a subsequent delivery run.
+
+The control handler is intentionally different. `flock.control.runner.deliver_one` calls
+`flock.bus.receive(..., blocking=False)` and consumes at most one lifecycle envelope per
+kick instead of calling `drain_ingress`. The registry dispatch contract therefore hands a
+handler access to ingress; it does not require every handler to consume a snapshot batch.
 
 The atomic guarantee describes the normal Redis path. `drain_ingress` also supports clients
 without a working `EVAL` command (principally test doubles) by repeatedly calling `LPOP`.
