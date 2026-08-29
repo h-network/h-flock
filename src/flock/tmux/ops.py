@@ -78,6 +78,10 @@ def generate_agents_md(agent_name: str, tenant: str = "default", lead: str | Non
             "and yours is the account that decides when something is done.\n\n"
             "Before you hand out work, check `office status`. An agent that is `blocked` "
             "will not receive it — hold the work and say so. Do not try to fix the agent.\n\n"
+            "`office cloneToAll` only ever reuses a copy it made during that same call "
+            "as a local source for the next agent — never a target that already existed "
+            "before the call started. Mixing a pre-existing agent into the same `-a` list "
+            "as fresh hires is safe: the existing one is skipped, not reused as a source.\n\n"
         )
     elif lead:
         lead_sentence = f"{lead} is the lead of this office. Their direction is the office's direction.\n\n"

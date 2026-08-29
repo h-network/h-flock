@@ -271,6 +271,7 @@ def test_generate_agents_md():
     lead_content = generate_agents_md("zeus", "hq", lead="zeus")
     assert "You are the lead of this office. The other agents follow your direction, and yours is the account that decides when something is done." in lead_content
     assert "Before you hand out work, check `office status`. An agent that is `blocked` will not receive it — hold the work and say so. Do not try to fix the agent." in lead_content
+    assert "`office cloneToAll` only ever reuses a copy it made during that same call" in lead_content
     assert "## Working in this office" in lead_content
 
     peer_content = generate_agents_md("dave", "hq", lead="zeus")
