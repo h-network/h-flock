@@ -28,6 +28,8 @@ AGENT_STATE_RESOURCES = frozenset(
         "usage.attributed",
         "tags",
         "resume",
+        "skip-permissions",
+        "claude-tools",
         "hmac-keys",
     }
 )

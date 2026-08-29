@@ -95,6 +95,24 @@ class TmuxHost:
         val = r.get(key)
         return val.decode() if isinstance(val, bytes) else (str(val) if val is not None else None)
 
+    def get_agent_skip_permissions(self, r: redis.Redis, agent: str) -> bool | None:
+        key = prefix(self.pod, self.tenant, agent=agent, resource="skip-permissions")
+        val = r.get(key)
+        if val is None:
+            return None
+        val = val.decode() if isinstance(val, bytes) else val
+        return val == "1"
+
+    def get_agent_claude_tools(self, r: redis.Redis, agent: str) -> str | None:
+        # ⚠ `None` (key absent) and `""` (published, unrestricted) are both
+        # legitimate returns here and mean different things downstream --
+        # do not coalesce them.
+        key = prefix(self.pod, self.tenant, agent=agent, resource="claude-tools")
+        val = r.get(key)
+        if val is None:
+            return None
+        return val.decode() if isinstance(val, bytes) else val
+
     def log_window_created(self, r: redis.Redis, agent: str) -> None:
         log_record(
             "tmuxhost", "window_created", destination=agent,
@@ -110,6 +128,8 @@ class TmuxHost:
         lead: str | None = None,
         provider: dict | None = None,
         resume: bool | None = None,
+        skip_permissions: bool | None = None,
+        claude_tools: str | None = None,
     ) -> None:
         ret, stdout, stderr = tmux_ops.run_tmux("has-session", "-t", self.session_name, socket=self.socket)
         if ret != 0:
@@ -136,7 +156,8 @@ class TmuxHost:
                     cmd_args = ["bash", "-il"]
                 cmd.extend(
                     window_env(
-                        initial_window, tenant=self.tenant, cwd=cwd, profile=profile, provider=provider
+                        initial_window, tenant=self.tenant, cwd=cwd, profile=profile, provider=provider,
+                        skip_permissions=skip_permissions, claude_tools=claude_tools,
                     )
                     + cmd_args
                 )
@@ -165,9 +186,14 @@ class TmuxHost:
         lead: str | None = None,
         provider: dict | None = None,
         resume: bool | None = None,
+        skip_permissions: bool | None = None,
+        claude_tools: str | None = None,
     ) -> bool:
         cwd = cwd or f"/workdir/{agent_name}"
-        env_args = window_env(agent_name, tenant=self.tenant, cwd=cwd, profile=profile, provider=provider)
+        env_args = window_env(
+            agent_name, tenant=self.tenant, cwd=cwd, profile=profile, provider=provider,
+            skip_permissions=skip_permissions, claude_tools=claude_tools,
+        )
 
         # ⚠ Not written here — tmux_ops.create_window below writes it for every
         # caller, and writing it twice is what dropped the lead sentence.
@@ -213,6 +239,12 @@ class TmuxHost:
         first_provider = self.get_agent_provider(r, first_agent) if first_agent != "__init__" else None
         first_resume_raw = self.get_agent_resume(r, first_agent) if first_agent != "__init__" else None
         first_resume = True if first_resume_raw == "1" else (False if first_resume_raw == "0" else None)
+        first_skip_permissions = (
+            self.get_agent_skip_permissions(r, first_agent) if first_agent != "__init__" else None
+        )
+        first_claude_tools = (
+            self.get_agent_claude_tools(r, first_agent) if first_agent != "__init__" else None
+        )
 
         self.ensure_server_and_session(
             r,
@@ -222,6 +254,8 @@ class TmuxHost:
             lead=lead,
             provider=first_provider,
             resume=first_resume,
+            skip_permissions=first_skip_permissions,
+            claude_tools=first_claude_tools,
         )
 
         existing_windows = self.get_windows()
@@ -234,8 +268,11 @@ class TmuxHost:
                 provider = self.get_agent_provider(r, agent)
                 resume_raw = self.get_agent_resume(r, agent)
                 resume = True if resume_raw == "1" else (False if resume_raw == "0" else None)
+                skip_permissions = self.get_agent_skip_permissions(r, agent)
+                claude_tools = self.get_agent_claude_tools(r, agent)
                 self.create_window(
-                    r, agent, cli=cli, profile=profile, lead=lead, provider=provider, resume=resume
+                    r, agent, cli=cli, profile=profile, lead=lead, provider=provider, resume=resume,
+                    skip_permissions=skip_permissions, claude_tools=claude_tools,
                 )
 
         # A cause marker beside an already-present window did not cause that

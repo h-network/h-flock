@@ -516,6 +516,23 @@ def _control_command(command: str, argv: list[str]) -> None:
                                 help="resume prior session history (default when history exists)")
         mode_group.add_argument("--fresh", action="store_true", default=None,
                                 help="start a clean session ignoring prior history")
+        # ⚠ Both are startAgent's own knobs (base image), not h-flock's --
+        # omitted means startAgent decides, same as --resume/--fresh omitted
+        # means tmuxhost decides. Neither flag changes default behavior.
+        permission_group = parser.add_mutually_exclusive_group()
+        permission_group.add_argument(
+            "--skip-permissions", action="store_true", default=None,
+            help="bypass CLI approval prompts (default: on)",
+        )
+        permission_group.add_argument(
+            "--no-skip-permissions", action="store_true", default=None,
+            help="keep real CLI approval prompts instead of bypassing them",
+        )
+        parser.add_argument(
+            "--claude-tools", metavar="LIST", default=None,
+            help="claude's --tools list, space-separated (default: Bash Read Write Edit "
+                 "Glob Grep); '' means unrestricted. claude only, ignored by codex/agy",
+        )
     args = parser.parse_args(argv)
     r, pod, tenant, source = _context()
     if command == "hire" and args.profile:
@@ -533,6 +550,12 @@ def _control_command(command: str, argv: list[str]) -> None:
             payload["resume"] = False
         elif args.resume:
             payload["resume"] = True
+        if args.no_skip_permissions:
+            payload["skip_permissions"] = False
+        elif args.skip_permissions:
+            payload["skip_permissions"] = True
+        if args.claude_tools is not None:
+            payload["claude_tools"] = args.claude_tools
 
     stream_id = send(
         r,
