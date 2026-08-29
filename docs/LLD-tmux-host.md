@@ -128,7 +128,7 @@ shared across `tmuxhost`, `control`, and `port`.
 
 Windows are **reconciled against roster members with `port_type == "tmux"`**, in both directions —
 a `port_type == "tmux"` agent in the roster with no window gets one, a window with no `port_type == "tmux"` agent in the roster is
-removed. Non-tmux roster entries (enrolled REST clients with `port_type: "api"`, or `port_type: "control"`) generate no windows and are ignored by `tmuxhost`. Reconciliation is a repeatable operation, not a one-time setup step, so
+removed. Non-tmux roster entries (enrolled REST clients with `port_type: "api"`, `port_type: "control"`, or sandboxed agents with `port_type: "openshell"`) generate no windows and are ignored by `tmuxhost`. Reconciliation is a repeatable operation, not a one-time setup step, so
 running it again after a roster change is the whole mechanism for hiring and
 letting go.
 
