@@ -143,6 +143,55 @@ class DoorsAndRouterTest(unittest.TestCase):
         )
         self.assertEqual(opened[0]["stream_id"], stream_id)
 
+    def test_receive_log_failure_after_pop_does_not_prevent_opening(self):
+        envelope = build("Message", "alice", "bob", {"text": "deliver me"})
+        ingress = prefix("acme", "hq", "bob", "ingress")
+        self.r.rpush(ingress, encode(envelope))
+        opened = []
+
+        with patch("flock.bus.doors.log_record", side_effect=OSError("stdout closed")):
+            receive(
+                self.r,
+                pod="acme",
+                tenant="hq",
+                agent="bob",
+                openers={"Message": opened.append},
+                timeout=0,
+                blocking=False,
+            )
+
+        self.assertEqual([item["stream_id"] for item in opened], [envelope["stream_id"]])
+        self.assertEqual(self.r.lists[ingress], [])
+
+    def test_receive_log_failure_does_not_escape_after_dead_letter_append(self):
+        envelope = build("Mystery", "alice", "bob", {})
+        self.r.rpush(prefix("acme", "hq", "bob", "ingress"), encode(envelope))
+
+        with patch("flock.bus.doors.log_record", side_effect=OSError("stdout closed")):
+            receive(
+                self.r,
+                pod="acme",
+                tenant="hq",
+                agent="bob",
+                openers={},
+                timeout=0,
+                blocking=False,
+            )
+
+        self.assertEqual(len(self.r.lists[prefix("acme", "hq", "bob", "dead")]), 1)
+
+    def test_api_burst_log_failure_does_not_interrupt_drained_delivery(self):
+        from flock.port.deliver import deliver_api
+
+        envelope = build("Message", "alice", "api", {"text": "deliver me"})
+        self.r.rpush(prefix("acme", "hq", "api", "ingress"), encode(envelope))
+
+        with patch("flock.bus.doors.log_record", side_effect=OSError("stdout closed")):
+            deliver_api(self.r, "acme", "hq", "api")
+
+        inbox = prefix("acme", "hq", agent="api", resource="inbox")
+        self.assertEqual(len(self.r.streams[inbox]), 1)
+
     def test_broadcast_receive_records_name_each_actual_recipient(self):
         output = io.StringIO()
         opened = {"bob": [], "carol": []}

@@ -86,16 +86,21 @@ def _emit_for_recipient(
     recipient: str,
     reason: str | None = None,
 ) -> None:
-    """Emit receive-side custody about the actual participant, not L2 fan-out."""
-    log_record(
-        module,
-        event,
-        stream_id=envelope.get("stream_id"),
-        correlation_id=envelope.get("correlation_id"),
-        source=envelope.get("l2", {}).get("source"),
-        destination=recipient,
-        reason=reason,
-    )
+    """Best-effort receive custody about the participant, not L2 fan-out."""
+    try:
+        log_record(
+            module,
+            event,
+            stream_id=envelope.get("stream_id"),
+            correlation_id=envelope.get("correlation_id"),
+            source=envelope.get("l2", {}).get("source"),
+            destination=recipient,
+            reason=reason,
+        )
+    except Exception:
+        # receive() and burst delivery have already destructively popped or
+        # drained ingress. Observation cannot strand that accepted custody.
+        pass
 
 
 def send(
