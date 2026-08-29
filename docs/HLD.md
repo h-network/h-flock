@@ -105,9 +105,11 @@ wrong since. It also predated the v4 wire.
   ┌─────────────────────────────────────────────────────────────────────────┐
   │  flock.port — the FIRST component that parses the body                  │
   │                                                                         │
-  │    ⑤ received       HSETNX delivering   ← the ownership tag             │
+  │    HSETNX delivering     acquire once per run                           │
   │       opener dispatched on port_type                                    │
-  │    ⑥ opened         HDEL   delivering                                   │
+  │       ⑤ received       zero or more, per parsed envelope                │
+  │       ⑥ opened         zero or more, per successful envelope            │
+  │    HDEL delivering       release once per run (finally)                 │
   └───────────────────────────────┬─────────────────────────────────────────┘
                                   │
                     ┌──────────┬──┴─────────┬───────────┐
