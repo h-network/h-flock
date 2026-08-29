@@ -75,7 +75,7 @@ inspectors:
 
 | | Does | Rejects |
 |---|---|---|
-| **send** | builds the envelope, writes the egress selected by `source`, logs | nothing malformed can be constructed |
+| **send** | builds the envelope, writes the egress selected by `source`, logs, tracks `unreplied` from the L2 header alone | nothing malformed can be constructed |
 | **receive boundary** | validates what came off ingress, dispatches on `kind` to an opener, logs | unknown kind → dead-letter |
 
 For registered VABs, each check therefore has one logical home. An envelope
@@ -91,6 +91,15 @@ egress key is authoritative: a mismatched `source` field is overwritten with
 the queue owner and logged as `source_stamped`. This makes attribution honest,
 but does not authenticate which process wrote that queue or prevent a direct
 caller from choosing another participant's valid egress prefix.
+
+**`send`'s one piece of interpretation stays at the header, not the payload.**
+It already resolves both `source` and `destination` port_type for
+`require_allowed` above, so it reuses that lookup to open or clear one HASH
+field in `unreplied` — a client (`api` port_type) reaching a `tmux` agent
+opens a count against that client; that agent replying to the same client
+clears it. This reads `l2` and the roster, the same inputs the switch's own
+forwarding decision already reads; it never inspects `payload`. Full shape
+and the watchdog rule that consumes it are LLD-watchdog §2d.
 
 A consequence worth stating: **an agent never learns a queue name.** Components
 at the edge use `send` and `receive`; a terminal agent sees the `office` verbs
@@ -404,6 +413,7 @@ The switch sits on the opposite end of both.
 | `<prefix>:usage.requests` | SET | the watchdog activity tailer | the same tailer's per-agent request deduplication |
 | `<prefix>:usage.attributed` | SET | the watchdog activity tailer | the same tailer's per-agent delivery-attribution deduplication |
 | `<prefix>:blocked` | HASH | the watchdog's verifier | office and watchdog reads |
+| `<prefix>:unreplied` | HASH | the `send` door itself | the watchdog's §2d (LLD-watchdog) |
 | tenant `<prefix>:alerts` | STREAM | the watchdog | api polling and SSE, by cursor |
 | tenant `<prefix>:usage` | STREAM | the watchdog activity tailer | `office usage`, by range |
 

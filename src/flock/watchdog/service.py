@@ -75,6 +75,7 @@ class Watchdog:
         doing_alert_seconds: float = 900,
         todo_alert_seconds: float = 300,
         hold_alert_seconds: float = 3600,
+        unreplied_alert_seconds: float = 60,
         home_root: str | Path = "/home/ubuntu",
     ):
         self.r = r
@@ -89,6 +90,7 @@ class Watchdog:
         self.doing_alert_seconds = doing_alert_seconds
         self.todo_alert_seconds = todo_alert_seconds
         self.hold_alert_seconds = hold_alert_seconds
+        self.unreplied_alert_seconds = unreplied_alert_seconds
         self.home_root = Path(home_root)
         self._reported_blocks: set[tuple[str, str, str]] = set()
 
@@ -450,6 +452,75 @@ class Watchdog:
             if stale:
                 self.r.hdel(state_key, *stale)
 
+    def _check_unreplied_duration(self, agents: list[str], now: datetime) -> None:
+        """Tell the lead directly when a client message has sat unanswered.
+
+        Fourth in the doing/todo/hold family, same delivery and dedup shape,
+        independent state. Unlike those three, the trigger is not the board —
+        it is `unreplied`, a HASH `bus.send` itself writes: opened when a
+        client (`api` port_type, e.g. `telegram`) sends a tmux agent a
+        Message or Attachment, cleared the instant that agent sends anything
+        back to the same client. `since` is the oldest still-unanswered
+        message's timestamp; `count` how many have arrived since.
+
+        Board-only-to-the-lead's reasoning (§4) still applies here: pasting the
+        nag straight into the owing agent's own pane would risk nothing here
+        (the evidence is `unreplied`, cleared only by an actual reply, not by
+        window activity), but the family's one exception stays the lead only,
+        not a second one for this rule alone.
+
+        ⚠ **Re-alerts back off exponentially, unlike the other three.**
+        `WATCHDOG_UNREPLIED_ALERT_SEC` defaults to 60s because a client message
+        deserves a fast first nag — a fixed re-alert *period* that short would
+        page the lead once a minute for the length of any genuinely long task,
+        which is the wrong failure mode to optimize for. Instead the state
+        value stored per client is the threshold that was just used, and the
+        next one required is double it: 60s, 120s, 240s, ... A quick miss
+        still surfaces within a minute; a five-minute task produces two nags,
+        not five.
+        """
+        lead = self._lead()
+        if not lead:
+            return
+        for agent in agents:
+            state_key = prefix(self.pod, self.tenant, agent, "unreplied.alerted")
+            raw_fields = _fields(self.r.hgetall(prefix(self.pod, self.tenant, agent, "unreplied")) or {})
+            present_clients = set()
+            for client, raw_value in raw_fields.items():
+                try:
+                    data = json.loads(raw_value)
+                    count = int(data["count"])
+                    since = _timestamp(data["since"])
+                except (TypeError, ValueError, KeyError):
+                    continue
+                if since is None or count < 1:
+                    continue
+                present_clients.add(client)
+                age = int((now - since).total_seconds())
+
+                previous = _text(self.r.hget(state_key, client))
+                if previous is not None and previous.isdigit():
+                    next_threshold = int(previous) * 2
+                else:
+                    next_threshold = int(self.unreplied_alert_seconds)
+                if age < next_threshold:
+                    continue
+
+                minutes = age // 60
+                plural = "" if count == 1 else "s"
+                text = (
+                    f'[alert from watchdog] {agent} has {count} unanswered message{plural} from '
+                    f'{client}, oldest {minutes} min old'
+                )
+                self._notify_lead(lead, text)
+                self.r.hset(state_key, client, str(next_threshold))
+
+            # A client the agent has since answered leaves `unreplied`; its
+            # crossing count is no longer meaningful, same pruning as todo/hold.
+            stale = {_text(field) for field in (self.r.hkeys(state_key) or [])} - present_clients
+            if stale:
+                self.r.hdel(state_key, *stale)
+
     def poll(self, *, now: datetime | None = None) -> None:
         now = (now or datetime.now(timezone.utc)).astimezone(timezone.utc)
         agents = self._agents()
@@ -478,6 +549,10 @@ class Watchdog:
             self._check_hold_duration(agents, now)
         except Exception as exc:
             self._error("hold_duration", exc)
+        try:
+            self._check_unreplied_duration(agents, now)
+        except Exception as exc:
+            self._error("unreplied_duration", exc)
 
     def _credential_accounts(self) -> list[tuple[str, str, Path]]:
         """Return each CLI account used by an enrolled terminal agent once."""
@@ -618,6 +693,7 @@ def main() -> None:
         doing_alert_seconds=float(os.environ.get("WATCHDOG_DOING_ALERT_SEC", "900")),
         todo_alert_seconds=float(os.environ.get("WATCHDOG_TODO_ALERT_SEC", "300")),
         hold_alert_seconds=float(os.environ.get("WATCHDOG_HOLD_ALERT_SEC", "3600")),
+        unreplied_alert_seconds=float(os.environ.get("WATCHDOG_UNREPLIED_ALERT_SEC", "60")),
     )
     # ⚠ These three moved out of the switch's forwarding loop. They observe
     # agents — CLI transcripts, presence, whether a paste was followed by input

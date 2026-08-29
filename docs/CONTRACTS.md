@@ -1034,21 +1034,40 @@ the entry shape matches the single-agent route exactly.
   <prefix>:agent:<name>:doing.alerted     STRING   "<ticket_id>:<crossing>", set by the watchdog
   <prefix>:agent:<name>:todo.alerted      HASH     { <ticket_id>: <crossing>, … }, set by the watchdog
   <prefix>:agent:<name>:hold.alerted      HASH     { <ticket_id>: <crossing>, … }, set by the watchdog
+  <prefix>:agent:<name>:unreplied         HASH     { <client>: {"count","since"} }, set by `send()`
+  <prefix>:agent:<name>:unreplied.alerted HASH     { <client>: <next_threshold_s>, … }, set by the watchdog
   <prefix>:alerts                         STREAM   tenant-level, MAXLEN ~ 1000
 ```
 
-⚠ **`doing.alerted`, `todo.alerted` and `hold.alerted` do not gate the alerts
-stream.** They are the dedupe keys for a *different* mechanism —
-`LLD-watchdog` §2a/§2b/§2c's direct paste into the tenant `lead`'s pane when a
-ticket has sat in `doing`, `todo` or `hold` past
-`WATCHDOG_DOING_ALERT_SEC`/`WATCHDOG_TODO_ALERT_SEC`/`WATCHDOG_HOLD_ALERT_SEC`.
-This is the one case where the watchdog writes to a participant's `ingress`
-rather than only to `<prefix>:alerts`, and it is addressed to the `lead`
-alone, never to the ticket's own agent (`HLD` §8c). `doing.alerted` is a
-STRING because `tasks.doing` holds at most one ticket; `todo.alerted` and
-`hold.alerted` are HASHes keyed by ticket id because `tasks.todo` and
-`tasks.hold` can each hold several aging tickets at once, tracked
-independently and dropped once a ticket leaves that state.
+⚠ **`doing.alerted`, `todo.alerted`, `hold.alerted` and `unreplied.alerted` do
+not gate the alerts stream.** They are the dedupe keys for a *different*
+mechanism — `LLD-watchdog` §2a/§2b/§2c/§2d's direct paste into the tenant
+`lead`'s pane when a ticket has sat in `doing`, `todo` or `hold` past
+`WATCHDOG_DOING_ALERT_SEC`/`WATCHDOG_TODO_ALERT_SEC`/`WATCHDOG_HOLD_ALERT_SEC`,
+or a client message has sat in `unreplied` past
+`WATCHDOG_UNREPLIED_ALERT_SEC`. This is the one case where the watchdog
+writes to a participant's `ingress` rather than only to `<prefix>:alerts`,
+and it is addressed to the `lead` alone, never to the ticket's or message's
+own agent (`HLD` §8c). `doing.alerted` is a STRING because `tasks.doing`
+holds at most one ticket; `todo.alerted` and `hold.alerted` are HASHes keyed
+by ticket id because `tasks.todo` and `tasks.hold` can each hold several
+aging tickets at once, tracked independently and dropped once a ticket
+leaves that state. `unreplied.alerted` is a HASH for the same reason, keyed
+by client rather than ticket id — but unlike the other three it stores the
+*next required age in seconds*, not a crossing count: re-alerts back off
+exponentially (60s, 120s, 240s, …) rather than at a fixed period, since a
+client reply is worth a fast first nag but not a repeat every minute for the
+length of a genuinely long task.
+
+⚠ **`unreplied` is written by `send()`, not by the watchdog.** Both
+directions of a client conversation pass through that one door: `office
+send` and a client's `POST /agents/<agent>/envelopes` both call it, just
+with `source`/`destination` swapped. It opens or extends the destination's
+field when an `api` port_type sends a `tmux` agent a `Message` or
+`Attachment`, and deletes the field outright the moment that agent sends
+anything back to the same client. Peer `tmux`-to-`tmux` traffic never
+touches it — ticket age already covers that responsiveness question via
+`doing.alerted`/`todo.alerted`/`hold.alerted`.
 
 ⚠ **`blocked` is written by the WATCHDOG.** It is a delivery verdict retained
 instead of discarded: set on `unverified`, deleted on `verified`. One writer, and
