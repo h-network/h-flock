@@ -63,7 +63,7 @@ is. This is what makes "no agent writes another agent's keys" (`HLD` invariant
 3) hold structurally rather than by convention — the command has no argument
 that could name someone else's identity to write as.
 
-⚠ **`main()` scopes `FLOCK_LOG_QUIET` to its own run** (`cli.py:1069`), setting
+⚠ **`main()` scopes `FLOCK_LOG_QUIET` to its own run** (`cli.py:1073`), setting
 it before dispatch and restoring whatever it found afterward. `office` runs
 inside an agent's own pane, so bus telemetry it would otherwise print
 (`sent`, `send_refused`, …) is a signpost the agent does not need and, once,
@@ -338,13 +338,14 @@ whichever target agent clones first, clones every remaining target from that
 local copy, and points **every** clone's `origin` at the supplied URL rather
 than at the local source (`cli.py:860`, `:836`) — so the network cost is paid
 once but no agent ends up with another agent's workspace as its remote.
-Existing target directories are skipped outright; a failed clone's partial
+Existing target directories are skipped outright and never reused as the
+local source for subsequent fresh clones in that run; a failed clone's partial
 directory is removed (`shutil.rmtree`) so a retry does not read "already has
 it" from debris. `--dry-run` performs no writes and reports what would happen.
 `api` and `control` participants have no `/workdir` and are never targets.
 
 Also reachable as the bare `cloneToAll` on `PATH` (`clone_to_all_main`,
-`cli.py:1086`), which delegates to `office cloneToAll` rather than
+`cli.py:1090`), which delegates to `office cloneToAll` rather than
 reimplementing it — a second copy existed for two days in 2026-08-19..21,
 dropped this cleanup, and left directories every later run misread as done.
 
@@ -368,7 +369,7 @@ Full record shape, correlation and pricing edge cases are `CONTRACTS.md` §5's
 ## 9. Errors and output
 
 Every command-level failure is `OfficeError` (`cli.py:53`), a `ValueError`
-subclass carrying a user-facing message. `_run()` (`cli.py:1101`) is the single
+subclass carrying a user-facing message. `_run()` (`cli.py:1105`) is the single
 catch point: it prints `office: error: <message>` to stderr and exits 1.
 Nothing below that boundary prints its own error text or exits directly —
 argument parsing errors are the one exception, going through `argparse`'s own
