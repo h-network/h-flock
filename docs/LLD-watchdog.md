@@ -388,6 +388,15 @@ delivery has been observed since**. It does not mean that the agent is stuck,
 and it is not proof that the CLI acted on or understood anything. The watchdog
 only reads the verdict, reports its age, and may include it in a stall alert.
 
+The evidence that verifies a marker is any `input`, `output` or `tool`
+activity event timestamped after it (`VERIFICATION_ACTIVITY_KINDS`,
+`watchdog/verification.py`) — not `input` alone. A CLI mid-turn keeps
+producing tool calls and output for minutes after the paste; counting only
+typing produced the false-`unverified` rate build 81 fixed. `input` is what
+agy's own correction below describes because `_agy_events` is the only kind
+agy's tailer ever emits — the underlying check is CLI-agnostic and treats all
+three kinds the same for claude and codex.
+
 ### Measured limits
 
 The deterministic lab run established the boundary:
@@ -533,7 +542,7 @@ agents.
 
 | variable | default | purpose |
 |---|---:|---|
-| `WATCHDOG_ENABLED` | `1` | `0` makes the process exit cleanly |
+| `WATCHDOG_ENABLED` | `1` | `0` silences alerting only; the observers (`ActivityTailer`, `PresenceSampler`, `DeliveryVerifier`) keep running, and the process does not exit |
 | `WATCHDOG_INTERVAL` | `30` | seconds between ordinary passes |
 | `WATCHDOG_STALL_SEC` | `600` | minimum age of a doing ticket |
 | `WATCHDOG_SILENCE_SEC` | `300` | minimum window-output silence |
