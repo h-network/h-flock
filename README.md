@@ -14,7 +14,8 @@
 ![tmux](https://img.shields.io/badge/tmux-agent_windows-1BB91F?style=flat-square&logo=tmux&logoColor=white)
 ![FastAPI](https://img.shields.io/badge/FastAPI-two_doors-009688?style=flat-square&logo=fastapi&logoColor=white)
 ![Agents](https://img.shields.io/badge/agents-claude_codex_agy-8B5CF6?style=flat-square)
-![Tests](https://img.shields.io/badge/tests-954_passing-22C55E?style=flat-square)
+![Sandboxes](https://img.shields.io/badge/sandboxes-OpenShell_disposable-F97316?style=flat-square)
+![Tests](https://img.shields.io/badge/tests-1248_passing-22C55E?style=flat-square)
 
 <!--
   Demo placeholder. Options for filling this in:
@@ -72,6 +73,14 @@ new kind of colleague is one delivery routine, not a rewrite.
 - **🏗️ One container = one tenant.** Redis, the switch, a tmux server with one
   window per agent, and two doors to the outside. Bring it up twice and it
   converges.
+- **📦 Agents that run somewhere else entirely.** `port_type: openshell` hires
+  an agent into a real, disposable [NVIDIA OpenShell](docs/LLD-port-openshell.md)
+  sandbox instead of a tmux window — its own container, reached only through
+  the gateway (gRPC + mTLS), torn down on `letGo`. Same `office
+  hire`/`send`/`letGo` flow, same board, same reply mechanism; the roster and
+  mailbox stay on h-flock's bus, only the execution moves. A CLI credential
+  is handed to the sandbox per delivery and wiped immediately after — it
+  never comes to rest there.
 
 Boards, presence and activity, live terminals, accounts, adapters that are not
 daemons, and what gets logged: [`docs/HLD.md`](docs/HLD.md) has all of it, and
@@ -500,6 +509,7 @@ went the way it did rather than only what it was.
 | [`LLD-bus-and-switch.md`](docs/LLD-bus-and-switch.md) | addressing, the envelope, the two doors, the invariants |
 | [`LLD-office.md`](docs/LLD-office.md) | the agent-facing command — the board, lifecycle, and what crosses the bus versus a direct Redis op |
 | [`LLD-port-tmux.md`](docs/LLD-port-tmux.md) | how text actually gets into a terminal, and why each rule is load-bearing |
+| [`LLD-port-openshell.md`](docs/LLD-port-openshell.md) | disposable sandbox agents — delivery, lifecycle, and credential transfer |
 | [`LLD-tmux-host.md`](docs/LLD-tmux-host.md) | the server, windows, geometry, reconciliation |
 | [`LLD-api.md`](docs/LLD-api.md) · [`LLD-session.md`](docs/LLD-session.md) | the two doors — `:8080` envelopes and state, `:8081` terminal bytes |
 | [`LLD-container.md`](docs/LLD-container.md) | one container is one tenant |

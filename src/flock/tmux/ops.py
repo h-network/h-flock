@@ -142,6 +142,13 @@ precisely because it reads like a natural close. Before treating a turn as
 finished: did an office send call actually execute in this turn, not "did I
 mean to."
 
+That said, "always reply via office send" means a substantive message must
+actually reach its recipient — it does not mean every message needs a reply
+forever. Once an exchange is down to pure closing acknowledgments ("thanks",
+"got it", "noted") with nothing new in either message, let it end. Replying
+to an acknowledgment with another acknowledgment is a loop, not courtesy —
+watchdog will flag it if it keeps going.
+
 Push your own branch, never `main` directly — name it
 `<your-agent-name>/short-description`. The lead reviews and merges. However
 your git credential is set up (SSH, `gh auth`, whatever), use it; nothing

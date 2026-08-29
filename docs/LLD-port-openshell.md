@@ -298,18 +298,23 @@ real `StopAgent` cycle, not just the client layer underneath it.
   the VM's raw bridge IP, which isn't stable across container recreates.
 
 Still open, not yet asked:
-- The exact sandbox image / how `agy` (and opencode/copilot) get into it,
-  if they need to.
 - **Whether this integration needs its own mTLS client identity**,
   separate from the lab's local `openshell` CLI registration used for the
   §2a verification run — raised by architect, not yet decided.
-- **`resume=True` unconditionally, for every CLI, on every delivery**
-  (§2/§3a) is confirmed safe for codex (a fresh sandbox's `resume --last`
-  silently starts new instead of erroring — observed directly) but only
-  *inferred* safe for claude (`-c` with nothing to continue) from
-  documented CLI ergonomics, not observed — no credential was injected to
-  test it for real, per this ticket's standing rule. Confirm with a real
-  credentialed run before fully trusting this for claude.
+- `agy` and opencode/copilot's presence in the default sandbox image, if
+  they need to be there. Confirmed (§5, credential-transfer testing):
+  `agy` is **not** installed in the default image at all (`which agy`
+  exits 1) — not chased further, tracked as a known gap rather than fixed
+  here.
+
+Correction to an earlier pass through this row (architect, 2026-08-29):
+an intermediate edit here claimed the codex/agy credential-transfer test
+(§5) also confirmed `resume=True` for claude, since that test used a real
+`CLAUDE_CODE_OAUTH_TOKEN` and got a genuine reply. That overstated it —
+auth succeeding with `resume=True` in the argv is not the same claim as
+"a fresh sandbox with nothing to continue behaves correctly under
+`resume=True`," and no test has isolated that second, narrower case for
+claude the way it was directly observed for codex. Still open — see §6.
 
 Resolved since the last update:
 - ~~The 19-character sandbox name limit vs. 63-character flock agent
