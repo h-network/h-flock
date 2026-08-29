@@ -21,7 +21,7 @@ and pastes into the agent's window using bracketed paste mode.
 ```
   ┌───────────────────────────────── deliver_tmux ──────────────────────────────────┐
   │                                                                                 │
-  │  1. Parse snapshot-drained envelopes & emit 'received'                          │
+  │  1. Snapshot-drain and parse envelopes; emit 'received'                         │
   │  2. Batch consecutive Messages into a combined bracketed paste                  │
   │  3. For API sources: append [reply to <client>] trailer                         │
   │  4. For verifiable CLIs: record pending.verify & delivery.markers before paste │
@@ -33,8 +33,8 @@ and pastes into the agent's window using bracketed paste mode.
 
 ## 2. Delivery & Burst Batching (`deliver_tmux`)
 
-When invoked by the delivery framework, `deliver_tmux` receives a drained snapshot of
-envelopes for the destination agent:
+When invoked by the delivery framework, `deliver_tmux` snapshot-drains and consumes the
+envelopes currently queued for the destination agent:
 
 - **Opportunistic burst batching**: Consecutive `Message`-kind envelopes are concatenated
   into ONE combined bracketed paste (`[message from X] text\n` per block, in arrival order),

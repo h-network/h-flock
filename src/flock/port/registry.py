@@ -43,7 +43,7 @@ def reset_registry() -> None:
 def get_delivery_handler(port_type_name: str) -> Optional[Callable[..., Any]]:
     """Look up and resolve the delivery handler for a given port_type.
     
-    Lazy-resolves (module_path, attr_name) specifications on first invocation.
+    Resolves lazy (module_path, attr_name) specifications on every lookup.
     """
     if not port_type_name or port_type_name not in _PORT_REGISTRY:
         return None
