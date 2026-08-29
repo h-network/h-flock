@@ -21,6 +21,7 @@ from flock.bus import (
     port_type,
     require_allowed,
 )
+from flock.bus.queues import admit_ingress
 from flock.watchdog.activity import ActivityTailer
 from flock.watchdog.presence import PresenceSampler
 from flock.watchdog.verification import DeliveryVerifier
@@ -76,6 +77,7 @@ class Watchdog:
         todo_alert_seconds: float = 300,
         hold_alert_seconds: float = 3600,
         unreplied_alert_seconds: float = 60,
+        ingress_max: int = 300,
         home_root: str | Path = "/home/ubuntu",
     ):
         self.r = r
@@ -91,6 +93,7 @@ class Watchdog:
         self.todo_alert_seconds = todo_alert_seconds
         self.hold_alert_seconds = hold_alert_seconds
         self.unreplied_alert_seconds = unreplied_alert_seconds
+        self.ingress_max = ingress_max
         self.home_root = Path(home_root)
         self._reported_blocks: set[tuple[str, str, str]] = set()
 
@@ -264,6 +267,20 @@ class Watchdog:
         way the switch does after a normal forward — same envelope shape, same
         `message_opener` rendering, same delivery subprocess. Only the egress
         hop, which nothing was ever going to drain, is skipped.
+
+        ⚠ The ingress write goes through the same `admit_ingress` bound the
+        switch uses for every other forward, not a plain `rpush`. Before this,
+        a lead whose port stopped draining ingress had nothing capping how
+        many nags the watchdog kept appending — the one unbounded write into
+        a participant's ingress in an otherwise bounded system. Rejection here
+        is not a delivery failure worth retaining: these are best-effort nags,
+        not durable envelopes anyone is owed, and the board/`unreplied` state
+        that triggered this one is untouched, so it re-fires on its own next
+        threshold crossing once the lead's port recovers. So a full queue logs
+        `lead_alert_capacity` and drops the alert — no dead-letter, no retry.
+        A Redis/eval exception logs `lead_alert_unknown` instead, because the
+        write may have committed before the error, mirroring `send_unknown`/
+        `forward_unknown` elsewhere in the bus.
         """
         if not is_member(self.r, pod=self.pod, tenant=self.tenant, agent=lead):
             return
@@ -278,7 +295,29 @@ class Watchdog:
         except EnvelopeError as exc:
             self._error("lead_alert", exc)
             return
-        self.r.rpush(prefix(self.pod, self.tenant, lead, "ingress"), raw)
+        try:
+            admitted, _, depth = admit_ingress(
+                self.r,
+                pod=self.pod,
+                tenant=self.tenant,
+                destinations=[lead],
+                raw=raw,
+                limit=self.ingress_max,
+            )
+        except Exception as exc:
+            log_record(
+                "watchdog", "lead_alert_unknown",
+                stream_id=envelope["stream_id"], destination=lead,
+                reason=f"admission outcome UNKNOWN after {exc}",
+            )
+            return
+        if not admitted:
+            log_record(
+                "watchdog", "lead_alert_capacity",
+                stream_id=envelope["stream_id"], destination=lead,
+                reason=f"lead ingress full: depth {depth} has reached INGRESS_MAX {self.ingress_max}",
+            )
+            return
         log_record("watchdog", "lead_alert_sent", stream_id=envelope["stream_id"], destination=lead)
         try:
             subprocess.Popen(["flock.port", lead])
@@ -694,6 +733,7 @@ def main() -> None:
         todo_alert_seconds=float(os.environ.get("WATCHDOG_TODO_ALERT_SEC", "300")),
         hold_alert_seconds=float(os.environ.get("WATCHDOG_HOLD_ALERT_SEC", "3600")),
         unreplied_alert_seconds=float(os.environ.get("WATCHDOG_UNREPLIED_ALERT_SEC", "60")),
+        ingress_max=int(os.environ.get("INGRESS_MAX", "300")),
     )
     # ⚠ These three moved out of the switch's forwarding loop. They observe
     # agents — CLI transcripts, presence, whether a paste was followed by input
