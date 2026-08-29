@@ -85,6 +85,18 @@ class FlockClient:
             {"text": text, "as": self.app_name},
         )
 
+    def send_command(self, destination: str, text: str) -> tuple[int, dict]:
+        """Send a Command-kind envelope. Unlike send_message's Message-kind
+        shorthand, flock.port's command_opener pastes payload.text raw with
+        a trailing newline and no "[message from X]" wrapper — so a native
+        CLI slash command (e.g. Claude Code's /clear) is interpreted by the
+        underlying CLI instead of read as chat text saying "/clear"."""
+        return self.request(
+            "POST",
+            f"/agents/{destination}/envelopes",
+            {"kind": "Command", "payload": {"text": text}, "as": self.app_name},
+        )
+
     def send_attachment(
         self, destination: str, filename: str, mime_type: str, content_base64: str, caption: str | None = None
     ) -> tuple[int, dict]:
@@ -399,6 +411,30 @@ def _parse_mention(text: str) -> tuple[str, str] | None:
     if not match:
         return None
     return match.group(1).lower(), (match.group(2) or "").strip()
+
+
+# `/run <agent> <command>` — a policy-reviewed exception to Command being
+# "deliberately not exposed" (README §2a, web/SPEC.md §6): a full Command
+# passthrough is unbounded remote execution from a phone with no live view
+# of the pane, exactly what that note objected to. This is bounded to a
+# fixed, pre-vetted set of native CLI slash commands instead — see
+# handle_run_command for the full reasoning and the single-line
+# requirement (an allowed command's own text could otherwise carry a
+# newline, submitting a second, unvetted line of raw input on delivery).
+# Global rather than per-CLI: the api exposes no field for which CLI an
+# agent runs (same limitation PANE_WATCH_CHROME_OVERRIDES exists for), and
+# claude/codex/agy's actual command grammars are not something this client
+# can verify without a live agent of each kind to check against — an
+# operator who runs CLIs where these two names mean something else, or
+# wants more, sets --run-allowed-commands/RUN_ALLOWED_COMMANDS instead of
+# this default.
+DEFAULT_RUN_ALLOWED_COMMANDS = ("/clear", "/compact")
+
+
+def _parse_command_allowlist(spec: str) -> frozenset[str]:
+    """Parse "/clear,/compact" — comma-separated, each entry stripped of
+    surrounding whitespace, blank entries dropped."""
+    return frozenset(item.strip() for item in spec.split(",") if item.strip())
 
 
 def render_alert(alert: dict) -> str:
@@ -1285,6 +1321,7 @@ class TelegramBot:
         pane_watch_refresh_s: float = 2.0,
         pane_watch_max_duration_s: float = 600.0,
         mini_app_url: str | None = None,
+        run_allowed_commands: "frozenset[str] | None" = None,
     ):
         self.flock = flock_client
         self.telegram = telegram_client
@@ -1336,6 +1373,13 @@ class TelegramBot:
         self.pane_watch_refresh_s = pane_watch_refresh_s
         self.pane_watch_max_duration_s = pane_watch_max_duration_s
         self.pane_watches: dict = ChatDict()
+        # `/run <agent> <command>` — see DEFAULT_RUN_ALLOWED_COMMANDS for why
+        # this is global rather than per-CLI.
+        self.run_allowed_commands = (
+            frozenset(run_allowed_commands)
+            if run_allowed_commands is not None
+            else frozenset(DEFAULT_RUN_ALLOWED_COMMANDS)
+        )
 
     def is_voice_enabled(self, chat_id: int | str) -> bool:
         return self.voice_feature_enabled and self.chat_voice_enabled.get(str(chat_id), False)
@@ -1408,6 +1452,7 @@ class TelegramBot:
                 {"command": "status", "description": f"Quick status check for {self.target_agent}"},
                 {"command": "watch", "description": "Live-tail an agent's tmux pane (/watch <agent>)"},
                 {"command": "unwatch", "description": "Stop this chat's active /watch"},
+                {"command": "run", "description": "Run an allowed CLI slash command, no wrapper (/run <agent> <command>)"},
                 {"command": "voice", "description": "Toggle spoken voice replies (TTS)"},
             ])
             if not res.get("ok", True):
@@ -1762,6 +1807,60 @@ class TelegramBot:
                 self.telegram.send_message(cid, error)
             return error
         return self.handle_user_prompt(cid, rest, agent_override=name)
+
+    def handle_run_command(self, chat_id: int | str, rest: str) -> str:
+        """`/run <agent> <command>` — raw, unwrapped pane injection: a
+        Command-kind envelope instead of the Message-kind shorthand every
+        other text path uses, so a native CLI slash command (e.g. Claude
+        Code's `/clear`) is interpreted by the underlying CLI instead of
+        read as chat text saying "/clear". One-off, same as `@mention` —
+        `chat_target_agent` is never touched by this.
+
+        ⚠ Bounded to `self.run_allowed_commands` (`DEFAULT_RUN_ALLOWED_COMMANDS`
+        unless overridden), an exact, whole-string match — not a prefix a
+        caller can tack arguments onto. A full Command passthrough here was
+        the first design and was deliberately rejected: unlike README §2a's
+        "not exposed at all" objection, which was about a one-tap *button*,
+        this is typed by hand — but it is still unbounded remote execution
+        with no live view of the pane, exactly the property that objection
+        cared about. A fixed, pre-vetted allowlist of session-hygiene
+        commands is the resolution, not a loophole around it.
+
+        ⚠ Single-line only, checked before the allowlist. `command_opener`
+        pastes the text with one trailing newline appended — an allowed
+        command's own text carrying an embedded newline would submit it as
+        one line and then paste a second, completely unvetted line of raw
+        input right after, defeating the allowlist entirely. None of
+        `DEFAULT_RUN_ALLOWED_COMMANDS`' own entries need one; a rejection
+        here only ever fires on something a caller added deliberately.
+
+        ⚠ No separate operator/chat_id restriction here beyond the existing
+        single `allowed_chat_id` gate every command already goes through
+        (`_chat_allowed`) — there is no concept of distinct "operators"
+        yet for one chat_id to be restricted relative to another. Revisit
+        once that lands; not building speculative restriction infra for a
+        model that doesn't exist yet.
+        """
+        cid = str(chat_id)
+
+        def _reject(text: str) -> str:
+            if self.telegram:
+                self.telegram.send_message(cid, text)
+            return text
+
+        parts = rest.split(None, 1)
+        if len(parts) < 2 or not parts[1].strip():
+            return _reject("Usage: /run <agent> <command>")
+        name, command_text = parts[0].lower(), parts[1]
+        error = self._validate_mention_target(name)
+        if error:
+            return _reject(error)
+        if "\n" in command_text or "\r" in command_text:
+            return _reject("/run commands must be a single line.")
+        if command_text not in self.run_allowed_commands:
+            allowed = ", ".join(sorted(self.run_allowed_commands)) or "(none configured)"
+            return _reject(f"'{command_text}' isn't an allowed /run command. Allowed: {allowed}")
+        return self.handle_user_prompt(cid, command_text, agent_override=name, raw=True)
 
     def handle_photo_message(self, chat_id: int | str, photo_sizes: list[dict], caption: str) -> str:
         """A photo update never carries `text` — `_dispatch_update`'s
@@ -2172,6 +2271,8 @@ class TelegramBot:
             return self.handle_watch_pick(chat_id, text[len("/watch "):].strip())
         if text == "/unwatch":
             return self.handle_watch_stop_command(chat_id)
+        if text == "/run" or text.startswith("/run "):
+            return self.handle_run_command(chat_id, text[len("/run"):].strip())
         if text.startswith("@"):
             mention = _parse_mention(text)
             if mention is not None:
@@ -2343,12 +2444,16 @@ class TelegramBot:
             render.flush(self.telegram, force=True)
 
     def handle_user_prompt(
-        self, chat_id: int | str, text: str, *, agent_override: str | None = None
+        self, chat_id: int | str, text: str, *, agent_override: str | None = None, raw: bool = False
     ) -> str:
         """Post `text` to this chat's target agent (§ 🎯 Message agent,
         default target_agent/--agent) and return immediately. `agent_override`
         is handle_mention_prompt's one-off "@name ..." destination — used for
-        this call only, never written to `chat_target_agent`.
+        this call only, never written to `chat_target_agent`. `raw` is
+        handle_run_command's "/run <agent> <text>" — sends a Command-kind
+        envelope instead of a Message-kind one (see FlockClient.send_command),
+        otherwise identical: same presence/blocked gate, same activity
+        watcher, same one-off (never persistent) destination.
 
         ⚠ No wait, no reply capture here — that used to be a `while not
         completed` loop polling for target_agent's reply, unbounded, run
@@ -2395,15 +2500,16 @@ class TelegramBot:
             )
             watcher.start()
 
-        code, resp = self.flock.send_message(agent, text)
+        code, resp = self.flock.send_command(agent, text) if raw else self.flock.send_message(agent, text)
         if code != 202:
             self.finalize_activity(cid, agent)
-            reply_text = f"Failed to send message to {agent}: {resp.get('detail', 'error')}"
+            verb = "run on" if raw else "send message to"
+            reply_text = f"Failed to {verb} {agent}: {resp.get('detail', 'error')}"
             if self.telegram:
                 self.telegram.send_message(cid, reply_text)
             return reply_text
 
-        reply_text = f"✅ Sent to {agent}."
+        reply_text = f"✅ Ran on {agent}." if raw else f"✅ Sent to {agent}."
         if self.telegram:
             self.telegram.send_message(cid, reply_text)
         return reply_text
@@ -2668,6 +2774,11 @@ def main() -> None:
     parser.add_argument("--mini-app-url", default=os.getenv("MINI_APP_URL", ""),
                         help="Public HTTPS URL for clients/web/mini.html — adds a 📊 Dashboard "
                              "web_app button to the sticky menu when set; omitted entirely otherwise")
+    parser.add_argument("--run-allowed-commands",
+                        default=os.getenv("RUN_ALLOWED_COMMANDS", ",".join(DEFAULT_RUN_ALLOWED_COMMANDS)),
+                        help="/run: comma-separated exact-match allowlist of native CLI slash commands "
+                             f"(default: {','.join(DEFAULT_RUN_ALLOWED_COMMANDS)}) — global, not per-CLI, "
+                             "since the api exposes no field for which CLI an agent runs")
 
     args = parser.parse_args()
 
@@ -2703,6 +2814,7 @@ def main() -> None:
         pane_watch_refresh_s=args.pane_watch_refresh_seconds,
         pane_watch_max_duration_s=args.pane_watch_max_duration_seconds,
         mini_app_url=args.mini_app_url or None,
+        run_allowed_commands=_parse_command_allowlist(args.run_allowed_commands),
     )
 
     # ⚠ Called once here, unconditionally, before any mode below runs — not
