@@ -541,6 +541,7 @@ office send -a <destination> -- --<leading-dash-body>
 office send-file -a <destination> <path> [--caption <text>] [--mime-type <type>]
 office broadcast <text>...              # tmux colleagues, everyone but you
 office hire <agent> [--cli claude|codex|agy] [--profile <account>]
+office hire <agent> [--resume | --fresh] [--skip-permissions | --no-skip-permissions] [--claude-tools <list>]
 office peers | profiles | letGo | let-go | pause | resume
 office add | list | take | done | cancel | hold | delete
 office status [<agent>]                 # presence, open ticket, last activity
@@ -571,6 +572,18 @@ is the authority; if the two disagree, the code is right and this is the stale o
   refusing unknown accounts with an explicit list of available accounts.
   ⚠ **`--cli` is validated against the three known values** (`claude`, `codex`,
   `agy`).
+  ⚠ **`--skip-permissions`/`--no-skip-permissions` and `--claude-tools` set
+  `StartAgent` payload fields the base image's `startAgent` launcher reads at
+  the far end** (`AGENT_SKIP_PERMISSIONS`, `AGENT_CLAUDE_TOOLS` —
+  `/usr/local/bin/startAgent`), never validated client-side or at the opener:
+  a permission bypass or a tool restriction has no wrong-subsystem failure
+  mode to guard against the way `--cli`/`--profile` do. Omitted means
+  `startAgent`'s own defaults (skip prompts; claude limited to
+  Bash/Read/Write/Edit/Glob/Grep) — this is opt-in per hire, default behavior
+  unchanged. `--claude-tools ''` (empty string) is a distinct, real value —
+  claude with no tool restriction — never conflated with the flag being
+  omitted. `AGENT_SKIP_PERMISSIONS` applies to all three CLIs;
+  `AGENT_CLAUDE_TOOLS` is claude-only and silently unused by codex/agy.
 - **`cloneToAll`** (and alias **`clone-to-all`**) puts one repository in every `tmux` agent's workspace. It
   fetches from the network **once** and clones the rest from that copy, then
   points each `origin` back at the real URL. `api` and `control` agents are
@@ -630,7 +643,7 @@ shape admission, described below.
 | `Message` | `tmux`, `openshell` | `{"text": "..."}` | tmux pastes attributed text; OpenShell runs one attributed headless prompt and sends its output back over the bus |
 | `Command` | `tmux`, `openshell` | `{"text": "..."}` | executes bare text: pasted into tmux or passed to one headless sandbox invocation |
 | `Attachment` | `tmux`, `openshell` | `{"filename", "mime_type", "content_base64", "caption"?}` | writes decoded bytes into the recipient's workspace/sandbox; tmux also pastes an inert notice |
-| `StartAgent` | `control` | `{"agent": "networking", "cli": "claude", "port_type": "tmux", "resume": true}` | publishes desired launch state, enrols (tmuxhost reconciles window and CLI, auto-resuming history) |
+| `StartAgent` | `control` | `{"agent": "networking", "cli": "claude", "port_type": "tmux", "resume": true, "skip_permissions": true, "claude_tools": ""}` | publishes desired launch state, enrols (tmuxhost reconciles window and CLI, auto-resuming history); `skip_permissions`/`claude_tools` optional, each omitted means `startAgent`'s own default |
 | `StopAgent` | `control` | `{"agent": "networking"}` | removes roster row, purges identity state, kills window inline (tmuxhost cleans up on reconcile) |
 | `PauseAgent` | `control` | `{"agent": "networking"}` | marks paused in Redis and interrupts CLI |
 | `ResumeAgent` | `control` | `{"agent": "networking"}` | clears pause in Redis, resumes CLI, kicks pending ingress |

@@ -211,7 +211,7 @@ def test_tmuxhost_get_agent_claude_tools_absent_vs_empty():
 @patch("flock.tmux.ops.create_window")
 def test_tmuxhost_reconcile_reads_per_agent_permissions_and_tools(mock_create_window):
     mock_create_window.return_value = (0, "", "")
-    r = FakeRedis([], roster_agents=["dave"], port_type_map={"dave": "tmux"})
+    r = FakeRedis(["dave"])
     r.values[prefix("acme", "hq", "dave", "launch")] = "claude"
     r.values[prefix("acme", "hq", "dave", "resume")] = b"0"
     r.values[prefix("acme", "hq", "dave", "skip-permissions")] = b"0"

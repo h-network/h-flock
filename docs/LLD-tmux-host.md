@@ -310,3 +310,24 @@ If prior history exists and `resume` is not explicitly set to `0` (`--fresh`),
 sessions exist, it continues the most recent recorded session. When explicit
 `resume: true` (`--resume`) or `resume: false` (`--fresh`) is set via `StartAgent`,
 that explicit instruction overrides auto-detection.
+
+⚠ **A window may opt out of `startAgent`'s own defaults, per agent.** The base
+image's `startAgent` (not h-flock's) reads two env vars nothing threaded
+per-window before: `AGENT_SKIP_PERMISSIONS` (default `1` — skip CLI approval
+prompts; all three CLIs read it, each mapping to its own bypass flag) and
+`AGENT_CLAUDE_TOOLS` (claude only; unset means the limited
+Bash/Read/Write/Edit/Glob/Grep default, an *empty string* means unrestricted).
+`office hire --skip-permissions`/`--no-skip-permissions` and `--claude-tools
+<list>` set `StartAgent` payload fields of the same name (`office hire`,
+`CONTRACTS.md` §5), which `start_agent` (`src/flock/control/openers.py:384`,
+`:401`) persists to per-agent Redis keys — `skip-permissions` and
+`claude-tools` — the same `config_changed`/replace-window pattern `resume`
+already uses. `TmuxHost.get_agent_skip_permissions`/`get_agent_claude_tools`
+(`src/flock/tmuxhost/host.py:98`, `:106`) read them back into
+`window_env` (`src/flock/tmux/ops.py:305`), which appends
+`AGENT_SKIP_PERMISSIONS=1`/`0` and `AGENT_CLAUDE_TOOLS=<value>` to the
+window's env list only when a value was actually set (`:354`, `:360`) — same
+"absent is not empty" rule as the OAuth token above it: omitted means
+`startAgent` decides, never this layer re-deciding it. `AGENT_CLAUDE_TOOLS=`
+(empty) is therefore a real, distinct value from the variable being absent —
+it is how a hire asks for claude's unrestricted tool set.
