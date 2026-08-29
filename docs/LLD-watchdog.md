@@ -284,6 +284,79 @@ whole field, not decremented) — the next pass diffs `unreplied.alerted`'s
 fields against what is still present and drops what no longer matches, same
 pruning §2b and §2c already do for tickets that leave `todo`/`hold`.
 
+## 2e. Ack-loop: two peers only exchanging closing acknowledgments
+
+Fifth in the family, and the first not driven by the board or a single
+agent's own state. A live incident (2026-08-29) had two tmux agents replying
+to each other's closing "got it"/"thanks" forever, with nothing substantive
+left to say — caught only because the lead happened to be watching. §2e
+exists so that noticing does not depend on luck.
+
+**Classification lives in `bus.send()`, not here** (`CONTRACTS.md`,
+`LLD-bus-and-switch.md` §"secondary post-egress bookkeeping"), for the same
+reason `unreplied` does: the switch never opens a payload (invariant 1), and
+`ActivityTailer` is deliberately argument-blind — it extracts a tool-use
+block's *name*, never its `input` (`watchdog/activity.py`), so a CLI
+transcript could not expose message text here without breaking that rule
+too. `send()` is the only place already legitimately holding the text, for a
+`Message` between two `tmux` ports:
+
+```
+<prefix>:agent:<source>:acks   HASH   <destination>: {"streak", "last_ts"}
+```
+
+The edge is directed and stores no content, ever — only a streak count and a
+timestamp. `send()`'s classifier is a small **frozen, exact-match** phrase
+set (`ack`, `got it`, `thanks`, `sounds good`, `will do`, `no problem`, …),
+deliberately excluding bare words like "yes"/"ok"-adjacent generic replies
+that are as often substantive as they are closing — a false negative here
+just delays a nag; a false positive on ordinary short replies would make the
+alert noise. A non-ack `Message` deletes the directed field outright, same
+"leaves entirely" semantics `unreplied` uses.
+
+**Both directed edges must independently cross `WATCHDOG_ACK_LOOP_THRESHOLD`
+(default `3`), not just one.** An agent that is simply terse — replying "ok"
+to three different substantive messages from the same peer — is not a loop;
+requiring the *reverse* edge to also be at or past the threshold is what
+tells that apart from an actual ping-pong, without ever reading either
+side's words. The reported count is `min()` of the two directed streaks — a
+conservative "at least this many, each way."
+
+⚠ **A streak never expires on its own — `bus.send()` only touches an edge on
+a new message.** A loop that stopped an hour ago must not still read as
+current, so §2e also requires the more recent of the two edges' `last_ts` to
+be within `WATCHDOG_ACK_LOOP_WINDOW_SEC` (default `120`, matching the same
+120-second window `bus.send()` itself uses to decide whether an incoming ack
+continues a streak or restarts it at 1). An edge older than that — or a pair
+where either direction's field is simply absent — is treated as not
+currently looping, and any state stored for it is dropped.
+
+```
+[alert from watchdog] <a> and <b> look like they are ack-looping
+(<N> closing replies each way, nothing new) — check whether the thread is
+actually done
+```
+
+Delivery is `_notify_lead`, unchanged. Re-alerts back off exponentially, the
+same shape §2d uses and for the same reason: a loop found early deserves a
+fast first nag, not a wait for a long fixed period, but a loop that keeps
+going should not re-page the lead on every 30-second poll either. Unlike
+§2a-d, the identity here is an **unordered pair**, not one board entry or one
+client, so the crossing state is stored once — under whichever of the two
+agent names sorts first — keyed by the other's name:
+
+```
+<prefix>:agent:<first-of-pair>:ack-loop.alerted   HASH   <second-of-pair>: <next_streak>
+```
+
+**No agent is ever messaged directly — only the lead**, same restriction as
+every other rule in this family (§4). The watchdog does not decide the
+conversation is actually finished; it only reports that neither side has
+said anything new in a while. A retired peer leaves the same kind of stale
+field `unreplied` already tolerates for a retired client — `acks` and
+`ack-loop.alerted` are not swept clean of a name that has left the roster,
+only skipped going forward.
+
 ## 3. `blocked`: a retained delivery verdict
 
 The switch, not the watchdog, owns:
@@ -458,6 +531,8 @@ agents.
 | `WATCHDOG_HOLD_ALERT_SEC` | `3600` | age at which §2c messages the lead directly, and the re-alert period thereafter |
 | `WATCHDOG_UNREPLIED_ALERT_SEC` | `60` | age at which §2d first messages the lead directly; each re-alert doubles this as the next required age |
 | `INGRESS_MAX` | `300` | bound `_notify_lead` passes to `admit_ingress` for the lead's ingress list — the switch's own variable (`LLD-bus-and-switch`), read here too so both processes honor the same cap without a shared config source |
+| `WATCHDOG_ACK_LOOP_THRESHOLD` | `3` | per-direction ack streak required, both ways, before §2e messages the lead; each re-alert doubles this as the next required streak |
+| `WATCHDOG_ACK_LOOP_WINDOW_SEC` | `120` | an ack edge older than this is no longer treated as a live loop — matches the window `bus.send()` itself uses to continue vs. restart a streak |
 
 `REDIS_URL`, `POD` and `TENANT` identify the tenant. `TMUX_SESSION` defaults to
 the tenant name; `TMUX_SOCKET` selects an explicit tmux socket when present.
@@ -477,14 +552,14 @@ the tenant name; `TMUX_SOCKET` selects an explicit tmux socket when present.
    reviewing build 77 — the move updated eight docs for the file *paths* and
    missed the sentence about *ownership*.
 5. `blocked` is a limited delivery-verification verdict, not a diagnosis.
-6. ⚠ **AMENDED — §2a, §2b, §2c and §2d are the exception.** Every `stalled`,
-   `blocked` and `credential` alert still goes only to the Redis Stream and
-   container log, never into any agent's ingress queue. §2a's doing-duration,
-   §2b's todo-duration, §2c's hold-duration and §2d's unreplied-duration
-   messages are the exception, and it is narrower than "an agent's ingress
-   queue" in general: all four are addressed only to whichever participant is
-   currently the tenant's `lead` (HLD §8c), never to the agent the ticket or
-   message names, and never to any other peer. If there is no lead, or the
-   lead is not `tmux`, none of the four fall back to any other participant —
-   they send nothing.
+6. ⚠ **AMENDED — §2a, §2b, §2c, §2d and §2e are the exception.** Every
+   `stalled`, `blocked` and `credential` alert still goes only to the Redis
+   Stream and container log, never into any agent's ingress queue. §2a's
+   doing-duration, §2b's todo-duration, §2c's hold-duration, §2d's
+   unreplied-duration and §2e's ack-loop messages are the exception, and it is
+   narrower than "an agent's ingress queue" in general: all five are
+   addressed only to whichever participant is currently the tenant's `lead`
+   (HLD §8c) — for §2e, never to either agent in the looping pair — and never
+   to any other peer. If there is no lead, or the lead is not `tmux`, none of
+   the five fall back to any other participant — they send nothing.
 7. No terminal content is captured or parsed.
