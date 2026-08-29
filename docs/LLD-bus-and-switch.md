@@ -99,7 +99,7 @@ The receive-side `_emit_for_recipient()` helper follows the same rule. Its
 records are best-effort after `LPOP`/`BLPOP` or an atomic burst drain, so a log
 output failure cannot prevent opener dispatch, interrupt a drained batch, or
 escape after a dead-letter/opened outcome. Both `receive()` and the tmux/api
-burst delivery paths use this helper.
+and OpenShell burst delivery paths use this helper.
 
 As secondary post-egress bookkeeping, `send()` also classifies closing
 acknowledgments on directed tmux-to-tmux `Message` edges. It stores only a
@@ -301,6 +301,7 @@ concept for terminal agents and app clients:
 |---|---|---|
 | terminal agents | `tmux` | dynamic; an enrolled name backed by a window and CLI |
 | app clients | `api` | dynamic; an enrolled name backed by a mailbox, with no window |
+| sandbox agents | `openshell` | dynamic; an enrolled name backed by a disposable OpenShell sandbox, with no tmux window |
 | `api` | `api` | fixed default identity for the REST door |
 | `host` | `control` | fixed lifecycle-control provider |
 | `gateway` | deferred | future cross-tenant traffic (§7) |
@@ -331,7 +332,7 @@ Since several modules read it, its shape is part of the contract:
 | **Key** | `pod:<pod>:tenant:<tenant>:roster` |
 | **Type** | `HASH` |
 | **Field** | a participant name, matching the segment rule |
-| **Value** | its **port_type** — the virtual agent base attached to it: `tmux`, `api`, `control` |
+| **Value** | its **port_type** — the virtual agent base attached to it: `tmux`, `api`, `control`, `openshell` |
 
 **This is the MAC address table.** A name resolves to a port and to what is
 attached to that port, and nothing else about the participant lives here.
@@ -420,6 +421,14 @@ unread entries survive retirement and are available if the client is enrolled
 again. The fixed `api` and `host` participants cannot be stopped through
 `StopAgent`; removing either would remove a tenant door rather than retire a
 dynamic participant.
+
+For `openshell`, StartAgent publishes policy/launch/profile and the roster row,
+then synchronously creates the agent's disposable sandbox through the gateway;
+there is no tmuxhost reconciler or window. StopAgent removes membership and
+classified identity state before synchronously deleting that sandbox. The
+delivery port atomically drains an ingress snapshot and runs each supported
+kind through a one-shot sandbox operation, including a bus reply for Message or
+Command output (`LLD-port-openshell`).
 
 Retention includes both directions of envelope data. A retired participant's
 ingress waits to be consumed after re-enrolment, and its egress waits to be
@@ -660,7 +669,7 @@ ports can both observe no tag and then both claim it, recreating the concurrent
 delivery this guard exists to prevent. A waiter loops on `HSETNX` rather than
 exiting, then dispatches according to the participant's port_type:
 
-- `tmux`, `api`, and the unknown-port fallback atomically drain the complete
+- `tmux`, `api`, `openshell`, and the unknown-port fallback atomically drain the complete
   ingress snapshot with one Lua `LRANGE` + `DEL`. Tmux concatenates each
   consecutive run of `Message` envelopes into one paste; non-Message kinds open
   individually in arrival order. Api and unknown-port delivery handle every
@@ -1010,6 +1019,12 @@ the same ingress and kick, then the API delivery routine appends the envelope to
 `…:agent:<client>:inbox`. `StopAgent` removes the row and every classified item
 of per-agent identity state; queues and board data remain. The switch
 does not change for any of this; it still routes a name without reading its port_type.
+
+For `port_type: "openshell"`, StartAgent publishes launch/profile/policy and the
+roster row, then synchronously provisions the real sandbox; StopAgent performs
+the classified identity purge and synchronously deletes it. Delivery atomically
+drains ingress and resolves the lazy OpenShell handler, with no tmux window or
+tmuxhost reconciliation involved (`LLD-port-openshell`).
 
 **The agent-facing command is a deliberately narrow edge.** `office send` and
 `office broadcast` treat every token after the destination as literal message

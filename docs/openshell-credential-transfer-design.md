@@ -42,27 +42,23 @@ This works because claude's own CLI accepts `CLAUDE_CODE_OAUTH_TOKEN` as
 a first-class, per-process auth source — the exact same mechanism
 `flock.tmux.ops.window_env` already relies on for tmux-hosted claude
 agents (`CLAUDE_CODE_OAUTH_TOKEN_<PROFILE>` read from the tenant
-container's own environment, keyed by profile). The openshell delivery
-path (`flock/port/openshell.py`'s `_exec_headless`) would do the
-analogous thing:
+container's own environment, keyed by profile).
+
+**Built and wired in** (`flock/port/openshell.py`'s `_exec_headless`,
+ticket `f6b9f6fe` for the `profile` lookup itself):
 
 ```python
-token = os.environ.get(f"CLAUDE_OAUTH_TOKEN_{(profile or 'default').upper().replace('-', '_')}")
-result = client.exec_sandbox(
-    sandbox_id, headless_command("claude", resume=True),
-    stdin=prompt.encode("utf-8"),
-    env={"CLAUDE_CODE_OAUTH_TOKEN": token} if token else None,
-)
+token = os.environ.get(f"CLAUDE_OAUTH_TOKEN_{_profile_env_suffix(profile)}")
+env = {"CLAUDE_CODE_OAUTH_TOKEN": token} if token else None
+return client.exec_sandbox(ref.id, command, stdin=stdin_text.encode("utf-8"), env=env)
 ```
 
 Same env var name, same profile-keyed lookup convention as tmux — no new
-naming scheme needed for claude specifically. **Not yet wired into
-`deliver_openshell`** — this doc describes the shape; the code hasn't
-been changed to look up and pass a token yet, since doing so needs the
-same token this test already burned its one-time authorization on, and
-that authorization does not cover reuse (see
-[[feedback-no-unasked-credential-transfer]]). Wiring the plumbing itself
-doesn't need a live token — only *testing* it again would.
+naming scheme needed for claude specifically. `profile` itself comes from
+`start_agent`'s openshell branch, which validates and publishes
+`payload.profile` the same way the tmux branch does, reusing the shared
+`profile` Redis resource (no new resource needed) — see
+`docs/LLD-port-openshell.md` §3a.
 
 ## 3. codex / agy: decided — Candidate B (write-then-wipe)
 

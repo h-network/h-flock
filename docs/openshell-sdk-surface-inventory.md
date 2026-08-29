@@ -15,21 +15,33 @@ whatever NVIDIA publishes separately; treat field names as accurate for
 
 ## 1. What h-flock uses today
 
-Via `flock.openshell.client.OpenShellClient`, itself wrapping the SDK's
-`SandboxClient`/`WorkspaceClient`:
+**Updated 2026-08-29 (docs sweep, ticket `53c8a128`)** — this section
+originally listed only the four-method slice this doc was first written
+against; ticket `655ebeac` built substantially more of the surface below
+since then. Current list, via `flock.openshell.client.OpenShellClient`:
 
 | capability | SDK method | RPC |
 |---|---|---|
 | health check | `SandboxClient.health()` | `Health` |
-| create + wait ready | `.create()` + `.wait_ready()` | `CreateSandbox` + polled `GetSandbox` |
+| create + wait ready (+ opt-in partial policy) | `.create()` + `.wait_ready()` | `CreateSandbox` + polled `GetSandbox` |
 | read status | `.get()` | `GetSandbox` |
+| list | `.list()` | `ListSandboxes` |
+| stop / start | `.stop()` / `.start()` + `.wait_ready()` | `StopSandbox` / `StartSandbox` |
 | delete | `.delete()` | `DeleteSandbox` |
 | run a command | `.exec()` / `.exec_stream()` | `ExecSandbox` (server-streaming, consumed to completion) |
 | workspace get-or-create | `WorkspaceClient.get()`/`.create()` | `GetWorkspace` / `CreateWorkspace` |
+| expose/get/list/delete a service | raw stub | `ExposeService` / `GetService` / `ListServices` / `DeleteService` |
+| provider CRUD (create/list/delete) + sandbox attach/detach/list | raw stub | `CreateProvider` / `ListProviders` / `DeleteProvider` / `AttachSandboxProvider` / `DetachSandboxProvider` / `ListSandboxProviders` |
+| read logs | raw stub | `GetSandboxLogs` |
+| watch (lazy generator) | raw stub | `WatchSandbox` |
 
-Everything below this line is **not used**, either because the SDK doesn't
-wrap it at all (raw stub access only) or because it's wrapped but flock
-never calls it.
+Everything below this line not listed above is still **not used**, either
+because the SDK doesn't wrap it at all (raw stub access only) or because
+it's wrapped but flock never calls it — the per-section tables further
+down were written before the above was built and, in a few spots, still
+say "not used" for capabilities that are now used; §3/§5/§6/§7's tables
+below have been corrected accordingly, but treat this section as the
+authoritative current list if the two ever disagree again.
 
 ## 2. The gateway's two services
 
@@ -47,10 +59,10 @@ Python-level wrapper method at all.
 | `CreateSandbox` | `.create()` | used |
 | `GetSandbox` | `.get()` | used |
 | `DeleteSandbox` | `.delete()` | used |
-| `StopSandbox` | `.stop()` | **not used** — pause without deleting. Distinct from delete; a stopped sandbox can be `StartSandbox`ed again without losing its filesystem, per the `SANDBOX_PHASE_STOPPED` phase already in the enum flock reads today (§4). |
-| `StartSandbox` | `.start()` | **not used** — resume a stopped sandbox. |
-| `ListSandboxes` | `.list()` / `.list_for_all_workspaces()` | **not used** — enumerate sandboxes in a workspace (or all). Could replace flock's per-agent `get_sandbox` probing with one listing call for e.g. a reconciler that wants to sweep orphaned sandboxes. |
-| `WatchSandbox` | none | **not used, not wrapped**. Server-streaming: `follow_status`/`follow_logs`/`follow_events`, `log_tail_lines`, `stop_on_terminal`. This is real-time push (status changes, log lines, platform events) instead of polling `GetSandbox`/`GetSandboxLogs` — see §7. |
+| `StopSandbox` | `.stop()` | used (`OpenShellClient.stop_sandbox`) — pause without deleting; a stopped sandbox can be `StartSandbox`ed again without losing its filesystem. Not yet wired into `control/openers.py`'s `pause_agent`, which openshell agents still have no real implementation for — the client method exists, the control-lifecycle hookup doesn't. |
+| `StartSandbox` | `.start()` | used (`OpenShellClient.start_sandbox`) — resume a stopped sandbox. Same "client method exists, `resume_agent` hookup doesn't" gap as `StopSandbox`. |
+| `ListSandboxes` | `.list()` / `.list_for_all_workspaces()` | used (`OpenShellClient.list_sandboxes`, workspace-scoped only — `list_for_all_workspaces` still unwrapped). Not yet used by anything in `flock.port`/`flock.control` itself (e.g. a reconciler sweeping orphaned sandboxes) — just available on the client. |
+| `WatchSandbox` | `OpenShellClient.watch_sandbox` (lazy generator) | Wrapped and confirmed real against the live gateway (received a genuine streamed event). Server-streaming: `follow_status`/`follow_logs`/`follow_events`, `log_tail_lines`, `stop_on_terminal`. Real-time push (status changes, log lines, platform events) instead of polling `GetSandbox`/`GetSandboxLogs` — see §7. Nothing in `flock.port`/`flock.control` consumes it yet. |
 
 ## 4. Exec & interactive access
 
@@ -61,31 +73,40 @@ Python-level wrapper method at all.
 | `CreateSshSession` / `RevokeSshSession` | none | **not used, not wrapped**. Issues a token + gateway host/port/scheme/host-key-fingerprint for SSH access to a sandbox (`CreateSshSessionResponse`). A genuine alternate access path, orthogonal to `ExecSandbox`. |
 | `ForwardTcp` (bidi-streaming) | none | **not used, not wrapped**. `TcpForwardInit{sandbox_id, service_id, ssh|tcp target, authorization_token}` + raw `TcpForwardFrame.data` — a raw TCP tunnel into a sandbox, used together with §5's service-exposure RPCs. |
 
-## 5. Networking / service exposure (entirely unused)
+## 5. Networking / service exposure (client-wrapped, not used by any delivery/lifecycle path yet)
 
 | RPC | notes |
 |---|---|
-| `ExposeService` | `{sandbox, service, target_port, domain, workspace}` → registers a port inside the sandbox as reachable. `domain: bool` implies a public-domain option, not just an internal address. |
-| `GetService` / `ListServices` / `DeleteService` | CRUD over exposed services; `ServiceEndpointResponse{endpoint, url}` gives back a real reachable URL. |
+| `ExposeService` | `{sandbox, service, target_port, domain, workspace}` → registers a port inside the sandbox as reachable. `domain: bool` implies a public-domain option, not just an internal address. Wrapped as `OpenShellClient.expose_service`, confirmed real against the live gateway (got back a genuine reachable URL). |
+| `GetService` / `ListServices` / `DeleteService` | CRUD over exposed services; `ServiceEndpointResponse{endpoint, url}` gives back a real reachable URL. Wrapped and confirmed real the same way. |
 
-None of this is used. If an openshell-sandboxed agent ever needs to expose
+All four are wrapped on `OpenShellClient` and confirmed to work against
+the live gateway, but nothing in `flock.port`/`flock.control` calls them
+yet — no openshell agent's lifecycle currently exposes a service
+automatically. If an openshell-sandboxed agent ever needs to expose
 something (a dev server, a webhook receiver) the way a tmux agent might
-bind a port on the container itself, this is the mechanism — currently
-nothing in `flock.openshell` touches it.
+bind a port on the container itself, the client-side mechanism is ready;
+the lifecycle wiring to use it isn't.
 
 ## 6. Provider / credential management (much bigger than `SandboxSpec.providers`)
 
 `flock.openshell.client.create_sandbox`'s `providers: Sequence[str]`
 parameter only *attaches providers by name*
-(`SandboxSpec.providers: repeated string`). The actual provider
-lifecycle is a whole separate, much larger subsystem, entirely untouched:
+(`SandboxSpec.providers: repeated string`). A wider slice of the provider
+lifecycle is now wrapped on the client (`create_provider`/
+`list_providers`/`delete_provider`/`attach_sandbox_provider`/
+`detach_sandbox_provider`/`list_sandbox_providers`), but **as a general
+capability, not as flock's actual credential-transfer mechanism** — the
+real delivery path uses per-CLI env-var/write-then-wipe transfer instead
+(`docs/openshell-credential-transfer-design.md`), specifically because
+telegram ruled out storing credentials in OpenShell's own `Provider`
+object even server-side (§6a below). Still genuinely unused/unwrapped:
 
 | RPC | purpose |
 |---|---|
-| `CreateProvider` / `GetProvider` / `ListProviders` / `UpdateProvider` / `DeleteProvider` | Full CRUD on `Provider` objects (`datamodel_pb2.Provider`: `metadata`, `type`, `credentials: map<string,string>`, `config: map<string,string>`, `credential_expires_at_ms`, `profile_workspace`, `credential_handles: map<string, CredentialHandle>`). This is where a named credential bundle (e.g. an "openshell provider" like `anthropic-oauth`) actually gets defined — flock currently assumes such a name already exists and just references it; nothing in this codebase can create one. |
-| `ListProviderProfiles` / `GetProviderProfile` / `ImportProviderProfiles` / `UpdateProviderProfiles` / `LintProviderProfiles` / `DeleteProviderProfile` | A separate, richer `ProviderProfile` concept — `display_name`, `description`, `category` (`ProviderProfileCategory`: INFERENCE/AGENT/SOURCE_CONTROL/MESSAGING/DATA/KNOWLEDGE/OTHER), `credentials`, `endpoints`, `binaries`, `inference_capable`, `discovery`, `source`, `scope`. Looks like a catalog/template layer above raw `Provider`s (importable, lintable) — plausibly how an operator would define reusable credential templates across workspaces rather than hand-building each `Provider`. |
-| `GetProviderRefreshStatus` / `ConfigureProviderRefresh` / `RotateProviderCredential` / `DeleteProviderRefresh` | Credential refresh lifecycle — `ProviderCredentialRefreshStrategy` includes OAUTH2_REFRESH_TOKEN, OAUTH2_CLIENT_CREDENTIALS, GOOGLE_SERVICE_ACCOUNT_JWT, AWS_STS_ASSUME_ROLE, EXTERNAL, STATIC — this is a real, fairly complete credential-rotation system, not a stub. |
-| `ListSandboxProviders` / `AttachSandboxProvider` / `DetachSandboxProvider` | Attach/detach a provider **after** a sandbox already exists (`AttachSandboxProviderRequest` takes `expected_resource_version` — optimistic concurrency control) rather than only at `CreateSandbox` time. flock currently only sets `providers` at creation; this would let a running sandbox's credentials be rotated without recreating it. |
+| `GetProvider` / `UpdateProvider` | Read/update a single existing `Provider` (`datamodel_pb2.Provider`: `metadata`, `type`, `credentials: map<string,string>`, `config: map<string,string>`, `credential_expires_at_ms`, `profile_workspace`, `credential_handles: map<string, CredentialHandle>`) — create/list/delete are wrapped (§1), these two aren't. |
+| `ListProviderProfiles` / `GetProviderProfile` / `ImportProviderProfiles` / `UpdateProviderProfiles` / `LintProviderProfiles` / `DeleteProviderProfile` | A separate, richer `ProviderProfile` concept — `display_name`, `description`, `category` (`ProviderProfileCategory`: INFERENCE/AGENT/SOURCE_CONTROL/MESSAGING/DATA/KNOWLEDGE/OTHER), `credentials`, `endpoints`, `binaries`, `inference_capable`, `discovery`, `source`, `scope`. Looks like a catalog/template layer above raw `Provider`s (importable, lintable) — this is where the real, built-in `claude-code`/`codex`/`copilot`/`cursor` profiles found in §6a live. Read via the `openshell` CLI directly for that investigation; still nothing wrapped on `OpenShellClient`. |
+| `GetProviderRefreshStatus` / `ConfigureProviderRefresh` / `RotateProviderCredential` / `DeleteProviderRefresh` | Credential refresh lifecycle — `ProviderCredentialRefreshStrategy` includes OAUTH2_REFRESH_TOKEN, OAUTH2_CLIENT_CREDENTIALS, GOOGLE_SERVICE_ACCOUNT_JWT, AWS_STS_ASSUME_ROLE, EXTERNAL, STATIC — this is a real, fairly complete credential-rotation system, not a stub. Unused — flock's own credential transfer has no rotation story at all yet (see `openshell-credential-transfer-design.md` §4). |
 | `GetSandboxProviderEnvironment` | Returns whatever env vars a sandbox's attached providers resolve to (`supports_static_credential_bindings` flag) — a real introspection point for "what did the provider actually inject," which would help verify §8 of `LLD-port-openshell.md`'s open question about credential wiring without guessing. |
 | `ExchangeProviderSubjectToken` | `{sandbox_id, provider, credential_key, supervisor_jwt_svid}` — looks like the sandbox-internal supervisor process's own mechanism for exchanging its identity (a JWT-SVID, i.e. SPIFFE-style workload identity) for the actual provider credential at runtime, rather than the credential being handed to the sandbox statically at creation. Internal machinery, not something flock would call directly, but explains *how* `providers` at creation time actually becomes a real credential inside the sandbox process.
 
@@ -167,26 +188,29 @@ Anthropic key, which needs asking telegram first per the standing rule)
 would be needed to know for certain whether it authenticates `claude`
 specifically, and this session's dummy-credential test found no visible
 effect through the path flock's own code currently uses
-(`create_sandbox(providers=[...])` → plain `exec_sandbox`). If it turns
-out this genuinely doesn't help `claude` (because of its client-side
-login gate), the practical path to closing "sandbox starts logged out"
-is more likely still `SandboxSpec.environment` (an actual env var flock
-sets directly at creation, the same shape flock's own tmux lane already
-uses for `CLAUDE_CODE_OAUTH_TOKEN`) than the provider-attachment
-mechanism — worth a real-credential test to settle this before building
-around either assumption.
+(`create_sandbox(providers=[...])` → plain `exec_sandbox`).
 
-## 7. Observability (logs, watch, health) — mostly unused
+**Resolved since this was written**: telegram decided against the native
+provider mechanism regardless of whether it would have worked technically
+— credentials must stay in h-flock, not rest in OpenShell's own
+`Provider` object even server-side. The actual shipped mechanism is
+`exec_sandbox`'s per-call `env=` for claude (confirmed with a real
+credential: genuine authentication, a real reply) and write-then-wipe
+files for codex/agy (confirmed with a real credential for codex; `agy`
+isn't in the default image to test against at all). See
+`docs/openshell-credential-transfer-design.md`.
+
+## 7. Observability (logs, watch, health) — health wrapped and used, logs/watch wrapped but not called anywhere yet
 
 | RPC | wrapped as | notes |
 |---|---|---|
-| `GetSandboxLogs` | none | **not used, not wrapped**. `{sandbox_id, lines, since_ms, sources, min_level, workspace}` — pull-model log read (like `kubectl logs`), independent of `ExecSandbox`'s own stdout/stderr. |
-| `WatchSandbox` | none | **not used, not wrapped**, see §3. `SandboxStreamEvent{sandbox, log: SandboxLogLine, event: PlatformEvent, warning, draft_policy_update}` — one stream multiplexing status changes, log lines, and platform events. This is the closest OpenShell analogue to flock's own `ActivityTailer`/watchdog concept (tailing an agent's activity file) — worth remembering given `docs/LLD-port-openshell.md` already argues `pending.verify`/`delivery.markers` don't apply here because "this container's ActivityTailer can't see into an external sandbox." `WatchSandbox` is the one RPC that could actually change that conclusion — it's a real, live signal source from *inside* the sandbox that flock currently has no equivalent for. Worth a closer look before assuming that gap is permanent. |
+| `GetSandboxLogs` | `OpenShellClient.get_sandbox_logs` | Wrapped, confirmed real against the live gateway. `{sandbox_id, lines, since_ms, sources, min_level, workspace}` — pull-model log read (like `kubectl logs`), independent of `ExecSandbox`'s own stdout/stderr. Nothing in `flock.port`/`flock.control` calls it yet — available on the client, not wired into any delivery/lifecycle path. |
+| `WatchSandbox` | `OpenShellClient.watch_sandbox` | Wrapped and confirmed real (see §3). `SandboxStreamEvent{sandbox, log: SandboxLogLine, event: PlatformEvent, warning, draft_policy_update}` — one stream multiplexing status changes, log lines, and platform events. This remains the closest OpenShell analogue to flock's own `ActivityTailer`/watchdog concept — `docs/LLD-port-openshell.md` still argues `pending.verify`/`delivery.markers` don't apply here because "this container's ActivityTailer can't see into an external sandbox," and that conclusion still holds since nothing consumes this stream yet; it's the one RPC that *could* change it if someone builds that consumer. |
 | `Health` | `.health()` | used |
 | `GetCurrentUser` | none | **not used, not wrapped**. `{subject, display_name, roles, scopes, identity_provider}` — directly relevant to the still-open "whose mTLS identity" question: this RPC would tell you, for real, which identity a given cert/token actually authenticates as, rather than inferring it from which cert file was used. |
 | `GetGatewayInfo` | none | **not used, not wrapped**. `{status, gateway_version, compute_drivers: [{name, capabilities}]}` — compute driver capabilities could matter for whatever sandbox templates/runtime classes are available on a given gateway. |
 
-## 8. Sandbox execution environment (partially unused)
+## 8. Sandbox execution environment (a slice now used, most still isn't)
 
 `SandboxSpec`/`SandboxTemplate` fields flock's `create_sandbox` doesn't
 set at all yet:
@@ -202,33 +226,39 @@ set at all yet:
   requests are real and settable**; flock has never requested one. If an
   openshell-hosted agent ever needs GPU access this is the field, not
   something to invent.
-- `SandboxSpec.policy: SandboxPolicy` — flock's `create_sandbox`
-  deliberately omits this (comment in `client.py`: lets the sandbox
-  discover policy from its baked-in default). The real `SandboxPolicy`
-  shape is substantial and currently 100% unused by flock:
-  - `FilesystemPolicy{include_workdir, read_only: [paths], read_write: [paths]}`
-  - `LandlockPolicy{compatibility}` — Landlock LSM compatibility mode
-  - `ProcessPolicy{run_as_user, run_as_group}`
-  - `network_policies: map<name, NetworkPolicyRule>` — each rule lists
-    `endpoints: [NetworkEndpoint]` and `binaries: [NetworkBinary]`
-    (i.e. network access can be scoped to specific host binaries, not
-    just the sandbox as a whole)
-  - `NetworkEndpoint` is large and genuinely L7-aware: TLS, an
-    `enforcement`/`access` mode, `allow_encoded_slash`,
+- `SandboxSpec.policy: SandboxPolicy` — **partially used since this was
+  first written.** `create_sandbox` now accepts opt-in `filesystem_read_only`/
+  `filesystem_read_write`/`include_workdir`, `run_as_user`/`run_as_group`,
+  and a `network_allow` pass-through, and confirmed real against the live
+  gateway (`whoami` genuinely reflected a policy-specified user). Omitting
+  all of them still omits `policy` entirely, unchanged from the original
+  default-discovery behavior. **A real, previously-hidden gateway
+  behavior found building this**: setting *any* of filesystem/process
+  without also setting `network_allow` replaces the sandbox's entire
+  baked-in default policy, including whatever network access it
+  implicitly granted, and the container exits immediately
+  (`ContainerExited`) — `create_sandbox` now raises `ValueError` up front
+  rather than let that happen silently. Still 100% unused, no wrapper at
+  all:
+  - `LandlockPolicy{compatibility}` — Landlock LSM compatibility mode.
+  - `NetworkEndpoint`'s full L7 richness beyond the plain `host`/`port`/
+    `protocol` fields `network_allow` passes through close to verbatim:
+    TLS, `enforcement`/`access` mode, `allow_encoded_slash`,
     `persisted_queries`/`graphql_persisted_queries` +
     `graphql_max_body_bytes` (GraphQL-specific controls),
     `websocket_credential_rewrite`/`request_body_credential_rewrite`,
     `json_rpc_max_body_bytes`, an `mcp: McpOptions` field (MCP-protocol
     awareness specifically), `credential_binding`/`provider_credentialed`
-    (ties a network rule to a specific attached provider's credential)
+    (ties a network rule to a specific attached provider's credential).
   - `network_middlewares: map<name, NetworkMiddlewareConfig>` — pluggable
     middleware (`middleware` name + `config: Struct`, ordered, scoped by
-    `MiddlewareEndpointSelector{include, exclude}`)
+    `MiddlewareEndpointSelector{include, exclude}`).
 
-  This is a real, fine-grained, protocol-aware egress control system —
-  the actual substance behind this ticket's own framing of OpenShell as
-  "policy-governed" sandboxing. Flock currently opts out of all of it by
-  never setting `policy` at all.
+  The full L7 surface above is the real substance behind this ticket's
+  own framing of OpenShell as "policy-governed" sandboxing, and flock
+  still opts out of essentially all of it — what's shipped is a plain
+  filesystem/process/host+port slice, not the protocol-aware egress
+  control system this proto actually offers.
 - **Draft-policy review subsystem** (`SubmitPolicyAnalysis`,
   `GetDraftPolicy`, `ApproveDraftChunk`/`RejectDraftChunk`/
   `ApproveAllDraftChunks`/`EditDraftChunk`/`UndoDraftChunk`/
@@ -326,26 +356,35 @@ findings from that live run, not visible from proto reading alone:
 
 ## 12. What seems worth building next (opinion, not a decision)
 
-In rough order of how directly they'd serve flock's actual needs, not
-NVIDIA's:
+**Updated 2026-08-29 (docs sweep)** — most of this list has since been
+built at the client layer; re-scoped to what's actually left, in rough
+order of how directly it'd serve flock's needs:
 
-1. **`GetSandboxProviderEnvironment`** — cheapest, most directly useful:
-   turns "what did the provider actually inject" from a guess into an
-   observable fact, closing a real gap in this ticket's own docs.
-2. **`WatchSandbox`** — could genuinely change the "no ActivityTailer
-   equivalent" conclusion this ticket's docs currently rely on; worth
-   confirming or refuting deliberately rather than leaving as an
-   assumption.
-3. **`StopSandbox`/`StartSandbox`** — cheap to wire in, gives `PauseAgent`/
-   `ResumeAgent` (already real lifecycle actions for tmux agents) a real
-   openshell-side implementation instead of no-op/unsupported.
-4. **`SandboxSpec.policy`** (network/filesystem/process) — the actual
-   substance of "policy-governed" that flock currently opts out of by
-   never setting it; biggest single gap between what this integration
-   claims and what it uses.
-5. Provider CRUD (`CreateProvider` et al.) — only matters once there's an
-   actual credential to provision through flock rather than assumed to
-   pre-exist; lower priority until that decision is made.
+1. **Wire `StopSandbox`/`StartSandbox` into `control/openers.py`'s
+   `pause_agent`/`resume_agent`.** The client methods (`stop_sandbox`/
+   `start_sandbox`) are built and real-verified; openshell agents still
+   have no actual `PauseAgent`/`ResumeAgent` implementation calling them.
+   Cheapest real gap left.
+2. **Build a consumer for `watch_sandbox`.** The method exists and is
+   real-verified, but nothing calls it — it's the one RPC that could
+   change the "no ActivityTailer equivalent" conclusion
+   `docs/LLD-port-openshell.md` still relies on, and that only happens
+   once something actually consumes the stream, not just wraps the RPC.
+3. **`SandboxSpec.policy`'s full L7 surface** (§8) — a plain filesystem/
+   process/host+port slice is built; the protocol-aware egress control
+   (GraphQL/MCP awareness, credential binding, middleware) that's the
+   real substance of "policy-governed" remains untouched. Biggest
+   still-real gap between what this integration claims and what it uses.
+4. ~~`GetSandboxProviderEnvironment`~~ — **turned out to be a dead end**:
+   confirmed directly (§6a) that this RPC refuses external callers
+   (`PERMISSION_DENIED: this method requires a sandbox principal`), so it
+   can never do what this recommendation assumed. Superseded.
+5. ~~Provider CRUD~~ — built at the client layer, but telegram's decision
+   (credentials must stay in h-flock, never rest in OpenShell's own
+   `Provider` object) means it isn't and won't be flock's actual
+   credential-transfer mechanism. Superseded for that purpose; the
+   wrapped methods remain available for whatever else a provider object
+   might be useful for.
 
 Everything else in this document is real and available, but further from
 anything flock currently does.
