@@ -71,6 +71,16 @@ office profiles      # every account, who's on it, who has no CLI account
 
 ## 5. CLI and account assignment
 
+⚠ **The specific mapping below is a historical snapshot, not current
+state — same caveat §4 already makes for the live roster.** Account/CLI
+assignment changes with every hire/retire/reassignment, same category of
+fact as who's on the roster at all. For the actual current split, run:
+
+```
+office peers -v      # framework + profile per peer
+office profiles      # who's on which account
+```
+
 Two accounts existed in this tenant: `default` and `bussines`. ⚠ **Only
 `claude` can be pointed at a second account without a manual step.**
 `setup.sh` (~line 146) hard-blocks `agy` from anything but `default` —
