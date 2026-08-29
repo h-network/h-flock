@@ -119,15 +119,25 @@ For a tmux message, the rendered line names the sender:
   [message from backend] can you review the auth change?
 ```
 
+When a message is client-sourced (`port_type == "api"`, e.g. `telegram`), the
+opener appends an actionable `[reply to <client>]` trailer line immediately after that message:
+
+```
+  [message from telegram] can you check the auth status?
+  [reply to telegram]
+```
+
 When multiple `Message` envelopes are drained together during a burst, their
-rendered lines are concatenated into one combined block in arrival order:
+rendered lines are concatenated into one combined block in arrival order (each
+client-sourced message carrying its own `[reply to <client>]` trailer):
 
 ```
   [message from backend] can you review the auth change?
-  [message from systems] deployment complete on staging
+  [message from telegram] can you check the auth status?
+  [reply to telegram]
 ```
 
-That prefix is the entire reply mechanism. The agent reads a name and replies
+That prefix and client trailer form the reply mechanism. The agent reads a name and replies
 with `office send -a <name> <message>` — nothing routes a reply, and nothing
 needs to. Combining multiple burst messages into one paste preserves all
 content and sender attributions while avoiding back-to-back paste races.
