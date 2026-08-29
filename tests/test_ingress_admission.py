@@ -10,7 +10,8 @@ from pathlib import Path
 import pytest
 import redis
 
-from flock.switch.service import _ADMIT_INGRESS
+from flock.bus import prefix
+from flock.bus.queues import admit_ingress
 
 
 @pytest.fixture
@@ -50,7 +51,16 @@ def test_concurrent_admission_never_exceeds_limit(real_redis):
 
     def admit(raw):
         barrier.wait()
-        results.append(real_redis.eval(_ADMIT_INGRESS, 1, "ingress", 1, raw))
+        results.append(
+            admit_ingress(
+                real_redis,
+                pod="acme",
+                tenant="hq",
+                destinations=["bob"],
+                raw=raw,
+                limit=1,
+            )
+        )
 
     threads = [threading.Thread(target=admit, args=(raw,)) for raw in ("one", "two")]
     for thread in threads:
@@ -59,17 +69,61 @@ def test_concurrent_admission_never_exceeds_limit(real_redis):
     for thread in threads:
         thread.join()
 
-    assert sorted(int(result[0]) for result in results) == [0, 1]
-    assert real_redis.llen("ingress") == 1
-    assert real_redis.lindex("ingress", 0) in {"one", "two"}
+    assert sorted(result[0] for result in results) == [False, True]
+    assert (True, None, None) in results
+    assert (False, "bob", 1) in results
+    key = prefix("acme", "hq", "bob", "ingress")
+    assert real_redis.llen(key) == 1
+    assert real_redis.lindex(key, 0) in {"one", "two"}
 
 
 def test_broadcast_rejection_appends_no_partial_copy(real_redis):
-    real_redis.rpush("bob-ingress", "already full")
-    result = real_redis.eval(
-        _ADMIT_INGRESS, 2, "bob-ingress", "carol-ingress", 1, "broadcast"
+    bob = prefix("acme", "hq", "bob", "ingress")
+    carol = prefix("acme", "hq", "carol", "ingress")
+    real_redis.rpush(bob, "already full")
+    result = admit_ingress(
+        real_redis,
+        pod="acme",
+        tenant="hq",
+        destinations=["bob", "carol"],
+        raw="broadcast",
+        limit=1,
     )
 
-    assert list(map(int, result)) == [0, 1, 1]
-    assert real_redis.lrange("bob-ingress", 0, -1) == ["already full"]
-    assert real_redis.llen("carol-ingress") == 0
+    assert result == (False, "bob", 1)
+    assert real_redis.lrange(bob, 0, -1) == ["already full"]
+    assert real_redis.llen(carol) == 0
+
+
+def test_rejection_identifies_later_full_destination(real_redis):
+    carol = prefix("acme", "hq", "carol", "ingress")
+    real_redis.rpush(carol, "already full")
+
+    result = admit_ingress(
+        real_redis,
+        pod="acme",
+        tenant="hq",
+        destinations=["bob", "carol"],
+        raw="broadcast",
+        limit=1,
+    )
+
+    assert result == (False, "carol", 1)
+
+
+@pytest.mark.parametrize(
+    ("destinations", "limit", "message"),
+    [([], 1, "destinations must not be empty"), (["bob"], 0, "limit must be positive")],
+)
+def test_admission_rejects_invalid_operation_before_redis(
+    real_redis, destinations, limit, message
+):
+    with pytest.raises(ValueError, match=message):
+        admit_ingress(
+            real_redis,
+            pod="acme",
+            tenant="hq",
+            destinations=destinations,
+            raw="message",
+            limit=limit,
+        )

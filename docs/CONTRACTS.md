@@ -303,7 +303,9 @@ before it emits `sent`, so a fast switch can emit `popped` before the source
 emits `sent` even though custody is correct.
 
 **Ingress admission is atomically count-bounded by `INGRESS_MAX`.** The switch
-checks capacity and appends in one Lua execution; it never rolls an over-limit
+calls `flock.bus.queues.admit_ingress()` with its configured bound. The shared
+primitive checks capacity and appends in one Lua execution; it never logs,
+dead-letters, or kicks, and it never rolls an over-limit
 append back with a later `RPOP`. Unicast admits its one copy or dead-letters it.
 A raw broadcast is all-or-none across its selected recipients: if any ingress is
 at the bound, none receive the frame, the sender retains one dead-letter with
