@@ -314,6 +314,15 @@ at the bound, none receive the frame, the sender retains one dead-letter with
 `destination: "all"`, and no recipient is kicked. A successful broadcast emits
 one `forwarded` with `count=N`.
 
+⚠ **The watchdog is a second caller, not just the switch.** `_notify_lead`
+(`LLD-watchdog` §2a) calls the same `admit_ingress()` for the single lead
+destination before pasting a doing/todo/hold/unreplied nag into its pane —
+config (`INGRESS_MAX`) is read independently by each process rather than
+shared, since the primitive takes no ambient configuration. Rejection policy
+still differs by caller: the switch dead-letters, the watchdog logs
+`lead_alert_capacity` and drops the alert with no dead-letter, since a nag is
+best-effort and the state that triggered it re-fires on its own.
+
 Events, in custody order (not guaranteed log or timestamp order):
 
 ```

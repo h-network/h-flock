@@ -125,12 +125,28 @@ watchdog is not a roster member (§1) and has no egress queue for the switch to
 poll, so `office send`'s normal path — write to the sender's own egress,
 let the switch forward it — has nothing to drain it. The watchdog instead
 builds the same v4 envelope `office send` would (source `watchdog`, kind
-`Message`), pushes it directly onto the lead's `ingress` list, and kicks
+`Message`), admits it onto the lead's `ingress` list, and kicks
 `flock.port <lead>` itself — the same two steps the switch performs after
 popping a normal envelope from egress. The rendering the lead sees
 (`message_opener`, the `[message from watchdog]` wrapper, delivery
 verification markers) is identical to any other message; only the egress hop
 is skipped, because nothing was ever going to consume it.
+
+⚠ **The ingress write goes through `flock.bus.queues.admit_ingress`, the same
+atomic bound the switch uses for every other forward — not a plain `rpush`.**
+Before this, a lead whose port stopped draining ingress had no depth cap on
+how many watchdog nags kept accumulating there: the one unbounded write into a
+participant's ingress in an otherwise `INGRESS_MAX`-bounded system. Both
+processes read `INGRESS_MAX` themselves and pass it explicitly — the primitive
+takes no ambient configuration (`CONTRACTS.md`, `flock.bus.queues`). A full
+queue logs `lead_alert_capacity` and drops the alert; a Redis/`eval` exception
+logs `lead_alert_unknown` instead of treating it as a confirmed rejection,
+since the write may have committed before the error — mirroring `send_unknown`
+and `forward_unknown` elsewhere in the bus. Neither outcome is retried, and
+neither is a dead-letter: these are best-effort nags, not durable envelopes
+anyone is owed, and the board or `unreplied` state that triggered the nag is
+untouched either way, so it simply re-fires on its own next threshold crossing
+once the lead's port recovers.
 
 If the tenant has no lead (`<prefix>:lead` unset), or the lead is not a `tmux`
 participant, the check is silently skipped — there is nowhere to deliver a
@@ -441,6 +457,7 @@ agents.
 | `WATCHDOG_TODO_ALERT_SEC` | `300` | age at which §2b messages the lead directly, and the re-alert period thereafter |
 | `WATCHDOG_HOLD_ALERT_SEC` | `3600` | age at which §2c messages the lead directly, and the re-alert period thereafter |
 | `WATCHDOG_UNREPLIED_ALERT_SEC` | `60` | age at which §2d first messages the lead directly; each re-alert doubles this as the next required age |
+| `INGRESS_MAX` | `300` | bound `_notify_lead` passes to `admit_ingress` for the lead's ingress list — the switch's own variable (`LLD-bus-and-switch`), read here too so both processes honor the same cap without a shared config source |
 
 `REDIS_URL`, `POD` and `TENANT` identify the tenant. `TMUX_SESSION` defaults to
 the tenant name; `TMUX_SOCKET` selects an explicit tmux socket when present.

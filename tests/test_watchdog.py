@@ -310,6 +310,36 @@ def test_doing_duration_does_nothing_without_a_configured_lead(monkeypatch):
     assert _key("architect", "ingress") not in r.lists
 
 
+def test_notify_lead_drops_the_alert_when_the_lead_ingress_is_full(monkeypatch, capsys):
+    r = WatchRedis()
+    _doing_agent(r)
+    _lead(r)
+    r.lists[_key("architect", "ingress")] = ["x"] * 300  # INGRESS_MAX default
+    monkeypatch.setattr(service, "run_tmux", _quiet_windows())
+    monkeypatch.setattr(service.subprocess, "Popen", lambda args: (_ for _ in ()).throw(AssertionError("should not kick")))
+
+    _watchdog(r).poll(now=NOW)
+
+    assert len(r.lists[_key("architect", "ingress")]) == 300
+    events = [json.loads(line) for line in capsys.readouterr().out.splitlines()]
+    assert any(event.get("event") == "lead_alert_capacity" for event in events)
+    assert not any(event.get("event") == "lead_alert_sent" for event in events)
+
+
+def test_notify_lead_logs_unknown_and_does_not_kick_on_a_redis_fault(monkeypatch, capsys):
+    r = WatchRedis(fails_on={"eval": ConnectionError})
+    _doing_agent(r)
+    _lead(r)
+    monkeypatch.setattr(service, "run_tmux", _quiet_windows())
+    monkeypatch.setattr(service.subprocess, "Popen", lambda args: (_ for _ in ()).throw(AssertionError("should not kick")))
+
+    _watchdog(r).poll(now=NOW)
+
+    events = [json.loads(line) for line in capsys.readouterr().out.splitlines()]
+    assert any(event.get("event") == "lead_alert_unknown" for event in events)
+    assert not any(event.get("event") == "lead_alert_sent" for event in events)
+
+
 def _todo_agent(r, agent="sme-2", *, created="2026-08-09T13:55:00Z", ticket_id="ticket-1", title="pick up the auth review", append=False):
     entry = json.dumps({"id": ticket_id, "title": title, "created_ts": created})
     key = _key(agent, "tasks.todo")
