@@ -14,10 +14,11 @@ not to repeat that.
 from __future__ import annotations
 
 import os
+import pathlib
 from typing import Mapping, Sequence
 
 import grpc
-from openshell import ExecResult, SandboxClient, SandboxError, SandboxRef, WorkspaceClient
+from openshell import ExecResult, SandboxClient, SandboxError, SandboxRef, TlsConfig, WorkspaceClient
 
 # `_proto` is underscore-private in the SDK's own naming, but it is the only
 # way to build a `SandboxSpec` carrying providers/environment — the SDK's
@@ -26,6 +27,17 @@ from openshell import ExecResult, SandboxClient, SandboxError, SandboxRef, Works
 from openshell._proto import openshell_pb2
 
 OPENSHELL_GATEWAY_ENDPOINT_ENV = "OPENSHELL_GATEWAY_ENDPOINT"
+# mTLS material, all optional -- the real test gateway requires client-cert
+# auth (confirmed directly: a plaintext/no-cert attempt gets a TLS
+# "certificate required" alert), but a from-scratch OpenShellClient() had
+# no way to supply any of this at all until this was found and fixed. See
+# docs/LLD-port-openshell.md for what identity these paths should actually
+# point to -- still an open question, unrelated to whether the mechanism
+# itself works.
+OPENSHELL_GATEWAY_TLS_CA_ENV = "OPENSHELL_GATEWAY_TLS_CA"
+OPENSHELL_GATEWAY_TLS_CERT_ENV = "OPENSHELL_GATEWAY_TLS_CERT"
+OPENSHELL_GATEWAY_TLS_KEY_ENV = "OPENSHELL_GATEWAY_TLS_KEY"
+OPENSHELL_GATEWAY_BEARER_TOKEN_ENV = "OPENSHELL_GATEWAY_BEARER_TOKEN"
 DEFAULT_TIMEOUT_SECONDS = 30.0
 DEFAULT_READY_TIMEOUT_SECONDS = 120.0
 
@@ -46,6 +58,26 @@ def _endpoint(explicit: str | None) -> str:
             f"no OpenShell gateway endpoint: pass one explicitly or set {OPENSHELL_GATEWAY_ENDPOINT_ENV}"
         )
     return endpoint
+
+
+def _tls_from_env() -> TlsConfig | None:
+    """Build TlsConfig from env-supplied paths, or None for a plaintext channel.
+
+    None is a deliberate, valid choice (e.g. a local dev gateway with no
+    TLS at all) -- this only builds a config when at least one of the
+    three paths is actually set, rather than defaulting to `TlsConfig()`
+    (system roots, no client identity) the moment any env var is present.
+    """
+    ca = os.environ.get(OPENSHELL_GATEWAY_TLS_CA_ENV)
+    cert = os.environ.get(OPENSHELL_GATEWAY_TLS_CERT_ENV)
+    key = os.environ.get(OPENSHELL_GATEWAY_TLS_KEY_ENV)
+    if not (ca or cert or key):
+        return None
+    return TlsConfig(
+        ca_path=pathlib.Path(ca) if ca else None,
+        cert_path=pathlib.Path(cert) if cert else None,
+        key_path=pathlib.Path(key) if key else None,
+    )
 
 
 class OpenShellClient:
@@ -71,7 +103,12 @@ class OpenShellClient:
             raise ValueError("workspace must be a non-empty string")
         self.workspace = workspace
         self.timeout = timeout
-        self._client = sandbox_client or SandboxClient(_endpoint(endpoint), timeout=timeout)
+        self._client = sandbox_client or SandboxClient(
+            _endpoint(endpoint),
+            tls=_tls_from_env(),
+            bearer_token=os.environ.get(OPENSHELL_GATEWAY_BEARER_TOKEN_ENV),
+            timeout=timeout,
+        )
         # Built lazily from `self._client` in the real case (needs its live
         # grpc channel); accepted directly here so tests can inject a fake
         # without needing a fake that also mimics `SandboxClient._channel`.

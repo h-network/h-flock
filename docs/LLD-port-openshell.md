@@ -183,6 +183,31 @@ Both real constraints are now handled:
   from `create_sandbox()` so callers never need to know about the two-step
   requirement.
 
+**Update 2026-08-29, fourth pass — a real, previously-hidden gap: the real
+construction path had no way to authenticate at all.** `OpenShellClient`'s
+non-injected path built a bare `SandboxClient(endpoint, timeout=timeout)`
+with no `tls=`/`bearer_token=` — which would fail outright against this
+gateway's mTLS requirement (confirmed real: a plaintext attempt gets a TLS
+"certificate required" alert, §2a). Every prior real-gateway check up to
+this point used the `sandbox_client=`/injection seam specifically to work
+around this, which is legitimate for testing `OpenShellClient`'s own logic
+but never actually exercised its real construction path end to end. Fixed:
+added `OPENSHELL_GATEWAY_TLS_CA`/`_CERT`/`_KEY` and
+`OPENSHELL_GATEWAY_BEARER_TOKEN` env vars, wired into the real
+`SandboxClient(...)` call. **Confirmed fixed for real**: ran a fully real
+`OpenShellClient("acme-hq")` (zero injected fakes) against the live
+gateway using the lab's own mTLS cert files
+(`~/.config/openshell/gateways/openshell/mtls/*`) — `create_sandbox` →
+`exec_sandbox` → `delete_sandbox` all succeeded genuinely (real sandbox
+id, real `echo` output, real deletion). This is the first time the
+wrapper's actual production construction path — not just its logic against
+an injected fake — has been run against the live gateway.
+
+Still open: which mTLS identity the real integration should use — the
+lab's local CLI registration (used only for this check) or a separate one
+provisioned for flock itself. Unresolved either way; the mechanism works
+with whatever cert paths it's given.
+
 ## 3a. Delivery (`src/flock/port/openshell.py`) and lifecycle
 (`control/openers.py`)
 
