@@ -19,7 +19,8 @@ from clients.telegram.bot import (
     synthesize_speech, _parse_sse_events, _derive_session_url,
     _agent_picker_keyboard, _is_transient_chrome_line, _parse_int_overrides,
     _parse_mention, _pane_tail_window, _strip_ansi, _valid_attachment_filename, _valid_attachment_mime_type,
-    ATTACHMENT_ALLOWED_PAYLOAD_KEYS, ATTACHMENT_MAX_BYTES, ATTACHMENT_MAX_CAPTION_BYTES, TELEGRAM_MAX_FILE_BYTES,
+    ATTACHMENT_ALLOWED_PAYLOAD_KEYS, ATTACHMENT_MAX_BYTES, ATTACHMENT_MAX_CAPTION_BYTES, DEFAULT_CURSOR_FILE,
+    TELEGRAM_MAX_FILE_BYTES,
 )
 
 
@@ -311,6 +312,26 @@ def test_cursor_store():
 
         store.save("1001-0")
         assert store.load() == "1001-0"
+
+
+def test_default_cursor_file_is_not_a_bare_relative_filename():
+    """A bare "cursor.json" default lands wherever CWD happens to be —
+    including the repo root for an ad hoc local run with no --cursor-file,
+    where it sat as an untracked file breaking
+    test_the_image_tag_names_the_commit_it_was_built_from's dirty-tree
+    check. The default must be an absolute path under a dot-directory,
+    matching container/entrypoint.sh's own --cursor-file convention."""
+    assert Path(DEFAULT_CURSOR_FILE).is_absolute()
+    assert ".flock" in Path(DEFAULT_CURSOR_FILE).parts
+    assert CursorStore().filepath == Path(DEFAULT_CURSOR_FILE)
+
+
+def test_cursor_store_save_creates_missing_parent_directories(tmp_path):
+    nested = tmp_path / "does" / "not" / "exist" / "cursor.json"
+    store = CursorStore(str(nested))
+    store.save("1-0")
+    assert nested.exists()
+    assert store.load() == "1-0"
 
 
 def test_status_command():
@@ -2056,10 +2077,10 @@ def test_reply_pusher_per_message_voice_override(monkeypatch):
         assert synthesized_voices == ["custom-override-voice"]
 
 
-def test_telegram_bot_voice_feature_flag_disabled_by_default():
+def test_telegram_bot_voice_feature_flag_disabled_by_default(tmp_path):
     flock = DummyFlockClient()
     telegram = DummyTelegramClient()
-    store = CursorStore()
+    store = CursorStore(str(tmp_path / "cursor.json"))
     bot_instance = TelegramBot(
         flock_client=flock,
         telegram_client=telegram,
@@ -2080,10 +2101,10 @@ def test_telegram_bot_voice_feature_flag_disabled_by_default():
     assert not bot_instance.is_voice_enabled(12345)
 
 
-def test_telegram_bot_voice_toggle_and_menu_when_feature_enabled():
+def test_telegram_bot_voice_toggle_and_menu_when_feature_enabled(tmp_path):
     flock = DummyFlockClient()
     telegram = DummyTelegramClient()
-    store = CursorStore()
+    store = CursorStore(str(tmp_path / "cursor.json"))
     bot_instance = TelegramBot(
         flock_client=flock,
         telegram_client=telegram,
@@ -2122,10 +2143,10 @@ def test_telegram_bot_voice_toggle_and_menu_when_feature_enabled():
     assert not bot_instance.is_voice_enabled(12345)
 
 
-def test_telegram_bot_enrol_registers_voice_command():
+def test_telegram_bot_enrol_registers_voice_command(tmp_path):
     flock = DummyFlockClient()
     telegram = DummyTelegramClient()
-    store = CursorStore()
+    store = CursorStore(str(tmp_path / "cursor.json"))
     bot_instance = TelegramBot(flock_client=flock, telegram_client=telegram, cursor_store=store)
     assert bot_instance.enrol() is True
     assert len(telegram.commands_set) == 1
@@ -2198,10 +2219,10 @@ def test_telegram_bot_chat_id_type_normalization_with_reply_pusher(monkeypatch):
         assert telegram.sent_voices[0]["chat_id"] == "46444780"
 
 
-def test_telegram_bot_int_str_chat_id_in_flows():
+def test_telegram_bot_int_str_chat_id_in_flows(tmp_path):
     flock = DummyFlockClient()
     telegram = DummyTelegramClient()
-    store = CursorStore()
+    store = CursorStore(str(tmp_path / "cursor.json"))
     bot_instance = TelegramBot(
         flock_client=flock,
         telegram_client=telegram,
@@ -2337,11 +2358,11 @@ def test_flock_client_stream_activity(monkeypatch):
     assert events[0]["cursor"] == "100-0"
 
 
-def test_telegram_bot_live_activity_with_user_prompt_and_reply_pusher(monkeypatch):
+def test_telegram_bot_live_activity_with_user_prompt_and_reply_pusher(monkeypatch, tmp_path):
     flock = DummyFlockClient()
     flock.activity_queue = [{"cursor": "50-0", "agent": "architect", "kind": "input"}]
     telegram = DummyTelegramClient()
-    store = CursorStore()
+    store = CursorStore(str(tmp_path / "cursor.json"))
     bot_instance = TelegramBot(
         flock_client=flock,
         telegram_client=telegram,
@@ -2401,12 +2422,12 @@ def test_telegram_bot_live_activity_with_user_prompt_and_reply_pusher(monkeypatc
     assert telegram.sent_messages[-1]["text"] == "architect: done building"
 
 
-def test_telegram_bot_multi_output_turn_does_not_early_exit(monkeypatch):
+def test_telegram_bot_multi_output_turn_does_not_early_exit(monkeypatch, tmp_path):
     """Verify that multiple output events interleaved with tools do not cause early exit."""
     flock = DummyFlockClient()
     flock.activity_queue = [{"cursor": "70-0", "agent": "architect", "kind": "input"}]
     telegram = DummyTelegramClient()
-    store = CursorStore()
+    store = CursorStore(str(tmp_path / "cursor.json"))
     bot_instance = TelegramBot(
         flock_client=flock,
         telegram_client=telegram,
@@ -2477,10 +2498,10 @@ def test_telegram_bot_multi_output_turn_does_not_early_exit(monkeypatch):
     assert telegram.sent_messages[-1]["text"] == "architect: all done"
 
 
-def test_telegram_bot_no_activity_push_flag():
+def test_telegram_bot_no_activity_push_flag(tmp_path):
     flock = DummyFlockClient()
     telegram = DummyTelegramClient()
-    store = CursorStore()
+    store = CursorStore(str(tmp_path / "cursor.json"))
     bot_instance = TelegramBot(
         flock_client=flock,
         telegram_client=telegram,
@@ -2498,10 +2519,10 @@ def test_telegram_bot_no_activity_push_flag():
     assert telegram.sent_messages[0]["text"] == "✅ Sent to architect."
 
 
-def test_get_activity_tail_pagination_and_true_tail():
+def test_get_activity_tail_pagination_and_true_tail(tmp_path):
     flock = DummyFlockClient()
     telegram = DummyTelegramClient()
-    store = CursorStore()
+    store = CursorStore(str(tmp_path / "cursor.json"))
     bot_instance = TelegramBot(
         flock_client=flock,
         telegram_client=telegram,
@@ -2527,10 +2548,10 @@ def test_get_activity_tail_pagination_and_true_tail():
     assert bot_instance._get_activity_tail("architect") == "02500-0"
 
 
-def test_reply_pusher_seed_cursor_pagination():
+def test_reply_pusher_seed_cursor_pagination(tmp_path):
     flock = DummyFlockClient()
     telegram = DummyTelegramClient()
-    store = CursorStore()
+    store = CursorStore(str(tmp_path / "cursor.json"))
     pusher = ReplyPusher(
         flock=flock,
         telegram=telegram,

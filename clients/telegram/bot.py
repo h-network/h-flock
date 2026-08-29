@@ -423,10 +423,18 @@ def render_alert(alert: dict) -> str:
     return f"{icon} {kind} — {json.dumps(details)}"
 
 
+# Matches the deployed convention (container/entrypoint.sh's own
+# --cursor-file "/home/ubuntu/.flock/telegram.cursor.json") rather than a
+# bare relative filename. A bare "cursor.json" default lands wherever CWD
+# happens to be — including the repo root itself for an ad hoc local run
+# with no --cursor-file, where it sits as an untracked file forever after.
+DEFAULT_CURSOR_FILE = str(pathlib.Path.home() / ".flock" / "telegram.cursor.json")
+
+
 class CursorStore:
     """Persists cursor to disk so bot restarts do not replay mailbox."""
 
-    def __init__(self, filepath: str = "cursor.json"):
+    def __init__(self, filepath: str = DEFAULT_CURSOR_FILE):
         self.filepath = pathlib.Path(filepath)
 
     def load(self) -> str | None:
@@ -442,6 +450,7 @@ class CursorStore:
         if not cursor:
             return
         try:
+            self.filepath.parent.mkdir(parents=True, exist_ok=True)
             self.filepath.write_text(json.dumps({"cursor": cursor, "updated_at": time.time()}), encoding="utf-8")
         except Exception as exc:
             logger.warning(f"Failed to save cursor to {self.filepath}: {exc}")
@@ -2617,7 +2626,7 @@ def main() -> None:
                         help="skip TLS verification (self-signed door certificate)")
     parser.add_argument("--api-token", default=os.getenv("FLOCK_API_TOKEN", os.getenv("API_TOKEN", "")), help="h-flock API Bearer token")
     parser.add_argument("--bot-token", default=os.getenv("TELEGRAM_BOT_TOKEN", ""), help="Telegram Bot API token")
-    parser.add_argument("--cursor-file", default=os.getenv("CURSOR_FILE", "cursor.json"), help="File path to store message cursor")
+    parser.add_argument("--cursor-file", default=os.getenv("CURSOR_FILE", DEFAULT_CURSOR_FILE), help="File path to store message cursor")
     parser.add_argument("--agent", default="architect", help="Target agent name")
     parser.add_argument("--dry-run", action="store_true", help="Run in dry-run mode (prints Telegram operations to stdout)")
     parser.add_argument("--prompt", type=str, default="", help="Prompt text to send in dry-run mode")
