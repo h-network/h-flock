@@ -41,6 +41,7 @@ class DummyFlockClient:
         self.hired = []
         self.retired = []
         self.sent_envelopes = []
+        self.sent_commands = []
         self.sent_attachments = []
         self.alerts = []
         self.alerts_next_cursor = None
@@ -51,6 +52,10 @@ class DummyFlockClient:
     def send_message(self, destination, text):
         self.sent_envelopes.append({"destination": destination, "text": text})
         return 202, {"stream_id": "s2", "correlation_id": "c2"}
+
+    def send_command(self, destination, text):
+        self.sent_commands.append({"destination": destination, "text": text})
+        return 202, {"stream_id": "s2c", "correlation_id": "c2c"}
 
     def send_attachment(self, destination, filename, mime_type, content_base64, caption=None):
         entry = {
@@ -1073,6 +1078,157 @@ def test_mention_mid_sentence_is_not_routing_just_message_content():
         assert reply == "✅ Sent to architect."
         assert flock.sent_envelopes[-1]["destination"] == "architect"
         assert flock.sent_envelopes[-1]["text"] == "please check with @sme-2 first"
+
+
+# ── /run: raw, unwrapped pane injection via a Command-kind envelope ────────
+
+
+def test_run_sends_a_command_envelope_not_a_message_one():
+    with tempfile.TemporaryDirectory() as tmpdir:
+        bot_instance, flock, telegram = _make_bot(tmpdir=tmpdir)
+        reply = bot_instance.handle_text_message(12345, "/run sme-2 /clear")
+        assert reply == "✅ Ran on sme-2."
+        assert flock.sent_commands == [{"destination": "sme-2", "text": "/clear"}]
+        # never goes through the Message-kind path
+        assert flock.sent_envelopes == []
+
+
+def test_run_is_one_off_and_does_not_change_the_persistent_target():
+    with tempfile.TemporaryDirectory() as tmpdir:
+        bot_instance, flock, telegram = _make_bot(tmpdir=tmpdir)
+        assert bot_instance._target_for(12345) == "architect"
+        bot_instance.handle_text_message(12345, "/run sme-2 /clear")
+        assert bot_instance._target_for(12345) == "architect"
+        assert "12345" not in bot_instance.chat_target_agent
+        bot_instance.handle_text_message(12345, "plain text after /run")
+        assert flock.sent_envelopes[-1]["destination"] == "architect"
+
+
+def test_run_allows_compact_too():
+    with tempfile.TemporaryDirectory() as tmpdir:
+        bot_instance, flock, telegram = _make_bot(tmpdir=tmpdir)
+        reply = bot_instance.handle_text_message(12345, "/run architect /compact")
+        assert reply == "✅ Ran on architect."
+        assert flock.sent_commands[-1]["text"] == "/compact"
+
+
+def test_run_rejects_a_command_not_on_the_allowlist():
+    with tempfile.TemporaryDirectory() as tmpdir:
+        bot_instance, flock, telegram = _make_bot(tmpdir=tmpdir)
+        reply = bot_instance.handle_text_message(12345, "/run architect /add-dir /some/path")
+        assert "isn't an allowed /run command" in reply
+        assert "/clear" in reply and "/compact" in reply
+        assert flock.sent_commands == []
+        assert flock.sent_envelopes == []
+
+
+def test_run_rejects_arbitrary_text_not_shaped_like_a_command():
+    with tempfile.TemporaryDirectory() as tmpdir:
+        bot_instance, flock, telegram = _make_bot(tmpdir=tmpdir)
+        reply = bot_instance.handle_text_message(12345, "/run architect rm -rf /")
+        assert "isn't an allowed /run command" in reply
+        assert flock.sent_commands == []
+
+
+def test_run_rejects_an_allowed_command_name_with_trailing_arguments():
+    """Exact match only -- /clear plus anything else is not /clear."""
+    with tempfile.TemporaryDirectory() as tmpdir:
+        bot_instance, flock, telegram = _make_bot(tmpdir=tmpdir)
+        reply = bot_instance.handle_text_message(12345, "/run architect /clear extra")
+        assert "isn't an allowed /run command" in reply
+        assert flock.sent_commands == []
+
+
+def test_run_rejects_an_embedded_newline_even_inside_an_allowed_command():
+    """A newline in the command text would submit /clear on delivery and
+    then paste a second, unvetted line right after it -- rejected before
+    the allowlist is even checked."""
+    with tempfile.TemporaryDirectory() as tmpdir:
+        bot_instance, flock, telegram = _make_bot(tmpdir=tmpdir)
+        reply = bot_instance.handle_text_message(12345, "/run architect /clear\nrm -rf /")
+        assert "single line" in reply
+        assert flock.sent_commands == []
+
+
+def test_run_allowlist_is_configurable_per_instance():
+    with tempfile.TemporaryDirectory() as tmpdir:
+        bot_instance, flock, telegram = _make_bot(
+            tmpdir=tmpdir, run_allowed_commands=frozenset({"/help"}),
+        )
+        reply = bot_instance.handle_text_message(12345, "/run architect /clear")
+        assert "isn't an allowed /run command" in reply
+        assert flock.sent_commands == []
+
+        reply = bot_instance.handle_text_message(12345, "/run architect /help")
+        assert reply == "✅ Ran on architect."
+        assert flock.sent_commands[-1]["text"] == "/help"
+
+
+def test_parse_command_allowlist_strips_whitespace_and_drops_blanks():
+    assert bot._parse_command_allowlist(" /clear ,/compact,, ") == frozenset({"/clear", "/compact"})
+
+
+def test_run_with_no_agent_or_text_prompts_for_usage():
+    with tempfile.TemporaryDirectory() as tmpdir:
+        bot_instance, flock, telegram = _make_bot(tmpdir=tmpdir)
+        reply = bot_instance.handle_text_message(12345, "/run")
+        assert "Usage: /run" in reply
+        assert flock.sent_commands == []
+
+        reply = bot_instance.handle_text_message(12345, "/run architect")
+        assert "Usage: /run" in reply
+        assert flock.sent_commands == []
+
+        reply = bot_instance.handle_text_message(12345, "/run architect   ")
+        assert "Usage: /run" in reply
+        assert flock.sent_commands == []
+
+
+def test_run_unknown_agent_errors_back_instead_of_running_anywhere():
+    with tempfile.TemporaryDirectory() as tmpdir:
+        bot_instance, flock, telegram = _make_bot(tmpdir=tmpdir)
+        reply = bot_instance.handle_text_message(12345, "/run nonexistent /clear")
+        assert "isn't a known agent" in reply
+        assert flock.sent_commands == []
+
+
+def test_run_rejects_a_non_tmux_client_by_name():
+    with tempfile.TemporaryDirectory() as tmpdir:
+        flock = DummyFlockClient()
+        flock.roster["telegram"] = "api"
+        bot_instance, flock, telegram = _make_bot(flock=flock, tmpdir=tmpdir)
+        reply = bot_instance.handle_text_message(12345, "/run telegram /clear")
+        assert "isn't a known agent" in reply
+        assert flock.sent_commands == []
+
+
+def test_run_rejects_a_reserved_name():
+    with tempfile.TemporaryDirectory() as tmpdir:
+        bot_instance, flock, telegram = _make_bot(tmpdir=tmpdir)
+        reply = bot_instance.handle_text_message(12345, "/run all /clear")
+        assert "isn't a known agent" in reply
+        assert flock.sent_commands == []
+
+
+def test_run_blocked_agent_is_refused_same_as_a_regular_message():
+    with tempfile.TemporaryDirectory() as tmpdir:
+        bot_instance, flock, telegram = _make_bot(tmpdir=tmpdir)
+        flock.presence_state = "blocked"
+        reply = bot_instance.handle_text_message(12345, "/run architect /clear")
+        assert "not accepting messages" in reply
+        assert flock.sent_commands == []
+
+
+def test_run_failure_reports_run_specific_wording_not_send_wording():
+    with tempfile.TemporaryDirectory() as tmpdir:
+        class RefusingFlockClient(DummyFlockClient):
+            def send_command(self, destination, text):
+                return 422, {"detail": "policy denied"}
+
+        flock = RefusingFlockClient()
+        bot_instance, flock, telegram = _make_bot(flock=flock, tmpdir=tmpdir)
+        reply = bot_instance.handle_text_message(12345, "/run architect /clear")
+        assert "Failed to run on architect" in reply
 
 
 # ── receiving a photo: sent on as a real Attachment envelope ────────────────

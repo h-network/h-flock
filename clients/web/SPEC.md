@@ -97,7 +97,11 @@ Telegram's own indicator expiring is why.
 - the terminal is **read-only until deliberately switched**, and the current mode
   is always visible
 - `Command` is not exposed in the UI at all. If a user wants to run something they
-  can type it in the terminal, where they can see what they are doing
+  can type it in the terminal, where they can see what they are doing.
+  (`clients/telegram` carries one narrow, deliberate exception to this —
+  `/run`, a fixed allowlist of native CLI slash commands, not full
+  passthrough. See `clients/telegram/README.md` §2h for why that's judged
+  different from what this note objects to. No equivalent exists here.)
 - one origin for page, api and socket
 
 ## 6a. Lifecycle — hiring and retiring, from the UI
