@@ -93,12 +93,15 @@ but does not authenticate which process wrote that queue or prevent a direct
 caller from choosing another participant's valid egress prefix.
 
 **`send`'s one piece of interpretation stays at the header, not the payload.**
-It already resolves both `source` and `destination` port_type for
-`require_allowed` above, so it reuses that lookup to open or clear one HASH
-field in `unreplied` — a client (`api` port_type) reaching a `tmux` agent
-opens a count against that client; that agent replying to the same client
-clears it. This reads `l2` and the roster, the same inputs the switch's own
-forwarding decision already reads; it never inspects `payload`. Full shape
+It reads both `source` and `destination` port_type with two of its own roster
+lookups — ⚠ **not** a reuse of `require_allowed` above, which checks policy
+export/import *tags*, a separate hash, and never touches port_type; an
+earlier version of this doc claimed otherwise, caught by `bus`'s
+module-boundary sweep. It opens or clears one HASH field in `unreplied` — a
+client (`api` port_type) reaching a `tmux` agent opens a count against that
+client; that agent replying to the same client clears it. This reads `l2`
+and the roster, the same inputs the switch's own forwarding decision already
+reads; it never inspects `payload`. Full shape
 and the watchdog rule that consumes it are LLD-watchdog §2d.
 
 A consequence worth stating: **an agent never learns a queue name.** Components
