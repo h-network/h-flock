@@ -330,14 +330,19 @@ at all).
 - **Largest available size**, `photo[-1]` — Telegram's own smallest-to-largest
   ordering for the `PhotoSize` array. This is the best *compressed* copy the
   bot ever sees: Telegram recompresses every "photo" upload itself, so full
-  original quality isn't available through this path at all (only a
-  "document" upload preserves it, a different message shape, not handled
-  here). `mime_type` is always `image/jpeg` for the same reason — no
-  content-sniffing needed.
+  original quality isn't available through this path at all — a
+  **"document"** upload preserves it instead, a different message shape,
+  see [§2g](#2g-receiving-a-document-uncompressed). `mime_type` is always
+  `image/jpeg` for the same reason — no content-sniffing needed.
 - **`filename`** comes from Telegram's own `getFile` `file_path` (its
   basename, e.g. `file_123.jpg`), still run through the same basename
   validation `docs/CONTRACTS.md` specifies rather than trusted outright —
   falls back to a generated name if that ever fails.
+- **Shares its download/validate/send mechanics with §2g's "document" path**
+  (`_send_incoming_file_as_attachment`) — the only real difference between
+  the two is *what's already known about the upload*: a photo has no name
+  or MIME type of its own (both are supplied here, `image/jpeg` and a
+  `file_path`-derived name), a document already carries both from Telegram.
 - **A defensive size check against two different ceilings, not one applied
   twice.** `TELEGRAM_MAX_FILE_BYTES` (20MB) is what Telegram will let a bot
   download at all, checked against `PhotoSize`'s own reported `file_size`
@@ -406,6 +411,38 @@ checked before falling through to the ordinary text-reply path at all.
   same truncation `send_voice` already applies — smaller than the bus's own
   65,536-UTF-8-byte cap (`docs/CONTRACTS.md`), so a long caption that's
   perfectly valid on the bus still gets cut for Telegram specifically.
+
+---
+
+## 2g. Receiving a Document (Uncompressed)
+
+Telegram's normal "photo" picker always recompresses before this bot ever
+sees it — Telegram's own behavior, not something fixable here. Sending as a
+**document** instead (send as file, not as photo) skips that recompression,
+so this is the path for anyone who actually needs the original bytes —
+`message.document` is a single object with its own `file_id`/`file_name`/
+`mime_type`, not an array of `PhotoSize` like `message.photo`, and not
+always JPEG.
+
+- **Shares every mechanic beyond that with [§2e's photo
+  path](#2e-receiving-a-photo)** (`_send_incoming_file_as_attachment`) —
+  `@mention` routing, `blocked` presence, both size ceilings
+  (`TELEGRAM_MAX_FILE_BYTES` for the download, `ATTACHMENT_MAX_BYTES` for
+  what the bus accepts), and sending the real `Attachment` envelope are all
+  the identical code path a photo already used, not a second copy of it.
+- **`filename` and `mime_type` come from Telegram directly** (`file_name`,
+  `mime_type`) instead of being derived or hardcoded the way a photo's are
+  — still run through the same validation as any other Attachment
+  (`_valid_attachment_filename`/`_valid_attachment_mime_type`) rather than
+  trusted outright, since Telegram's own metadata isn't guaranteed to be
+  spec-shaped (e.g. a `mime_type` with a `; charset=...` parameter, which
+  the closed grammar in `docs/CONTRACTS.md` doesn't allow). An invalid
+  `mime_type` falls back to `application/octet-stream` rather than
+  refusing the file outright — the content is still fine even if the
+  reported type isn't — and `mime_type` is genuinely optional in Telegram's
+  own API, so a missing one gets the same fallback. An invalid `file_name`
+  falls back to a generated name, same idea as a photo's fallback but with
+  no extension assumed (a document could be anything).
 
 ---
 

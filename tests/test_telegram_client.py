@@ -1211,6 +1211,92 @@ def test_handle_photo_message_shows_typing_before_the_download():
         assert telegram.chat_actions == [{"chat_id": "12345", "action": "typing"}]
 
 
+# ── receiving a "document" (uncompressed) upload: shares _send_incoming_file_as_attachment ──
+
+def test_dispatch_update_routes_a_document_instead_of_falling_through(monkeypatch):
+    with tempfile.TemporaryDirectory() as tmpdir:
+        bot_instance, flock, telegram = _make_bot(tmpdir=tmpdir, allowed_chat_id=12345)
+        calls = []
+        monkeypatch.setattr(
+            bot_instance, "handle_document_message",
+            lambda chat_id, document, caption: calls.append((chat_id, document, caption)),
+        )
+        document = {"file_id": "doc1", "file_name": "report.pdf", "mime_type": "application/pdf"}
+        update = {"message": {"chat": {"id": 12345}, "document": document, "caption": "the report"}}
+        bot_instance._dispatch_update(update)
+        assert calls == [("12345", document, "the report")]
+
+
+def test_handle_document_message_uses_telegrams_own_filename_and_mime_type():
+    with tempfile.TemporaryDirectory() as tmpdir:
+        bot_instance, flock, telegram = _make_bot(tmpdir=tmpdir)
+        telegram.get_file_response = {"ok": True, "result": {"file_path": "documents/file_1"}}
+        document = {"file_id": "doc1", "file_name": "report.pdf", "mime_type": "application/pdf", "file_size": 5000}
+
+        reply = bot_instance.handle_document_message(12345, document, "")
+
+        assert reply == "✅ File sent to architect."
+        sent = flock.sent_attachments[0]
+        assert sent["filename"] == "report.pdf"
+        assert sent["mime_type"] == "application/pdf"
+        assert base64.b64decode(sent["content_base64"]) == b"fake-jpeg-bytes"
+
+
+def test_handle_document_message_falls_back_to_octet_stream_for_an_invalid_reported_mime_type():
+    with tempfile.TemporaryDirectory() as tmpdir:
+        bot_instance, flock, telegram = _make_bot(tmpdir=tmpdir)
+        document = {"file_id": "doc1", "file_name": "notes.txt", "mime_type": "text/plain; charset=utf-8"}
+        bot_instance.handle_document_message(12345, document, "")
+        assert flock.sent_attachments[0]["mime_type"] == "application/octet-stream"
+
+
+def test_handle_document_message_defaults_a_missing_mime_type_to_octet_stream():
+    with tempfile.TemporaryDirectory() as tmpdir:
+        bot_instance, flock, telegram = _make_bot(tmpdir=tmpdir)
+        document = {"file_id": "doc1", "file_name": "notes.txt"}  # Telegram's mime_type is optional
+        bot_instance.handle_document_message(12345, document, "")
+        assert flock.sent_attachments[0]["mime_type"] == "application/octet-stream"
+
+
+def test_handle_document_message_falls_back_to_a_generated_filename_with_no_extension_assumed():
+    with tempfile.TemporaryDirectory() as tmpdir:
+        bot_instance, flock, telegram = _make_bot(tmpdir=tmpdir)
+        document = {"file_id": "doc1", "file_name": "../evil", "mime_type": "application/octet-stream"}
+        bot_instance.handle_document_message(12345, document, "")
+        filename = flock.sent_attachments[0]["filename"]
+        assert _valid_attachment_filename(filename)
+        assert filename.startswith("telegram-file-")
+
+
+def test_handle_document_message_mention_routes_without_changing_the_persistent_target():
+    with tempfile.TemporaryDirectory() as tmpdir:
+        bot_instance, flock, telegram = _make_bot(tmpdir=tmpdir)
+        document = {"file_id": "doc1", "file_name": "report.pdf", "mime_type": "application/pdf"}
+        reply = bot_instance.handle_document_message(12345, document, "@sme-2 the numbers")
+        assert reply == "✅ File sent to sme-2."
+        assert flock.sent_attachments[-1]["destination"] == "sme-2"
+        assert flock.sent_attachments[-1]["caption"] == "the numbers"
+        assert "12345" not in bot_instance.chat_target_agent
+
+
+def test_handle_document_message_respects_blocked_presence():
+    with tempfile.TemporaryDirectory() as tmpdir:
+        flock = DummyFlockClient()
+        flock.presence_state = "blocked"
+        bot_instance, flock, telegram = _make_bot(flock=flock, tmpdir=tmpdir)
+        document = {"file_id": "doc1", "file_name": "report.pdf", "mime_type": "application/pdf"}
+        reply = bot_instance.handle_document_message(12345, document, "")
+        assert reply == "architect is not accepting messages right now"
+        assert flock.sent_attachments == []
+
+
+def test_handle_document_message_with_no_document_is_a_no_op():
+    with tempfile.TemporaryDirectory() as tmpdir:
+        bot_instance, flock, telegram = _make_bot(tmpdir=tmpdir)
+        assert bot_instance.handle_document_message(12345, {}, "") == ""
+        assert flock.sent_attachments == []
+
+
 def test_status_command_respects_per_chat_target():
     with tempfile.TemporaryDirectory() as tmpdir:
         flock = DummyFlockClient()
