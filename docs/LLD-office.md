@@ -117,7 +117,9 @@ the byte-count acknowledgement — are `CONTRACTS.md` §5's, not repeated here.
 envelope to one agent (`office send-file -a <destination> <path> [--caption <text>] [--mime-type <type>]`).
 It requires `-a <destination>` (unicast only; `destination: all` is refused),
 validates that `<path>` is a regular file, checks `ATTACHMENT_MAX_BYTES` (10 MiB)
-before reading and encoding, validates the basename (`<=255` UTF-8 bytes, no
+before reading and encoding — via `stat()` up front, then again against the bytes
+actually read (`cli.py:220`, `:257`), a TOCTOU guard against the file growing
+between the two — validates the basename (`<=255` UTF-8 bytes, no
 slashes, control characters, or `.`/`..`), validates or guesses the MIME type
 (falling back to `application/octet-stream`), validates caption length (`<=65,536` UTF-8 bytes),
 and encodes the raw bytes into RFC 4648 standard base64 with padding. The acknowledgement
@@ -227,7 +229,7 @@ board entry into a command that assumes a shape. `_serialized()` (`cli.py:606`)
 writes it back with `separators=(",", ":")` — compact, not pretty-printed,
 because it is a Redis list entry, not a file for a human to read directly.
 
-⚠ **`held_ts`, set by `hold` (`cli.py:756`), is the youngest of the four
+⚠ **`held_ts`, set by `hold` (`cli.py:760`), is the youngest of the four
 timestamps.** `started_ts` is not reusable for "how long has this been on
 hold": `take` overwrites it unconditionally on every take, including a retake
 out of `hold`, so it means "since last taken", not "since parked". A ticket
@@ -235,7 +237,7 @@ held before this field existed carries none — `list` falls back to
 `created_ts` for those rather than showing nothing (§6d).
 
 ⚠ **`related` is a list of ticket ids, stored, never validated.** `office add
---related <id>[,<id>...]` (`cli.py:783`) splits on comma, strips, and dedupes
+--related <id>[,<id>...]` (`cli.py:786`) splits on comma, strips, and dedupes
 (`list(dict.fromkeys(...))`, the same pattern `_clone_agents` uses); the
 opener filters to strings and drops the key entirely when the result is
 empty, the same "absent means not set" convention as `priority`. **No
@@ -336,8 +338,10 @@ participants — `-a a,b` narrows to a comma-separated subset, validated against
 that set; omitted means all of them. It fetches the upstream **once** into
 whichever target agent clones first, clones every remaining target from that
 local copy, and points **every** clone's `origin` at the supplied URL rather
-than at the local source (`cli.py:860`, `:836`) — so the network cost is paid
-once but no agent ends up with another agent's workspace as its remote.
+than at the local source (`_clone_to_all_command`, `cli.py:892‥903`; the
+`remote set-url` itself is `_git_clone`, `cli.py:851`) — so the network cost
+is paid once but no agent ends up with another agent's workspace as its
+remote.
 Existing target directories are skipped outright and never reused as the
 local source for subsequent fresh clones in that run; a failed clone's partial
 directory is removed (`shutil.rmtree`) so a retry does not read "already has
