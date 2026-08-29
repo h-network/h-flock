@@ -18,6 +18,9 @@ every tmux/api/control delivery (`flock.openshell` pulls in grpc/protobuf).
 
 from __future__ import annotations
 
+import base64
+import os
+
 from flock.bus import DeadLetter, EnvelopeError, parse, prefix
 from flock.bus.doors import _emit_for_recipient, send
 from flock.bus.envelope import parse_for_switch
@@ -25,7 +28,13 @@ from flock.openshell import OpenShellClient, OpenShellUnavailable, headless_comm
 from flock.openshell.naming import sandbox_name, workspace_name
 
 from .deliver import drain_ingress
-from .openers import add_ticket_opener
+from .openers import (
+    ATTACHMENT_MAX_BASE64_CHARS,
+    ATTACHMENT_MAX_BYTES,
+    BASE64_CHARS_REGEX,
+    MIME_TYPE_REGEX,
+    add_ticket_opener,
+)
 
 
 def _agent_cli(r, pod: str, tenant: str, agent: str) -> str:
@@ -90,6 +99,129 @@ def _deliver_command(r, pod: str, tenant: str, agent: str, envelope: dict, clien
     _reply(r, pod, tenant, agent, source, envelope, result)
 
 
+def _write_attachment(
+    client: OpenShellClient, sbx_name: str, stream_id: str, filename: str, decoded_bytes: bytes
+) -> str:
+    """Base64-decode-into-temp-file-then-atomic-mv via `exec_sandbox`.
+
+    No dedicated file-write RPC is confirmed in the OpenShell surface (see
+    docs/openshell-sdk-surface-inventory.md — `sandbox upload`/`download`
+    use a real SSH session instead, which would need a new SSH-client
+    dependency to reproduce; this reuses the already-proven `exec_sandbox`
+    path with no new dependency, matching how tmux's own `attachment_opener`
+    writes files with a plain `open()` — there just isn't a filesystem
+    handle to open directly here).
+
+    Base path is `/sandbox` — confirmed directly (`pwd`/`$HOME` inside a
+    real sandbox), not `/workdir` (flock's own container convention,
+    which does not exist inside an OpenShell sandbox at all: an earlier
+    version of this used it and got a real `mkdir: /workdir: Permission
+    denied`). No per-agent subdirectory either, unlike tmux's shared
+    container — each sandbox already belongs to exactly one agent.
+
+    `target_dir`/`temp_path`/`final_path` are passed as shell positional
+    parameters (`$1`/`$2`/`$3`), not interpolated into the script text —
+    `filename` is externally supplied (already validated by the caller,
+    but this avoids depending on that validation alone for shell safety).
+    """
+    ref = client.get_sandbox(sbx_name)
+    target_dir = f"/sandbox/attachments/{stream_id}"
+    final_path = f"{target_dir}/{filename}"
+    temp_path = f"{target_dir}/.tmp.{os.urandom(8).hex()}"
+    b64_content = base64.b64encode(decoded_bytes).decode("ascii")
+    script = 'mkdir -p "$1" && base64 -d > "$2" && mv -f "$2" "$3"'
+    result = client.exec_sandbox(
+        ref.id, ["/bin/sh", "-c", script, "sh", target_dir, temp_path, final_path],
+        stdin=b64_content.encode("ascii"),
+    )
+    if result.exit_code != 0:
+        raise DeadLetter(f"attachment write failed: {result.stderr or result.stdout}")
+    return final_path
+
+
+def _deliver_attachment(r, pod: str, tenant: str, agent: str, envelope: dict, client: OpenShellClient, sbx_name: str, cli: str) -> None:
+    payload = envelope.get("payload")
+    if not isinstance(payload, dict):
+        raise DeadLetter("attachment payload must be a dict")
+
+    required_keys = {"filename", "mime_type", "content_base64"}
+    allowed_keys = {"filename", "mime_type", "content_base64", "caption"}
+    if not required_keys.issubset(payload.keys()):
+        raise DeadLetter("missing required attachment payload fields")
+    if not set(payload.keys()).issubset(allowed_keys):
+        raise DeadLetter("unexpected attachment payload fields")
+
+    filename = payload["filename"]
+    mime_type = payload["mime_type"]
+    content_base64 = payload["content_base64"]
+    caption = payload.get("caption")
+
+    if not isinstance(filename, str) or not isinstance(mime_type, str) or not isinstance(content_base64, str):
+        raise DeadLetter("invalid attachment payload field types")
+    if caption is not None and not isinstance(caption, str):
+        raise DeadLetter("caption must be a string if present")
+
+    # Same validation as flock.port.openers.attachment_opener (tmux) --
+    # filename: non-empty UTF-8 basename, at most 255 UTF-8 bytes, no path
+    # separators/control chars/'.'/'..'.
+    try:
+        filename_bytes = filename.encode("utf-8")
+    except UnicodeEncodeError as exc:
+        raise DeadLetter(f"filename utf-8 encoding error: {exc}") from exc
+    if not (1 <= len(filename_bytes) <= 255):
+        raise DeadLetter("filename length must be between 1 and 255 UTF-8 bytes")
+    if filename in {".", ".."}:
+        raise DeadLetter("filename cannot be '.' or '..'")
+    if "/" in filename or "\\" in filename:
+        raise DeadLetter("filename cannot contain path separators")
+    if any(ord(c) < 32 or ord(c) == 127 for c in filename):
+        raise DeadLetter("filename cannot contain ASCII control characters or DEL")
+
+    try:
+        mime_bytes = mime_type.encode("ascii")
+    except UnicodeEncodeError as exc:
+        raise DeadLetter(f"mime_type must be ASCII: {exc}") from exc
+    if not (1 <= len(mime_bytes) <= 255):
+        raise DeadLetter("mime_type length must be between 1 and 255 ASCII bytes")
+    if not MIME_TYPE_REGEX.match(mime_type):
+        raise DeadLetter(f"invalid mime_type format: {mime_type!r}")
+
+    if caption is not None:
+        try:
+            caption_bytes = caption.encode("utf-8")
+        except UnicodeEncodeError as exc:
+            raise DeadLetter(f"caption utf-8 encoding error: {exc}") from exc
+        if len(caption_bytes) > 65536:
+            raise DeadLetter("caption exceeds 65536 UTF-8 bytes")
+
+    if len(content_base64) > ATTACHMENT_MAX_BASE64_CHARS:
+        raise DeadLetter("content_base64 exceeds maximum allowed base64 length")
+    if len(content_base64) % 4 != 0:
+        raise DeadLetter("content_base64 length must be a multiple of 4")
+    if not BASE64_CHARS_REGEX.match(content_base64):
+        raise DeadLetter("content_base64 contains invalid characters or malformed padding")
+    try:
+        decoded_bytes = base64.b64decode(content_base64, validate=True)
+    except Exception as exc:
+        raise DeadLetter(f"content_base64 decode failed: {exc}") from exc
+    if len(decoded_bytes) > ATTACHMENT_MAX_BYTES:
+        raise DeadLetter(f"decoded attachment exceeds maximum size of {ATTACHMENT_MAX_BYTES} bytes")
+
+    source = envelope.get("l2", {}).get("source", "unknown")
+    stream_id = envelope.get("stream_id") or envelope.get("l2", {}).get("stream_id")
+    if not stream_id or not isinstance(stream_id, str):
+        raise DeadLetter("missing stream_id for attachment delivery")
+
+    final_path = _write_attachment(client, sbx_name, stream_id, filename, decoded_bytes)
+
+    notice = f"[attachment from {source}] saved to {final_path} ({mime_type}, {len(decoded_bytes)} bytes)"
+    if caption:
+        notice += f"\n[attachment caption] {caption}"
+
+    result = _exec_headless(client, sbx_name, cli, notice)
+    _reply(r, pod, tenant, agent, source, envelope, result)
+
+
 def deliver_openshell(
     r,
     pod: str,
@@ -150,9 +282,7 @@ def deliver_openshell(
                         session_name=session_name, socket=socket,
                     )
                 elif kind == "Attachment":
-                    # No dedicated file-write RPC confirmed in the OpenShell
-                    # surface yet -- see docs/LLD-port-openshell.md §5.
-                    raise DeadLetter("attachment delivery not yet implemented for port_type openshell")
+                    _deliver_attachment(r, pod, tenant, agent, envelope, client, sbx_name, cli)
                 else:
                     raise DeadLetter(f"unknown kind: {kind}")
             except DeadLetter as exc:

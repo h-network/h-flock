@@ -303,24 +303,45 @@ Resolved since the last update:
   avoided entirely: no new resource added, `get_sandbox` is called fresh
   before every `exec` instead (§3a).
 
-## 5. Not built yet
+## 5. Status update — Attachment delivery built and real-gateway-verified (ticket 655ebeac)
 
-- Attachment delivery (base64-exec-and-mv via `exec_sandbox`, the same
-  approach the prior attempt sketched — plausible given `exec` is
-  confirmed real, but unverified end-to-end, and not implemented — see
-  §3a).
-- `pending.verify`/`delivery.markers` are expected to be skipped for this
-  port_type, same reasoning the prior attempt gave and which still holds:
-  `ExecSandbox` is synchronous and returns a real result directly, and this
-  container's `ActivityTailer` cannot see inside an external sandbox, so
-  those markers would only produce false "unverified" alerts. (Trivially
-  true here: this module never calls `mark_delivery_pending` at all.)
-- **The delivery/lifecycle wiring as a whole has not been run against the
-  live gateway** — only the client layer underneath it has (§2a/§3). A
-  real end-to-end run (StartAgent → a real Message delivery → StopAgent
-  against the actual test VM) is the next honesty-critical step before
-  this can be called done, not just unit-tested.
+`_deliver_attachment` in `flock/port/openshell.py`: same validation as
+tmux's `attachment_opener` (filename/mime_type/caption/content_base64
+charset and size limits), then `_write_attachment` (base64-decode-into-
+temp-file-then-atomic-mv via `exec_sandbox`, positional shell params for
+the paths rather than string interpolation), then the same
+headless-exec-and-reply path `_deliver_message`/`_deliver_command` already
+use for the "[attachment from ...] saved to ..." notice.
 
-All of the above needs a reachable gateway to build against honestly, per
-the standing instruction on this ticket: report what's verified versus
-assumed, don't let mocked tests stand in for real connectivity.
+**Real, previously-wrong assumption caught by live testing**: the first
+version used `/workdir/<agent>/attachments/<stream_id>/` — flock's own
+tmux-container convention. That path does not exist inside an OpenShell
+sandbox at all; a real run got `mkdir: /workdir: Permission denied`.
+Confirmed directly (`pwd`/`$HOME` inside a real sandbox both report
+`/sandbox`) and fixed: the real base path is `/sandbox/attachments/
+<stream_id>/`, with no per-agent subdirectory needed since each sandbox
+already belongs to exactly one agent, unlike tmux's shared container.
+
+**Confirmed genuinely real end to end**: built a real envelope, ran
+`deliver_openshell` against a real sandbox on the live gateway, and
+directly `exec_sandbox`'d a `find`/`cat` from a second, independent
+client afterward — the file was really there, byte-for-byte correct
+content, and the automatic reply (the CLI's own honest "Not logged in",
+no credential injected) genuinely arrived back through the real bus.
+
+Considered and rejected as the mechanism: `openshell sandbox upload`/
+`download` (confirmed via `-vvv` tracing to use a real SSH session via
+`CreateSshSession`, not `ExecSandbox`) — would need a new SSH-client
+dependency (e.g. paramiko) to reproduce from Python, versus zero new
+dependencies for the `exec_sandbox` approach actually built.
+
+`pending.verify`/`delivery.markers` are still skipped for this port_type,
+same reasoning the prior attempt gave and which still holds: `ExecSandbox`
+is synchronous and returns a real result directly, and this container's
+`ActivityTailer` cannot see inside an external sandbox, so those markers
+would only produce false "unverified" alerts. (Trivially true here: this
+module never calls `mark_delivery_pending` at all.)
+
+All four envelope kinds (Message, Command, AddTicket, Attachment) and the
+full StartAgent/StopAgent lifecycle are now built and have each been run
+against the live gateway for real, not just unit-tested.

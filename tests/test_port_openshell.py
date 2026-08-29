@@ -24,6 +24,11 @@ class FakeSandboxClient:
         self.get_exc = None
         self.exec_result = None
         self.exec_exc = None
+        # For scenarios needing more than one exec() call with different
+        # results (e.g. attachment delivery: write, then headless notice)
+        # -- consumed in order; falls back to exec_result/exec_exc once
+        # exhausted (or if never set).
+        self.exec_results = []
 
     def get(self, name, *, workspace):
         self.calls.append(("get", workspace, name))
@@ -33,6 +38,11 @@ class FakeSandboxClient:
 
     def exec(self, sandbox_id, command, *, env=None, stdin=None, timeout_seconds=None, stream_output=False, workdir=None):
         self.calls.append(("exec", sandbox_id, list(command), stdin))
+        if self.exec_results:
+            outcome = self.exec_results.pop(0)
+            if isinstance(outcome, Exception):
+                raise outcome
+            return outcome
         if self.exec_exc:
             raise self.exec_exc
         return self.exec_result
@@ -152,11 +162,81 @@ def test_add_ticket_never_touches_the_sandbox_client():
     assert len(r.lists.get(todo_key, [])) == 1
 
 
-def test_attachment_dead_letters_as_not_yet_implemented():
+def test_attachment_writes_file_then_execs_notice_and_replies():
+    r = FakeRespRedis()
+    env = _setup(
+        r, "acme", "hq", "backend", "alice", "Attachment",
+        {"filename": "a.txt", "mime_type": "text/plain", "content_base64": "aGk="},
+    )
+    fake_client, fake_sdk = _client()
+    fake_sdk.exec_results = [
+        ExecResult(exit_code=0, stdout="", stderr=""),  # the write
+        ExecResult(exit_code=0, stdout="got it", stderr=""),  # the notice exec
+    ]
+
+    deliver_openshell(r, pod="acme", tenant="hq", agent="backend", client=fake_client)
+
+    dead_key = prefix("acme", "hq", "backend", "dead")
+    assert r.lists.get(dead_key, []) == []
+
+    exec_calls = [call for call in fake_sdk.calls if call[0] == "exec"]
+    (write_call, notice_call) = exec_calls
+    _write_kind, _sandbox_id, write_command, write_stdin = write_call
+    assert write_command[:3] == ["/bin/sh", "-c", 'mkdir -p "$1" && base64 -d > "$2" && mv -f "$2" "$3"']
+    target_dir, _temp_path, final_path = write_command[4], write_command[5], write_command[6]
+    assert target_dir == f"/sandbox/attachments/{env['stream_id']}"
+    assert final_path == f"/sandbox/attachments/{env['stream_id']}/a.txt"
+    import base64 as _b64
+    assert _b64.b64decode(write_stdin) == b"hi"
+
+    _notice_kind, _sandbox_id2, _notice_command, notice_stdin = notice_call
+    assert final_path.encode() in notice_stdin
+    assert b"[attachment from alice]" in notice_stdin
+
+    egress_key = prefix("acme", "hq", "backend", "egress")
+    reply = parse_envelope(r.lists[egress_key][0])
+    assert reply["payload"] == {"text": "got it"}
+
+
+def test_attachment_write_failure_dead_letters_without_notice_exec():
     r = FakeRespRedis()
     _setup(
         r, "acme", "hq", "backend", "alice", "Attachment",
         {"filename": "a.txt", "mime_type": "text/plain", "content_base64": "aGk="},
+    )
+    fake_client, fake_sdk = _client()
+    fake_sdk.exec_results = [ExecResult(exit_code=1, stdout="", stderr="disk full")]
+
+    deliver_openshell(r, pod="acme", tenant="hq", agent="backend", client=fake_client)
+
+    exec_calls = [call for call in fake_sdk.calls if call[0] == "exec"]
+    assert len(exec_calls) == 1  # only the write attempt, no notice exec
+    dead_key = prefix("acme", "hq", "backend", "dead")
+    assert len(r.lists.get(dead_key, [])) == 1
+
+
+def test_attachment_rejects_path_separator_in_filename():
+    r = FakeRespRedis()
+    _setup(
+        r, "acme", "hq", "backend", "alice", "Attachment",
+        {"filename": "../etc/passwd", "mime_type": "text/plain", "content_base64": "aGk="},
+    )
+    fake_client, fake_sdk = _client()
+
+    deliver_openshell(r, pod="acme", tenant="hq", agent="backend", client=fake_client)
+
+    assert fake_sdk.calls == []
+    dead_key = prefix("acme", "hq", "backend", "dead")
+    assert len(r.lists.get(dead_key, [])) == 1
+
+
+def test_attachment_rejects_oversized_decoded_content():
+    r = FakeRespRedis()
+    import base64 as _b64
+    huge = _b64.b64encode(b"x" * (11 * 1024 * 1024)).decode()
+    _setup(
+        r, "acme", "hq", "backend", "alice", "Attachment",
+        {"filename": "a.bin", "mime_type": "application/octet-stream", "content_base64": huge},
     )
     fake_client, fake_sdk = _client()
 
