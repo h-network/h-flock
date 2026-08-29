@@ -538,6 +538,7 @@ def test_menu_command_sends_sticky_keyboard():
             "🔔 Alerts", "➕ Hire",
             "🎯 Message: architect",
             "📢 Broadcast",
+            "🙈 Hide menu",
         ]
         # every static label resolves to a dispatch code; the dynamic target
         # button is matched by prefix instead (see handle_text_message)
@@ -1320,7 +1321,7 @@ def test_callback_query_back_to_menu():
 
 
 def test_sticky_labels_cover_the_office_options():
-    assert set(TelegramBot.STICKY_LABELS.values()) == {"ov", "at", "lc", "wa", "al", "hi", "bc"}
+    assert set(TelegramBot.STICKY_LABELS.values()) == {"ov", "at", "lc", "wa", "al", "hi", "bc", "hm"}
 
 
 def test_sticky_keyboard_tap_dispatches_like_the_matching_inline_code():
@@ -1331,6 +1332,36 @@ def test_sticky_keyboard_tap_dispatches_like_the_matching_inline_code():
 
         reply = bot_instance.handle_text_message(12345, "🔔 Alerts")
         assert "blocked" in reply
+
+
+def test_hide_menu_sends_remove_keyboard_not_a_dead_end():
+    """A persistent ReplyKeyboardMarkup can't be dismissed from the phone
+    itself -- Telegram's own collapse gesture is a temporary toggle and the
+    keyboard reappears on refresh. Only an explicit
+    reply_markup={"remove_keyboard": True} (ReplyKeyboardRemove) actually
+    removes it."""
+    with tempfile.TemporaryDirectory() as tmpdir:
+        bot_instance, flock, telegram = _make_bot(tmpdir=tmpdir)
+        reply = bot_instance.handle_hide_menu_command(12345)
+        assert len(telegram.sent_messages) == 1
+        assert telegram.sent_messages[0]["reply_markup"] == {"remove_keyboard": True}
+        assert "/menu" in reply
+
+
+def test_hide_menu_button_dispatches_via_the_sticky_keyboard_tap():
+    with tempfile.TemporaryDirectory() as tmpdir:
+        bot_instance, flock, telegram = _make_bot(tmpdir=tmpdir)
+        reply = bot_instance.handle_text_message(12345, "🙈 Hide menu")
+        assert telegram.sent_messages[-1]["reply_markup"] == {"remove_keyboard": True}
+        assert reply == telegram.sent_messages[-1]["text"]
+
+
+def test_menu_command_still_brings_the_keyboard_back_after_hiding():
+    with tempfile.TemporaryDirectory() as tmpdir:
+        bot_instance, flock, telegram = _make_bot(tmpdir=tmpdir)
+        bot_instance.handle_hide_menu_command(12345)
+        bot_instance.handle_menu_command(12345)
+        assert telegram.sent_messages[-1]["reply_markup"] == bot_instance._sticky_keyboard("12345")
 
 
 # ── alerts ───────────────────────────────────────────────────────────────────
