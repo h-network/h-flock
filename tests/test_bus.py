@@ -810,3 +810,17 @@ class UnrepliedTrackingTest(unittest.TestCase):
             kind="Command", payload={"op": "noop"},
         )
         self.assertNotIn(self.key, self.r.hashes)
+
+    def test_a_bookkeeping_fault_is_logged_but_never_fails_the_send(self):
+        """The message is already durably enqueued by the time this runs (LLD-bus-and-switch §1)."""
+        output = io.StringIO()
+        with patch.object(self.r, "hset", side_effect=ConnectionError("redis down")), redirect_stdout(output):
+            stream_id = send(
+                self.r, pod="acme", tenant="hq", source="telegram", destination="alice", payload={"text": "hi"}
+            )
+        self.assertTrue(stream_id)
+        egress = self.r.lists[prefix("acme", "hq", "telegram", "egress")]
+        self.assertEqual(len(egress), 1)
+        records = [json.loads(line) for line in output.getvalue().splitlines()]
+        self.assertEqual([r["event"] for r in records], ["sent", "unreplied_tracking_failed"])
+        self.assertIn("redis down", records[1]["reason"])
