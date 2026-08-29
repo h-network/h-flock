@@ -50,7 +50,7 @@ Every envelope moving across the bus or read from `/messages` conforms to the ve
 | `v` | integer | Wire schema version. Always `4`. Anything else is rejected at the door — the fabric does not accept older frames. |
 | `kind` | string | Message kind discriminator (e.g. `"Message"`, `"AddTicket"`, `"StartAgent"`, `"StopAgent"`). |
 | `stream_id` | string | Unique 32-character lowercase hex identifier for this envelope across its entire lifecycle. |
-| `correlation_id` | string | 32-character lowercase hex identifier for multi-turn conversations. Propagated from request or minted automatically. |
+| `correlation_id` | string | Unique 32-character lowercase hex identifier minted by the fabric for multi-turn conversation tracing. |
 | `ts` | string | RFC 3339 / ISO 8601 UTC timestamp with millisecond precision and `Z` suffix (`%Y-%m-%dT%H:%M:%S.%fZ`). |
 | `l2` | object | **Layer 2 Local Forwarding:** contains `source` (local agent name) and `destination` (local agent name or `"all"`). Used by the local switch. |
 | `ttl` | integer *(v4)* | Forwards remaining. Starts at `16`, decremented by the switch at each forward; at `0` the envelope is dead-lettered instead of forwarded. Read-only. |
