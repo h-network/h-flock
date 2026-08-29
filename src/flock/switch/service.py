@@ -7,9 +7,11 @@ import time
 
 import redis
 
-from flock.bus import EnvelopeError, emit, is_member, log_record, members, prefix
-from flock.bus.envelope import advance_hop, header_record_fields, parse_for_switch, stamp_source
+from flock.bus.envelope import EnvelopeError, advance_hop, header_record_fields, parse_for_switch, stamp_source
+from flock.bus.keys import prefix
+from flock.bus.logging import emit, log_record
 from flock.bus.queues import admit_ingress
+from flock.bus.roster import is_member, members
 from .retention import RetentionTrimmer
 from .windowlog import WindowLogTailer
 
