@@ -58,10 +58,15 @@ restarted and deployed without disturbing the others.
 | `GET` | `/restdoc` | self-contained API documentation page |
 | `GET` | `/docs` | OpenAPI Swagger UI documentation |
 | `GET` | `/redoc` | OpenAPI ReDoc documentation |
-| `GET` | `/openapi.json` | OpenAPI 3.0 schema specification |
+| `GET` | `/openapi.json` | OpenAPI schema specification (version selected by the installed FastAPI; currently 3.1 by default) |
 
 `GET /board` walks the roster and pipelines the reads — one round trip, no
 keyspace scan, and agents holding nothing still appear.
+
+The three SSE routes are deliberately excluded from the generated OpenAPI
+schema (`include_in_schema=False`). They remain supported public operations and
+are documented here, in `API.md`, and on `/restdoc`; Swagger UI and ReDoc cover
+the request/response operations that OpenAPI can describe usefully.
 
 ## 3. Sending
 
@@ -136,7 +141,7 @@ on the same kind removes one. Both can be sent together to rotate in one
 call. `StopAgent` purges the whole `hmac-keys` hash for that client, same as
 every other per-agent state resource.
 
-⚠ **Payload size limit:** Envelopes submitted to `POST /agents/{agent}/envelopes` are bounded at **1 MB (1,048,576 bytes)** by default. `Attachment` is the one named exception for kind-aware size and shape admission (`CONTRACTS.md` §6): decoded file content is bounded at **10 MiB (10,485,760 bytes)**, with `content_base64` pre-checked against the derived bound `4 * ceil(10,485,760 / 3) = 13,981,016` ASCII bytes before strict RFC 4648 decode and validation against its closed payload schema. Envelopes exceeding their respective limit or violating schema bounds are rejected immediately with HTTP `422 Unprocessable Content`.
+⚠ **Request size limit:** The full serialized JSON POST body submitted to `POST /agents/{agent}/envelopes` — including `as`, `kid`, and `sig` when present — is bounded at **1 MB (1,048,576 bytes)** by default. `Attachment` is the one named exception for kind-aware size and shape admission (`CONTRACTS.md` §6): decoded file content is bounded at **10 MiB (10,485,760 bytes)**, with `content_base64` pre-checked against the derived bound `4 * ceil(10,485,760 / 3) = 13,981,016` ASCII bytes before strict RFC 4648 decode and validation against its closed payload schema. Requests exceeding their respective limit or violating schema bounds are rejected immediately with HTTP `422 Unprocessable Content`.
 
 ⚠ **The api must not know what kinds exist (with the one exception of `Attachment` resource admission).** It builds an envelope and writes
 its own egress; which kinds are openable is a fact about adapters, discovered at

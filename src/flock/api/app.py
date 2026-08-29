@@ -334,7 +334,7 @@ def _render_restdoc_html(app: FastAPI) -> str:
             "curl": 'curl -H "Authorization: Bearer $API_TOKEN" http://localhost:8080/redoc',
         },
         "/openapi.json": {
-            "desc": "OpenAPI 3.0 schema specification JSON.",
+            "desc": "OpenAPI schema specification JSON (version selected by FastAPI).",
             "curl": 'curl -H "Authorization: Bearer $API_TOKEN" http://localhost:8080/openapi.json',
         },
     }
@@ -885,9 +885,12 @@ def create_app(*, settings: Settings | None = None, redis_client: Any = None) ->
         after: str | None = None,
         limit: int = Query(default=100, ge=1, le=1000),
     ) -> dict[str, Any]:
+        try:
+            inbox_key = prefix(settings.pod, settings.tenant, agent, "inbox")
+        except KeyError as exc:
+            raise HTTPException(status_code=404, detail="invalid client agent") from exc
         if port_type(client, pod=settings.pod, tenant=settings.tenant, agent=agent) != "api":
             raise HTTPException(status_code=404, detail="invalid client agent")
-        inbox_key = prefix(settings.pod, settings.tenant, agent, "inbox")
         messages = _read_stream_entries(client, inbox_key, after=after, limit=limit, preferred_field="envelope")
         next_cursor = messages[-1]["cursor"] if messages else after
         return {
@@ -902,9 +905,12 @@ def create_app(*, settings: Settings | None = None, redis_client: Any = None) ->
         request: Request,
         after: str | None = None,
     ) -> StreamingResponse:
+        try:
+            inbox_key = prefix(settings.pod, settings.tenant, agent, "inbox")
+        except KeyError as exc:
+            raise HTTPException(status_code=404, detail="invalid client agent") from exc
         if port_type(client, pod=settings.pod, tenant=settings.tenant, agent=agent) != "api":
             raise HTTPException(status_code=404, detail="invalid client agent")
-        inbox_key = prefix(settings.pod, settings.tenant, agent, "inbox")
         return _stream_response(request, client, inbox_key, "message", after, "envelope")
 
     @app.get("/agents/{agent}/activity")

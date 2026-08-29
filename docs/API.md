@@ -891,7 +891,7 @@ When an envelope is posted to the door or delivered across the bus, the platform
 - **`opened`**: Emitted when the port's kind opener successfully completes processing.
 
 **Request & Payload Size Limits:**
-- **Maximum Envelope Payload:** Standard envelopes posted to `POST /agents/{agent}/envelopes` are limited to **1 MB (1,048,576 bytes)** of serialized JSON. `Attachment` envelopes are bounded by decoded file content up to **10 MiB (10,485,760 bytes)** (with `content_base64` bounded before decode at `4 * ceil(10,485,760 / 3) = 13,981,016` ASCII bytes). Requests exceeding these limits return `422 Unprocessable Content`.
+- **Maximum Request Body:** The full serialized JSON POST body sent to `POST /agents/{agent}/envelopes`, including `as`, `kid`, and `sig` when present, is limited to **1 MB (1,048,576 bytes)**. `Attachment` requests are bounded by decoded file content up to **10 MiB (10,485,760 bytes)** (with `content_base64` bounded before decode at `4 * ceil(10,485,760 / 3) = 13,981,016` ASCII bytes). Requests exceeding these limits return `422 Unprocessable Content`.
 - **Stream Query Bounds:** Pagination `limit` parameters on stream providers (`/messages`, `/activity`, `/alerts`) are bounded between `1` and `1000` entries (default `100`).
 
 **Streaming & Socket Error Handling:**
