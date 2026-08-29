@@ -307,6 +307,8 @@ def test_doing_duration_does_nothing_without_a_configured_lead(monkeypatch):
 
     _watchdog(r).poll(now=NOW)
 
+    assert _key("architect", "ingress") not in r.lists
+
 
 def test_notify_lead_drops_the_alert_when_the_lead_ingress_is_full(monkeypatch, capsys):
     r = WatchRedis()
@@ -336,8 +338,6 @@ def test_notify_lead_logs_unknown_and_does_not_kick_on_a_redis_fault(monkeypatch
     events = [json.loads(line) for line in capsys.readouterr().out.splitlines()]
     assert any(event.get("event") == "lead_alert_unknown" for event in events)
     assert not any(event.get("event") == "lead_alert_sent" for event in events)
-
-    assert _key("architect", "ingress") not in r.lists
 
 
 def _todo_agent(r, agent="sme-2", *, created="2026-08-09T13:55:00Z", ticket_id="ticket-1", title="pick up the auth review", append=False):
