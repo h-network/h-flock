@@ -1740,15 +1740,63 @@ class TelegramBot:
     def handle_photo_message(self, chat_id: int | str, photo_sizes: list[dict], caption: str) -> str:
         """A photo update never carries `text` — `_dispatch_update`'s
         text-only early return would otherwise silently drop it, which is
-        the bug this closes. Routes exactly like a text message: the
-        caption is the message body, and an `@mention` prefix on it
-        overrides the destination one-off, same as typed text
-        (`_parse_mention`/`_validate_mention_target` — no second routing
-        implementation). `photo_sizes[-1]` is Telegram's own convention for
-        "smallest to largest" — the best *compressed* version this bot ever
-        sees; a "photo" upload is always recompressed by Telegram itself,
-        full original quality is only available for a "document" upload,
-        out of scope here.
+        the bug this closes. `photo_sizes[-1]` is Telegram's own convention
+        for "smallest to largest" — the best *compressed* version this bot
+        ever sees; a "photo" upload is always recompressed by Telegram
+        itself, full original quality is only available via a "document"
+        upload instead (`handle_document_message`). Shared mechanics —
+        routing, size checks, download, sending the `Attachment` envelope —
+        live in `_send_incoming_file_as_attachment`.
+        """
+        if not photo_sizes:
+            return ""
+        largest = photo_sizes[-1]
+        return self._send_incoming_file_as_attachment(
+            chat_id, caption, largest.get("file_id"), largest.get("file_size"),
+            mime_type="image/jpeg", filename=None, fallback_extension=".jpg", label="photo",
+        )
+
+    def handle_document_message(self, chat_id: int | str, document: dict, caption: str) -> str:
+        """A "document" upload (send as file, not as photo) is Telegram's
+        uncompressed path — `message.document` is a single object with its
+        own `file_id`/`file_name`/`mime_type`, not an array of `PhotoSize`
+        like `message.photo`, and not always JPEG. Shares every mechanic
+        with `handle_photo_message` beyond that (routing, both size
+        ceilings, download, sending the envelope) via
+        `_send_incoming_file_as_attachment` rather than a second copy.
+        """
+        if not document:
+            return ""
+        return self._send_incoming_file_as_attachment(
+            chat_id, caption, document.get("file_id"), document.get("file_size"),
+            mime_type=document.get("mime_type") or "application/octet-stream",
+            filename=document.get("file_name"), fallback_extension="", label="file",
+        )
+
+    def _send_incoming_file_as_attachment(
+        self,
+        chat_id: int | str,
+        caption: str,
+        file_id: str | None,
+        reported_size: int | None,
+        mime_type: str,
+        filename: str | None,
+        fallback_extension: str,
+        label: str,
+    ) -> str:
+        """Shared by `handle_photo_message` and `handle_document_message`.
+        Routes exactly like a text message: the caption is the message
+        body, and an `@mention` prefix on it overrides the destination
+        one-off, same as typed text (`_parse_mention`/
+        `_validate_mention_target` — no second routing implementation).
+        `filename` is Telegram's own name when it already has one (a
+        "document" always does); `None` for a "photo", which only ever
+        gives a `file_path` to derive one from once downloaded — either way
+        the result is run through the same basename validation with the
+        same generated-name fallback, never trusted outright. `mime_type`
+        is validated the same way, falling back to
+        `application/octet-stream` rather than rejecting a file whose
+        content is fine but whose reported type isn't spec-shaped.
 
         Sends a real `Attachment` envelope (`docs/CONTRACTS.md`) — file
         bytes on the bus, `content_base64`, not a path shared out of band.
@@ -1774,10 +1822,6 @@ class TelegramBot:
 
         agent = agent_override or self._target_for(cid)
 
-        if not photo_sizes:
-            return ""
-        largest = photo_sizes[-1]
-        file_id = largest.get("file_id")
         if not file_id or not self.telegram:
             return ""
 
@@ -1791,11 +1835,10 @@ class TelegramBot:
         # ⚠ Two different ceilings, checked separately, not the same limit
         # twice: TELEGRAM_MAX_FILE_BYTES (20MB) is what Telegram will let a
         # bot download at all; ATTACHMENT_MAX_BYTES (10MB, docs/CONTRACTS.md)
-        # is what the bus will accept as decoded Attachment content. A photo
+        # is what the bus will accept as decoded Attachment content. A file
         # between the two downloads fine and must still be refused here.
-        reported_size = largest.get("file_size")
         if reported_size and reported_size > TELEGRAM_MAX_FILE_BYTES:
-            reply = "That photo is too large to fetch (Telegram's own 20MB bot download limit)."
+            reply = f"That {label} is too large to fetch (Telegram's own 20MB bot download limit)."
             self.telegram.send_message(cid, reply)
             return reply
 
@@ -1804,38 +1847,34 @@ class TelegramBot:
         info = self.telegram.request("getFile", {"file_id": file_id})
         file_path = info.get("result", {}).get("file_path") if info.get("ok") else None
         if not file_path:
-            reply = f"Couldn't fetch that photo from Telegram: {info.get('description', 'unknown error')}"
+            reply = f"Couldn't fetch that {label} from Telegram: {info.get('description', 'unknown error')}"
             self.telegram.send_message(cid, reply)
             return reply
 
         data = self.telegram.download_file(file_path)
         if not data:
-            reply = "Couldn't download that photo from Telegram."
+            reply = f"Couldn't download that {label} from Telegram."
             self.telegram.send_message(cid, reply)
             return reply
         if len(data) > ATTACHMENT_MAX_BYTES:
-            reply = "That photo is too large to send as an attachment (10MB limit)."
+            reply = f"That {label} is too large to send as an attachment (10MB limit)."
             self.telegram.send_message(cid, reply)
             return reply
 
-        # Telegram's own file_path (e.g. "photos/file_123.jpg") is already a
-        # valid basename in practice; still validated with a generated
-        # fallback rather than trusted outright, since the spec's rules are
-        # this client's rules too, not just the far end's.
-        filename = pathlib.Path(file_path).name
-        if not _valid_attachment_filename(filename):
-            filename = f"telegram-photo-{int(time.time())}-{uuid.uuid4().hex[:8]}.jpg"
-        mime_type = "image/jpeg"
+        resolved_filename = filename or pathlib.Path(file_path).name
+        if not _valid_attachment_filename(resolved_filename):
+            resolved_filename = f"telegram-{label}-{int(time.time())}-{uuid.uuid4().hex[:8]}{fallback_extension}"
+        resolved_mime_type = mime_type if _valid_attachment_mime_type(mime_type) else "application/octet-stream"
 
         code, resp = self.flock.send_attachment(
-            agent, filename, mime_type, base64.b64encode(data).decode("ascii"), caption=body or None,
+            agent, resolved_filename, resolved_mime_type, base64.b64encode(data).decode("ascii"), caption=body or None,
         )
         if code != 202:
-            reply = f"Failed to send that photo to {agent}: {resp.get('detail', 'error')}"
+            reply = f"Failed to send that {label} to {agent}: {resp.get('detail', 'error')}"
             self.telegram.send_message(cid, reply)
             return reply
 
-        reply = f"✅ Photo sent to {agent}."
+        reply = f"✅ {label.capitalize()} sent to {agent}."
         self.telegram.send_message(cid, reply)
         return reply
 
@@ -2366,6 +2405,11 @@ class TelegramBot:
         photo_sizes = msg.get("photo")
         if photo_sizes:
             self.handle_photo_message(chat_id, photo_sizes, msg.get("caption", ""))
+            return
+
+        document = msg.get("document")
+        if document:
+            self.handle_document_message(chat_id, document, msg.get("caption", ""))
             return
 
         text = msg.get("text", "").strip()
