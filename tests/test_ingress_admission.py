@@ -1,5 +1,6 @@
 """Real-Redis controls for atomic ingress admission."""
 
+import json
 import shutil
 import socket
 import subprocess
@@ -11,6 +12,7 @@ import pytest
 import redis
 
 from flock.bus import prefix
+from flock.bus.doors import _increment_unreplied
 from flock.bus.queues import admit_ingress
 
 
@@ -127,3 +129,29 @@ def test_admission_rejects_invalid_operation_before_redis(
             raw="message",
             limit=limit,
         )
+
+
+def test_concurrent_unreplied_increments_preserve_count_and_first_since(real_redis):
+    key = prefix("acme", "hq", "alice", "unreplied")
+    first_since = "2026-08-29T12:00:00.000Z"
+    _increment_unreplied(real_redis, key=key, client="telegram", since=first_since)
+    barrier = threading.Barrier(11)
+
+    def increment(index):
+        barrier.wait()
+        _increment_unreplied(
+            real_redis, key=key, client="telegram",
+            since=f"2026-08-29T12:00:{index:02d}.000Z",
+        )
+
+    threads = [threading.Thread(target=increment, args=(index,)) for index in range(1, 11)]
+    for thread in threads:
+        thread.start()
+    barrier.wait()
+    for thread in threads:
+        thread.join()
+
+    assert json.loads(real_redis.hget(key, "telegram")) == {
+        "count": 11,
+        "since": first_since,
+    }

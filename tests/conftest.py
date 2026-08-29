@@ -634,6 +634,22 @@ class FakeRespRedis:
             if key in self.lists:
                 del self.lists[key]
             return items
+        if "flock unreplied increment v1" in script:
+            key, client, since = args
+            count = 1
+            existing = self.hashes.get(key, {}).get(client)
+            if existing:
+                try:
+                    data = json.loads(existing)
+                    count = int(data["count"]) + 1
+                    existing_since = data["since"]
+                    since = min(existing_since, since) if existing_since else since
+                except (TypeError, ValueError, KeyError, json.JSONDecodeError):
+                    count = 1
+            self.hashes.setdefault(key, {})[client] = json.dumps(
+                {"count": count, "since": since}, separators=(",", ":")
+            )
+            return count
         if numkeys == 2 and len(args) == 5:
             cause_key, roster_key, correlation_id, agent, agent_port_type = args
             self.values[cause_key] = correlation_id

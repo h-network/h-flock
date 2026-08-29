@@ -1083,12 +1083,10 @@ reply closes the whole backlog. Peer `tmux`-to-`tmux` traffic never touches it �
 ticket age already covers that responsiveness question via
 `doing.alerted`/`todo.alerted`/`hold.alerted`.
 
-⚠ **Known gap, tracked as bus ticket 95c9b4ce.** Opening a count is a plain
-HGET-then-HSET, not atomic — two client messages arriving within the same
-short window can race, undercounting or picking a later `since` than the
-true earliest message. `hold.alerted`/`todo.alerted`'s per-ticket writes
-don't have this exposure because concurrent writers to the same ticket id
-are not an expected case; concurrent client messages to the same agent are.
+Opening or extending one client field is a single Lua execution: it decodes the
+existing value, increments `count`, preserves the earliest valid `since`, and
+writes the replacement atomically. Malformed prior state recovers to count 1
+with the current timestamp rather than pinning the field or losing the send.
 
 ⚠ **`blocked` is written by the WATCHDOG.** It is a delivery verdict retained
 instead of discarded: set on `unverified`, deleted on `verified`. One writer, and

@@ -1,6 +1,5 @@
 """The bus's two queue doors."""
 
-import json
 from collections.abc import Callable
 from datetime import datetime, timezone
 
@@ -23,9 +22,34 @@ from .roster import port_type
 # reset a count that could not have been opened.
 _UNREPLIED_KINDS = {"Message", "Attachment"}
 
+_INCREMENT_UNREPLIED = """
+-- flock unreplied increment v1
+local count = 1
+local since = ARGV[2]
+local existing = redis.call('HGET', KEYS[1], ARGV[1])
+if existing then
+    local ok, data = pcall(cjson.decode, existing)
+    if ok and type(data) == 'table' and tonumber(data['count'])
+       and type(data['since']) == 'string' and data['since'] ~= '' then
+        count = tonumber(data['count']) + 1
+        since = data['since']
+        if ARGV[2] < since then
+            since = ARGV[2]
+        end
+    end
+end
+redis.call('HSET', KEYS[1], ARGV[1], cjson.encode({count=count, since=since}))
+return count
+"""
+
 
 def _unreplied_key(pod: str, tenant: str, agent: str) -> str:
     return prefix(pod, tenant, agent=agent, resource="unreplied")
+
+
+def _increment_unreplied(r, *, key: str, client: str, since: str) -> None:
+    """Atomically increment one client backlog while preserving first since."""
+    r.eval(_INCREMENT_UNREPLIED, 1, key, client, since)
 
 
 def _track_unreplied(r, *, pod: str, tenant: str, source: str, destination: str, kind: str) -> None:
@@ -52,17 +76,8 @@ def _track_unreplied(r, *, pod: str, tenant: str, source: str, destination: str,
         and kind in _UNREPLIED_KINDS
     ):
         key = _unreplied_key(pod, tenant, destination)
-        count = 1
         since = datetime.now(timezone.utc).isoformat(timespec="milliseconds").replace("+00:00", "Z")
-        existing = r.hget(key, source)
-        if existing:
-            try:
-                data = json.loads(existing)
-                count = int(data["count"]) + 1
-                since = data["since"] or since
-            except (TypeError, ValueError, KeyError):
-                pass
-        r.hset(key, source, json.dumps({"count": count, "since": since}, separators=(",", ":")))
+        _increment_unreplied(r, key=key, client=source, since=since)
     elif source_type == "tmux" and destination_type == "api":
         r.hdel(_unreplied_key(pod, tenant, source), destination)
 
