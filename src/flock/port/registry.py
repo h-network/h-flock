@@ -25,7 +25,29 @@ def register_port_type(
     port_type_name: str,
     handler: HandlerSpec,
 ) -> None:
-    """Register or override a delivery handler for a port_type."""
+    """Register or override a delivery handler for a port_type.
+
+    Lazy specs are resolved once here to reject invalid extensions at
+    registration time, but the original spec is retained for lazy lookup.
+    """
+    resolved_handler = handler
+    if isinstance(handler, tuple) and len(handler) == 2:
+        module_path, attr_name = handler
+        try:
+            mod = importlib.import_module(module_path)
+            resolved_handler = getattr(mod, attr_name)
+        except (ImportError, AttributeError, TypeError) as exc:
+            raise ValueError(
+                f"invalid delivery handler for port_type {port_type_name!r}: "
+                f"cannot resolve {module_path}.{attr_name}"
+            ) from exc
+
+    if not callable(resolved_handler):
+        raise ValueError(
+            f"invalid delivery handler for port_type {port_type_name!r}: "
+            "handler must be callable or a resolvable (module_path, attribute_name) spec"
+        )
+
     _PORT_REGISTRY[port_type_name] = handler
 
 
@@ -57,6 +79,14 @@ def get_delivery_handler(port_type_name: str) -> Optional[Callable[..., Any]]:
         try:
             mod = importlib.import_module(module_path)
             handler = getattr(mod, attr_name)
+            if not callable(handler):
+                logger.error(
+                    "delivery handler %s.%s for port_type %r is not callable",
+                    module_path,
+                    attr_name,
+                    port_type_name,
+                )
+                return None
             return handler
         except (ImportError, AttributeError) as exc:
             logger.error(

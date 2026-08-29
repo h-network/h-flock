@@ -144,10 +144,10 @@ gRPC.
 
 ### Registry API
 
-- `register_port_type(port_type_name: str, handler: HandlerSpec) -> None`: Register or override a delivery handler.
+- `register_port_type(port_type_name: str, handler: HandlerSpec) -> None`: Register or override a delivery handler. Direct handlers must be callable; lazy specs are eagerly resolved and checked once at registration, then retained as tuples so later delivery lookups remain lazy. Invalid custom registrations raise `ValueError`. The four built-in defaults do not pass through this function and remain unimported until selected for delivery.
 - `unregister_port_type(port_type_name: str) -> None`: Remove a registration.
 - `reset_registry() -> None`: Reset registry to built-in default mappings.
-- `get_delivery_handler(port_type_name: str) -> Optional[Callable]`: Look up and resolve the handler callable.
+- `get_delivery_handler(port_type_name: str) -> Optional[Callable]`: Look up and resolve the handler callable. A missing import, missing attribute, or resolved non-callable is logged and returns `None`, which routes delivery through the unroutable dead-letter path.
 
 ## 5. Unroutable & Dead-Letter Handling (`deliver_unroutable`)
 
