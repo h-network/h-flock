@@ -1,7 +1,7 @@
 """The bus's two queue doors."""
 
 from collections.abc import Callable
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 from .envelope import (
     EnvelopeError,
@@ -21,6 +21,15 @@ from .roster import port_type
 # similar structured kinds are never sent by a client and would only ever
 # reset a count that could not have been opened.
 _UNREPLIED_KINDS = {"Message", "Attachment"}
+_ACK_WINDOW_SECONDS = 120
+_ACK_PHRASES = frozenset(
+    {
+        "ack", "acknowledged", "appreciate it", "got it", "much appreciated",
+        "no problem", "noted", "np", "ok", "okay", "roger", "roger that",
+        "sounds good", "thank you", "thanks", "thanks a lot", "understood",
+        "will do",
+    }
+)
 
 _INCREMENT_UNREPLIED = """
 -- flock unreplied increment v1
@@ -42,6 +51,22 @@ redis.call('HSET', KEYS[1], ARGV[1], cjson.encode({count=count, since=since}))
 return count
 """
 
+_UPDATE_ACK_STREAK = """
+-- flock ack streak v1
+local streak = 1
+local existing = redis.call('HGET', KEYS[1], ARGV[1])
+if existing then
+    local ok, data = pcall(cjson.decode, existing)
+    if ok and type(data) == 'table' and tonumber(data['streak'])
+       and type(data['last_ts']) == 'string'
+       and data['last_ts'] >= ARGV[3] and data['last_ts'] <= ARGV[2] then
+        streak = tonumber(data['streak']) + 1
+    end
+end
+redis.call('HSET', KEYS[1], ARGV[1], cjson.encode({streak=streak, last_ts=ARGV[2]}))
+return streak
+"""
+
 
 def _unreplied_key(pod: str, tenant: str, agent: str) -> str:
     return prefix(pod, tenant, agent=agent, resource="unreplied")
@@ -50,6 +75,54 @@ def _unreplied_key(pod: str, tenant: str, agent: str) -> str:
 def _increment_unreplied(r, *, key: str, client: str, since: str) -> None:
     """Atomically increment one client backlog while preserving first since."""
     r.eval(_INCREMENT_UNREPLIED, 1, key, client, since)
+
+
+def _is_ack_shaped(text) -> bool:
+    """Apply the frozen v1 closing-acknowledgment classifier."""
+    if not isinstance(text, str):
+        return False
+    trimmed = text.strip()
+    if len(trimmed) > 80 or "?" in trimmed:
+        return False
+    normalized = " ".join(trimmed.split()).casefold().rstrip(".!").rstrip()
+    if len(normalized.split()) > 12:
+        return False
+    return normalized in _ACK_PHRASES
+
+
+def _acks_key(pod: str, tenant: str, source: str) -> str:
+    return prefix(pod, tenant, agent=source, resource="acks")
+
+
+def _update_ack_streak(
+    r, *, key: str, destination: str, now_ts: str, cutoff_ts: str
+) -> None:
+    r.eval(_UPDATE_ACK_STREAK, 1, key, destination, now_ts, cutoff_ts)
+
+
+def _track_ack_loop(
+    r, *, pod: str, tenant: str, source: str, destination: str,
+    kind: str, payload: dict, now: datetime | None = None,
+) -> None:
+    """Track ack-shaped Message streaks on one directed tmux peer edge."""
+    if kind != "Message" or destination == "all":
+        return
+    if port_type(r, pod=pod, tenant=tenant, agent=source) != "tmux":
+        return
+    if port_type(r, pod=pod, tenant=tenant, agent=destination) != "tmux":
+        return
+    key = _acks_key(pod, tenant, source)
+    if not _is_ack_shaped(payload.get("text")):
+        r.hdel(key, destination)
+        return
+    current = now or datetime.now(timezone.utc)
+    now_ts = current.isoformat(timespec="milliseconds").replace("+00:00", "Z")
+    cutoff_ts = (current - timedelta(seconds=_ACK_WINDOW_SECONDS)).isoformat(
+        timespec="milliseconds"
+    ).replace("+00:00", "Z")
+    _update_ack_streak(
+        r, key=key, destination=destination, now_ts=now_ts, cutoff_ts=cutoff_ts
+    )
 
 
 def _track_unreplied(r, *, pod: str, tenant: str, source: str, destination: str, kind: str) -> None:
@@ -188,6 +261,18 @@ def send(
             "unreplied_tracking_failed",
             envelope,
             f"unreplied bookkeeping failed: {exc}",
+        )
+    try:
+        _track_ack_loop(
+            r, pod=pod, tenant=tenant, source=local_source,
+            destination=local_destination, kind=kind, payload=payload,
+        )
+    except Exception as exc:
+        _emit_observation(
+            module,
+            "ack_tracking_failed",
+            envelope,
+            f"ack-loop bookkeeping failed: {exc}",
         )
     return envelope["stream_id"]
 

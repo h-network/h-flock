@@ -3,6 +3,7 @@ import json
 import io
 import unittest
 from contextlib import redirect_stdout
+from datetime import datetime, timedelta, timezone
 from unittest.mock import patch
 
 from flock.bus import EnvelopeError, build, emit, encode, is_member, members, parse, prefix, receive, send, port_type, tags_key
@@ -979,3 +980,90 @@ class UnrepliedTrackingTest(unittest.TestCase):
         self.assertTrue(stream_id)
         egress = self.r.lists[prefix("acme", "hq", "telegram", "egress")]
         self.assertEqual(len(egress), 1)
+
+
+class AckLoopTrackingTest(unittest.TestCase):
+    def setUp(self):
+        self.r = FakeRedis()
+        roster = prefix("acme", "hq", resource="roster")
+        self.r.hashes[roster] = {"alice": "tmux", "bob": "tmux", "telegram": "api"}
+        self.key = prefix("acme", "hq", "alice", "acks")
+
+    def test_frozen_classifier_normalization_and_exclusions(self):
+        from flock.bus.doors import _ACK_PHRASES, _is_ack_shaped
+
+        self.assertEqual(
+            _ACK_PHRASES,
+            {
+                "got it", "thanks", "thank you", "thanks a lot",
+                "much appreciated", "appreciate it", "sounds good", "will do",
+                "noted", "understood", "acknowledged", "no problem", "np",
+                "roger", "roger that", "ok", "okay", "ack",
+            },
+        )
+
+        accepted = [" GOT   IT!! ", "thanks !", "Roger that.", "MUCH APPRECIATED"]
+        rejected = ["yes", "great", "perfect", "got it?", object(), "thanks " + "x" * 80]
+        for text in accepted:
+            with self.subTest(text=text):
+                self.assertTrue(_is_ack_shaped(text))
+        for text in rejected:
+            with self.subTest(text=text):
+                self.assertFalse(_is_ack_shaped(text))
+
+    def test_gap_beyond_window_resets_streak(self):
+        from flock.bus.doors import _track_ack_loop
+
+        first = datetime(2026, 8, 29, 16, 0, tzinfo=timezone.utc)
+        for now in (first, first + timedelta(seconds=120)):
+            _track_ack_loop(
+                self.r, pod="acme", tenant="hq", source="alice",
+                destination="bob", kind="Message", payload={"text": "ok"}, now=now,
+            )
+        self.assertEqual(json.loads(self.r.hashes[self.key]["bob"])["streak"], 2)
+
+        _track_ack_loop(
+            self.r, pod="acme", tenant="hq", source="alice",
+            destination="bob", kind="Message", payload={"text": "ok"},
+            now=first + timedelta(seconds=241),
+        )
+        self.assertEqual(json.loads(self.r.hashes[self.key]["bob"])["streak"], 1)
+
+    def test_ack_streak_is_directed_and_non_ack_clears_only_that_edge(self):
+        for _ in range(2):
+            send(
+                self.r, pod="acme", tenant="hq", source="alice",
+                destination="bob", payload={"text": "thanks"},
+            )
+        record = json.loads(self.r.hashes[self.key]["bob"])
+        self.assertEqual(record["streak"], 2)
+        self.assertNotIn("alice", self.r.hashes.get(prefix("acme", "hq", "bob", "acks"), {}))
+
+        send(
+            self.r, pod="acme", tenant="hq", source="alice",
+            destination="bob", payload={"text": "Here is substantive work."},
+        )
+        self.assertNotIn("bob", self.r.hashes.get(self.key, {}))
+
+    def test_api_traffic_and_non_message_kinds_never_touch_ack_state(self):
+        send(
+            self.r, pod="acme", tenant="hq", source="telegram",
+            destination="alice", payload={"text": "thanks"},
+        )
+        send(
+            self.r, pod="acme", tenant="hq", source="alice",
+            destination="bob", kind="Command", payload={"text": "thanks"},
+        )
+        self.assertNotIn(self.key, self.r.hashes)
+
+    def test_ack_tracking_fault_is_logged_but_send_stays_committed(self):
+        output = io.StringIO()
+        with patch.object(self.r, "eval", side_effect=ConnectionError("redis down")), redirect_stdout(output):
+            stream_id = send(
+                self.r, pod="acme", tenant="hq", source="alice",
+                destination="bob", payload={"text": "noted"},
+            )
+        self.assertTrue(stream_id)
+        self.assertEqual(len(self.r.lists[prefix("acme", "hq", "alice", "egress")]), 1)
+        events = [json.loads(line)["event"] for line in output.getvalue().splitlines()]
+        self.assertEqual(events, ["sent", "ack_tracking_failed"])
