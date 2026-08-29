@@ -90,6 +90,12 @@ stdout/logging exception is swallowed and routing continues. A Redis admission
 exception remains `forward_unknown` and is still re-raised; failure to emit that
 record cannot replace the original Redis exception.
 
+The receive-side `_emit_for_recipient()` helper follows the same rule. Its
+records are best-effort after `LPOP`/`BLPOP` or an atomic burst drain, so a log
+output failure cannot prevent opener dispatch, interrupt a drained batch, or
+escape after a dead-letter/opened outcome. Both `receive()` and the tmux/api
+burst delivery paths use this helper.
+
 For registered VABs, each check therefore has one logical home. An envelope
 built by `send` cannot be structurally malformed because only one thing builds
 it. The `receive()` library function implements the one-envelope control path;
