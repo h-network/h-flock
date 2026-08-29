@@ -234,7 +234,7 @@ def deliver_one(r, *, pod, tenant, agent, session_name, socket=None) -> None
 | `control` | `flock.control.runner.deliver_one` (lazy import) | `ports` lane | [`LLD-port-delivery.md`](LLD-port-delivery.md) |
 | `openshell` | `flock.port.openshell.deliver_openshell` (lazy import) | `openshell` lane | [`LLD-port-openshell.md`](LLD-port-openshell.md) |
 
-`flock.port.registry` maintains lazy import specs, so non-tmux port modules (control, openshell, ramp) are only imported when that specific port_type is encountered in the roster. If an unregistered or unroutable port_type is received, `deliver_unroutable` drains and dead-letters the snapshot cleanly.
+`flock.port.registry` maintains lazy import specs, so non-tmux port modules (control and openshell) are only imported when that specific port_type is encountered in the roster. If an unregistered or unroutable port_type is received, `deliver_unroutable` drains and dead-letters the snapshot cleanly.
 
 ## 3. What a log record is
 
