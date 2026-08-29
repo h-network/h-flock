@@ -80,6 +80,8 @@ def send(r, *, pod, tenant, source, destination, payload,
          kind="Message", correlation_id=None) -> str
     # resolves destination locally, builds, writes the egress named by source,
     # and logs. A non-local qualified destination is logged and raises before write.
+    # Key construction and encoding finish before RPUSH's outcome-unknown window.
+    # Once RPUSH returns, logging/tracking faults cannot change the successful result.
     # ⚠ Not "its own" — the caller supplies `source`, and the same value
     # picks the queue. They agree by construction, not by verification.
 class DeadLetter(Exception)             # opener rejection; reason is str(exc)

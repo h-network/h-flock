@@ -216,6 +216,51 @@ class DoorsAndRouterTest(unittest.TestCase):
         self.assertEqual(records[0]["reason"], "egress write outcome UNKNOWN after redis down")
         self.assertNotEqual(records[0]["stream_id"], "unknown")
 
+    def test_send_unknown_log_failure_does_not_replace_the_redis_exception(self):
+        with (
+            patch.object(self.r, "rpush", side_effect=ConnectionError("redis down")),
+            patch("flock.bus.doors.emit", side_effect=OSError("stdout closed")),
+            self.assertRaisesRegex(ConnectionError, "redis down"),
+        ):
+            send(
+                self.r,
+                pod="acme",
+                tenant="hq",
+                source="alice",
+                destination="bob",
+                payload={},
+            )
+
+    def test_encoding_failure_is_provably_pre_write_not_send_unknown(self):
+        output = io.StringIO()
+        with redirect_stdout(output), self.assertRaises(TypeError):
+            send(
+                self.r,
+                pod="acme",
+                tenant="hq",
+                source="alice",
+                destination="bob",
+                payload={"not_json": object()},
+            )
+
+        self.assertNotIn(prefix("acme", "hq", "alice", "egress"), self.r.lists)
+        self.assertEqual(output.getvalue(), "")
+
+    def test_sent_log_failure_cannot_turn_committed_send_into_failure(self):
+        with patch("flock.bus.doors.emit", side_effect=OSError("stdout closed")):
+            stream_id = send(
+                self.r,
+                pod="acme",
+                tenant="hq",
+                source="alice",
+                destination="bob",
+                payload={},
+            )
+
+        self.assertTrue(stream_id)
+        egress = self.r.lists[prefix("acme", "hq", "alice", "egress")]
+        self.assertEqual(len(egress), 1)
+
     def test_ingress_write_failure_is_logged_without_forward_or_kick(self):
         send(
             self.r,
@@ -824,3 +869,21 @@ class UnrepliedTrackingTest(unittest.TestCase):
         records = [json.loads(line) for line in output.getvalue().splitlines()]
         self.assertEqual([r["event"] for r in records], ["sent", "unreplied_tracking_failed"])
         self.assertIn("redis down", records[1]["reason"])
+
+    def test_a_bookkeeping_fault_remains_swallowed_when_its_log_also_fails(self):
+        with (
+            patch.object(self.r, "hset", side_effect=ConnectionError("redis down")),
+            patch("flock.bus.doors.emit", side_effect=OSError("stdout closed")),
+        ):
+            stream_id = send(
+                self.r,
+                pod="acme",
+                tenant="hq",
+                source="telegram",
+                destination="alice",
+                payload={"text": "hi"},
+            )
+
+        self.assertTrue(stream_id)
+        egress = self.r.lists[prefix("acme", "hq", "telegram", "egress")]
+        self.assertEqual(len(egress), 1)
