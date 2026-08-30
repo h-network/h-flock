@@ -233,12 +233,20 @@ and `TMUX_SOCKET` at their respective delivery edges.
 
 | port_type | Registered Handler | Owner | Spec |
 |---|---|---|---|
-| `tmux` | `flock.port.deliver.deliver_tmux` | `tmux` lane | [`LLD-port-tmux.md`](LLD-port-tmux.md) |
+| `tmux` | `flock.tmux.deliver.deliver_tmux` | `tmux` lane | [`LLD-port-tmux.md`](LLD-port-tmux.md) |
 | `api` | `flock.port.deliver.deliver_api` | `api` lane | [`LLD-api.md`](LLD-api.md) |
 | `control` | `flock.control.runner.deliver_one` (lazy import) | `ports` lane | [`LLD-port-delivery.md`](LLD-port-delivery.md) |
 | `openshell` | `flock.port.openshell.deliver_openshell` (lazy import) | `openshell` lane | [`LLD-port-openshell.md`](LLD-port-openshell.md) |
 
 `flock.port.registry` maintains lazy import specs, so non-tmux port modules (control and openshell) are only imported when that specific port_type is encountered in the roster. If an unregistered or unroutable port_type is received, `deliver_unroutable` drains and dead-letters the snapshot cleanly.
+
+Tmux is lazy in the other direction as well: importing the generic
+`flock.port` package or registry does not import `flock.tmux`. Its registered
+handler lives in `flock.tmux.deliver`, its terminal actions live in
+`flock.tmux.openers`, and `flock.port.openers` contains the shared storage-only
+AddTicket action plus attachment schema constants reused by OpenShell.
+Compatibility access to the former top-level
+`flock.port` tmux exports is lazy.
 
 ## 3. What a log record is
 

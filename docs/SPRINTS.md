@@ -92,7 +92,7 @@ validated against the accounts that exist* · the watchdog half of
 
 | | |
 |---|---|
-| confirmation | `src/flock/control/openers.py` contains **no emit call at all**. `StartAgent`, `StopAgent`, `PauseAgent` and `ResumeAgent` take custody and never say what they did. `src/flock/port/openers.py:211` already does this right — `board_write_confirmed` is the pattern to copy |
+| confirmation | `src/flock/control/openers.py` contains **no emit call at all**. `StartAgent`, `StopAgent`, `PauseAgent` and `ResumeAgent` take custody and never say what they did. `src/flock/port/openers.py` already does this right — `board_write_confirmed` is the pattern to copy |
 | profile | an invalid `--profile` dead-letters with a bare `KeyError` repr, naming neither the problem nor the rule, one component away from where it was typed. A *plausible* typo is worse: it passes, the directory gets seeded, and the agent starts cleanly against an account nobody configured |
 | credentials | `src/flock/watchdog/service.py:264` tests for `.credentials.json`, so an agent authenticated by token alerts `absent` **forever** — and credential alerts never clear |
 
@@ -119,7 +119,7 @@ was fixed. The agy claim itself is proven live against a real hired agent.
 | codex model | `src/flock/watchdog/activity.py:154` falls through to `"unknown"`, so every codex row prices as `unpriced` — indistinguishable from a genuinely free local model. ⚠ **The model is in `turn_context`**, emitted once per turn as `payload.model`, not in the usage record. Take the last one at or before the record's ordinal, so a mid-session model change is followed |
 | agy | agy records **no token counts anywhere**. Its state is SQLite and protobuf, not JSONL; the model is there (`gemini-3.7-flash`, one row per generation) and the counts are not. **So agy is not priceable from local state**, and the fix is to say so in the output rather than to write an adapter that cannot exist |
 | rate limits | codex logs `used_percent`, `resets_at` and `plan_type` beside every usage record. We surface none of it, and it is the limit an operator actually hits |
-| attribution | decide whether a trimmed marker gets a signal, **or close the row**. `src/flock/port/openers.py:69` bounds markers at 500 and the comment above it argues the loss should stay silent — a counter that fired on the normal case was built and deleted in review once already |
+| attribution | decide whether a trimmed marker gets a signal, **or close the row**. `src/flock/tmux/openers.py:69` bounds markers at 500 and the comment above it argues the loss should stay silent — a counter that fired on the normal case was built and deleted in review once already |
 
 ⚠ **Fixtures are the deliverable, not a side effect.** Both defects above
 shipped because a test constructed a shape the vendor has never written and

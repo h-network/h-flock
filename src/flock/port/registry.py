@@ -12,7 +12,7 @@ logger = logging.getLogger(__name__)
 HandlerSpec = Union[Callable[..., Any], Tuple[str, str]]
 
 _DEFAULT_REGISTRY: Dict[str, HandlerSpec] = {
-    "tmux": ("flock.port.deliver", "deliver_tmux"),
+    "tmux": ("flock.tmux.deliver", "deliver_tmux"),
     "api": ("flock.port.deliver", "deliver_api"),
     "control": ("flock.control.runner", "deliver_one"),
     "openshell": ("flock.port.openshell", "deliver_openshell"),

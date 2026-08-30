@@ -326,7 +326,7 @@ Resolved since the last update:
 ## 5. Status update — Attachment delivery built and real-gateway-verified (ticket 655ebeac)
 
 `_deliver_attachment` in `flock/port/openshell.py`: same validation as
-tmux's `attachment_opener` (filename/mime_type/caption/content_base64
+tmux's `flock.tmux.openers.attachment_opener` (filename/mime_type/caption/content_base64
 charset and size limits), then `_write_attachment` (base64-decode-into-
 temp-file-then-atomic-mv via `exec_sandbox`, positional shell params for
 the paths rather than string interpolation), then the same

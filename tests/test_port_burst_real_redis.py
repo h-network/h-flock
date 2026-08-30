@@ -93,7 +93,7 @@ def test_atomic_drain_with_concurrent_producers(real_redis_server):
     assert len(set(all_drained)) == 100  # no duplicates
 
 
-@patch("flock.port.openers.list_windows")
+@patch("flock.tmux.openers.list_windows")
 @patch("flock.tmux.ops.run_tmux")
 def test_real_redis_port_delivery_batching_and_markers(mock_run_tmux, mock_list_windows, real_redis_server, capsys):
     port, client = real_redis_server

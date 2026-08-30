@@ -1,13 +1,11 @@
 import json
-import os
 import time
 from datetime import datetime, timezone
-from flock.bus import DeadLetter, EnvelopeError, log_record, parse, prefix, receive
+from flock.bus import EnvelopeError, parse, prefix
 from flock.bus.doors import _emit_for_recipient
 from flock.bus.envelope import parse_for_switch
 # Minimal hand-rolled RESP client (flock.bus.resp.Redis), not redis-py, for fast transient process startup
 from flock.bus import resp as redis
-from .openers import add_ticket_opener, attachment_opener, command_opener, message_opener, messages_opener
 from .registry import get_delivery_handler, register_port_type, reset_registry, unregister_port_type
 
 
@@ -110,153 +108,6 @@ def deliver_unroutable(
         r.rpush(dead_key, raw)
         reason = f"unroutable port_type: {port_type_name!r}"
         _emit_for_recipient("port", "dead_lettered", envelope, agent, reason)
-
-
-def deliver_tmux(
-    r,
-    pod: str,
-    tenant: str,
-    agent: str,
-    session_name: str | None = None,
-    socket: str | None = None,
-    timeout: int = 1,
-    **kwargs,
-) -> None:
-    session_name = session_name or os.environ.get("TMUX_SESSION") or tenant
-    socket = socket or os.environ.get("TMUX_SOCKET")
-    ingress_key = prefix(pod, tenant, agent, "ingress")
-    dead_key = prefix(pod, tenant, agent, "dead")
-
-    raw_items = drain_ingress(r, ingress_key)
-    if not raw_items:
-        return
-
-    parsed_items: list[tuple[str, dict]] = []
-    for raw in raw_items:
-        try:
-            envelope = parse(raw)
-        except EnvelopeError as exc:
-            r.rpush(dead_key, raw)
-            try:
-                header = parse_for_switch(raw)
-            except EnvelopeError:
-                header = {}
-            _emit_for_recipient("port", "dead_lettered", header, agent, str(exc))
-            continue
-
-        _emit_for_recipient("port", "received", envelope, agent)
-        parsed_items.append((raw, envelope))
-
-    if not parsed_items:
-        return
-
-    current_message_batch: list[tuple[str, dict]] = []
-
-    def flush_messages() -> None:
-        nonlocal current_message_batch
-        if not current_message_batch:
-            return
-        batch = current_message_batch
-        current_message_batch = []
-        envelopes = [env for _, env in batch]
-        try:
-            messages_opener(
-                r=r,
-                pod=pod,
-                tenant=tenant,
-                agent=agent,
-                envelopes=envelopes,
-                session_name=session_name,
-                socket=socket,
-            )
-        except DeadLetter as exc:
-            for raw_item, env in batch:
-                r.rpush(dead_key, raw_item)
-                _emit_for_recipient("port", "dead_lettered", env, agent, str(exc))
-            return
-        except Exception as exc:
-            for raw_item, env in batch:
-                r.rpush(dead_key, raw_item)
-                _emit_for_recipient("port", "dead_lettered", env, agent, f"opener failed: {exc}")
-            return
-
-        for _, env in batch:
-            _emit_for_recipient("port", "opened", env, agent)
-
-    for raw, envelope in parsed_items:
-        kind = envelope.get("kind")
-        if kind == "Message":
-            current_message_batch.append((raw, envelope))
-        else:
-            flush_messages()
-            if kind == "Command":
-                try:
-                    command_opener(
-                        r=r,
-                        pod=pod,
-                        tenant=tenant,
-                        agent=agent,
-                        envelope=envelope,
-                        session_name=session_name,
-                        socket=socket,
-                    )
-                except DeadLetter as exc:
-                    r.rpush(dead_key, raw)
-                    _emit_for_recipient("port", "dead_lettered", envelope, agent, str(exc))
-                    continue
-                except Exception as exc:
-                    r.rpush(dead_key, raw)
-                    _emit_for_recipient("port", "dead_lettered", envelope, agent, f"opener failed: {exc}")
-                    continue
-                _emit_for_recipient("port", "opened", envelope, agent)
-
-            elif kind == "AddTicket":
-                try:
-                    add_ticket_opener(
-                        r=r,
-                        pod=pod,
-                        tenant=tenant,
-                        agent=agent,
-                        envelope=envelope,
-                        session_name=session_name,
-                        socket=socket,
-                    )
-                except DeadLetter as exc:
-                    r.rpush(dead_key, raw)
-                    _emit_for_recipient("port", "dead_lettered", envelope, agent, str(exc))
-                    continue
-                except Exception as exc:
-                    r.rpush(dead_key, raw)
-                    _emit_for_recipient("port", "dead_lettered", envelope, agent, f"opener failed: {exc}")
-                    continue
-                _emit_for_recipient("port", "opened", envelope, agent)
-
-            elif kind == "Attachment":
-                try:
-                    attachment_opener(
-                        r=r,
-                        pod=pod,
-                        tenant=tenant,
-                        agent=agent,
-                        envelope=envelope,
-                        session_name=session_name,
-                        socket=socket,
-                    )
-                except DeadLetter as exc:
-                    r.rpush(dead_key, raw)
-                    _emit_for_recipient("port", "dead_lettered", envelope, agent, str(exc))
-                    continue
-                except Exception as exc:
-                    r.rpush(dead_key, raw)
-                    _emit_for_recipient("port", "dead_lettered", envelope, agent, f"opener failed: {exc}")
-                    continue
-                _emit_for_recipient("port", "opened", envelope, agent)
-
-            else:
-                r.rpush(dead_key, raw)
-                _emit_for_recipient("port", "dead_lettered", envelope, agent, f"unknown kind: {kind}")
-
-    flush_messages()
 
 
 def deliver_one(

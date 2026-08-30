@@ -5,7 +5,8 @@
 > Depends on [`LLD-bus-and-switch.md`](LLD-bus-and-switch.md) for envelope formats and
 > [`LLD-port-delivery.md`](LLD-port-delivery.md) for the generic delivery framework,
 > busy-tag locking, and registry-based dispatch.
-> This document specifies `deliver_tmux` and the tmux openers in `src/flock/port/openers.py`.
+> This document specifies `deliver_tmux` in `src/flock/tmux/deliver.py` and the
+> tmux openers in `src/flock/tmux/openers.py`.
 > Bringing tmux up — the server, the windows, sizing — is owned by [`LLD-tmux-host.md`](LLD-tmux-host.md).
 
 ## 1. Purpose
@@ -17,6 +18,13 @@ submits commands.
 The tmux port (`deliver_tmux`) implements delivery for agents hosted in tmux panes (`port_type: tmux`).
 It opens envelopes, renders text or saves files, writes delivery verification markers,
 and pastes into the agent's window using bracketed paste mode.
+
+The generic registry selects this handler through the lazy
+`("flock.tmux.deliver", "deliver_tmux")` spec. Importing the generic
+`flock.port` framework does not import tmux delivery code; the tmux module is
+loaded only when the selected destination has `port_type: tmux`. The old
+top-level `flock.port` tmux exports remain lazy compatibility attributes and do
+not restore the eager dependency.
 
 ```
   ┌───────────────────────────────── deliver_tmux ──────────────────────────────────┐
@@ -73,6 +81,8 @@ by bus/API authentication policies.
 `{"title": "…", "description": "…", "priority": "…"}`. The `AddTicket` opener creates a v1
 ticket entry in the destination agent's `tasks.todo` Redis list, records the `add` event via
 `flock.bus.record_task_event`, and **pastes nothing into the window**.
+This one opener is shared with OpenShell and therefore remains in
+`flock.port.openers`; all terminal/paste openers live in `flock.tmux.openers`.
 
 - **No window check**: Writes to `tasks.todo` succeed even if the agent's window is not currently open.
 - **Synchronous mutation confirmation**: Returns list depth to confirm write. Success emits `board_write_confirmed`.

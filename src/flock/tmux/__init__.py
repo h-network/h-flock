@@ -19,6 +19,28 @@ from .ops import (
     write_agent_guide,
 )
 
+_DELIVERY_EXPORTS = {
+    "attachment_opener",
+    "command_opener",
+    "deliver_tmux",
+    "mark_delivery_pending",
+    "message_opener",
+    "messages_opener",
+}
+
+
+def __getattr__(name: str):
+    """Load delivery code only when its public attribute is requested."""
+    if name not in _DELIVERY_EXPORTS:
+        raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+    if name == "deliver_tmux":
+        from .deliver import deliver_tmux
+
+        return deliver_tmux
+    from . import openers
+
+    return getattr(openers, name)
+
 __all__ = [
     "AmbientTmuxError",
     "TmuxCommandError",
@@ -36,4 +58,10 @@ __all__ = [
     "start_agent_command",
     "window_env",
     "write_agent_guide",
+    "deliver_tmux",
+    "attachment_opener",
+    "command_opener",
+    "mark_delivery_pending",
+    "message_opener",
+    "messages_opener",
 ]

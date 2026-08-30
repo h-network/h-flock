@@ -1,6 +1,6 @@
 """Delivery for port_type: openshell -- one-shot exec against a live sandbox.
 
-Parallel to `deliver_tmux` in `.deliver`, but built around a fundamentally
+Parallel to `deliver_tmux` in `flock.tmux.deliver`, but built around a fundamentally
 different interaction model (see docs/LLD-port-openshell.md §2): OpenShell's
 `ExecSandbox` spawns a fresh process and returns once it exits — there is no
 "paste into an already-running pane" equivalent. So a `Message`/`Command`
@@ -242,7 +242,7 @@ def _deliver_attachment(r, pod: str, tenant: str, agent: str, envelope: dict, cl
     if caption is not None and not isinstance(caption, str):
         raise DeadLetter("caption must be a string if present")
 
-    # Same validation as flock.port.openers.attachment_opener (tmux) --
+    # Same validation as flock.tmux.openers.attachment_opener --
     # filename: non-empty UTF-8 basename, at most 255 UTF-8 bytes, no path
     # separators/control chars/'.'/'..'.
     try:
