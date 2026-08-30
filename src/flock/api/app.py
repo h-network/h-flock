@@ -556,7 +556,7 @@ def _render_restdoc_html(app: FastAPI) -> str:
       An HTTP <code>202 Accepted</code> response from <code>POST /agents/{{agent}}/envelopes</code> means the envelope was successfully validated structurally, assigned a <code>stream_id</code> and <code>correlation_id</code>, and written to Redis on the source's egress queue.
     </p>
     <p>
-      It does <strong>NOT</strong> mean the envelope has been delivered to the destination or executed. Delivery is asynchronous: the switch moves envelopes from egress to destination ingress queues and kicks the corresponding port process. If delivery fails (e.g. unknown destination or opener failure), the envelope dead-letters asynchronously. To trace envelope progress, inspect log output using the returned <code>stream_id</code>.
+      It does <strong>NOT</strong> mean the envelope has been delivered to the destination or executed. Delivery is asynchronous: the switch moves envelopes from egress to destination ingress queues and kicks the corresponding port process. Unenrolled local destinations are rejected synchronously with HTTP <code>404 Not Found</code>; failures after roster validation succeeds (for example, an opener failure) dead-letter asynchronously. To trace envelope progress, inspect log output using the returned <code>stream_id</code>.
     </p>
 
     <h2>4. Live Terminal Session Protocol</h2>
