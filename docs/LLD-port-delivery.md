@@ -28,7 +28,7 @@ framework is the receiving framework that:
                   │ 3. Lookup port_type in flock.port.registry ───────────────┼──► Handler consumes ingress
                   │ 4. Release 'delivering' lock (HDEL) & exit                │    - tmux (LLD-port-tmux.md)
                   └───────────────────────────────────────────────────────────┘    - api (LLD-api.md)
-                                                                                   - control (not yet written)
+                                                                                   - control (one envelope per kick)
                                                                                    - openshell (LLD-port-openshell.md)
 ```
 
@@ -42,9 +42,10 @@ and an office of idle agents consumes zero CPU or RAM.
 real time (terminal pastes, mailbox writes, or external RPCs). A persistent process popping
 eagerly would buffer unboundedly in process memory, invisible to monitoring and lost on
 restart. Instead, queued envelopes remain inspectable in Redis until a transient port process
-snapshot-drains them. That snapshot then lives in the process while its handler runs; a process
-crash after the drain can therefore lose the snapshot rather than replay it. This is the
-deliberate at-most-once boundary, not a durable work queue.
+begins delivery. The tmux, API, OpenShell, and unroutable handlers snapshot-drain their work;
+that snapshot then lives in the process while its handler runs, so a process crash after the
+drain can lose the snapshot rather than replay it. Control instead consumes at most one
+envelope per kick (§3). This is the deliberate at-most-once boundary, not a durable work queue.
 
 **Mutual exclusion per agent (`delivering` lock).** Concurrent delivery processes for the
 same agent are serialized using an atomic `HSETNX` loop against `<prefix>:delivering`:
@@ -140,12 +141,13 @@ Handlers are registered as either direct callables or lazy-import `(module_path,
 | `control` | `("flock.control.runner", "deliver_one")` | `ports` lane | this document, §"The control handler" above |
 | `openshell` | `("flock.port.openshell", "deliver_openshell")` | `openshell` lane | [`LLD-port-openshell.md`](LLD-port-openshell.md) |
 
-**Lazy-import property:** Handlers registered as tuple specs are only resolved on demand when an
-envelope for that specific `port_type` is actively being delivered. The registry retains the
-tuple rather than replacing it with the resolved callable, so it performs `import_module` and
-`getattr` on each lookup (Python's module cache normally makes repeat imports cheap). A port
-delivery for `tmux` never imports `flock.control`, `openshell`, or external dependencies like
-gRPC.
+**Lazy-import property:** The four built-in tuple specs are resolved on demand when an envelope
+for that specific `port_type` is actively being delivered. A custom tuple passed to
+`register_port_type` is eagerly resolved once for validation at registration time. In both
+cases the registry retains the tuple rather than replacing it with the resolved callable, so
+subsequent lookups perform `import_module` and `getattr` again (Python's module cache normally
+makes repeat imports cheap). A port delivery for `tmux` never imports `flock.control`,
+`openshell`, or external dependencies like gRPC.
 
 The inverse boundary holds too: importing `flock.port` or
 `flock.port.registry` does not import `flock.tmux`. Tmux ingress delivery and
@@ -157,7 +159,7 @@ compatibility and therefore do not weaken this import boundary.
 
 ### Registry API
 
-- `register_port_type(port_type_name: str, handler: HandlerSpec) -> None`: Register or override a delivery handler. Direct handlers must be callable; lazy specs are eagerly resolved and checked once at registration, then retained as tuples so later delivery lookups remain lazy. Invalid custom registrations raise `ValueError`. The four built-in defaults do not pass through this function and remain unimported until selected for delivery.
+- `register_port_type(port_type_name: str, handler: HandlerSpec) -> None`: Register or override a delivery handler. Direct handlers must be callable; lazy specs are eagerly resolved and checked once at registration, then retained as tuples so later delivery lookups remain lazy. Invalid custom registrations raise `ValueError`. The four built-in defaults do not pass through this function. The transport-specific tmux, control, and OpenShell modules remain unimported until selected for delivery; API delivery lives in the generic `flock.port.deliver` module already imported by `flock.port`.
 - `unregister_port_type(port_type_name: str) -> None`: Remove a registration.
 - `reset_registry() -> None`: Reset registry to built-in default mappings.
 - `get_delivery_handler(port_type_name: str) -> Optional[Callable]`: Look up and resolve the handler callable. A missing import, missing attribute, or resolved non-callable is logged and returns `None`, which routes delivery through the unroutable dead-letter path.
@@ -176,7 +178,7 @@ is absent):
                            └──► push to :dead queue ──► emit 'dead_lettered' (unroutable)
 ```
 
-Parsing belongs to the selected handler and therefore happens after registry dispatch. Every
-built-in delivery handler dead-letters malformed envelopes while processing its drained
-snapshot. Because a malformed envelope has no validated envelope to receive, it gets a
-`dead_lettered` record but no `received` record.
+Parsing belongs to the selected handler and therefore happens after registry dispatch. The
+tmux, API, OpenShell, and unroutable handlers dead-letter malformed envelopes while processing
+their drained snapshots. Because a malformed envelope has no validated envelope to receive,
+it gets a `dead_lettered` record but no `received` record.
