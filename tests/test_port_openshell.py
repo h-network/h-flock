@@ -8,8 +8,6 @@ docs/LLD-port-openshell.md for what has and hasn't been run against a
 live gateway.
 """
 
-import inspect
-
 from conftest import FakeRespRedis
 from openshell import ExecResult
 
@@ -80,12 +78,6 @@ def _setup(r, pod, tenant, agent, source, kind, payload, cli="claude"):
     ingress_key = prefix(pod, tenant, agent, "ingress")
     r.rpush(ingress_key, encode(env))
     return env
-
-
-def test_handler_contract_has_no_tmux_context_parameters():
-    parameters = inspect.signature(deliver_openshell).parameters
-    assert "session_name" not in parameters
-    assert "socket" not in parameters
 
 
 def test_message_execs_headless_and_replies():

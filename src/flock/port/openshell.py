@@ -308,6 +308,8 @@ def deliver_openshell(
     pod: str,
     tenant: str,
     agent: str,
+    session_name: str | None = None,
+    socket: str | None = None,
     timeout: int = 1,
     client: OpenShellClient | None = None,
     **kwargs,
@@ -359,6 +361,7 @@ def deliver_openshell(
                 elif kind == "AddTicket":
                     add_ticket_opener(
                         r=r, pod=pod, tenant=tenant, agent=agent, envelope=envelope,
+                        session_name=session_name, socket=socket,
                     )
                 elif kind == "Attachment":
                     _deliver_attachment(r, pod, tenant, agent, envelope, client, sbx_name, cli, profile)
