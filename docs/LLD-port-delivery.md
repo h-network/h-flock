@@ -135,7 +135,7 @@ Handlers are registered as either direct callables or lazy-import `(module_path,
 
 | `port_type` | Handler Spec | Owner | Documentation |
 |---|---|---|---|
-| `tmux` | `("flock.port.deliver", "deliver_tmux")` | `tmux` lane | [`LLD-port-tmux.md`](LLD-port-tmux.md) |
+| `tmux` | `("flock.tmux.deliver", "deliver_tmux")` | `tmux` lane | [`LLD-port-tmux.md`](LLD-port-tmux.md) |
 | `api` | `("flock.port.deliver", "deliver_api")` | `api` lane | [`LLD-api.md`](LLD-api.md) |
 | `control` | `("flock.control.runner", "deliver_one")` | `ports` lane | this document, §"The control handler" above |
 | `openshell` | `("flock.port.openshell", "deliver_openshell")` | `openshell` lane | [`LLD-port-openshell.md`](LLD-port-openshell.md) |
@@ -146,6 +146,14 @@ tuple rather than replacing it with the resolved callable, so it performs `impor
 `getattr` on each lookup (Python's module cache normally makes repeat imports cheap). A port
 delivery for `tmux` never imports `flock.control`, `openshell`, or external dependencies like
 gRPC.
+
+The inverse boundary holds too: importing `flock.port` or
+`flock.port.registry` does not import `flock.tmux`. Tmux ingress delivery and
+terminal openers live in `flock.tmux.deliver` and `flock.tmux.openers`; the only
+shared delivery action left in `flock.port.openers` is the storage-only AddTicket
+board mutation, alongside attachment schema constants shared with OpenShell.
+Legacy top-level tmux attributes on `flock.port` resolve lazily for
+compatibility and therefore do not weaken this import boundary.
 
 ### Registry API
 

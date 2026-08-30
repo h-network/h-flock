@@ -6,7 +6,8 @@ from unittest.mock import MagicMock, patch
 
 from conftest import FakeRespRedis
 from flock.bus import build as build_envelope, encode, prefix
-from flock.port.deliver import deliver_api, deliver_one, deliver_tmux, deliver_unroutable
+from flock.port.deliver import deliver_api, deliver_one, deliver_unroutable
+from flock.tmux.deliver import deliver_tmux
 from flock.port.registry import (
     get_delivery_handler,
     register_port_type,
@@ -93,7 +94,7 @@ def test_deliver_one_dispatches_tmux(capsys):
     ingress_key = prefix("acme", "hq", "bob", "ingress")
     r.rpush(ingress_key, encode(env))
 
-    with patch("flock.port.openers.list_windows", return_value={"bob"}), \
+    with patch("flock.tmux.openers.list_windows", return_value={"bob"}), \
          patch("flock.tmux.ops.run_tmux", return_value=(0, "", "")):
         deliver_one(r, pod="acme", tenant="hq", agent="bob")
 
@@ -117,7 +118,7 @@ def test_tmux_handler_resolves_empty_or_absent_session_at_its_edge(monkeypatch, 
         monkeypatch.setenv("TMUX_SESSION", session_env)
     monkeypatch.setenv("TMUX_SOCKET", "/tmp/flock-test.sock")
 
-    with patch("flock.port.deliver.messages_opener") as mock_opener:
+    with patch("flock.tmux.deliver.messages_opener") as mock_opener:
         deliver_one(r, pod="acme", tenant="hq", agent="bob")
 
     assert mock_opener.call_args.kwargs["session_name"] == "hq"
@@ -132,7 +133,7 @@ def test_tmux_handler_resolves_configured_session_at_its_edge(monkeypatch):
     monkeypatch.setenv("TMUX_SESSION", "custom-session")
     monkeypatch.delenv("TMUX_SOCKET", raising=False)
 
-    with patch("flock.port.deliver.messages_opener") as mock_opener:
+    with patch("flock.tmux.deliver.messages_opener") as mock_opener:
         deliver_one(r, pod="acme", tenant="hq", agent="bob")
 
     assert mock_opener.call_args.kwargs["session_name"] == "custom-session"

@@ -44,7 +44,7 @@ Tier A is documentation, B internal code, C Redis/environment, and D wire.
 | `lead` | `src/flock/tmuxhost/host.py:75` | redis key | Tenant-level agent whose generated guide receives leadership instructions. | None. | C |
 | `__init__` | `src/flock/tmuxhost/host.py:83` | identifier | Non-agent placeholder window used to keep an empty session alive. | Null/management port, loosely. | B |
 
-## `flock.port`
+## `flock.port` and `flock.tmux` delivery
 
 | name | where it lives | kind | what it means, in one line | networking analogue, if any | tier |
 |---|---|---|---|---|---|
@@ -52,22 +52,22 @@ Tier A is documentation, B internal code, C Redis/environment, and D wire.
 | `send` CLI | `src/flock/port/send.py:5` | identifier | Agent-facing command that constructs an envelope and writes its own egress. | Transmit-side NIC operation. | B |
 | `run_port` | `src/flock/port/deliver.py:265` | identifier | Acquires per-agent serialization, delivers one ingress envelope, and exits. | Receive-side port service. | B |
 | `deliver_one` | `src/flock/port/deliver.py:283` | identifier | Dispatches one destination ingress item by looking up handler in port registry. | Frame delivery entrypoint. | B |
-| `deliver_tmux` | `src/flock/port/deliver.py:110` | identifier | Delivers queued ingress envelopes to a tmux window. | Tmux frame delivery. | B |
+| `deliver_tmux` | `src/flock/tmux/deliver.py` | identifier | Delivers queued ingress envelopes to a tmux window. | Tmux frame delivery. | B |
 | `deliver_api` | `src/flock/port/deliver.py:58` | identifier | Moves one ingress envelope to an enrolled client's mailbox stream. | Delivery to a different port medium. | B |
 | `deliver_unroutable` | `src/flock/port/deliver.py:88` | identifier | Pops and dead-letters an envelope whose port_type has no implementation. | Unsupported-port drop. | B |
 | `get_delivery_handler` | `src/flock/port/registry.py:38` | identifier | Resolves delivery function or lazy module spec for a port_type. | Port registry lookup. | B |
 | `register_port_type` | `src/flock/port/registry.py:24` | identifier | Registers a callable or lazy (module, attr) handler for a port_type. | Port registration. | B |
-| `messages_opener` / `message_opener` | `src/flock/port/openers.py:82`, `src/flock/port/openers.py:119` | identifier | Terminal action selected for a `Message` (batched or single). | Protocol handler. | B |
-| `command_opener` | `src/flock/port/openers.py:144` | identifier | Terminal action selected for a `Command`. | Protocol handler. | B |
-| `add_ticket_opener` | `src/flock/port/openers.py:175` | identifier | Board action selected for an `AddTicket`. | Protocol handler. | B |
-| `attachment_opener` | `src/flock/port/openers.py:284` | identifier | File write and inert notice action selected for an `Attachment`. | Protocol handler. | B |
+| `messages_opener` / `message_opener` | `src/flock/tmux/openers.py:82`, `src/flock/tmux/openers.py:119` | identifier | Terminal action selected for a `Message` (batched or single). | Protocol handler. | B |
+| `command_opener` | `src/flock/tmux/openers.py:144` | identifier | Terminal action selected for a `Command`. | Protocol handler. | B |
+| `add_ticket_opener` | `src/flock/port/openers.py` | identifier | Shared board action selected for an `AddTicket`; it performs no tmux operation. | Protocol handler. | B |
+| `attachment_opener` | `src/flock/tmux/openers.py:284` | identifier | File write and inert notice action selected for an `Attachment`. | Protocol handler. | B |
 | `opened` | `src/flock/bus/doors.py:143` | doc term | Terminal outcome meaning an opener completed, not proof a human/CLI consumed it. | Accepted by destination handler, not delivery acknowledgement. | A |
 | `delivering` | `src/flock/port/deliver.py:277` | redis key | Tenant hash serving as a per-agent mutual-exclusion/busy tag. | Per-port transmit lock. | C |
 | `paused` | `src/flock/port/deliver.py:120` | redis key | Marker that leaves ingress queued rather than opening it. | Administratively down port. | C |
-| `pending.verify` | `src/flock/port/openers.py:50` | redis key | Stream of pasted deliveries awaiting out-of-band activity judgment. | Delivery telemetry awaiting observation. | C |
-| `delivery.markers` | `src/flock/port/openers.py:51` | redis key | Bounded stream used to correlate later token usage heuristically with the delivery that prompted it. | Receive-side accounting join marker. | C |
+| `pending.verify` | `src/flock/tmux/openers.py:50` | redis key | Stream of pasted deliveries awaiting out-of-band activity judgment. | Delivery telemetry awaiting observation. | C |
+| `delivery.markers` | `src/flock/tmux/openers.py:51` | redis key | Bounded stream used to correlate later token usage heuristically with the delivery that prompted it. | Receive-side accounting join marker. | C |
 | `VERIFY_AFTER_SECONDS` | `src/flock/watchdog/service.py:386` | env var | Minimum marker age before the watchdog judges delivery verification; defaults to 120 seconds. | Observation-window threshold. | C |
-| `VERIFIABLE_CLIS` | `src/flock/port/openers.py:21` | identifier | Allowlist of CLI implementations whose session files can confirm input. | Observable port types. | B |
+| `VERIFIABLE_CLIS` | `src/flock/tmux/openers.py:21` | identifier | Allowlist of CLI implementations whose session files can confirm input. | Observable port types. | B |
 | `inbox` | `src/flock/port/deliver.py:67` | redis key | Resumable mailbox stream for a `port_type: api` participant. | Receive buffer on an application port. | C |
 | `dead` | `src/flock/port/deliver.py:66` | redis key | Retained list of envelopes that could not be opened. | Dead-letter/drop queue. | C |
 | `ingress` | `src/flock/port/deliver.py:65` | redis key | Recipient-side queue from which delivery pops. | Ingress queue. | C |
