@@ -259,6 +259,18 @@ does not construct any vendor-specific variables itself. The base image's
 `startAgent` launcher translates that intent for the selected CLI, including
 Claude's URL and model-tier rules.
 
+⚠ **Known accepted limitation: an explicitly configured provider name can
+silently fall through to the vendor when its URL is missing.** If an agent has
+no provider configured, `get_agent_provider` returning `None` is intentional:
+the CLI uses its normal vendor/OAuth path. But the same return value is used
+when a provider name exists and its matching `PROVIDER_<NAME>_URL` does not
+(`src/flock/tmuxhost/host.py:53-65`). The lookup logs an error, then window
+creation continues with `provider=None`, making that misconfiguration
+indistinguishable downstream from the intentional no-provider case. The CLI can
+therefore consume real vendor usage instead of refusing loudly. This behavior
+is accepted for now; operators must treat the tmuxhost error as the only signal
+that the requested provider was not applied.
+
 ⚠ **Unsupported provider/CLI combinations refuse rather than fall through.**
 The base launcher currently rejects provider configuration for codex and agy
 with exit 3. h-flock used to build `ANTHROPIC_*` directly, so a codex window
