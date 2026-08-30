@@ -81,8 +81,20 @@ everything.
 **Wire Format & Bytes Encoding:**
 - **Terminal Output (`server -> client`):** `{"agent": "<name>", "data": "<text>"}` where `data` is UTF-8 string content containing ANSI control sequences (e.g. `\x1b[2J\x1b[H` screen repaint snapshots or live stdout). Non-ASCII terminal bytes from tmux `%output` are decoded using `utf-8` (`errors="replace"`).
 - **Keystrokes (`client -> server`):** `{"agent": "<name>", "data": "<keystrokes>"}` where `data` is raw UTF-8 string keystroke input. The server encodes this string to UTF-8 bytes and forwards it to tmux via `send-keys -H <hex_bytes>`.
+- **In-Band Error Responses (`server -> client`):** Invalid or rejected frames return structured error JSON without closing the socket:
+  - `{"error": "invalid json"}` / `{"error": "message must be an object"}`: malformed JSON payload
+  - `{"error": "invalid mode"}`: mode not recognized (only `"read-only"` or `"read-write"`)
+  - `{"error": "mode cannot change"}`: subscription mode cannot be changed on an active connection (§4)
+  - `{"error": "subscribe must be a list of agents"}`: invalid subscribe payload structure
+  - `{"error": "unknown agents", "agents": ["<name>", ...]}`: named agent(s) not found in the tmux session
+  - `{"error": "read-only"}`: keystroke input sent on a read-only subscription
+  - `{"error": "agent and data must be strings"}` / `{"error": "agent is not subscribed"}`: invalid keystroke frame or destination
+  - `{"error": "unsupported message"}`: unrecognized message structure
+  - `{"error": "<broken_reason>"}`: sent to active subscribers when the tmux stream fails, before closing with code 1011
 
-**A subscriber gets a snapshot first, then the stream.** `capture-pane` (without `-S -`) captures the visible screen (not the full scrollback history), prefixed with clear-and-home (`\x1b[2J\x1b[H`), followed by the screen lines and cursor position restoration (`\x1b[{row};{col}H` queried via `display-message -p -t <pane> "#{cursor_y} #{cursor_x}"`), so row 1 of the client matches row 1 of the pane and live updates stay aligned without offset.
+**A subscriber gets a snapshot first, then the stream.** `capture-pane -p -e -t <pane>` (without `-S -`) captures the visible screen (not the full scrollback history; `-e` preserves ANSI style/colour attributes), prefixed with clear-and-home (`\x1b[2J\x1b[H`), followed by the screen lines and cursor position restoration (`\x1b[{row};{col}H` queried via `display-message -p -t <pane> "#{cursor_y} #{cursor_x}"`), so row 1 of the client matches row 1 of the pane and live updates stay aligned without offset.
+
+⚠ **Queue bounding & in-flight buffering:** Each subscriber output queue is capped at 1000 items (`asyncio.Queue(maxsize=1000)`). If an output event arrives when the queue is full, the oldest unread event is dropped (`get_nowait()`) so control-mode reads never block. During `update_subscription`, any live `%output` arriving while `capture-pane` and `display-message` are in flight is buffered per-agent in `buffering` and flushed immediately after the snapshot frame.
 
 ⚠ **`{"subscribe": [...], "refresh": true}` re-snapshots every agent named in that message, not only newly-added ones.** A client polling pane *content* on its own schedule (the Telegram bot's live-tail, `clients/telegram/README.md` §2d) sends its already-subscribed agent again with `refresh: true` to get one more `capture-pane` without dropping and re-adding the subscription — which would open a gap where a live `%output` between the two calls is lost. Omitting `refresh` (or leaving it `false`) keeps the old behaviour: a resend of an unchanged agent set is a no-op.
 
@@ -110,6 +122,8 @@ Watching the office is the common case and must not carry execution rights. This
 is `tmux attach -r` semantics, enforced by us rather than by tmux, because a
 control-mode client is privileged by construction.
 
+⚠ **Mode is immutable once set on a connection.** A client specifies `"mode": "read-only"` or `"mode": "read-write"` (defaulting to `"read-write"`) on its first `subscribe` message. Subsequent `subscribe` messages on the same socket cannot change the mode; attempting to do so returns `{"error": "mode cannot change"}`. Switching execution rights requires opening a new connection.
+
 ## 5. Auth
 
 **The same bearer token as the api.** Both are doors into one tenant and a second
@@ -119,7 +133,7 @@ scheme would be a second thing to get wrong. Checked once, on connect.
 
 **WebSocket Close Codes:**
 - `1000`: Normal closure when the client or server ends the socket connection cleanly.
-- `4401`: Unauthorized (token missing or invalid). The server accepts the socket and closes with `code=4401, reason="unauthorized"` so client receives close frame.
+- `4401`: Unauthorized (token missing or invalid). The server closes the socket immediately before accept with `code=4401, reason="unauthorized"` without sending an accept handshake frame.
 - `1011`: Internal error (control mode client disconnect or unhandled internal exception).
 
 **Browser WebSocket Authentication & Log Safety:** Standard browser `WebSocket` constructors cannot set custom `Authorization` headers. The session door supports both `Authorization: Bearer <API_TOKEN>` headers and `?token=<API_TOKEN>` query parameters. `uvicorn.run` is invoked with `access_log=False`. ⚠ **That is not sufficient and the claim that it is was wrong.** It silences the access logger only; the handshake line comes from `uvicorn/protocols/websockets/websockets_impl.py`, which logs the path *with* its query string on the error logger. Measured on a running tenant: `INFO: … - "WebSocket /session?token=<REDACTED-TOKEN>" [accepted]`. Until a short-lived ticket replaces the raw token, **a query-parameter connection puts the tenant token in the container log**. Connection logging is handled via structured `_connection_log` JSON records on close which exclude credentials. Server-side proxying (as implemented in `clients/web/server.py`) is the recommended architecture for browser clients.
@@ -127,7 +141,7 @@ scheme would be a second thing to get wrong. Checked once, on connect.
 ⚠ There are now two write paths into a window — `Command` over the bus, and
 keystrokes over this socket — and only the first produces envelope log records.
 This module logs **one record per connection**, not per keystroke: who connected,
-which agents, read-only or not, and when it closed. Enough to answer "who was
+which agents, read-only or not (`mode: "unselected"` if closed before subscribing), and when it closed. Enough to answer "who was
 typing in frontend's window", without a log line per character.
 
 ⚠ **TLS**: configured via `SESSION_TLS_CERT` and `SESSION_TLS_KEY` (falling
