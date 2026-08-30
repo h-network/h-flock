@@ -22,14 +22,8 @@ def add_ticket_opener(
     tenant: str,
     agent: str,
     envelope: dict,
-    session_name: str | None = None,
-    socket: str | None = None,
 ) -> None:
-    """Write an AddTicket envelope to the recipient's board.
-
-    ``session_name`` and ``socket`` remain compatibility-only until the
-    OpenShell caller is cleaned up; this shared storage action uses neither.
-    """
+    """Write an AddTicket envelope to the recipient's board."""
     corr_id = envelope.get("correlation_id")
     source = envelope.get("l2", {}).get("source", "unknown")
     payload = envelope.get("payload", {})
