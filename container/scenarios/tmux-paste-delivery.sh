@@ -8,8 +8,8 @@
 # making CPython report rc=0 on ECHILD even when tmux failed. doors.py could then
 # emit opened for a paste that never landed. Pane content cannot false-green in
 # that failure mode.
-# `--break-delivery` corrupts routing before paste_text. It proves these
-# assertions are wired, but does not prove sensitivity to a paste_text failure.
+# `--break-delivery` corrupts routing before submit_text. It proves these
+# assertions are wired, but does not prove sensitivity to a submit_text failure.
 set -uo pipefail
 . "$(dirname "$0")/_lib.sh"
 
@@ -54,7 +54,7 @@ esac
 
 restore_needed=0
 resume_needed=0
-tmuxhost_pid=""
+tmux_reconciler_pid=""
 restore_negative_control() {
   local failed=0
   if [ "$restore_needed" = 1 ]; then
@@ -66,8 +66,8 @@ restore_negative_control() {
   fi
   if [ "$resume_needed" = 1 ]; then
     resume_needed=0
-    if ! docker exec "$CONTAINER" kill -CONT "$tmuxhost_pid" >/dev/null 2>&1; then
-      echo "ERROR: failed to SIGCONT tmuxhost pid=$tmuxhost_pid; tenant may remain wedged" >&2
+    if ! docker exec "$CONTAINER" kill -CONT "$tmux_reconciler_pid" >/dev/null 2>&1; then
+      echo "ERROR: failed to SIGCONT tmux_reconciler pid=$tmux_reconciler_pid; tenant may remain wedged" >&2
       failed=1
     fi
   fi
@@ -76,20 +76,20 @@ restore_negative_control() {
 trap restore_negative_control EXIT
 if [ "$BREAK_DELIVERY" = 1 ]; then
   # A controlled invalid port route makes the same ordinary Message dead-letter
-  # before paste_text. The green and red runs therefore exercise one assertion,
+  # before submit_text. The green and red runs therefore exercise one assertion,
   # not separate fixture-only judges.
-  mapfile -t tmuxhost_pids < <(docker exec "$CONTAINER" pgrep -f '[p]ython3 -m flock.tmuxhost' 2>/dev/null || true)
-  [ "${#tmuxhost_pids[@]}" -eq 1 ] || incomplete tmux-paste-delivery tmuxhost_pid_count_${#tmuxhost_pids[@]}
-  tmuxhost_pid="${tmuxhost_pids[0]}"
+  mapfile -t tmux_reconciler_pids < <(docker exec "$CONTAINER" pgrep -f '[p]ython3 -m flock.tmux_reconciler' 2>/dev/null || true)
+  [ "${#tmux_reconciler_pids[@]}" -eq 1 ] || incomplete tmux-paste-delivery tmux_reconciler_pid_count_${#tmux_reconciler_pids[@]}
+  tmux_reconciler_pid="${tmux_reconciler_pids[0]}"
   resume_needed=1
-  docker exec "$CONTAINER" kill -STOP "$tmuxhost_pid" >/dev/null 2>&1 || incomplete tmux-paste-delivery tmuxhost_stop_failed
-  stop_deadline=$(( $(date +%s) + 5 )); tmuxhost_state=""
+  docker exec "$CONTAINER" kill -STOP "$tmux_reconciler_pid" >/dev/null 2>&1 || incomplete tmux-paste-delivery tmux_reconciler_stop_failed
+  stop_deadline=$(( $(date +%s) + 5 )); tmux_reconciler_state=""
   while [ "$(date +%s)" -lt "$stop_deadline" ]; do
-    tmuxhost_state="$(docker exec "$CONTAINER" awk '/^State:/{print $2}' "/proc/$tmuxhost_pid/status" 2>/dev/null || true)"
-    [ "$tmuxhost_state" = T ] && break
+    tmux_reconciler_state="$(docker exec "$CONTAINER" awk '/^State:/{print $2}' "/proc/$tmux_reconciler_pid/status" 2>/dev/null || true)"
+    [ "$tmux_reconciler_state" = T ] && break
     sleep 0.1
   done
-  [ "$tmuxhost_state" = T ] || incomplete tmux-paste-delivery tmuxhost_not_stopped
+  [ "$tmux_reconciler_state" = T ] || incomplete tmux-paste-delivery tmux_reconciler_not_stopped
   restore_needed=1
   docker exec "$CONTAINER" redis-cli HSET "$ROSTER" "$DESTINATION" broken-paste-control >/dev/null 2>&1 \
     || incomplete tmux-paste-delivery negative_control_setup_failed

@@ -217,7 +217,7 @@ has one, the credential.
   `default`.
 - **state:** built end to end. `StartAgent` / `office hire --profile`
   validates it against the configured account registry and persists it before
-  roster visibility, so `flock.tmuxhost` sees the right account when it
+  roster visibility, so `flock.tmux_reconciler` sees the right account when it
   reconciles the window. `port_type: api` and `control` participants carry no
   profile — there is no CLI to log in.
 
@@ -230,7 +230,7 @@ An agent's task list — `todo → doing → hold → done`. Pull-based.
 
 ### `host` ⚠ *conflated three ways*
 The fixed lifecycle participant (`vab: control`), the tmux window reconciler
-(`flock/tmuxhost`), and the machine. Searching finds all three.
+(`flock/tmux_reconciler`), and the machine. Searching finds all three.
 
 ---
 

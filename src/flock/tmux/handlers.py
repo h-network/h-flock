@@ -9,7 +9,7 @@ from flock.port.openers import (
     BASE64_CHARS_REGEX,
     MIME_TYPE_REGEX,
 )
-from flock.tmux.ops import list_windows, paste_text
+from flock.tmux.ops import list_windows, submit_text
 
 # The CLIs that write a session file the switch can tail. An agent running
 # anything else — a bare shell — produces no activity, so a delivery to it can
@@ -125,7 +125,7 @@ def messages_opener(
         mark_delivery_pending(r, pod, tenant, agent, stream_id, correlation_id=corr_id)
 
     primary_stream_id = envelopes[0].get("stream_id", "")
-    paste_text(session_name, agent, combined_msg, stream_id=primary_stream_id, socket=socket)
+    submit_text(session_name, agent, combined_msg, stream_id=primary_stream_id, socket=socket)
 
 
 def message_opener(
@@ -176,7 +176,7 @@ def command_opener(
     # Marking first costs nothing if the paste fails: the delivery genuinely did
     # not happen, and unverified is the right answer.
     mark_delivery_pending(r, pod, tenant, agent, stream_id, correlation_id=corr_id)
-    paste_text(session_name, agent, formatted_msg, stream_id=stream_id, socket=socket)
+    submit_text(session_name, agent, formatted_msg, stream_id=stream_id, socket=socket)
 
 
 def attachment_opener(
@@ -309,4 +309,4 @@ def attachment_opener(
     if caption:
         notice += f"[attachment caption] {caption}\n"
 
-    paste_text(session_name, agent, notice, stream_id=stream_id, socket=socket)
+    submit_text(session_name, agent, notice, stream_id=stream_id, socket=socket)

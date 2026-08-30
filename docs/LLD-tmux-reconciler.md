@@ -1,4 +1,4 @@
-# LLD — the tmux host
+# LLD — the tmux reconciler
 
 > **Status: built and running.**
 >
@@ -124,11 +124,11 @@ resolves to moves.
 One window per agent, **named after the agent**, so a window is addressable by
 the same name the bus uses. Low-level tmux operations use `flock.tmux` as a shared
 library (`create_window`, `kill_window`, `list_windows`, `write_agent_guide`, etc.)
-shared across `tmuxhost`, `control`, and `port`.
+shared across `tmux_reconciler`, `control`, and `port`.
 
 Windows are **reconciled against roster members with `port_type == "tmux"`**, in both directions —
 a `port_type == "tmux"` agent in the roster with no window gets one, a window with no `port_type == "tmux"` agent in the roster is
-removed. Non-tmux roster entries (enrolled REST clients with `port_type: "api"`, `port_type: "control"`, or sandboxed agents with `port_type: "openshell"`) generate no windows and are ignored by `tmuxhost`. Reconciliation is a repeatable operation, not a one-time setup step, so
+removed. Non-tmux roster entries (enrolled REST clients with `port_type: "api"`, `port_type: "control"`, or sandboxed agents with `port_type: "openshell"`) generate no windows and are ignored by `tmux_reconciler`. Reconciliation is a repeatable operation, not a one-time setup step, so
 running it again after a roster change is the whole mechanism for hiring and
 letting go.
 
@@ -188,7 +188,7 @@ four minutes later.
 assuming the lifetime and subtracting it from `expiresAt`; measured against the
 file's mtime the gap is 7:59:59. Therefore, agents assigned to the same account profile share the single profile config directory (`CLAUDE_CONFIG_DIR=~/.claude-<profile>`). Distinct profiles maintain separate directories with their own independent OAuth logins.
 
-⚠ **Launch, Profile, and Cause State Ordering:** `start_agent` (`flock.control.openers`) writes the `launch` (`pod:<pod>:tenant:<tenant>:agent:<name>:launch`) and `profile` keys before roster visibility, then atomically publishes the fresh-hire `window.cause` with roster membership. `tmuxhost` reconciles as soon as the roster row appears: publishing launch or profile later builds against defaults, while publishing cause and roster sequentially can expose either a stale cause or a cause-less creation. `window.cause` is one-shot: successful creation consumes it into the event, while an already-present window discards it without attribution so a later recovery cannot borrow a stale cause.
+⚠ **Launch, Profile, and Cause State Ordering:** `start_agent` (`flock.control.openers`) writes the `launch` (`pod:<pod>:tenant:<tenant>:agent:<name>:launch`) and `profile` keys before roster visibility, then atomically publishes the fresh-hire `window.cause` with roster membership. `tmux_reconciler` reconciles as soon as the roster row appears: publishing launch or profile later builds against defaults, while publishing cause and roster sequentially can expose either a stale cause or a cause-less creation. `window.cause` is one-shot: successful creation consumes it into the event, while an already-present window discards it without attribution so a later recovery cannot borrow a stale cause.
 
 ⚠ **Quiet Terminal Telemetry:** `office` runs inside an agent's window, where
 `stdout` is the agent's screen. Printing bus telemetry log records
@@ -204,7 +204,7 @@ the same line to the durable mounted custody log (`FLOCK_CUSTODY_FILE`).
 tmux itself restarts nothing. With `remain-on-exit` off, when a pane's process
 exits tmux removes its window; a server failure takes every pane with it.
 
-The continuously polling tmuxhost makes the effective agent restart policy
+The continuously polling tmux_reconciler makes the effective agent restart policy
 different from tmux's own behavior: on its next reconciliation pass, every
 `port_type: tmux` roster member whose window is missing is recreated. There is
 currently no retry limit, backoff, or terminal failed state. A configured CLI
@@ -213,8 +213,8 @@ may select that CLI's resume command. This was verified live when a second
 Ctrl-C made a CLI exit, tmux removed its window, and reconciliation recreated
 it.
 
-Supervision therefore has two layers: tmuxhost continuously supervises desired
-window existence, while the container entrypoint restarts tmuxhost itself
+Supervision therefore has two layers: tmux_reconciler continuously supervises desired
+window existence, while the container entrypoint restarts tmux_reconciler itself
 without restarting peer services. Both layers depend on idempotence: bringing
 the host up when it is already up must be a no-op, and reconciliation must
 converge rather than duplicate.
@@ -234,7 +234,7 @@ Documenting the current behavior does not decide that policy.
 
 **Cross-tenant routing.** Multiple tenants on one host are already supported:
 `flock_tenant_context` gives each tenant its own Compose project and container,
-and therefore its own tmuxhost process, server and session. What remains
+and therefore its own tmux_reconciler process, server and session. What remains
 deferred is tenants reaching one another, not how their tmux sessions are
 owned.
 
@@ -264,11 +264,11 @@ silently fall through to the vendor when its URL is missing.** If an agent has
 no provider configured, `get_agent_provider` returning `None` is intentional:
 the CLI uses its normal vendor/OAuth path. But the same return value is used
 when a provider name exists and its matching `PROVIDER_<NAME>_URL` does not
-(`src/flock/tmuxhost/host.py:53-65`). The lookup logs an error, then window
+(`src/flock/tmux_reconciler/service.py:53-65`). The lookup logs an error, then window
 creation continues with `provider=None`, making that misconfiguration
 indistinguishable downstream from the intentional no-provider case. The CLI can
 therefore consume real vendor usage instead of refusing loudly. This behavior
-is accepted for now; operators must treat the tmuxhost error as the only signal
+is accepted for now; operators must treat the tmux_reconciler error as the only signal
 that the requested provider was not applied.
 
 ⚠ **Unsupported provider/CLI combinations refuse rather than fall through.**
@@ -303,7 +303,7 @@ broken. This sanitising belongs to `startAgent`; `window_env` deliberately knows
 only the neutral `AGENT_PROVIDER_*` contract.
 
 ⚠ **There is one creation owner.** `StartAgent` publishes profile, provider and
-launch desired state; `tmuxhost` resolves it and builds the window. The former
+launch desired state; `tmux_reconciler` resolves it and builds the window. The former
 second creator drifted independently three times: it omitted the lead, seeded
 trust into the wrong profile, and once ignored the provider. Re-hiring with
 changed configuration removes the stale window so this canonical path rebuilds
@@ -320,7 +320,7 @@ properly.
 raise into a delivery path, but each emits a `tmux` `error` naming the directory.
 Silence here is how the profile-blind trust bug hid.
 
-⚠ **Re-hiring auto-resumes prior session history.** When `tmuxhost` creates a
+⚠ **Re-hiring auto-resumes prior session history.** When `tmux_reconciler` creates a
 window for an agent, it checks whether prior session history exists for that
 agent's working directory (`has_session_history`):
 - `claude`: `.claude[-<profile>]/projects/-workdir-<name>/*.jsonl`
@@ -328,7 +328,7 @@ agent's working directory (`has_session_history`):
 - `agy`: `.gemini/antigravity-cli/history.jsonl` matching `workspace`
 
 If prior history exists and `resume` is not explicitly set to `0` (`--fresh`),
-`tmuxhost` launches with the CLI's native resume command (`startAgent claude --resume`,
+`tmux_reconciler` launches with the CLI's native resume command (`startAgent claude --resume`,
 `startAgent codex resume --last`, or `startAgent agy --continue`). If multiple
 sessions exist, it continues the most recent recorded session. When explicit
 `resume: true` (`--resume`) or `resume: false` (`--fresh`) is set via `StartAgent`,
@@ -345,8 +345,8 @@ Bash/Read/Write/Edit/Glob/Grep default, an *empty string* means unrestricted).
 `CONTRACTS.md` §5), which `start_agent` (`src/flock/control/openers.py:384`,
 `:401`) persists to per-agent Redis keys — `skip-permissions` and
 `claude-tools` — the same `config_changed`/replace-window pattern `resume`
-already uses. `TmuxHost.get_agent_skip_permissions`/`get_agent_claude_tools`
-(`src/flock/tmuxhost/host.py:98`, `:106`) read them back into
+already uses. `TmuxReconciler.get_agent_skip_permissions`/`get_agent_claude_tools`
+(`src/flock/tmux_reconciler/service.py:98`, `:106`) read them back into
 `window_env` (`src/flock/tmux/ops.py:305`), which appends
 `AGENT_SKIP_PERMISSIONS=1`/`0` and `AGENT_CLAUDE_TOOLS=<value>` to the
 window's env list only when a value was actually set (`:354`, `:360`) — same

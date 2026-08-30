@@ -62,7 +62,7 @@ Everything here is deterministic and a failure is a real defect:
 
 1. The endpoint answers before anything is built. If it does not, `100` with
    the reason — an unreachable endpoint is not a product failure.
-2. Tenant comes up; exactly one switch, one tmuxhost.
+2. Tenant comes up; exactly one switch, one tmux_reconciler.
 3. All three agents present in the roster with `port_type=tmux`.
 4. Exactly one window each, named for the agent. Not two, not zero.
 5. Each agent's `provider` key resolves, and the resolved URL matches

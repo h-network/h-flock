@@ -18,31 +18,31 @@ Tier A is documentation, B internal code, C Redis/environment, and D wire.
 | `window` | `src/flock/tmux/ops.py:66` | doc term | One named terminal hosting one `port_type: tmux` agent. | A switch port's attached terminal. | A |
 | `create_window` / `kill_window` / `list_windows` | `src/flock/tmux/ops.py:559`, `src/flock/tmux/ops.py:605`, `src/flock/tmux/ops.py:67` | identifier | Idempotent named-window lifecycle operations. | Port provisioning and inventory. | B |
 | `window_env` | `src/flock/tmux/ops.py:305` | identifier | Builds the command-scoped environment inherited by an agent pane. | Port attachment configuration. | B |
-| `paste_text` | `src/flock/tmux/ops.py:609` | identifier | Performs the complete bracketed paste, delay, and Enter delivery sequence. | Frame transmission onto a terminal link. | B |
+| `submit_text` | `src/flock/tmux/ops.py:609` | identifier | Performs the complete bracketed paste, delay, and Enter delivery sequence. | Frame transmission onto a terminal link. | B |
 | `PASTE_ENTER_DELAY` | `src/flock/tmux/ops.py:16` | env var | Delay separating paste from Enter to prevent CLI input coalescing. | Inter-frame gap, loosely. | C |
 | `agent guide` | `src/flock/tmux/ops.py:520` | doc term | Generated `AGENTS.md`/`CLAUDE.md` instructions placed in an agent workdir. | Port-local configuration. | A |
 | `project trusted` | `src/flock/tmux/ops.py:188`, `src/flock/tmux/ops.py:231`, `src/flock/tmux/ops.py:266` | doc term | Pre-acceptance of a workdir in each supported CLI's own configuration. | None. | A |
 | `profile` | `src/flock/tmux/ops.py:310` | identifier | Named CLI configuration/account directory, not an agent behavioral profile. | None; “profile” is underspecified. | B |
 | `provider` | `src/flock/tmux/ops.py:311` | identifier | Model-service configuration selected for an agent. | Contradicts the network-model sense of provider. | B |
 
-## `flock.tmuxhost`
+## `flock.tmux_reconciler`
 
 | name | where it lives | kind | what it means, in one line | networking analogue, if any | tier |
 |---|---|---|---|---|---|
-| `tmuxhost` / `TmuxHost` | `src/flock/tmuxhost/host.py:14` | identifier | Long-running reconciler that makes tmux windows match desired roster state. | Port manager/controller. | B |
+| `tmux_reconciler` / `TmuxReconciler` | `src/flock/tmux_reconciler/service.py:14` | identifier | Long-running reconciler that makes tmux windows match desired roster state. | Port manager/controller. | B |
 | `host` | `container/entrypoint.sh:292` | doc term | Here means the tmux reconciler, while roster name `host` means lifecycle control. | Collision between physical host and control-plane address. | A |
-| `reconcile_once` | `src/flock/tmuxhost/host.py:229` | identifier | One desired-versus-actual window convergence pass. | Control-plane reconciliation. | B |
-| `ensure_server_and_session` | `src/flock/tmuxhost/host.py:122` | identifier | Creates missing tmux server/session and applies global options. | Ensuring a switching fabric exists. | B |
-| `session_name` | `src/flock/tmuxhost/host.py:21` | identifier | Tmux session target, normally identical to tenant name. | Routing-domain instance name. | B |
-| `TMUX_SESSION` | `src/flock/tmuxhost/__main__.py:14` | env var | Override for tmux session name independently of tenant. | Routing-domain override. | C |
-| `ROSTER_POLL_SECONDS` | `src/flock/tmuxhost/__main__.py:13` | env var | Delay between desired-state reconciliation passes. | Control-plane refresh interval. | C |
-| `get_agent_cli` | `src/flock/tmuxhost/host.py:31` | identifier | Reads the agent's launch program from Redis. | Resolves port attachment implementation. | B |
-| `launch` | `src/flock/tmuxhost/host.py:32` | redis key | CLI name tmuxhost must start for an agent. | Port attachment type. | C |
-| `profile` | `src/flock/tmuxhost/host.py:39` | redis key | Agent's shared CLI configuration/account name. | None. | C |
-| `provider` | `src/flock/tmuxhost/host.py:53` | redis key | Indirection name used to find model URL/token environment variables. | Misleading: a model uplink, not the participant provider. | C |
-| `PROVIDER_<NAME>_*` | `src/flock/tmuxhost/host.py:61` | env var | URL, token, and model settings for a named model service. | Upstream service configuration. | C |
-| `lead` | `src/flock/tmuxhost/host.py:75` | redis key | Tenant-level agent whose generated guide receives leadership instructions. | None. | C |
-| `__init__` | `src/flock/tmuxhost/host.py:125` | identifier | Non-agent placeholder window used to keep an empty session alive. | Null/management port, loosely. | B |
+| `reconcile_once` | `src/flock/tmux_reconciler/service.py:229` | identifier | One desired-versus-actual window convergence pass. | Control-plane reconciliation. | B |
+| `ensure_server_and_session` | `src/flock/tmux_reconciler/service.py:122` | identifier | Creates missing tmux server/session and applies global options. | Ensuring a switching fabric exists. | B |
+| `session_name` | `src/flock/tmux_reconciler/service.py:21` | identifier | Tmux session target, normally identical to tenant name. | Routing-domain instance name. | B |
+| `TMUX_SESSION` | `src/flock/tmux_reconciler/__main__.py:14` | env var | Override for tmux session name independently of tenant. | Routing-domain override. | C |
+| `ROSTER_POLL_SECONDS` | `src/flock/tmux_reconciler/__main__.py:13` | env var | Delay between desired-state reconciliation passes. | Control-plane refresh interval. | C |
+| `get_agent_cli` | `src/flock/tmux_reconciler/service.py:31` | identifier | Reads the agent's launch program from Redis. | Resolves port attachment implementation. | B |
+| `launch` | `src/flock/tmux_reconciler/service.py:32` | redis key | CLI name tmux_reconciler must start for an agent. | Port attachment type. | C |
+| `profile` | `src/flock/tmux_reconciler/service.py:39` | redis key | Agent's shared CLI configuration/account name. | None. | C |
+| `provider` | `src/flock/tmux_reconciler/service.py:53` | redis key | Indirection name used to find model URL/token environment variables. | Misleading: a model uplink, not the participant provider. | C |
+| `PROVIDER_<NAME>_*` | `src/flock/tmux_reconciler/service.py:61` | env var | URL, token, and model settings for a named model service. | Upstream service configuration. | C |
+| `lead` | `src/flock/tmux_reconciler/service.py:75` | redis key | Tenant-level agent whose generated guide receives leadership instructions. | None. | C |
+| `__init__` | `src/flock/tmux_reconciler/service.py:125` | identifier | Non-agent placeholder window used to keep an empty session alive. | Null/management port, loosely. | B |
 
 ## `flock.port` and `flock.tmux` delivery
 
@@ -57,17 +57,17 @@ Tier A is documentation, B internal code, C Redis/environment, and D wire.
 | `deliver_unroutable` | `src/flock/port/deliver.py:88` | identifier | Pops and dead-letters an envelope whose port_type has no implementation. | Unsupported-port drop. | B |
 | `get_delivery_handler` | `src/flock/port/registry.py:65` | identifier | Resolves delivery function or lazy module spec for a port_type. | Port registry lookup. | B |
 | `register_port_type` | `src/flock/port/registry.py:24` | identifier | Registers a callable or lazy (module, attr) handler for a port_type. | Port registration. | B |
-| `messages_opener` / `message_opener` | `src/flock/tmux/openers.py:84`, `src/flock/tmux/openers.py:131` | identifier | Terminal action selected for a `Message` (batched or single). | Protocol handler. | B |
-| `command_opener` | `src/flock/tmux/openers.py:151` | identifier | Terminal action selected for a `Command`. | Protocol handler. | B |
+| `messages_opener` / `message_opener` | `src/flock/tmux/handlers.py:84`, `src/flock/tmux/handlers.py:131` | identifier | Terminal action selected for a `Message` (batched or single). | Protocol handler. | B |
+| `command_opener` | `src/flock/tmux/handlers.py:151` | identifier | Terminal action selected for a `Command`. | Protocol handler. | B |
 | `add_ticket_opener` | `src/flock/port/openers.py` | identifier | Shared board action selected for an `AddTicket`; it performs no tmux operation. | Protocol handler. | B |
-| `attachment_opener` | `src/flock/tmux/openers.py:182` | identifier | File write and inert notice action selected for an `Attachment`. | Protocol handler. | B |
+| `attachment_opener` | `src/flock/tmux/handlers.py:182` | identifier | File write and inert notice action selected for an `Attachment`. | Protocol handler. | B |
 | `opened` | `src/flock/bus/doors.py:331` | doc term | Terminal outcome meaning an opener completed, not proof a human/CLI consumed it. | Accepted by destination handler, not delivery acknowledgement. | A |
 | `delivering` | `src/flock/port/deliver.py:148` | redis key | Tenant hash serving as a per-agent mutual-exclusion/busy tag. | Per-port transmit lock. | C |
 | `paused` | `src/flock/port/deliver.py:120` | redis key | Marker that leaves ingress queued rather than opening it. | Administratively down port. | C |
-| `pending.verify` | `src/flock/tmux/openers.py:52` | redis key | Stream of pasted deliveries awaiting out-of-band activity judgment. | Delivery telemetry awaiting observation. | C |
-| `delivery.markers` | `src/flock/tmux/openers.py:53` | redis key | Bounded stream used to correlate later token usage heuristically with the delivery that prompted it. | Receive-side accounting join marker. | C |
+| `pending.verify` | `src/flock/tmux/handlers.py:52` | redis key | Stream of pasted deliveries awaiting out-of-band activity judgment. | Delivery telemetry awaiting observation. | C |
+| `delivery.markers` | `src/flock/tmux/handlers.py:53` | redis key | Bounded stream used to correlate later token usage heuristically with the delivery that prompted it. | Receive-side accounting join marker. | C |
 | `VERIFY_AFTER_SECONDS` | `src/flock/watchdog/service.py:864` | env var | Minimum marker age before the watchdog judges delivery verification; defaults to 120 seconds. | Observation-window threshold. | C |
-| `VERIFIABLE_CLIS` | `src/flock/tmux/openers.py:23` | identifier | Allowlist of CLI implementations whose session files can confirm input. | Observable port types. | B |
+| `VERIFIABLE_CLIS` | `src/flock/tmux/handlers.py:23` | identifier | Allowlist of CLI implementations whose session files can confirm input. | Observable port types. | B |
 | `inbox` | `src/flock/port/deliver.py:67` | redis key | Resumable mailbox stream for a `port_type: api` participant. | Receive buffer on an application port. | C |
 | `dead` | `src/flock/port/deliver.py:66` | redis key | Retained list of envelopes that could not be opened. | Dead-letter/drop queue. | C |
 | `ingress` | `src/flock/port/deliver.py:65` | redis key | Recipient-side queue from which delivery pops. | Ingress queue. | C |
@@ -79,13 +79,13 @@ Tier A is documentation, B internal code, C Redis/environment, and D wire.
 |---|---|---|---|---|---|
 | `control` | `src/flock/control/runner.py:1` | doc term | port_type that opens tenant lifecycle envelopes addressed to fixed participant `host`. | Control plane. | A |
 | `port_type` | `src/flock/control/openers.py:9` | doc term | Selects the receiving implementation (`tmux`, `api`, `control`, or `openshell`); its intended expansion is not recoverable here. | Port/media type, but the acronym does not convey it. | A |
-| `host` | `src/flock/control/openers.py:10` | identifier | Fixed roster participant/address for lifecycle operations, not tmuxhost. | Control-plane destination address. | B |
+| `host` | `src/flock/control/openers.py:10` | identifier | Fixed roster participant/address for lifecycle operations, not tmux_reconciler. | Control-plane destination address. | B |
 | `deliver_one` | `src/flock/control/runner.py:23` | identifier | Pops and opens one lifecycle envelope; same name as port's port_type dispatcher. | Control-plane receive operation. | B |
 | `StartAgent` / `StopAgent` | `src/flock/control/runner.py:102` | wire | Envelope kinds that add/remove participant desired state and port_type-specific state. | Provision/deprovision a port. | D |
 | `PauseAgent` / `ResumeAgent` | `src/flock/control/runner.py:104` | wire | Envelope kinds that stop/restart a tmux CLI while preserving membership and queues. | Administratively down/up a port. | D |
 | `start_agent` / `stop_agent` | `src/flock/control/openers.py:109-240` | identifier | Desired-state mutations implementing lifecycle kinds. | Port provisioning operations. | B |
 | `pause_agent` / `resume_agent` | `src/flock/control/openers.py:279-301` | identifier | Pause-marker and tmux-process operations implementing temporary suspension. | Port admin-state operations. | B |
-| `replace_window` | `src/flock/control/openers.py:115` | identifier | Callback that kills stale actual state so tmuxhost recreates it. | Rebind a port attachment. | B |
+| `replace_window` | `src/flock/control/openers.py:115` | identifier | Callback that kills stale actual state so tmux_reconciler recreates it. | Rebind a port attachment. | B |
 | `*_accepted` | `src/flock/control/openers.py:53-56` | record | Every desired-state write committed; claims nothing about asynchronously reconciled actual state. | Accepted control-plane intent. | B |
 | `*_incomplete` | `src/flock/control/openers.py:39-45` | record | A write outcome is unknown, only a subset was acknowledged, or an inline actual-state attempt failed; names facts separately from uncertainty. | Indeterminate or partial control outcome requiring operator action. | B |
 | `_STARTABLE_VABS` | `src/flock/control/openers.py:17` | identifier | port_type values lifecycle control accepts for new participants (`tmux`, `api`, `openshell`). | Supported port/media types. | B |
@@ -117,12 +117,12 @@ Tier A is documentation, B internal code, C Redis/environment, and D wire.
 | `REDIS_URL` | `container/entrypoint.sh:218` | env var | Connection string handed only to framework processes that need Redis. | Control-plane store address. | C |
 | `REDIS_READY_SECONDS` | `container/entrypoint.sh:235` | env var | Maximum boot wait for Redis readiness. | Dependency convergence timeout. | C |
 | `FLOCK_CUSTODY_FILE` | `container/entrypoint.sh:16` | env var | Mounted append-only byte mirror of custody records written to container stdout, retained across tenant teardown. | Durable observation ledger. | C |
-| `ROSTER_POLL_SECONDS` | `container/compose.yaml:31` | env var | Shared refresh interval for switch and tmuxhost. | Control-plane refresh interval. | C |
+| `ROSTER_POLL_SECONDS` | `container/compose.yaml:31` | env var | Shared refresh interval for switch and tmux_reconciler. | Control-plane refresh interval. | C |
 | `WATCHDOG_ENABLED` | `container/entrypoint.sh:417` | env var | Enables the separate human-alerting observer. | Network monitor enable flag. | C |
 | `door` | `container/entrypoint.sh:165` | doc term | One externally published API or session process/port. | Network ingress door/listener. | A |
 | `start` | `container/entrypoint.sh:127` | identifier | Shell helper that launches a named child and records its PID. | Process supervisor launch, though it is not a supervisor. | B |
 | `rcli` | `container/entrypoint.sh:226` | identifier | Auth-aware wrapper around `redis-cli` used during boot seeding. | Control-plane configuration client. | B |
-| `startAgent` | `src/flock/tmuxhost/host.py:104` | identifier | CLI launcher applying office-specific approval and model settings; not lifecycle `StartAgent`. | Port-attached process launcher. | B |
+| `startAgent` | `src/flock/tmux_reconciler/service.py:104` | identifier | CLI launcher applying office-specific approval and model settings; not lifecycle `StartAgent`. | Port-attached process launcher. | B |
 
 ## Explicit findings
 

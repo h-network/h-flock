@@ -606,7 +606,7 @@ def kill_window(session_name: str, window_name: str, socket: str | None = None) 
     return run_tmux("kill-window", "-t", f"{session_name}:{window_name}", socket=socket)
 
 
-def paste_text(
+def submit_text(
     session_name: str,
     agent_name: str,
     text: str,

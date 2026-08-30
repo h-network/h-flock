@@ -9,9 +9,9 @@ TENANT="${TENANT:-}"
 C="${CONTAINER:-h-flock-${TENANT}-tenant-1}"
 docker inspect "$C" >/dev/null 2>&1 || incomplete core-service-isolation container_missing
 
-services=(tmuxhost switch watchdog api session)
+services=(tmux_reconciler switch watchdog api session)
 patterns=(
-  '[p]ython3 -m flock.tmuxhost'
+  '[p]ython3 -m flock.tmux_reconciler'
   '[p]ython3 -m flock.switch'
   '[p]ython3 -m flock.watchdog'
   '[p]ython3 -m flock.api'

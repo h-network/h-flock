@@ -7,14 +7,14 @@ continuous control loop or runs only because a caller invoked it.
 
 ## The daemon
 
-The continuously running component is the `flock.tmuxhost` process:
+The continuously running component is the `flock.tmux_reconciler` process:
 
-- `src/flock/tmuxhost/__main__.py` is its executable entry point. `main()` reads
-  process configuration, constructs `TmuxHost`, and calls `run_forever()`.
-- `TmuxHost.run_forever()` in `src/flock/tmuxhost/host.py` owns the loop. It
+- `src/flock/tmux_reconciler/__main__.py` is its executable entry point. `main()` reads
+  process configuration, constructs `TmuxReconciler`, and calls `run_forever()`.
+- `TmuxReconciler.run_forever()` in `src/flock/tmux_reconciler/service.py` owns the loop. It
   connects to Redis, calls `reconcile_once()`, catches and records a failed
   pass, sleeps for `ROSTER_POLL_SECONDS`, and repeats.
-- `TmuxHost.reconcile_once()` is the daemon's control policy. It reads desired
+- `TmuxReconciler.reconcile_once()` is the daemon's control policy. It reads desired
   participants, keeps only those whose port type is `tmux`, compares them with
   the windows in the managed tmux session, creates missing windows, and removes
   windows with no corresponding desired participant. A manually created window
@@ -22,14 +22,14 @@ The continuously running component is the `flock.tmuxhost` process:
   reconciliation first creates `__init__` so the session survives, then removes
   it.
 
-The following `TmuxHost` helpers exist to support that reconciliation policy and
+The following `TmuxReconciler` helpers exist to support that reconciliation policy and
 have no independent loop:
 
 - `get_agent_cli()`, `get_agent_profile()`, `get_agent_provider()`,
   `get_agent_resume()`, `get_agent_skip_permissions()`, and
   `get_agent_claude_tools()` resolve desired per-agent launch state.
 - `get_lead()` resolves tenant-wide guide state.
-- `take_window_cause()` and `log_window_created()` join an asynchronously
+- `consume_creation_correlation()` and `log_window_created()` join an asynchronously
   created window to the control envelope that requested it.
 - `ensure_server_and_session()` implements the special first-window and
   `__init__` bootstrap required by reconciliation.
@@ -38,20 +38,20 @@ have no independent loop:
 
 These helpers are callable methods, but in the present design they are daemon
 internals: the reconciliation loop is their owner and reason for existing.
-`src/flock/tmuxhost/__init__.py` only exports `TmuxHost`; it adds no behavior.
+`src/flock/tmux_reconciler/__init__.py` only exports `TmuxReconciler`; it adds no behavior.
 
 ## The passive mechanism library
 
 Nothing under `src/flock/tmux/` runs continuously. Its functions execute only
-when tmuxhost, ingress delivery, control, a test, or another caller invokes
+when tmux_reconciler, ingress delivery, control, a test, or another caller invokes
 them.
 
 `src/flock/tmux/ops.py` contains the lowest-level mechanisms:
 
 - `require_isolated_tmux()` and `run_tmux()` enforce socket isolation and run a
   single tmux command.
-- `list_windows()`, `create_window()`, `kill_window()`, and `paste_text()` query
-  or mutate terminal state on demand. `paste_text()` performs the buffer load,
+- `list_windows()`, `create_window()`, `kill_window()`, and `submit_text()` query
+  or mutate terminal state on demand. `submit_text()` performs the buffer load,
   paste, delay, and Enter sequence; it is not a delivery loop.
 - `window_env()` and `start_agent_command()` construct the environment and argv
   for a pane. The resulting command is normally `startAgent <cli>`, not an
@@ -63,7 +63,7 @@ them.
   side effects, but no background lifecycle.
 - `AmbientTmuxError` and `TmuxCommandError` describe mechanism failures.
 
-`src/flock/tmux/openers.py` is the passive terminal-delivery mechanism:
+`src/flock/tmux/handlers.py` is the passive terminal-delivery mechanism:
 
 - `messages_opener()`, `message_opener()`, and `command_opener()` validate that
   the destination window exists and paste input into it.
@@ -82,7 +82,7 @@ until requested. It owns no runtime lifecycle.
 
 ## Things that do not fit cleanly
 
-`TmuxHost` currently mixes policy and mechanism. `reconcile_once()` and
+`TmuxReconciler` currently mixes policy and mechanism. `reconcile_once()` and
 `run_forever()` are plainly daemon code, while its `get_windows()`,
 `create_window()`, and `kill_window()` methods are thin callable wrappers around
 `flock.tmux.ops`. They belong to the daemon today because they add configured
@@ -107,20 +107,31 @@ read-only.
 
 Control lifecycle handlers are outside both categories. `control/openers.py`
 publishes desired participant state; it does not create a tmux window or track
-opened sessions. Tmuxhost independently reconciles the `tmux` subset of that
+opened sessions. `TmuxReconciler` independently reconciles the `tmux` subset of that
 state. Describing control as a module-agnostic opened-session tracker would
 therefore be inaccurate.
 
-## A cleaner split and vocabulary
+## Implemented boundary and deferred splits
 
-With freedom to change module boundaries, I would make the daemon explicit and
-keep terminal mechanisms independent of desired-state policy:
+The minimal structural split makes the daemon identity explicit while keeping
+terminal mechanisms independent of desired-state policy:
 
-- `flock.tmux_reconciler.main`: process configuration and executable entry
-  point, replacing the ambiguous package name `tmuxhost`.
-- `flock.tmux_reconciler.service.TmuxReconciler`: `run_forever()` and one
-  public `reconcile()` operation. `TmuxHost` sounds like the terminal host
-  itself; the class is actually a desired-versus-actual controller.
+- `flock.tmux_reconciler.__main__` owns process configuration and the executable
+  entry point; the former `tmuxhost` name incorrectly described the daemon as
+  the terminal host itself.
+- `flock.tmux_reconciler.service.TmuxReconciler` owns `run_forever()` and
+  `reconcile_once()`. Its name now states that it is a desired-versus-actual
+  controller.
+- `flock.tmux.handlers` is the passive delivery-handler module formerly named
+  `openers`; its functions can paste terminal input, write files, and record
+  verification state rather than merely “open.”
+- `submit_text()` replaces `paste_text()` because the operation pastes and then
+  submits with Enter.
+- `consume_creation_correlation()` replaces `take_window_cause()` because it is
+  a destructive one-shot read of a correlation id.
+
+The following larger splits remain deliberately deferred:
+
 - `flock.tmux_reconciler.desired`: typed loading of launch, profile, provider,
   resume, permissions, tools, lead, and creation cause from Redis. The current
   family of `get_agent_*` methods would become `load_agent_spec()` returning one
@@ -129,26 +140,21 @@ keep terminal mechanisms independent of desired-state policy:
   `missing`, `stale`, and placeholder necessity. This makes the current policy
   that kills unregistered human windows visible and independently testable.
 - `flock.tmux.client.TmuxClient`: isolated `run`, `list_windows`,
-  `create_window`, `kill_window`, and `paste_text` methods bound to one
+  `create_window`, `kill_window`, and `submit_text` methods bound to one
   session/socket. This replaces repeated free-function parameters without
   importing roster or Redis concepts.
 - `flock.agent_bootstrap`: `window_env`, `start_agent_command`, session-history
   detection, guide creation, profile seeding, and trust seeding. These prepare
   an agent process; they are not intrinsically tmux operations.
 - `flock.tmux.delivery`: `deliver_tmux` plus terminal envelope handlers. I would
-  rename `openers.py` to `handlers.py`: “opener” is fabric vocabulary, whereas
-  these functions handle envelope kinds and may paste, write a file, or record
-  verification state.
+  keep this separate from the low-level tmux client if those mechanisms are
+  later extracted.
 
-I would also rename individual operations for what they guarantee:
+Two policy-rich operation renames also remain deferred:
 
-- `paste_text()` to `submit_text()` because it performs both paste and Enter.
 - `ensure_server_and_session()` to daemon-owned `ensure_managed_session()`;
   “server and session” describes implementation, while “managed” signals that
   reconciliation policy applies to every window inside it.
-- `take_window_cause()` to `consume_creation_correlation()` because it is a
-  destructive one-shot read and carries a correlation id, not an arbitrary
-  cause object.
 - `create_window()` on the reconciler to `materialize_agent_window()` and the
   low-level client operation to `create_window()`. The distinct names prevent a
   caller from confusing policy-rich agent creation with a raw tmux command.

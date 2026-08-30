@@ -155,7 +155,7 @@ def start_agent(
     envelope: dict,
     replace_window: Callable[[str], object],
 ) -> None:
-    """Publish desired state; tmuxhost is the one implementation that creates windows."""
+    """Publish desired state; tmux_reconciler is the one implementation that creates windows."""
     agent, payload = _target(envelope, _START_AGENT_KEYS)
     policy = {}
     policy_supplied = any(side in payload for side in ("export", "import"))
@@ -283,7 +283,7 @@ def start_agent(
             lambda: r.hset(roster_key, agent, agent_port_type),
         )
         # Actual-state: provision the real sandbox now, synchronously.
-        # Unlike tmux, which defers window creation to tmuxhost's async
+        # Unlike tmux, which defers window creation to tmux_reconciler's async
         # reconciler (a window needs a session/server that may not exist
         # yet), an OpenShell sandbox is a single gRPC call with no
         # equivalent staged startup, so there is nothing to gain by
@@ -337,7 +337,7 @@ def start_agent(
     config_changed = existing_port_type == "tmux" and old_launch != cli
     if profile:
         # A profile becomes part of a config-directory path. Validate it before
-        # any state mutation, then persist it before roster visibility: tmuxhost
+        # any state mutation, then persist it before roster visibility: tmux_reconciler
         # may reconcile as soon as the row appears and must see the right account.
         profile_key = prefix(pod, tenant, agent=agent, resource="profile")
         old_profile = r.get(profile_key) if existing_port_type == "tmux" else None
@@ -350,7 +350,7 @@ def start_agent(
 
     if provider:
         # Same ordering rule as profile: published before roster visibility, or
-        # tmuxhost builds the window against the vendor's provider instead.
+        # tmux_reconciler builds the window against the vendor's provider instead.
         provider_key = prefix(pod, tenant, agent=agent, resource="provider")
         old_provider = r.get(provider_key) if existing_port_type == "tmux" else None
         old_provider = old_provider.decode() if isinstance(old_provider, bytes) else old_provider
@@ -361,7 +361,7 @@ def start_agent(
         )
 
     launch_key = prefix(pod, tenant, agent=agent, resource="launch")
-    # Publish all launch state before roster membership: tmuxhost reconciles on
+    # Publish all launch state before roster membership: tmux_reconciler reconciles on
     # that row and an early window cannot be corrected by name-idempotent create.
     _write_desired(
         committed, "launch published", "launch publish", lambda: r.set(launch_key, cli)
@@ -425,7 +425,7 @@ def start_agent(
     correlation_id = envelope.get("correlation_id")
     if existing_port_type != "tmux" and isinstance(correlation_id, str) and correlation_id:
         # A fresh tmux membership makes a later window necessary. Publish its
-        # cause before roster visibility so tmuxhost cannot observe the hire
+        # cause before roster visibility so tmux_reconciler cannot observe the hire
         # without also observing the join key. Idempotent starts do not replace
         # this marker: their envelope did not cause a new window.
         cause_key = prefix(pod, tenant, agent=agent, resource="window.cause")
@@ -449,7 +449,7 @@ def start_agent(
             lambda: r.hset(roster_key, agent, agent_port_type),
         )
     if config_changed:
-        # Remove only stale actual state. tmuxhost observes the roster row and
+        # Remove only stale actual state. tmux_reconciler observes the roster row and
         # recreates the window through its canonical lead/profile/provider path.
         try:
             replace_window(agent)

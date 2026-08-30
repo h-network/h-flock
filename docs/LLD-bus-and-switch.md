@@ -373,13 +373,13 @@ whatever writes the roster beyond writing it.
 
 Two long-lived readers need polling and one does not. The **switch** reads the
 roster when it builds each `BLPOP` set and once for each maintenance pass. The
-**tmux host**, with no queue to block on, polls on a loop of its own. The
+**tmux reconciler**, with no queue to block on, polls on a loop of its own. The
 **port** does not poll at all: it holds nothing between deliveries, so it has
 no set to keep in step. It is told which participant to deliver for, by the
 thing that just wrote to that participant.
 
 `ROSTER_POLL_SECONDS`, from the environment (`LLD-container` §4), defaults to 5
-and bounds the switch's blocking pop and the tmux host's reconciliation loop.
+and bounds the switch's blocking pop and the tmux reconciler's reconciliation loop.
 With an empty roster there is no queue to block on, so the switch sleeps for the
 same interval rather than spinning against repeated roster reads.
 The switch's maintenance cadence is separately configurable as
@@ -403,7 +403,7 @@ whichever module starts it, not to membership.
 Lifecycle branches on port_type. For `tmux`, desired state comes before actual state
 in both directions: `StartAgent` writes the optional profile, optional provider
 name and launch key **before the roster row becomes visible**. That row is
-tmuxhost's reconciliation trigger, and tmuxhost is the sole window creator — so
+tmux_reconciler's reconciliation trigger, and tmux_reconciler is the sole window creator — so
 boot and hire cannot drift on lead, account, or provider resolution. Re-hiring
 an existing name with changed configuration removes its stale window only after
 the new desired state is visible; the host recreates it canonically. `StopAgent`
@@ -424,7 +424,7 @@ dynamic participant.
 
 For `openshell`, StartAgent publishes policy/launch/profile and the roster row,
 then synchronously creates the agent's disposable sandbox through the gateway;
-there is no tmuxhost reconciler or window. StopAgent removes membership and
+there is no tmux_reconciler reconciler or window. StopAgent removes membership and
 classified identity state before synchronously deleting that sandbox. The
 delivery port atomically drains an ingress snapshot and runs each supported
 kind through a one-shot sandbox operation, including a bus reply for Message or
@@ -1028,7 +1028,7 @@ For `port_type: "openshell"`, StartAgent publishes launch/profile/policy and the
 roster row, then synchronously provisions the real sandbox; StopAgent performs
 the classified identity purge and synchronously deletes it. Delivery atomically
 drains ingress and resolves the lazy OpenShell handler, with no tmux window or
-tmuxhost reconciliation involved (`LLD-port-openshell`).
+tmux_reconciler reconciliation involved (`LLD-port-openshell`).
 
 **The agent-facing command is a deliberately narrow edge.** `office send` and
 `office broadcast` treat every token after the destination as literal message

@@ -14,7 +14,7 @@ import redis
 from flock.bus import prefix
 from flock.control import start_agent, stop_agent
 from flock.tmux import run_tmux, list_windows
-from flock.tmuxhost.host import TmuxHost
+from flock.tmux_reconciler.service import TmuxReconciler
 
 
 @pytest.fixture
@@ -78,7 +78,7 @@ def test_live_retire_and_rehire_session_continuity(isolated_env, monkeypatch):
 
     monkeypatch.setenv("HOME", str(home))
 
-    host = TmuxHost(
+    host = TmuxReconciler(
         pod="acme",
         tenant="hq",
         redis_url=redis_url,

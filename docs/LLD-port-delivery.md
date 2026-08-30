@@ -151,7 +151,7 @@ makes repeat imports cheap). A port delivery for `tmux` never imports `flock.con
 
 The inverse boundary holds too: importing `flock.port` or
 `flock.port.registry` does not import `flock.tmux`. Tmux ingress delivery and
-terminal openers live in `flock.tmux.deliver` and `flock.tmux.openers`; the only
+terminal openers live in `flock.tmux.deliver` and `flock.tmux.handlers`; the only
 shared delivery action left in `flock.port.openers` is the storage-only AddTicket
 board mutation, alongside attachment schema constants shared with OpenShell.
 Legacy top-level tmux attributes on `flock.port` resolve lazily for

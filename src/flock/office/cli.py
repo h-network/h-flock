@@ -503,7 +503,7 @@ def _control_command(command: str, argv: list[str]) -> None:
         parser.add_argument("--cli", default="claude", choices=("claude", "codex", "agy"),
                             help="CLI to start (default: claude)")
         # ⚠ StartAgent has always carried a profile — `control/openers.py`
-        # validates it, persists it BEFORE roster visibility so tmuxhost sees the
+        # validates it, persists it BEFORE roster visibility so tmux_reconciler sees the
         # right account when it reconciles, and rebuilds the window when it
         # changes. Only this command could not say it, so every agent hired into
         # a multi-account tenant landed on `default` with default's config dir —
@@ -518,7 +518,7 @@ def _control_command(command: str, argv: list[str]) -> None:
                                 help="start a clean session ignoring prior history")
         # ⚠ Both are startAgent's own knobs (base image), not h-flock's --
         # omitted means startAgent decides, same as --resume/--fresh omitted
-        # means tmuxhost decides. Neither flag changes default behavior.
+        # means tmux_reconciler decides. Neither flag changes default behavior.
         permission_group = parser.add_mutually_exclusive_group()
         permission_group.add_argument(
             "--skip-permissions", action="store_true", default=None,

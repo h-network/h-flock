@@ -21,9 +21,9 @@ LAUNCH="pod:${POD}:tenant:${TENANT}:agent:${AGENT}:launch"
 
 TOKEN="$(docker exec "$C" printenv API_TOKEN 2>/dev/null || true)"
 [ -n "$TOKEN" ] || incomplete tmux-window-loss missing_api_token
-mapfile -t tmuxhost_pids < <(docker exec "$C" pgrep -f '[p]ython3 -m flock.tmuxhost' 2>/dev/null || true)
-[ "${#tmuxhost_pids[@]}" -eq 1 ] || incomplete tmux-window-loss tmuxhost_pid_count_${#tmuxhost_pids[@]}
-tmuxhost_pid="${tmuxhost_pids[0]}"
+mapfile -t tmux_reconciler_pids < <(docker exec "$C" pgrep -f '[p]ython3 -m flock.tmux_reconciler' 2>/dev/null || true)
+[ "${#tmux_reconciler_pids[@]}" -eq 1 ] || incomplete tmux-window-loss tmux_reconciler_pid_count_${#tmux_reconciler_pids[@]}
+tmux_reconciler_pid="${tmux_reconciler_pids[0]}"
 
 mapfile -t before < <("${TMUX[@]}" list-windows -t "$TENANT" \
   -F '#{window_name}|#{window_id}|#{pane_pid}' 2>/dev/null | awk -F'|' -v a="$AGENT" '$1==a')
@@ -35,25 +35,25 @@ launch_before="$(docker exec "$C" redis-cli --raw GET "$LAUNCH" 2>/dev/null || t
 [ "$port_type" = tmux ] || incomplete tmux-window-loss target_not_tmux
 
 resumed=0
-resume_tmuxhost() {
+resume_tmux_reconciler() {
   if [ "$resumed" = 0 ]; then
     resumed=1
-    if ! docker exec "$C" kill -CONT "$tmuxhost_pid" >/dev/null 2>&1; then
-      echo "ERROR: failed to SIGCONT tmuxhost pid=$tmuxhost_pid; tenant may remain wedged" >&2
+    if ! docker exec "$C" kill -CONT "$tmux_reconciler_pid" >/dev/null 2>&1; then
+      echo "ERROR: failed to SIGCONT tmux_reconciler pid=$tmux_reconciler_pid; tenant may remain wedged" >&2
       exit 125
     fi
   fi
 }
-trap resume_tmuxhost EXIT
-docker exec "$C" kill -STOP "$tmuxhost_pid" >/dev/null 2>&1 || incomplete tmux-window-loss tmuxhost_stop_failed
+trap resume_tmux_reconciler EXIT
+docker exec "$C" kill -STOP "$tmux_reconciler_pid" >/dev/null 2>&1 || incomplete tmux-window-loss tmux_reconciler_stop_failed
 stop_deadline=$(( $(date +%s) + 5 ))
-tmuxhost_state=""
+tmux_reconciler_state=""
 while [ "$(date +%s)" -lt "$stop_deadline" ]; do
-  tmuxhost_state="$(docker exec "$C" awk '/^State:/{print $2}' "/proc/$tmuxhost_pid/status" 2>/dev/null || true)"
-  [ "$tmuxhost_state" = T ] && break
+  tmux_reconciler_state="$(docker exec "$C" awk '/^State:/{print $2}' "/proc/$tmux_reconciler_pid/status" 2>/dev/null || true)"
+  [ "$tmux_reconciler_state" = T ] && break
   sleep 0.1
 done
-[ "$tmuxhost_state" = T ] || incomplete tmux-window-loss tmuxhost_not_stopped
+[ "$tmux_reconciler_state" = T ] || incomplete tmux-window-loss tmux_reconciler_not_stopped
 "${TMUX[@]}" kill-window -t "$old_window_id" >/dev/null 2>&1 || incomplete tmux-window-loss window_kill_failed
 
 absent_count="$("${TMUX[@]}" list-windows -t "$TENANT" -F '#{window_name}' 2>/dev/null | awk -v a="$AGENT" '$0==a' | wc -l | tr -d ' ')"
@@ -102,7 +102,7 @@ done
 expect "one window_missing dead letter" 1 "$dead"
 expect "stream never opened during gap" 0 "$opened"
 
-resume_tmuxhost
+resume_tmux_reconciler
 deadline=$(( $(date +%s) + DEADLINE_SECONDS ))
 recovered=""
 while [ "$(date +%s)" -lt "$deadline" ]; do

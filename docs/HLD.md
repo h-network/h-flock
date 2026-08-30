@@ -57,7 +57,7 @@ login; `default` is the account nobody named.
 `setup.sh` asks for the accounts a tenant will use and seeds each one's config
 directory (`container/seed-home.sh --tenant NAME in|out|check`). Which account a given agent
 uses is a Redis key, `profile`, set by `StartAgent` / `office hire --profile`
-and validated against the configured registry; `flock.tmuxhost` turns it into
+and validated against the configured registry; `flock.tmux_reconciler` turns it into
 that agent's window environment (`CLAUDE_CONFIG_DIR` / `CODEX_HOME`).
 `office profiles` reads the registry and every agent's `profile` key back out,
 so a multi-account tenant can be audited from one command.
@@ -158,7 +158,7 @@ successor; a rejected admission ends earlier with `dead_lettered`.
 | `flock.switch` | **the one daemon** | blocks on every egress; also runs the maintenance pass (§8b) |
 | `flock.port` | invoked per kick, dispatches on port_type, exits | may drain a burst; not a daemon |
 | `flock.control` | `StartAgent` / `StopAgent` / pause / resume openers | reached only via the bus |
-| `flock.tmuxhost` | the tmux server, session, windows | |
+| `flock.tmux_reconciler` | the tmux server, session, windows | |
 | `flock.office` | the one agent-facing command | imports `flock.bus` only |
 | `flock.api` | REST — `:8080` | |
 | `flock.session` | WebSocket terminals — `:8081` | |
@@ -625,7 +625,7 @@ documentation audit went looking for exactly this kind of claim.
 | [`LLD-bus-and-switch.md`](LLD-bus-and-switch.md) | addressing, the envelope, the invariants in full |
 | [`LLD-office.md`](LLD-office.md) | the agent-facing command — the board, lifecycle, and what crosses the bus versus a direct Redis op |
 | [`LLD-port-delivery.md`](LLD-port-delivery.md) · [`LLD-port-tmux.md`](LLD-port-tmux.md) | the port delivery framework and how text gets into a terminal |
-| [`LLD-tmux-host.md`](LLD-tmux-host.md) · [`LLD-container.md`](LLD-container.md) | windows, and the tenant |
+| [`LLD-tmux-reconciler.md`](LLD-tmux-reconciler.md) · [`LLD-container.md`](LLD-container.md) | windows, and the tenant |
 | [`LLD-port-openshell.md`](LLD-port-openshell.md) | hosting an agent in a real, disposable OpenShell sandbox — built and verified against a live gateway |
 | [`LLD-api.md`](LLD-api.md) · [`LLD-session.md`](LLD-session.md) | the two doors |
 | [`TODO.md`](TODO.md) | what is parked, and why |

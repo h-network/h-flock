@@ -11,7 +11,7 @@ from .ops import (
     has_session_history,
     kill_window,
     list_windows,
-    paste_text,
+    submit_text,
     require_isolated_tmux,
     run_tmux,
     start_agent_command,
@@ -37,9 +37,9 @@ def __getattr__(name: str):
         from .deliver import deliver_tmux
 
         return deliver_tmux
-    from . import openers
+    from . import handlers
 
-    return getattr(openers, name)
+    return getattr(handlers, name)
 
 __all__ = [
     "AmbientTmuxError",
@@ -48,7 +48,7 @@ __all__ = [
     "create_window",
     "kill_window",
     "list_windows",
-    "paste_text",
+    "submit_text",
     "run_tmux",
     "generate_agents_md",
     "ensure_claude_project_trusted",

@@ -407,7 +407,7 @@ them they found eight things it did not say.
     switch/      the one daemon
     port/     invoked per delivery, dispatches on port_type, exits
     control/     StartAgent / StopAgent openers
-    tmuxhost/    the tmux server, session and windows
+    tmux_reconciler/    the tmux server, session and windows
     office/      the one agent-facing command
     api/         REST
     session/     WebSocket terminals
@@ -510,7 +510,7 @@ went the way it did rather than only what it was.
 | [`LLD-office.md`](docs/LLD-office.md) | the agent-facing command — the board, lifecycle, and what crosses the bus versus a direct Redis op |
 | [`LLD-port-tmux.md`](docs/LLD-port-tmux.md) | how text actually gets into a terminal, and why each rule is load-bearing |
 | [`LLD-port-openshell.md`](docs/LLD-port-openshell.md) | disposable sandbox agents — delivery, lifecycle, and credential transfer |
-| [`LLD-tmux-host.md`](docs/LLD-tmux-host.md) | the server, windows, geometry, reconciliation |
+| [`LLD-tmux-reconciler.md`](docs/LLD-tmux-reconciler.md) | the server, windows, geometry, reconciliation |
 | [`LLD-api.md`](docs/LLD-api.md) · [`LLD-session.md`](docs/LLD-session.md) | the two doors — `:8080` envelopes and state, `:8081` terminal bytes |
 | [`LLD-container.md`](docs/LLD-container.md) | one container is one tenant |
 | [`CONTRACTS.md`](docs/CONTRACTS.md) | what more than one module depends on |

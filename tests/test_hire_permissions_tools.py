@@ -1,5 +1,5 @@
 """Tests for per-agent AGENT_SKIP_PERMISSIONS / AGENT_CLAUDE_TOOLS threading:
-window_env, the StartAgent control opener, TmuxHost, and `office hire`.
+window_env, the StartAgent control opener, TmuxReconciler, and `office hire`.
 """
 
 from unittest.mock import patch, MagicMock
@@ -11,7 +11,7 @@ from flock.bus import prefix
 from flock.control import start_agent
 from flock.office.cli import main as office_main
 from flock.tmux.ops import window_env
-from flock.tmuxhost.host import TmuxHost
+from flock.tmux_reconciler.service import TmuxReconciler
 
 
 # ---------------------------------------------------------------------------
@@ -155,14 +155,14 @@ def test_start_agent_claude_tools_config_change_replaces_window():
 
 
 # ---------------------------------------------------------------------------
-# TmuxHost threading tests
+# TmuxReconciler threading tests
 # ---------------------------------------------------------------------------
 
 @patch("flock.tmux.ops.create_window")
-def test_tmuxhost_create_window_threads_skip_permissions_and_claude_tools(mock_create_window):
+def test_tmux_reconciler_create_window_threads_skip_permissions_and_claude_tools(mock_create_window):
     mock_create_window.return_value = (0, "", "")
     r = FakeRedis([])
-    host = TmuxHost(pod="acme", tenant="hq", redis_url="redis://127.0.0.1:6379/0", session_name="hq")
+    host = TmuxReconciler(pod="acme", tenant="hq", redis_url="redis://127.0.0.1:6379/0", session_name="hq")
 
     host.create_window(r, "dave", skip_permissions=False, claude_tools="")
 
@@ -172,10 +172,10 @@ def test_tmuxhost_create_window_threads_skip_permissions_and_claude_tools(mock_c
 
 
 @patch("flock.tmux.ops.create_window")
-def test_tmuxhost_create_window_omits_vars_when_unset(mock_create_window):
+def test_tmux_reconciler_create_window_omits_vars_when_unset(mock_create_window):
     mock_create_window.return_value = (0, "", "")
     r = FakeRedis([])
-    host = TmuxHost(pod="acme", tenant="hq", redis_url="redis://127.0.0.1:6379/0", session_name="hq")
+    host = TmuxReconciler(pod="acme", tenant="hq", redis_url="redis://127.0.0.1:6379/0", session_name="hq")
 
     host.create_window(r, "dave")
 
@@ -184,9 +184,9 @@ def test_tmuxhost_create_window_omits_vars_when_unset(mock_create_window):
     assert not any(v.startswith("AGENT_CLAUDE_TOOLS=") for v in created_cmd)
 
 
-def test_tmuxhost_get_agent_skip_permissions_absent_vs_set():
+def test_tmux_reconciler_get_agent_skip_permissions_absent_vs_set():
     r = FakeRedis([])
-    host = TmuxHost(pod="acme", tenant="hq", redis_url="redis://127.0.0.1:6379/0", session_name="hq")
+    host = TmuxReconciler(pod="acme", tenant="hq", redis_url="redis://127.0.0.1:6379/0", session_name="hq")
     assert host.get_agent_skip_permissions(r, "dave") is None
 
     r.values[prefix("acme", "hq", "dave", "skip-permissions")] = b"0"
@@ -196,9 +196,9 @@ def test_tmuxhost_get_agent_skip_permissions_absent_vs_set():
     assert host.get_agent_skip_permissions(r, "dave") is True
 
 
-def test_tmuxhost_get_agent_claude_tools_absent_vs_empty():
+def test_tmux_reconciler_get_agent_claude_tools_absent_vs_empty():
     r = FakeRedis([])
-    host = TmuxHost(pod="acme", tenant="hq", redis_url="redis://127.0.0.1:6379/0", session_name="hq")
+    host = TmuxReconciler(pod="acme", tenant="hq", redis_url="redis://127.0.0.1:6379/0", session_name="hq")
     assert host.get_agent_claude_tools(r, "dave") is None
 
     r.values[prefix("acme", "hq", "dave", "claude-tools")] = b""
@@ -209,14 +209,14 @@ def test_tmuxhost_get_agent_claude_tools_absent_vs_empty():
 
 
 @patch("flock.tmux.ops.create_window")
-def test_tmuxhost_reconcile_reads_per_agent_permissions_and_tools(mock_create_window):
+def test_tmux_reconciler_reconcile_reads_per_agent_permissions_and_tools(mock_create_window):
     mock_create_window.return_value = (0, "", "")
     r = FakeRedis(["dave"])
     r.values[prefix("acme", "hq", "dave", "launch")] = "claude"
     r.values[prefix("acme", "hq", "dave", "resume")] = b"0"
     r.values[prefix("acme", "hq", "dave", "skip-permissions")] = b"0"
     r.values[prefix("acme", "hq", "dave", "claude-tools")] = b""
-    host = TmuxHost(pod="acme", tenant="hq", redis_url="redis://127.0.0.1:6379/0", session_name="hq")
+    host = TmuxReconciler(pod="acme", tenant="hq", redis_url="redis://127.0.0.1:6379/0", session_name="hq")
 
     with patch.object(host, "get_windows", return_value=set()), \
          patch.object(host, "ensure_server_and_session"):

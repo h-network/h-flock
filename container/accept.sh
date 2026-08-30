@@ -32,7 +32,7 @@
 # EXCLUDED: tmux-nemotron is manual integration only. bus-* scenarios belong
 # under conservation/fault, never --tmux.
 #
-# LIMIT: these three members do NOT exercise a successful paste_text.
+# LIMIT: these three members do NOT exercise a successful submit_text.
 # tmux-window-loss targets a missing window, tmux-boundary sends nothing, and
 # tmux-concurrent-hire uses the control-plane opener. Until a successful-paste
 # scenario joins this suite, it does not exercise delivery_unverified and does

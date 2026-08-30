@@ -119,7 +119,7 @@ unset API_TOKEN
 export TMUX_SESSION="${TMUX_SESSION:-$TENANT}"
 
 # Socket access is total — anything that can reach it can send-keys into any
-# pane. The directory permissions are the whole boundary (LLD-tmux-host §4).
+# pane. The directory permissions are the whole boundary (LLD-tmux-reconciler §4).
 mkdir -p "$TMUX_TMPDIR"
 chmod 700 "$TMUX_TMPDIR"
 
@@ -311,7 +311,7 @@ done
 # Fixed agents. Roster rows like any other — the switch special-cases nothing
 # (LLD-bus-and-switch §3.2). `host` is what StartAgent/StopAgent are addressed
 # to; its port_type routes delivery to flock.control rather than to a tmux window, so
-# it has no window and the tmux host filters it out.
+# it has no window and the tmux reconciler filters it out.
 fields+=("api" "api")
 fields+=("host" "control")
 
@@ -348,7 +348,7 @@ map_each() {   # $1=map  $2=resource ; SETs pod:…:agent:<name>:<resource>
 # ⚠ Default every tmux agent to claude BEFORE the exception maps are applied.
 # setup.sh writes AGENT_CLIS only for agents that differ from the default, so a
 # plain single-account install writes no AGENT_CLIS at all. Without this, no
-# agent gets a launch key, tmuxhost builds every window as a bare shell, and the
+# agent gets a launch key, tmux_reconciler builds every window as a bare shell, and the
 # whole office comes up as three bash prompts with presence 'unknown'. Measured
 # on a from-scratch install taking every default.
 for _i in "${!agents[@]}"; do
@@ -396,19 +396,19 @@ unset AGENTS
 
 # Redis credentials belong to infrastructure processes, not agent windows.
 # Keep the URL in a shell variable for explicit process handoff, then remove
-# every credential-bearing variable before tmuxhost creates the tmux server.
-# tmuxhost consumes REDIS_URL from its own environment before its first tmux
+# every credential-bearing variable before tmux_reconciler creates the tmux server.
+# tmux_reconciler consumes REDIS_URL from its own environment before its first tmux
 # call, so the server cannot inherit it either.
 redis_url="${REDIS_URL:-redis://127.0.0.1:6379/0}"
 unset REDIS_PASSWORD REDISCLI_AUTH REDIS_URL
 
-# ── tmux host ─────────────────────────────────────────────────────────────────
-# The tmux server inherits this and passes it to every agent window. tmuxhost
+# ── tmux reconciler ─────────────────────────────────────────────────────────────────
+# The tmux server inherits this and passes it to every agent window. tmux_reconciler
 # itself has no AGENT_NAME, so FLOCK_LOG_FILE_AGENT_ONLY keeps its already-
 # central lifecycle records out of the file and prevents duplicates.
 export FLOCK_LOG_FILE=/home/ubuntu/.flock/window.log.jsonl
 export FLOCK_LOG_FILE_AGENT_ONLY=1
-start tmuxhost env REDIS_URL="$redis_url" python3 -m flock.tmuxhost
+start tmux_reconciler env REDIS_URL="$redis_url" python3 -m flock.tmux_reconciler
 
 # Windows lead routes. LLD-bus-and-switch §3.2 names the one roster case that is
 # not harmless: the switch routing to an agent whose window does not exist yet,

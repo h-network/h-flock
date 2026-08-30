@@ -53,7 +53,7 @@ def test_service_restarts_without_disturbing_peer_and_term_reaches_child(tmp_pat
 
 def test_peer_services_use_supervisor_while_redis_remains_critical():
     script = ENTRYPOINT.read_text()
-    for service in ("tmuxhost", "switch", "watchdog", "api", "session"):
+    for service in ("tmux_reconciler", "switch", "watchdog", "api", "session"):
         assert f"start {service}" in script
     assert 'start_critical redis "${redis_cmd[@]}"' in script
     assert '/usr/local/bin/supervise-service.sh "$name" "$@" &' in script

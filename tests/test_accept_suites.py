@@ -208,7 +208,7 @@ def test_help_is_readable_and_arguments_are_checked():
     assert "--tmux" in help_result.stdout
     assert "real agents in real panes" in help_result.stdout
     assert "tmux-nemotron is manual integration only" in help_result.stdout
-    assert "do NOT exercise a successful paste_text" in help_result.stdout
+    assert "do NOT exercise a successful submit_text" in help_result.stdout
     assert "tmux-window-loss targets a missing window" in help_result.stdout
     assert "tmux-boundary sends nothing" in help_result.stdout
     assert "tmux-concurrent-hire uses the control-plane opener" in help_result.stdout

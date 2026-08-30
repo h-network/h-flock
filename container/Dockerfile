@@ -83,7 +83,7 @@ RUN mkdir -p /home/ubuntu/.gemini/antigravity-cli/cache \
 
 # The base runs as ubuntu (uid 1000), and the agent CLIs expect that home. The
 # tmux socket therefore lives somewhere that user owns — /run is root's.
-# /workdir is where each agent gets its own home (LLD-tmux-host §5). The host
+# /workdir is where each agent gets its own home (LLD-tmux-reconciler §5). The host
 # creates /workdir/<agent> as the `ubuntu` user, so the parent has to exist and
 # be writable by it — otherwise makedirs fails silently and the window falls
 # back to /app, which is h-flock's own source.

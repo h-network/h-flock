@@ -111,7 +111,7 @@ OpenShell daemon or sandbox runs in the tenant container.
 |---|---|---|
 | redis | — | the bus. Loopback, AOF persistence enabled; ephemeral transport queues purged at boot (BUILD-63) |
 | switch | `LLD-bus-and-switch` | one per tenant, therefore one per container |
-| tmux host | `LLD-tmux-host` | creates the server, session and windows for `port_type: tmux` entries |
+| tmux reconciler | `LLD-tmux-reconciler` | creates the server, session and windows for `port_type: tmux` entries |
 | `flock.port` (transient) | `LLD-port-delivery` | kicked per delivery; resolves the current `port_type` through the registry and dispatches to tmux paste, api mailbox, control, or OpenShell delivery, then exits |
 | watchdog | `flock.watchdog` | background process; samples presence, tasks, activity; writes alerts for human operator |
 | api | `LLD-api` | envelopes in, state out, client mailbox polling & SSE streaming |
@@ -288,7 +288,7 @@ The same channel carries the one setting more than one module has to agree on:
 | `OPENSHELL_GATEWAY_BEARER_TOKEN` | optional gateway bearer authentication |
 
 `TMUX_TMPDIR` is inherited rather than passed per invocation, which is the whole
-reason `LLD-tmux-host` §4 chose it. It is listed here because anything attaching
+reason `LLD-tmux-reconciler` §4 chose it. It is listed here because anything attaching
 to a running tenant needs it and it is otherwise folklore:
 
 ```bash
@@ -299,7 +299,7 @@ docker exec -it -e TMUX_TMPDIR=/home/ubuntu/.flock/tmux <container> tmux attach 
 root — a socket there cannot be created by the user the agents run as.
 
 `ROSTER_POLL_SECONDS` is here rather than in either polling module because the
-switch and tmux host must use one value (`LLD-bus-and-switch` §3.2). Set in one
+switch and tmux reconciler must use one value (`LLD-bus-and-switch` §3.2). Set in one
 place and inherited, they agree by construction; configured per module, they
 agree until someone edits one of them. The port is invoked per delivery and
 does not poll the roster.
@@ -310,7 +310,7 @@ Order matters only where a dependency is real:
 
 ```
   redis            first — everything else connects to it
-  tmux host        creates the server, session and one window per tmux agent
+  tmux reconciler        creates the server, session and one window per tmux agent
   switch           needs redis; subscribe set comes from the roster
   watchdog         needs redis; samples presence, tasks, activity; writes alerts
   api              needs redis
@@ -334,7 +334,7 @@ headless CLI process in that long-lived sandbox.
 
 ### Entrypoint CLI Defaulting & Credential Verification
 
-- **Default CLI initialization:** `setup.sh` writes `AGENT_CLIS` only for agents that differ from the default CLI (`claude`). Therefore, a single-account default install passes no `AGENT_CLIS` environment variable. `container/entrypoint.sh` explicitly defaults every tmux agent's `launch` key in Redis (`pod:<pod>:tenant:<tenant>:agent:<name>:launch`) to `claude` before exception maps (`AGENT_CLIS`, `AGENT_PROFILES`) are applied. Without this explicit default, a default install writes no `launch` keys, `tmuxhost` builds every window as a bare shell, and the office comes up as bash prompts with presence `unknown`.
+- **Default CLI initialization:** `setup.sh` writes `AGENT_CLIS` only for agents that differ from the default CLI (`claude`). Therefore, a single-account default install passes no `AGENT_CLIS` environment variable. `container/entrypoint.sh` explicitly defaults every tmux agent's `launch` key in Redis (`pod:<pod>:tenant:<tenant>:agent:<name>:launch`) to `claude` before exception maps (`AGENT_CLIS`, `AGENT_PROFILES`) are applied. Without this explicit default, a default install writes no `launch` keys, `tmux_reconciler` builds every window as a bare shell, and the office comes up as bash prompts with presence `unknown`.
 - **`seed-home.sh check` credential verification:** `seed-home.sh --tenant NAME check` inspects profile credentials. It checks actual token expiration timestamps (`refreshTokenExpiresAt` or `expiresAt`) rather than just non-empty file existence. Previously, a 281-byte credential file with an expiry of zero reported `"logged in"` while every agent sat at `"Not logged in · Run /login"`. The check now parses the credential JSON and reports `"logged in"`, `"EXPIRED"`, `"UNREADABLE"`, or `"NEEDS LOGIN"`.
 - **Upfront segment format validation:** `container/entrypoint.sh` validates `POD`, `TENANT`, and each agent name in `AGENTS` against segment rules (`^[a-z0-9][a-z0-9-]{0,62}$`, non-all-digits, non-reserved) before starting Redis. Hand-edited `.env` or cloned deployments with uppercase or invalid segment names fail fast with a clear error message rather than crash-looping on Python tracebacks.
 - **Custody log permission reconciliation:** On boot, `container/entrypoint.sh` reconciles directory and file permissions on `FLOCK_CUSTODY_FILE` (fixing ownership via `sudo` if carried over from `cp -r` clones or root mounts). If the path cannot be made writable, the container refuses to start loudly rather than silently dropping custody records.
@@ -345,7 +345,7 @@ A real init runs as PID 1 so orphaned processes — the children agent CLIs spaw
 and abandon — are reaped instead of accumulating as zombies. That is a container
 concern and it is solved here rather than in any module.
 
-The tmux host, switch, watchdog, api and session each have an independent restart
+The tmux reconciler, switch, watchdog, api and session each have an independent restart
 loop with a one-second delay. One of those service exits is recorded, only that
 service is restarted, and the entrypoint stays alive; it does not kill the other
 services, the tmux server or agent windows. The modules already owe their callers

@@ -6,8 +6,8 @@
 > [`LLD-port-delivery.md`](LLD-port-delivery.md) for the generic delivery framework,
 > busy-tag locking, and registry-based dispatch.
 > This document specifies `deliver_tmux` in `src/flock/tmux/deliver.py` and the
-> tmux openers in `src/flock/tmux/openers.py`.
-> Bringing tmux up — the server, the windows, sizing — is owned by [`LLD-tmux-host.md`](LLD-tmux-host.md).
+> tmux openers in `src/flock/tmux/handlers.py`.
+> Bringing tmux up — the server, the windows, sizing — is owned by [`LLD-tmux-reconciler.md`](LLD-tmux-reconciler.md).
 
 ## 1. Purpose
 
@@ -82,7 +82,7 @@ by bus/API authentication policies.
 ticket entry in the destination agent's `tasks.todo` Redis list, records the `add` event via
 `flock.bus.record_task_event`, and **pastes nothing into the window**.
 This one opener is shared with OpenShell and therefore remains in
-`flock.port.openers`; all terminal/paste openers live in `flock.tmux.openers`.
+`flock.port.openers`; all terminal/paste openers live in `flock.tmux.handlers`.
 
 - **No window check**: Writes to `tasks.todo` succeed even if the agent's window is not currently open.
 - **Synchronous mutation confirmation**: Checks the returned list depth

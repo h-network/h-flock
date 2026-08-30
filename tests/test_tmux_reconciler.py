@@ -5,12 +5,12 @@ import tempfile
 import pytest
 from unittest.mock import patch, MagicMock
 from flock.control import start_agent
-from flock.tmuxhost.host import TmuxHost, generate_agents_md, write_agent_guide, ensure_claude_project_trusted
+from flock.tmux_reconciler.service import TmuxReconciler, generate_agents_md, write_agent_guide, ensure_claude_project_trusted
 
 
 
 @patch("flock.tmux.ops.run_tmux")
-def test_tmuxhost_reconciliation(mock_run_tmux):
+def test_tmux_reconciler_reconciliation(mock_run_tmux):
     mock_run_tmux.side_effect = [
         (0, "", ""),  # has-session
         (0, "", ""),  # exit-empty
@@ -24,7 +24,7 @@ def test_tmuxhost_reconciliation(mock_run_tmux):
     ]
 
     r = FakeRedis(["alice"])
-    host = TmuxHost(pod="acme", tenant="hq", redis_url="redis://127.0.0.1:6379/0", session_name="hq")
+    host = TmuxReconciler(pod="acme", tenant="hq", redis_url="redis://127.0.0.1:6379/0", session_name="hq")
     host.reconcile_once(r)
 
     calls = [c[0] for c in mock_run_tmux.call_args_list]
@@ -41,7 +41,7 @@ def test_window_created_consumes_hire_cause_and_recovery_borrows_none(mock_run_t
         (0, "", ""),
     ]
     r = FakeRedis([], cause_map={"dave": "hire-correlation"})
-    host = TmuxHost(
+    host = TmuxReconciler(
         pod="acme", tenant="hq", redis_url="redis://127.0.0.1:6379/0", session_name="hq"
     )
 
@@ -59,7 +59,7 @@ def test_window_created_consumes_hire_cause_and_recovery_borrows_none(mock_run_t
 def test_start_acceptance_and_later_window_creation_share_correlation(mock_run_tmux, capsys):
     mock_run_tmux.side_effect = [(0, "", ""), (0, "", "")]
     r = FakeRedis([])
-    host = TmuxHost(
+    host = TmuxReconciler(
         pod="acme", tenant="hq", redis_url="redis://127.0.0.1:6379/0", session_name="hq"
     )
 
@@ -93,7 +93,7 @@ def test_existing_window_discards_unconsumed_cause_without_emitting_join(mock_ru
         (0, "alice", ""),
     ]
     r = FakeRedis(["alice"], cause_map={"alice": "stale-correlation"})
-    host = TmuxHost(
+    host = TmuxReconciler(
         pod="acme", tenant="hq", redis_url="redis://127.0.0.1:6379/0", session_name="hq"
     )
 
@@ -108,7 +108,7 @@ def test_existing_window_discards_unconsumed_cause_without_emitting_join(mock_ru
 def test_failed_window_creation_retains_cause_for_retry(mock_run_tmux, capsys):
     mock_run_tmux.side_effect = [(0, "", ""), (1, "", "tmux rejected window")]
     r = FakeRedis([], cause_map={"dave": "hire-correlation"})
-    host = TmuxHost(
+    host = TmuxReconciler(
         pod="acme", tenant="hq", redis_url="redis://127.0.0.1:6379/0", session_name="hq"
     )
 
@@ -120,7 +120,7 @@ def test_failed_window_creation_retains_cause_for_retry(mock_run_tmux, capsys):
 
 
 @patch("flock.tmux.ops.run_tmux")
-def test_tmuxhost_ensure_session_with_roster_agent(mock_run_tmux):
+def test_tmux_reconciler_ensure_session_with_roster_agent(mock_run_tmux):
     mock_run_tmux.side_effect = [
         (1, "", "no server running"),  # has-session -> 1 (not existing)
         (0, "", ""),  # new-session -d -s hq -n alice ...
@@ -132,7 +132,7 @@ def test_tmuxhost_ensure_session_with_roster_agent(mock_run_tmux):
     ]
 
     r = FakeRedis(["alice"])
-    host = TmuxHost(pod="acme", tenant="hq", redis_url="redis://127.0.0.1:6379/0", session_name="hq")
+    host = TmuxReconciler(pod="acme", tenant="hq", redis_url="redis://127.0.0.1:6379/0", session_name="hq")
     host.reconcile_once(r)
 
     calls = [c[0] for c in mock_run_tmux.call_args_list]
@@ -140,7 +140,7 @@ def test_tmuxhost_ensure_session_with_roster_agent(mock_run_tmux):
 
 
 @patch("flock.tmux.ops.run_tmux")
-def test_tmuxhost_initial_session_resolves_agent_provider(mock_run_tmux, monkeypatch):
+def test_tmux_reconciler_initial_session_resolves_agent_provider(mock_run_tmux, monkeypatch):
     mock_run_tmux.side_effect = [
         (1, "", "no server running"),
         (0, "", ""),
@@ -158,7 +158,7 @@ def test_tmuxhost_initial_session_resolves_agent_provider(mock_run_tmux, monkeyp
         provider_map={"alice": "gpu"},
     )
 
-    TmuxHost(
+    TmuxReconciler(
         pod="acme", tenant="hq", redis_url="redis://127.0.0.1:6379/0", session_name="hq"
     ).reconcile_once(r)
 
@@ -170,7 +170,7 @@ def test_tmuxhost_initial_session_resolves_agent_provider(mock_run_tmux, monkeyp
 
 
 @patch("flock.tmux.ops.run_tmux")
-def test_tmuxhost_filters_non_tmux_port_type(mock_run_tmux):
+def test_tmux_reconciler_filters_non_tmux_port_type(mock_run_tmux):
     mock_run_tmux.side_effect = [
         (0, "", ""),  # has-session
         (0, "", ""),  # exit-empty
@@ -181,7 +181,7 @@ def test_tmuxhost_filters_non_tmux_port_type(mock_run_tmux):
     ]
 
     r = FakeRedis(["alice", "api"], port_type_map={"alice": "tmux", "api": "api"})
-    host = TmuxHost(pod="acme", tenant="hq", redis_url="redis://127.0.0.1:6379/0", session_name="hq")
+    host = TmuxReconciler(pod="acme", tenant="hq", redis_url="redis://127.0.0.1:6379/0", session_name="hq")
     host.reconcile_once(r)
 
     calls = [c[0] for c in mock_run_tmux.call_args_list]
@@ -189,7 +189,7 @@ def test_tmuxhost_filters_non_tmux_port_type(mock_run_tmux):
 
 
 @patch("flock.tmux.ops.run_tmux")
-def test_tmuxhost_replaces_last_stale_window_with_placeholder(mock_run_tmux):
+def test_tmux_reconciler_replaces_last_stale_window_with_placeholder(mock_run_tmux):
     """An empty tmux roster must still retire the last real agent window."""
     mock_run_tmux.side_effect = [
         (0, "", ""),  # has-session
@@ -203,7 +203,7 @@ def test_tmuxhost_replaces_last_stale_window_with_placeholder(mock_run_tmux):
         (0, "", ""),  # kill retired
     ]
 
-    host = TmuxHost(pod="acme", tenant="hq", redis_url="redis://127.0.0.1:6379/0", session_name="hq")
+    host = TmuxReconciler(pod="acme", tenant="hq", redis_url="redis://127.0.0.1:6379/0", session_name="hq")
     host.reconcile_once(FakeRedis([]))
 
     calls = [" ".join(call.args) for call in mock_run_tmux.call_args_list]
@@ -212,7 +212,7 @@ def test_tmuxhost_replaces_last_stale_window_with_placeholder(mock_run_tmux):
 
 
 @patch("flock.tmux.ops.run_tmux")
-def test_tmuxhost_reconciles_office_tools_and_agent_guide_env(mock_run_tmux):
+def test_tmux_reconciler_reconciles_office_tools_and_agent_guide_env(mock_run_tmux):
     mock_run_tmux.side_effect = [
         (0, "", ""),  # has-session
         (0, "", ""),  # exit-empty
@@ -227,7 +227,7 @@ def test_tmuxhost_reconciles_office_tools_and_agent_guide_env(mock_run_tmux):
 
     with tempfile.TemporaryDirectory() as tmpdir:
         r = FakeRedis(["alice"])
-        host = TmuxHost(pod="acme", tenant="hq", redis_url="redis://127.0.0.1:6379/0", session_name="hq")
+        host = TmuxReconciler(pod="acme", tenant="hq", redis_url="redis://127.0.0.1:6379/0", session_name="hq")
         host.reconcile_once(r)
 
         calls = [c[0] for c in mock_run_tmux.call_args_list]
@@ -335,7 +335,7 @@ def test_create_window_directly_writes_guide_and_trust(mock_run_tmux):
 
 
 @patch("flock.tmux.ops.run_tmux")
-def test_tmuxhost_launches_cli_via_startagent(mock_run_tmux):
+def test_tmux_reconciler_launches_cli_via_startagent(mock_run_tmux):
     mock_run_tmux.side_effect = [
         (0, "", ""),  # has-session
         (0, "", ""),  # exit-empty
@@ -348,7 +348,7 @@ def test_tmuxhost_launches_cli_via_startagent(mock_run_tmux):
     ]
 
     r = FakeRedis(["dave"], launch_map={"dave": "claude"})
-    host = TmuxHost(pod="acme", tenant="hq", redis_url="redis://127.0.0.1:6379/0", session_name="hq")
+    host = TmuxReconciler(pod="acme", tenant="hq", redis_url="redis://127.0.0.1:6379/0", session_name="hq")
     host.reconcile_once(r)
 
     calls = [c[0] for c in mock_run_tmux.call_args_list]
@@ -449,7 +449,7 @@ def test_write_agent_guide_trusts_all_clis():
 
 
 @patch("flock.tmux.ops.run_tmux")
-def test_tmuxhost_reconciles_profile_env_vars_when_set(mock_run_tmux):
+def test_tmux_reconciler_reconciles_profile_env_vars_when_set(mock_run_tmux):
     mock_run_tmux.side_effect = [
         (0, "", ""),  # has-session
         (0, "", ""),  # exit-empty
@@ -463,7 +463,7 @@ def test_tmuxhost_reconciles_profile_env_vars_when_set(mock_run_tmux):
     ]
 
     r = FakeRedis(["alice"], profile_map={"alice": "work"})
-    host = TmuxHost(pod="acme", tenant="hq", redis_url="redis://127.0.0.1:6379/0", session_name="hq")
+    host = TmuxReconciler(pod="acme", tenant="hq", redis_url="redis://127.0.0.1:6379/0", session_name="hq")
     host.reconcile_once(r)
 
     calls = [c[0] for c in mock_run_tmux.call_args_list]
@@ -474,7 +474,7 @@ def test_tmuxhost_reconciles_profile_env_vars_when_set(mock_run_tmux):
 
 
 @patch("flock.tmux.ops.run_tmux")
-def test_tmuxhost_omits_profile_env_vars_when_not_set(mock_run_tmux):
+def test_tmux_reconciler_omits_profile_env_vars_when_not_set(mock_run_tmux):
     mock_run_tmux.side_effect = [
         (0, "", ""),  # has-session
         (0, "", ""),  # exit-empty
@@ -488,7 +488,7 @@ def test_tmuxhost_omits_profile_env_vars_when_not_set(mock_run_tmux):
     ]
 
     r = FakeRedis(["alice"])
-    host = TmuxHost(pod="acme", tenant="hq", redis_url="redis://127.0.0.1:6379/0", session_name="hq")
+    host = TmuxReconciler(pod="acme", tenant="hq", redis_url="redis://127.0.0.1:6379/0", session_name="hq")
     host.reconcile_once(r)
 
     calls = [c[0] for c in mock_run_tmux.call_args_list]
@@ -499,7 +499,7 @@ def test_tmuxhost_omits_profile_env_vars_when_not_set(mock_run_tmux):
 
 
 @patch("flock.tmux.ops.run_tmux")
-def test_tmuxhost_reconciles_hyphenated_digit_agent_name(mock_run_tmux):
+def test_tmux_reconciler_reconciles_hyphenated_digit_agent_name(mock_run_tmux):
     mock_run_tmux.side_effect = [
         (0, "", ""),  # has-session
         (0, "", ""),  # exit-empty
@@ -512,7 +512,7 @@ def test_tmuxhost_reconciles_hyphenated_digit_agent_name(mock_run_tmux):
     ]
 
     r = FakeRedis(["sme-2"], launch_map={"sme-2": "codex"}, profile_map={"sme-2": "work-2"})
-    host = TmuxHost(pod="acme", tenant="hq", redis_url="redis://127.0.0.1:6379/0", session_name="hq")
+    host = TmuxReconciler(pod="acme", tenant="hq", redis_url="redis://127.0.0.1:6379/0", session_name="hq")
     host.reconcile_once(r)
 
     calls = [c[0] for c in mock_run_tmux.call_args_list]
@@ -536,7 +536,7 @@ def test_tmuxhost_reconciles_hyphenated_digit_agent_name(mock_run_tmux):
 def test_create_window_does_not_overwrite_the_lead_sentence(mock_run_tmux, tmp_path):
     """The guide is written once, by the caller that actually makes the window.
 
-    ⚠ Measured on a live tenant: tmuxhost wrote the guide with the lead, then
+    ⚠ Measured on a live tenant: tmux_reconciler wrote the guide with the lead, then
     tmux_ops.create_window wrote it again without one. Only the initial window —
     created by new-session, which does not pass through create_window — kept its
     lead sentence. Every other agent's guide named nobody.

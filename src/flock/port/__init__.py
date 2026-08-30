@@ -19,11 +19,11 @@ def __getattr__(name: str):
     if name not in _MOVED_TMUX_EXPORTS:
         raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
     from flock.tmux import deliver as tmux_deliver
-    from flock.tmux import openers as tmux_openers
+    from flock.tmux import handlers as tmux_handlers
 
     if name == "deliver_tmux":
         return tmux_deliver.deliver_tmux
-    return getattr(tmux_openers, name)
+    return getattr(tmux_handlers, name)
 
 __all__ = [
     "add_ticket_opener",

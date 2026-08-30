@@ -1,4 +1,4 @@
-"""Tests for session history detection, StartAgent resume handling, and tmuxhost resume commands."""
+"""Tests for session history detection, StartAgent resume handling, and tmux_reconciler resume commands."""
 
 import json
 import os
@@ -12,7 +12,7 @@ from flock.bus import prefix
 from flock.control import start_agent, stop_agent
 from flock.office.cli import main as office_main
 from flock.tmux.ops import has_session_history, start_agent_command
-from flock.tmuxhost.host import TmuxHost
+from flock.tmux_reconciler.service import TmuxReconciler
 
 
 # ---------------------------------------------------------------------------
@@ -195,17 +195,17 @@ def test_start_agent_resume_config_change_replaces_window():
 
 
 # ---------------------------------------------------------------------------
-# TmuxHost window creation & resume auto-detection tests
+# TmuxReconciler window creation & resume auto-detection tests
 # ---------------------------------------------------------------------------
 
 @patch("flock.tmux.ops.create_window")
 @patch("flock.tmux.ops.has_session_history")
-def test_tmuxhost_auto_detects_and_resumes_when_history_exists(mock_has_history, mock_create_window):
+def test_tmux_reconciler_auto_detects_and_resumes_when_history_exists(mock_has_history, mock_create_window):
     mock_has_history.return_value = True
     mock_create_window.return_value = (0, "", "")
 
     r = FakeRedis([])
-    host = TmuxHost(pod="acme", tenant="hq", redis_url="redis://127.0.0.1:6379/0", session_name="hq")
+    host = TmuxReconciler(pod="acme", tenant="hq", redis_url="redis://127.0.0.1:6379/0", session_name="hq")
 
     # resume is None in Redis -> triggers auto-detection
     host.create_window(r, "dave", cli="claude")
@@ -218,12 +218,12 @@ def test_tmuxhost_auto_detects_and_resumes_when_history_exists(mock_has_history,
 
 @patch("flock.tmux.ops.create_window")
 @patch("flock.tmux.ops.has_session_history")
-def test_tmuxhost_auto_detects_and_starts_fresh_when_no_history(mock_has_history, mock_create_window):
+def test_tmux_reconciler_auto_detects_and_starts_fresh_when_no_history(mock_has_history, mock_create_window):
     mock_has_history.return_value = False
     mock_create_window.return_value = (0, "", "")
 
     r = FakeRedis([])
-    host = TmuxHost(pod="acme", tenant="hq", redis_url="redis://127.0.0.1:6379/0", session_name="hq")
+    host = TmuxReconciler(pod="acme", tenant="hq", redis_url="redis://127.0.0.1:6379/0", session_name="hq")
 
     host.create_window(r, "dave", cli="claude")
 
@@ -235,11 +235,11 @@ def test_tmuxhost_auto_detects_and_starts_fresh_when_no_history(mock_has_history
 
 @patch("flock.tmux.ops.create_window")
 @patch("flock.tmux.ops.has_session_history")
-def test_tmuxhost_explicit_fresh_overrides_existing_history(mock_has_history, mock_create_window):
+def test_tmux_reconciler_explicit_fresh_overrides_existing_history(mock_has_history, mock_create_window):
     mock_create_window.return_value = (0, "", "")
 
     r = FakeRedis([])
-    host = TmuxHost(pod="acme", tenant="hq", redis_url="redis://127.0.0.1:6379/0", session_name="hq")
+    host = TmuxReconciler(pod="acme", tenant="hq", redis_url="redis://127.0.0.1:6379/0", session_name="hq")
 
     # Explicit resume=False passed (or read from resume key = '0')
     host.create_window(r, "dave", cli="claude", resume=False)
@@ -252,12 +252,12 @@ def test_tmuxhost_explicit_fresh_overrides_existing_history(mock_has_history, mo
 
 @patch("flock.tmux.ops.create_window")
 @patch("flock.tmux.ops.has_session_history")
-def test_tmuxhost_reconcile_handles_codex_and_agy_resume(mock_has_history, mock_create_window):
+def test_tmux_reconciler_reconcile_handles_codex_and_agy_resume(mock_has_history, mock_create_window):
     mock_has_history.return_value = True
     mock_create_window.return_value = (0, "", "")
 
     r = FakeRedis([])
-    host = TmuxHost(pod="acme", tenant="hq", redis_url="redis://127.0.0.1:6379/0", session_name="hq")
+    host = TmuxReconciler(pod="acme", tenant="hq", redis_url="redis://127.0.0.1:6379/0", session_name="hq")
 
     # Codex resume
     host.create_window(r, "codex-bot", cli="codex")

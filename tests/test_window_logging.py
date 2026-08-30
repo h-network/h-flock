@@ -110,7 +110,7 @@ def test_agent_only_file_setting_excludes_central_process_records(monkeypatch, t
     monkeypatch.setenv("FLOCK_LOG_FILE", str(path))
     monkeypatch.setenv("FLOCK_LOG_FILE_AGENT_ONLY", "1")
     monkeypatch.delenv("AGENT_NAME", raising=False)
-    log_record("tmuxhost", "started")
+    log_record("tmux_reconciler", "started")
     assert json.loads(capsys.readouterr().out)["event"] == "started"
     assert not path.exists()
 

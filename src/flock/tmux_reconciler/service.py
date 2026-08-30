@@ -11,7 +11,7 @@ from flock.tmux.ops import generate_agents_md, ensure_claude_project_trusted, wr
 OFFICE_TOOLS_ENV = "OFFICE_TOOLS=office"
 
 
-class TmuxHost:
+class TmuxReconciler:
     def __init__(
         self,
         pod: str,
@@ -60,7 +60,7 @@ class TmuxHost:
         upper = name.upper().replace("-", "_")
         url = os.environ.get(f"PROVIDER_{upper}_URL")
         if not url:
-            log_record("tmuxhost", "error", destination=agent,
+            log_record("tmux_reconciler", "error", destination=agent,
                        reason=f"provider '{name}' has no PROVIDER_{upper}_URL")
             return None
         return {
@@ -78,11 +78,11 @@ class TmuxHost:
             return None
         return raw_lead.decode() if isinstance(raw_lead, bytes) else str(raw_lead)
 
-    def take_window_cause(self, r: redis.Redis, agent: str) -> str | None:
+    def consume_creation_correlation(self, r: redis.Redis, agent: str) -> str | None:
         """Consume the one-shot hire cause for a newly created window.
 
         Consumption before logging prefers an absent join over a stale, false
-        join if tmuxhost dies between the Redis operation and stdout.
+        join if tmux_reconciler dies between the Redis operation and stdout.
         """
         key = prefix(self.pod, self.tenant, agent=agent, resource="window.cause")
         raw = r.getdel(key)
@@ -115,8 +115,8 @@ class TmuxHost:
 
     def log_window_created(self, r: redis.Redis, agent: str) -> None:
         log_record(
-            "tmuxhost", "window_created", destination=agent,
-            correlation_id=self.take_window_cause(r, agent),
+            "tmux_reconciler", "window_created", destination=agent,
+            correlation_id=self.consume_creation_correlation(r, agent),
         )
 
     def ensure_server_and_session(
@@ -164,7 +164,7 @@ class TmuxHost:
 
             code, out, err = tmux_ops.run_tmux(*cmd, socket=self.socket)
             if code != 0:
-                log_record("tmuxhost", "error", reason=f"Failed to create tmux session: {err}")
+                log_record("tmux_reconciler", "error", reason=f"Failed to create tmux session: {err}")
             elif initial_window != "__init__":
                 self.log_window_created(r, initial_window)
 
@@ -214,16 +214,16 @@ class TmuxHost:
             self.log_window_created(r, agent_name)
             return True
         else:
-            log_record("tmuxhost", "error", destination=agent_name, reason=f"new-window failed: {stderr}")
+            log_record("tmux_reconciler", "error", destination=agent_name, reason=f"new-window failed: {stderr}")
             return False
 
     def kill_window(self, window_name: str) -> bool:
         ret, stdout, stderr = tmux_ops.kill_window(self.session_name, window_name, socket=self.socket)
         if ret == 0:
-            log_record("tmuxhost", "window_killed", destination=window_name)
+            log_record("tmux_reconciler", "window_killed", destination=window_name)
             return True
         else:
-            log_record("tmuxhost", "error", destination=window_name, reason=f"kill-window failed: {stderr}")
+            log_record("tmux_reconciler", "error", destination=window_name, reason=f"kill-window failed: {stderr}")
             return False
 
     def reconcile_once(self, r: redis.Redis) -> None:
@@ -278,7 +278,7 @@ class TmuxHost:
         # A cause marker beside an already-present window did not cause that
         # window. Consume it without attaching it to a later crash recovery.
         for agent in roster_agents & existing_windows:
-            self.take_window_cause(r, agent)
+            self.consume_creation_correlation(r, agent)
 
         # Re-fetch after creations to decide cleanup
         existing_windows = self.get_windows()
@@ -301,7 +301,7 @@ class TmuxHost:
                 if ret == 0:
                     existing_windows.add(placeholder)
                 else:
-                    log_record("tmuxhost", "error", destination=placeholder,
+                    log_record("tmux_reconciler", "error", destination=placeholder,
                                reason=f"placeholder window failed, keeping stale window: {stderr}")
         for window in stale:
             if len(existing_windows) > 1:
@@ -310,10 +310,10 @@ class TmuxHost:
 
     def run_forever(self) -> None:
         r = redis.Redis.from_url(self.redis_url)
-        log_record("tmuxhost", "started", reason=f"session={self.session_name}")
+        log_record("tmux_reconciler", "started", reason=f"session={self.session_name}")
         while True:
             try:
                 self.reconcile_once(r)
             except Exception as e:
-                log_record("tmuxhost", "error", reason=f"Reconciliation exception: {e}")
+                log_record("tmux_reconciler", "error", reason=f"Reconciliation exception: {e}")
             time.sleep(self.poll_seconds)

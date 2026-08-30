@@ -8,7 +8,7 @@ from flock.bus.envelope import parse_for_switch
 from flock.port.deliver import drain_ingress
 from flock.port.openers import add_ticket_opener
 
-from .openers import attachment_opener, command_opener, messages_opener
+from .handlers import attachment_opener, command_opener, messages_opener
 
 
 def deliver_tmux(

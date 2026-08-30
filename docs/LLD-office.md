@@ -199,7 +199,7 @@ that must not trust what crossed the bus.
 `--resume`/`--fresh` are a mutually exclusive pair (`cli.py:514`), and neither
 is the client validating anything — they only decide whether `payload["resume"]`
 is present at all. Omitted (the default) means the fabric decides:
-`tmuxhost` auto-detects prior session history for that agent's workspace
+`tmux_reconciler` auto-detects prior session history for that agent's workspace
 (`~/.claude[-<profile>]/projects/...`, `~/.codex[-<profile>]/sessions/...`,
 `~/.gemini/antigravity-cli/history.jsonl`) and resumes it if there is any —
 retiring an agent (`letGo`) never deletes those files, only Redis state and the
@@ -211,7 +211,7 @@ launched with, and why `StopAgent` leaves history on disk deliberately — is
 
 ⚠ **`--skip-permissions`/`--no-skip-permissions` and `--claude-tools` are the
 same "omitted means the fabric decides" shape, one layer further down: the
-fabric they defer to here is the base image's `startAgent`, not `tmuxhost`.**
+fabric they defer to here is the base image's `startAgent`, not `tmux_reconciler`.**
 `--skip-permissions`/`--no-skip-permissions` are a second mutually exclusive
 pair (`cli.py:522`, immediately after `--resume`/`--fresh`); neither
 sets `payload["skip_permissions"]` unless given (`cli.py:553`), which is what
@@ -221,7 +221,7 @@ by a hire that never mentions it. `--claude-tools <list>` sets
 including the empty string, which is a real, distinct value meaning "no
 restriction", never confused with the flag being omitted. Both are `office`
 concerns only as far as building the payload; what they do once `StartAgent`
-lands is `LLD-tmux-host.md`'s "may opt out of `startAgent`'s own defaults"
+lands is `LLD-tmux-reconciler.md`'s "may opt out of `startAgent`'s own defaults"
 note and `CONTRACTS` §5/§6, not here. Unlike `--profile`, neither is validated
 client-side — `--cli`'s choices and `--profile`'s account check exist because
 a typo there fails inside the window looking like something else; a typo in a

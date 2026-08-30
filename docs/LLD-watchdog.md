@@ -419,7 +419,7 @@ verified at all, so they cannot become `blocked`.
 ⚠ **CORRECTED 2026-08-27 — agy is no longer in that set.** The lab run above
 predates `~/.gemini/antigravity-cli/history.jsonl` being wired into
 `ActivityTailer` (`watchdog/activity.py`'s `_agy_events`, same fix as HLD §8's
-correction). `VERIFIABLE_CLIS` in `tmux/openers.py` now includes `agy`, so a
+correction). `VERIFIABLE_CLIS` in `tmux/handlers.py` now includes `agy`, so a
 delivery to an agy agent with prior activity history is marked and judged
 exactly like claude/codex: **verified** if a later `input` line for that
 agent's `workspace` follows the marker, **blocked** if none does before the

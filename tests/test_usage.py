@@ -10,7 +10,7 @@ import pytest
 from flock.bus import prefix
 from flock.office import cli
 from flock.office.pricing import calculate_cost, find_model_rates, load_pricing
-from flock.tmux.openers import mark_delivery_pending
+from flock.tmux.handlers import mark_delivery_pending
 from flock.watchdog.activity import ActivityTailer
 
 

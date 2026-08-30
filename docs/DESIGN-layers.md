@@ -518,7 +518,7 @@ restarts.
 >
 > ⚠ **PARTLY RESOLVED by build 67, and the example was wrong.** `api` argued a
 > healthy agent running a long tmux command holds a climbing queue. **It does
-> not.** `paste_text` (`tmux/ops.py:371`) pastes and sends Enter immediately with
+> not.** `submit_text` (`tmux/ops.py:371`) pastes and sends Enter immediately with
 > no readiness check, and `message_opener` has none either — **delivery is
 > fire-and-forget into the pane.** A busy agent's queue drains at the normal
 > rate; the agent's own slowness never reaches the queue.

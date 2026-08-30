@@ -47,13 +47,13 @@ Nine lanes were originally hired for, mapped from the module table in `HLD`
 |---|---|---|
 | `bus` | switch + `bus.doors.send`/tracking | `flock.bus`, `flock.switch` — `LLD-bus-and-switch.md` |
 | `ports` | the generic port delivery framework | `flock.port`'s registry/dispatch, shared AddTicket action, and shared attachment schema definitions — `LLD-port-delivery.md`, split off from `tmux`'s original scope (§2's rename-vs-split test applies: this was a genuine split, `ports` owns the generic framework `deliver_one` dispatches through) |
-| `tmux` | the tmux server, windows, paste, and terminal delivery/openers | `flock.tmux`, `flock.tmuxhost`, `LLD-tmux-host.md` + `LLD-port-tmux.md` (the tmux-specific half of what used to be one doc with `LLD-port-delivery.md`) |
+| `tmux` | the tmux server, windows, paste, and terminal delivery/openers | `flock.tmux`, `flock.tmux_reconciler`, `LLD-tmux-reconciler.md` + `LLD-port-tmux.md` (the tmux-specific half of what used to be one doc with `LLD-port-delivery.md`) |
 | `openshell` | disposable sandbox agents (`port_type: openshell`) | `flock.openshell`, the `openshell` branches of `flock.port`/`flock.control` — `LLD-port-openshell.md` |
 | `api` | the REST door | `flock.api`, `LLD-api.md` |
 | `interface` | the websocket door + bundled clients | `flock.session`, `LLD-session.md`, plus `clients/telegram` and `clients/web` (`SPEC-bundled-clients-and-exposure.md`) |
 | `watchdog` | observation, alerts | `flock.watchdog`, `LLD-watchdog.md` |
 | `office-sme` (= `office`) | the agent-facing command | `flock.office`, `LLD-office.md` — see the rename note in §2 |
-| `testbed` | the tenant/container, plus CI infrastructure (added 2026-08-29, by the operator) | `flock.tmuxhost`'s container half, `LLD-container.md`, `setup.sh` — plus `.github/workflows/`, the dev-dependency declaration, the shared `tests/conftest.py` fixtures/doubles, and any real-service (e.g. Redis) integration harness; see `LLD-ci.md`. ⚠ **Not** ownership of every lane's own test files — each lane still writes and owns the tests for its own module (`bus` owns `test_bus.py`, `api` owns `test_api.py`, and so on); testbed owns the cross-cutting harness those tests run on, not the tests themselves. |
+| `testbed` | the tenant/container, plus CI infrastructure (added 2026-08-29, by the operator) | `flock.tmux_reconciler`'s container half, `LLD-container.md`, `setup.sh` — plus `.github/workflows/`, the dev-dependency declaration, the shared `tests/conftest.py` fixtures/doubles, and any real-service (e.g. Redis) integration harness; see `LLD-ci.md`. ⚠ **Not** ownership of every lane's own test files — each lane still writes and owns the tests for its own module (`bus` owns `test_bus.py`, `api` owns `test_api.py`, and so on); testbed owns the cross-cutting harness those tests run on, not the tests themselves. |
 | `acceptance` | cross-cutting verification | no dedicated LLD — works from `TEST-SIGNOFF.md` and `SPRINTS.md` instead, since it verifies every other lane's output rather than owning a module |
 
 `office` and `office-sme` are both live in this tenant's roster as separate

@@ -94,7 +94,7 @@ def test_deliver_one_dispatches_tmux(capsys):
     ingress_key = prefix("acme", "hq", "bob", "ingress")
     r.rpush(ingress_key, encode(env))
 
-    with patch("flock.tmux.openers.list_windows", return_value={"bob"}), \
+    with patch("flock.tmux.handlers.list_windows", return_value={"bob"}), \
          patch("flock.tmux.ops.run_tmux", return_value=(0, "", "")):
         deliver_one(r, pod="acme", tenant="hq", agent="bob")
 

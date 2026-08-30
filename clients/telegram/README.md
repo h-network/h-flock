@@ -265,7 +265,7 @@ an unsubscribe/resubscribe round trip that would risk losing a live diff in
 the gap.
 
 **Content window.** Every `capture-pane` snapshot is up to the pane's full
-120×32 screen (`LLD-tmux-host.md` §3); most of that is either stale
+120×32 screen (`LLD-tmux-reconciler.md` §3); most of that is either stale
 scrollback or the CLI's own input chrome, neither of which is "what the agent
 just said". The bot looks at the last `PANE_WATCH_TAIL_LINES` rows (default
 `12`) and crops the bottom `PANE_WATCH_CHROME_DEFAULT` rows (default `4`) —

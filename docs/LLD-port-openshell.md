@@ -258,7 +258,7 @@ real `StopAgent` cycle, not just the client layer underneath it.
   segment-string requirement — and published to the same shared
   `profile` Redis resource, no new resource needed), then synchronously
   calls `create_sandbox`. Unlike tmux, which defers window creation to
-  `tmuxhost`'s async reconciler, this is synchronous because sandbox
+  `tmux_reconciler`'s async reconciler, this is synchronous because sandbox
   creation is one gRPC call with no equivalent staged startup — no new
   reconciler process needed or built.
 - **`stop_agent`**: calls `delete_sandbox` synchronously, following the
@@ -326,7 +326,7 @@ Resolved since the last update:
 ## 5. Status update — Attachment delivery built and real-gateway-verified (ticket 655ebeac)
 
 `_deliver_attachment` in `flock/port/openshell.py`: same validation as
-tmux's `flock.tmux.openers.attachment_opener` (filename/mime_type/caption/content_base64
+tmux's `flock.tmux.handlers.attachment_opener` (filename/mime_type/caption/content_base64
 charset and size limits), then `_write_attachment` (base64-decode-into-
 temp-file-then-atomic-mv via `exec_sandbox`, positional shell params for
 the paths rather than string interpolation), then the same

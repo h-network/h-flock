@@ -9,7 +9,7 @@ import tempfile
 import pytest
 from unittest.mock import patch, MagicMock
 from flock.port.openers import add_ticket_opener
-from flock.tmux.openers import attachment_opener, command_opener, message_opener, messages_opener
+from flock.tmux.handlers import attachment_opener, command_opener, message_opener, messages_opener
 from flock.port.send import main as cli_main
 from flock.port.deliver import run_port
 from flock.bus import DeadLetter, build as build_envelope, encode, parse, prefix, receive
@@ -38,7 +38,7 @@ def test_port_entrypoint_restores_waitable_children(monkeypatch):
 
 
 
-@patch("flock.tmux.openers.list_windows")
+@patch("flock.tmux.handlers.list_windows")
 @patch("flock.tmux.ops.run_tmux")
 def test_message_opener_window_exists(mock_run_tmux, mock_list_windows, capsys):
     mock_list_windows.return_value = {"alice", "bob"}
@@ -103,7 +103,7 @@ def test_message_opener_window_exists(mock_run_tmux, mock_list_windows, capsys):
     assert input_data == "[message from alice] hello\n"
 
 
-@patch("flock.tmux.openers.list_windows")
+@patch("flock.tmux.handlers.list_windows")
 def test_message_opener_window_missing(mock_list_windows):
     mock_list_windows.return_value = {"alice"}
 
@@ -116,7 +116,7 @@ def test_message_opener_window_missing(mock_list_windows):
     assert "pod:acme:tenant:hq:agent:bob:dead" not in r.lists
 
 
-@patch("flock.tmux.openers.list_windows")
+@patch("flock.tmux.handlers.list_windows")
 @patch("flock.tmux.ops.run_tmux")
 def test_message_opener_broadcast(mock_run_tmux, mock_list_windows):
     mock_list_windows.return_value = {"alice", "bob", "carol"}
@@ -131,7 +131,7 @@ def test_message_opener_broadcast(mock_run_tmux, mock_list_windows):
     assert any("paste-buffer" in cmd and "hq:bob" in cmd for cmd in cmd_args)
 
 
-@patch("flock.tmux.openers.list_windows")
+@patch("flock.tmux.handlers.list_windows")
 @patch("flock.tmux.ops.run_tmux")
 def test_command_opener_bare_paste(mock_run_tmux, mock_list_windows):
     mock_list_windows.return_value = {"alice", "bob"}
@@ -149,7 +149,7 @@ def test_command_opener_bare_paste(mock_run_tmux, mock_list_windows):
     assert "[message from" not in input_data
 
 
-@patch("flock.tmux.openers.list_windows")
+@patch("flock.tmux.handlers.list_windows")
 @patch("flock.tmux.ops.run_tmux")
 def test_add_ticket_opener_writes_v1_ticket(mock_run_tmux, mock_list_windows):
     mock_list_windows.return_value = {"architect", "backend"}
@@ -180,7 +180,7 @@ def test_add_ticket_opener_writes_v1_ticket(mock_run_tmux, mock_list_windows):
     assert len(load_buffer_calls) == 0
 
 
-@patch("flock.tmux.openers.list_windows")
+@patch("flock.tmux.handlers.list_windows")
 @patch("flock.tmux.ops.run_tmux")
 def test_add_ticket_opener_stores_related_and_drops_non_strings(mock_run_tmux, mock_list_windows):
     mock_list_windows.return_value = {"architect", "backend"}
@@ -201,7 +201,7 @@ def test_add_ticket_opener_stores_related_and_drops_non_strings(mock_run_tmux, m
     assert ticket_data["related"] == ["abc12345", "def67890"]
 
 
-@patch("flock.tmux.openers.list_windows")
+@patch("flock.tmux.handlers.list_windows")
 @patch("flock.tmux.ops.run_tmux")
 def test_add_ticket_opener_omits_related_when_absent(mock_run_tmux, mock_list_windows):
     mock_list_windows.return_value = {"architect", "backend"}
@@ -222,7 +222,7 @@ def test_add_ticket_opener_omits_related_when_absent(mock_run_tmux, mock_list_wi
     assert "related" not in ticket_data
 
 
-@patch("flock.tmux.openers.list_windows")
+@patch("flock.tmux.handlers.list_windows")
 def test_add_ticket_opener_writes_when_window_is_missing(mock_list_windows, capsys):
     mock_list_windows.return_value = {"architect"}
     r = FakeRespRedis()
@@ -336,7 +336,7 @@ def test_assign_task_is_no_longer_a_kind():
     assert "AssignTask" not in pathlib.Path(deliver.__file__).read_text()
 
 
-@patch("flock.tmux.openers.list_windows")
+@patch("flock.tmux.handlers.list_windows")
 @patch("flock.tmux.ops.run_tmux")
 def test_add_ticket_opener_appends_to_task_record(mock_run_tmux, mock_list_windows):
     mock_list_windows.return_value = {"architect", "backend"}
@@ -368,7 +368,7 @@ def test_add_ticket_opener_appends_to_task_record(mock_run_tmux, mock_list_windo
 
 
 @patch("flock.port.deliver.redis.Redis.from_url")
-@patch("flock.tmux.openers.list_windows")
+@patch("flock.tmux.handlers.list_windows")
 @patch("flock.tmux.ops.run_tmux")
 def test_run_port_kicked_one_shot(mock_run_tmux, mock_list_windows, mock_redis_cls, monkeypatch):
     monkeypatch.delenv("TMUX_SESSION", raising=False)
@@ -494,7 +494,7 @@ def test_run_port_unroutable_broadcast_records_actual_recipient(mock_redis_cls, 
     assert records[-1]["stream_id"] == env["stream_id"]
 
 
-@patch("flock.tmux.openers.list_windows")
+@patch("flock.tmux.handlers.list_windows")
 @patch("flock.tmux.ops.run_tmux")
 def test_message_opener_writes_pending_verify_marker_for_claude(mock_run_tmux, mock_list_windows):
     mock_list_windows.return_value = {"alice", "bob"}
@@ -515,7 +515,7 @@ def test_message_opener_writes_pending_verify_marker_for_claude(mock_run_tmux, m
     assert "ts" in fields
 
 
-@patch("flock.tmux.openers.list_windows")
+@patch("flock.tmux.handlers.list_windows")
 @patch("flock.tmux.ops.run_tmux")
 def test_message_opener_marks_pending_verify_marker_for_agy(mock_run_tmux, mock_list_windows):
     """agy joined VERIFIABLE_CLIS once history.jsonl was wired into
@@ -538,7 +538,7 @@ def test_message_opener_marks_pending_verify_marker_for_agy(mock_run_tmux, mock_
     assert fields["stream_id"] == "12345-0"
 
 
-@patch("flock.tmux.openers.list_windows")
+@patch("flock.tmux.handlers.list_windows")
 @patch("flock.tmux.ops.run_tmux")
 def test_add_ticket_opener_skips_pending_verify_marker(mock_run_tmux, mock_list_windows):
     mock_list_windows.return_value = {"architect", "backend"}
@@ -554,7 +554,7 @@ def test_add_ticket_opener_skips_pending_verify_marker(mock_run_tmux, mock_list_
     assert verify_key not in r.streams
 
 
-@patch("flock.tmux.openers.list_windows")
+@patch("flock.tmux.handlers.list_windows")
 @patch("flock.tmux.ops.run_tmux")
 def test_mark_delivery_pending_swallows_redis_exceptions(mock_run_tmux, mock_list_windows):
     mock_list_windows.return_value = {"alice", "bob"}
@@ -570,7 +570,7 @@ def test_mark_delivery_pending_swallows_redis_exceptions(mock_run_tmux, mock_lis
 
 
 
-@patch("flock.tmux.openers.list_windows")
+@patch("flock.tmux.handlers.list_windows")
 @patch("flock.tmux.ops.run_tmux")
 def test_no_marker_for_a_window_running_no_cli(mock_run_tmux, mock_list_windows):
     """A bare shell writes no session file, so a delivery to it can never be
@@ -592,7 +592,7 @@ def test_no_marker_for_a_window_running_no_cli(mock_run_tmux, mock_list_windows)
 
 
 @patch("flock.port.deliver.redis.Redis.from_url")
-@patch("flock.tmux.openers.list_windows")
+@patch("flock.tmux.handlers.list_windows")
 @patch("flock.tmux.ops.run_tmux")
 def test_port_batches_consecutive_messages_into_single_paste(mock_run_tmux, mock_list_windows, mock_redis_cls, capsys):
     mock_r = FakeRespRedis()
@@ -641,7 +641,7 @@ def test_port_batches_consecutive_messages_into_single_paste(mock_run_tmux, mock
 
 
 @patch("flock.port.deliver.redis.Redis.from_url")
-@patch("flock.tmux.openers.list_windows")
+@patch("flock.tmux.handlers.list_windows")
 @patch("flock.tmux.ops.run_tmux")
 def test_port_preserves_order_with_interleaved_commands_and_tickets(mock_run_tmux, mock_list_windows, mock_redis_cls, capsys):
     mock_r = FakeRespRedis()
@@ -684,7 +684,7 @@ def test_port_preserves_order_with_interleaved_commands_and_tickets(mock_run_tmu
 
 
 @patch("flock.port.deliver.redis.Redis.from_url")
-@patch("flock.tmux.openers.list_windows")
+@patch("flock.tmux.handlers.list_windows")
 def test_port_batch_missing_window_dead_letters_all_envelopes(mock_list_windows, mock_redis_cls, capsys):
     mock_r = FakeRespRedis()
     mock_redis_cls.return_value = mock_r
@@ -709,7 +709,7 @@ def test_port_batch_missing_window_dead_letters_all_envelopes(mock_list_windows,
 
 
 @patch("flock.port.deliver.redis.Redis.from_url")
-@patch("flock.tmux.openers.list_windows")
+@patch("flock.tmux.handlers.list_windows")
 @patch("flock.tmux.ops.run_tmux")
 def test_port_burst_repro_twenty_envelopes_batched_cleanly(mock_run_tmux, mock_list_windows, mock_redis_cls, capsys):
     """Reconstructs the BURSTD001/BURSTZ003 burst scenario:
@@ -765,7 +765,7 @@ def test_port_burst_repro_twenty_envelopes_batched_cleanly(mock_run_tmux, mock_l
     assert len(opened_events) == 20
 
 
-@patch("flock.tmux.openers.list_windows")
+@patch("flock.tmux.handlers.list_windows")
 @patch("flock.tmux.ops.run_tmux")
 def test_attachment_opener_success(mock_run_tmux, mock_list_windows, tmp_path):
     mock_list_windows.return_value = {"architect", "bob"}
@@ -822,7 +822,7 @@ def test_attachment_opener_success(mock_run_tmux, mock_list_windows, tmp_path):
     assert "[attachment caption] system architecture diagram\n" in input_data
 
 
-@patch("flock.tmux.openers.list_windows")
+@patch("flock.tmux.handlers.list_windows")
 @patch("flock.tmux.ops.run_tmux")
 def test_attachment_opener_no_caption_and_idempotent_replay(mock_run_tmux, mock_list_windows, tmp_path):
     mock_list_windows.return_value = {"architect", "bob"}
@@ -881,7 +881,7 @@ def test_attachment_opener_no_caption_and_idempotent_replay(mock_run_tmux, mock_
     assert expected_file.read_bytes() == new_content
 
 
-@patch("flock.tmux.openers.list_windows")
+@patch("flock.tmux.handlers.list_windows")
 def test_attachment_opener_validation_errors(mock_list_windows, tmp_path):
     mock_list_windows.return_value = {"architect", "bob"}
     r = FakeRespRedis()
@@ -966,7 +966,7 @@ def test_attachment_burst_isolation(mock_messages, mock_attachment):
     assert mock_attachment.call_count == 1
 
 
-@patch("flock.tmux.openers.list_windows")
+@patch("flock.tmux.handlers.list_windows")
 @patch("flock.tmux.ops.run_tmux")
 def test_messages_opener_client_reply_trailer(mock_run_tmux, mock_list_windows):
     mock_list_windows.return_value = {"bob"}
@@ -991,7 +991,7 @@ def test_messages_opener_client_reply_trailer(mock_run_tmux, mock_list_windows):
     assert input_data == "[message from telegram] status check\n[reply to telegram]\n"
 
 
-@patch("flock.tmux.openers.list_windows")
+@patch("flock.tmux.handlers.list_windows")
 @patch("flock.tmux.ops.run_tmux")
 def test_messages_opener_peer_no_trailer(mock_run_tmux, mock_list_windows):
     mock_list_windows.return_value = {"bob"}
@@ -1017,7 +1017,7 @@ def test_messages_opener_peer_no_trailer(mock_run_tmux, mock_list_windows):
     assert "[reply to" not in input_data
 
 
-@patch("flock.tmux.openers.list_windows")
+@patch("flock.tmux.handlers.list_windows")
 @patch("flock.tmux.ops.run_tmux")
 def test_messages_opener_mixed_batch_trailer(mock_run_tmux, mock_list_windows):
     mock_list_windows.return_value = {"bob"}

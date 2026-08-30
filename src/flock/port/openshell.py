@@ -242,7 +242,7 @@ def _deliver_attachment(r, pod: str, tenant: str, agent: str, envelope: dict, cl
     if caption is not None and not isinstance(caption, str):
         raise DeadLetter("caption must be a string if present")
 
-    # Same validation as flock.tmux.openers.attachment_opener --
+    # Same validation as flock.tmux.handlers.attachment_opener --
     # filename: non-empty UTF-8 basename, at most 255 UTF-8 bytes, no path
     # separators/control chars/'.'/'..'.
     try:

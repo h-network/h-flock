@@ -3,7 +3,7 @@
 > **Status: built and running.** Published on its own port beside the api.
 >
 > The live view of a tenant's terminals, and the way a human types into one.
-> Depends on [`LLD-tmux-host.md`](LLD-tmux-host.md) for the windows it reads.
+> Depends on [`LLD-tmux-reconciler.md`](LLD-tmux-reconciler.md) for the windows it reads.
 > It never touches an envelope.
 
 ## 1. Purpose
@@ -154,7 +154,7 @@ same reasoning as the api door — see `LLD-api` §6 and `LLD-container` §3.
 ## 6. Lifecycle
 
 The control-mode client dies when the tmux server does, which under
-`LLD-tmux-host` §6 takes every pane with it. There is nothing to recover — the
+`LLD-tmux-reconciler` §6 takes every pane with it. There is nothing to recover — the
 windows are gone. Reconnect when a server exists again and tell subscribers the
 stream broke rather than letting it silently stop.
 
@@ -170,7 +170,7 @@ screen snapshot.
 per-connection log record identifies a connection, not a person.
 
 **Resize — decided, and the answer is no.** Windows are a fixed 120×32
-(`LLD-tmux-host` §3) and no client may change that. A resize would affect every
+(`LLD-tmux-reconciler` §3) and no client may change that. A resize would affect every
 other viewer and the agent in the window, so there is no rule about who wins
 because nobody gets to. An app renders the size it is given and scrolls or
 scales to fit.

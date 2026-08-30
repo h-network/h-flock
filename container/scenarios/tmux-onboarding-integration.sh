@@ -330,9 +330,9 @@ expect_value() {
 }
 expect_value tenant_health healthy "$health"
 switch_count="$(docker exec "$CONTAINER" pgrep -f '[p]ython3 -m flock.switch' 2>/dev/null | wc -l | tr -d ' ')"
-tmuxhost_count="$(docker exec "$CONTAINER" pgrep -f '[p]ython3 -m flock.tmuxhost' 2>/dev/null | wc -l | tr -d ' ')"
+tmux_reconciler_count="$(docker exec "$CONTAINER" pgrep -f '[p]ython3 -m flock.tmux_reconciler' 2>/dev/null | wc -l | tr -d ' ')"
 expect_value switch_count 1 "$switch_count"
-expect_value tmuxhost_count 1 "$tmuxhost_count"
+expect_value tmux_reconciler_count 1 "$tmux_reconciler_count"
 
 TMUX=(docker exec "$CONTAINER" env TMUX_TMPDIR=/home/ubuntu/.flock/tmux tmux)
 ROSTER="pod:${POD}:tenant:${TENANT}:roster"

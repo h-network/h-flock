@@ -83,7 +83,7 @@ attempted or provably rejected.* ⚠ **It then found five more sites outside thi
 build**, two of which could make the custody log report a delivery loss that
 never happened — see `TODO.md`. ⚠ **The hire row is only HALF closed**: control
 records what it *accepted*, and whether the window actually appeared is
-`tmuxhost`'s to say.
+`tmux_reconciler`'s to say.
 
 **Rows:** *a hire leaves no record of whether it worked* · *`--profile` is not
 validated against the accounts that exist* · the watchdog half of
@@ -119,7 +119,7 @@ was fixed. The agy claim itself is proven live against a real hired agent.
 | codex model | `src/flock/watchdog/activity.py:154` falls through to `"unknown"`, so every codex row prices as `unpriced` — indistinguishable from a genuinely free local model. ⚠ **The model is in `turn_context`**, emitted once per turn as `payload.model`, not in the usage record. Take the last one at or before the record's ordinal, so a mid-session model change is followed |
 | agy | agy records **no token counts anywhere**. Its state is SQLite and protobuf, not JSONL; the model is there (`gemini-3.7-flash`, one row per generation) and the counts are not. **So agy is not priceable from local state**, and the fix is to say so in the output rather than to write an adapter that cannot exist |
 | rate limits | codex logs `used_percent`, `resets_at` and `plan_type` beside every usage record. We surface none of it, and it is the limit an operator actually hits |
-| attribution | decide whether a trimmed marker gets a signal, **or close the row**. `src/flock/tmux/openers.py:69` bounds markers at 500 and the comment above it argues the loss should stay silent — a counter that fired on the normal case was built and deleted in review once already |
+| attribution | decide whether a trimmed marker gets a signal, **or close the row**. `src/flock/tmux/handlers.py:69` bounds markers at 500 and the comment above it argues the loss should stay silent — a counter that fired on the normal case was built and deleted in review once already |
 
 ⚠ **Fixtures are the deliverable, not a side effect.** Both defects above
 shipped because a test constructed a shape the vendor has never written and
@@ -184,10 +184,10 @@ mechanical:
 - **build 100's harness wraps `rpush` only**, targets the **ingress** key, and
   attaches to the **switch** process. A control-plane fault needs different Redis
   verbs and a different target process. **Extending it is part of 9a's cost.**
-- **`tmuxhost` has no `correlation_id` to thread.** It reconciles from Redis, and
+- **`tmux_reconciler` has no `correlation_id` to thread.** It reconciles from Redis, and
   `start_agent` never persists one. 9b needs a **new piece of desired state**,
   with a lifecycle, and it must tolerate `window_created` events that have **no
-  cause at all** — tmuxhost rebuilds missing windows with no control envelope
+  cause at all** — tmux_reconciler rebuilds missing windows with no control envelope
   behind them.
 
 **Both are still worth doing and the sprint stands.** Recorded because a spec
@@ -228,8 +228,8 @@ write the Lua script in this build.**
 open half of *a hire leaves no record of whether it worked*.
 
 ⚠ **This row shrank on measurement rather than on argument.** It assumed
-`tmuxhost` needed a new confirmation record. It does not —
-`src/flock/tmuxhost/host.py:116` and `src/flock/tmuxhost/host.py:150` **already
+`tmux_reconciler` needed a new confirmation record. It does not —
+`src/flock/tmux_reconciler/service.py:116` and `src/flock/tmux_reconciler/service.py:150` **already
 emit `window_created`.** The only thing missing is a `correlation_id`, so nothing
 can say *which hire produced which window*.
 
@@ -467,7 +467,7 @@ Today's builds and acceptance runs opened six rows that no sprint above covers.
 **Re-slot them before picking sprint 4** — three of them are consequences of
 sprint 2 and belong next to it, not at the bottom of a list:
 
-⚠ **CORRECTED — two of the six are closed, not open.** ~~`tmuxhost` should
+⚠ **CORRECTED — two of the six are closed, not open.** ~~`tmux_reconciler` should
 emit the control confirmation~~ shipped in build 103 (`TODO.md:55`), joining
 `window_created` to its cause. ~~`office status` says `unknown` for an agy
 agent~~ was answered 2026-08-27 (`TODO.md:62`): presence was not genuinely
@@ -476,7 +476,7 @@ remaining gap is deploy-lag rolling the fix out to this tenant's own running
 processes, not a design question. Struck through below rather than removed,
 so the "re-slot" instruction isn't read as still applying to them.
 
-- ~~`tmuxhost` should emit the control confirmation~~ — **shipped, build 103**
+- ~~`tmux_reconciler` should emit the control confirmation~~ — **shipped, build 103**
 - control desired-state writes are not atomic, so a partial hire is possible
 - a revoked OAuth token is invisible to the watchdog
 - acceptance never exercises `office usage` or `office status`

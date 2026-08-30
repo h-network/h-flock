@@ -647,7 +647,7 @@ def test_changed_existing_hire_retires_stale_window_after_desired_state(monkeypa
     ]
 
 
-def test_fresh_hire_with_profile_and_provider_leaves_creation_to_tmuxhost(monkeypatch):
+def test_fresh_hire_with_profile_and_provider_leaves_creation_to_tmux_reconciler(monkeypatch):
     events = []
     fake_tmux = types.ModuleType("flock.tmux")
     fake_tmux.kill_window = lambda session, agent, socket=None: (

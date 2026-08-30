@@ -26,7 +26,7 @@ is imported, never vendored.
     switch/      the switch process
     control/     the control port_type: StartAgent, StopAgent openers
     port/     the port: invoked per kick, dispatches on port_type
-    tmuxhost/    the tmux host
+    tmux_reconciler/    the tmux reconciler
     api/         the FastAPI app
   tests/
   container/     Dockerfile, entrypoint, compose file
@@ -50,7 +50,7 @@ delivery knowledge out of the switching path without pretending modules never
 import one another.
 
 `flock.tmux` holds the low-level operations — `create_window`, `kill_window`,
-`list_windows`, and the paste sequence — because both the tmux host and the
+`list_windows`, and the paste sequence — because both the tmux reconciler and the
 port's openers drive tmux. One implementation with two callers; two
 implementations would drift, and the drift would be invisible until a window
 appeared with the wrong environment or the wrong shell.
@@ -173,7 +173,7 @@ def create_window(session_name: str, agent_name: str,
     # command defaults to ["env", f"AGENT_NAME={agent_name}", "bash", "-il"]
     # cwd -> tmux -c. Defaults to /workdir/<agent_name>
     # targets "<session>:" — the trailing colon is load-bearing, see
-    # LLD-tmux-host §5
+    # LLD-tmux-reconciler §5
 
 def kill_window(session_name: str, window_name: str,
                 socket: str | None = None) -> tuple[int, str, str]
@@ -206,7 +206,7 @@ record naming the directory that failed. They used to end in `except: pass`, and
 that is exactly how the profile-blind trust bug hid: seeding failed quietly and
 every profiled agent sat at a picker, unreachable, reading as `idle`.
 
-def paste_text(session_name: str, agent_name: str, text: str,
+def submit_text(session_name: str, agent_name: str, text: str,
                stream_id: str = "", socket: str | None = None) -> None
     # load-buffer → paste-buffer -p -d → delay → Enter
     # failures get a best-effort delete; -d deletes on the successful path
@@ -215,8 +215,8 @@ def paste_text(session_name: str, agent_name: str, text: str,
     # complete paste sequence succeeded
 ```
 
-`StartAgent` writes desired state and leaves creation to tmuxhost, the sole
-window-creation implementation. tmuxhost passes the resolved environment and
+`StartAgent` writes desired state and leaves creation to tmux_reconciler, the sole
+window-creation implementation. tmux_reconciler passes the resolved environment and
 `startAgent <cli>` command to `create_window`.
 
 ### A delivery routine per port_type
@@ -243,7 +243,7 @@ and `TMUX_SOCKET` at their respective delivery edges.
 Tmux is lazy in the other direction as well: importing the generic
 `flock.port` package or registry does not import `flock.tmux`. Its registered
 handler lives in `flock.tmux.deliver`, its terminal actions live in
-`flock.tmux.openers`, and `flock.port.openers` contains the shared storage-only
+`flock.tmux.handlers`, and `flock.port.openers` contains the shared storage-only
 AddTicket action plus attachment schema constants reused by OpenShell.
 Compatibility access to the former top-level
 `flock.port` tmux exports is lazy.
@@ -281,7 +281,7 @@ only one path creates either missing evidence or a duplicate custody record
 | Field | | |
 |---|---|---|
 | `ts` | required | RFC3339, UTC, milliseconds |
-| `module` | required | component name, such as `bus`, `switch`, `port`, `tmuxhost`, `api`, `session`, `watchdog`, `control`, `tmux` or `container` |
+| `module` | required | component name, such as `bus`, `switch`, `port`, `tmux_reconciler`, `api`, `session`, `watchdog`, `control`, `tmux` or `container` |
 | `event` | required | see below |
 | `writer` | required | process label: `FLOCK_WRITER` when set, otherwise `module`; it is provenance for analysis, not an unforgeable credential |
 | `stream_id` | envelope events only | the join key; absent on lifecycle records |
@@ -296,7 +296,7 @@ only one path creates either missing evidence or a duplicate custody record
 in the same record and reads as a third identity for the same thing.
 
 Standard process labels for `writer` reflect operational components: `control`,
-`switch`, `port`, `tmuxhost`, `watchdog`, `container`, and `usage` (or `bench-send`/`bench-port`
+`switch`, `port`, `tmux_reconciler`, `watchdog`, `container`, and `usage` (or `bench-send`/`bench-port`
 during benchmarking).
 
 ⚠ **`writer: fault-injection` identifies deliberately synthetic records.** It is
@@ -417,8 +417,8 @@ the first write, where outcome is UNKNOWN with no writes acknowledged), the
 opener emits `{start,stop,pause,resume}_agent_incomplete`. ⚠ **`_accepted` records
 desired-state acknowledgement, not actual window or process creation.** For `StartAgent`,
 actual tmux windows and process lifecycles are reconciled asynchronously by
-`tmuxhost.reconcile_once`. For `StopAgent`, the opener attempts to kill the window
-synchronously inline after desired-state writes, with `tmuxhost` providing later cleanup.
+`tmux_reconciler.reconcile_once`. For `StopAgent`, the opener attempts to kill the window
+synchronously inline after desired-state writes, with `tmux_reconciler` providing later cleanup.
 
 `resume_agent_partially_failed` is the distinct known-failure outcome: desired-state
 writes and any earlier actual-state actions named as acknowledged did occur, but
@@ -655,8 +655,8 @@ shape admission, described below.
 | `Message` | `tmux`, `openshell` | `{"text": "..."}` | tmux pastes attributed text; OpenShell runs one attributed headless prompt and sends its output back over the bus |
 | `Command` | `tmux`, `openshell` | `{"text": "..."}` | executes bare text: pasted into tmux or passed to one headless sandbox invocation |
 | `Attachment` | `tmux`, `openshell` | `{"filename", "mime_type", "content_base64", "caption"?}` | writes decoded bytes into the recipient's workspace/sandbox; tmux also pastes an inert notice |
-| `StartAgent` | `control` | `{"agent": "networking", "cli": "claude", "port_type": "tmux", "resume": true, "skip_permissions": true, "claude_tools": ""}` | publishes desired launch state, enrols (tmuxhost reconciles window and CLI, auto-resuming history); `skip_permissions`/`claude_tools` optional, each omitted means `startAgent`'s own default |
-| `StopAgent` | `control` | `{"agent": "networking"}` | removes roster row, purges identity state, kills window inline (tmuxhost cleans up on reconcile) |
+| `StartAgent` | `control` | `{"agent": "networking", "cli": "claude", "port_type": "tmux", "resume": true, "skip_permissions": true, "claude_tools": ""}` | publishes desired launch state, enrols (tmux_reconciler reconciles window and CLI, auto-resuming history); `skip_permissions`/`claude_tools` optional, each omitted means `startAgent`'s own default |
+| `StopAgent` | `control` | `{"agent": "networking"}` | removes roster row, purges identity state, kills window inline (tmux_reconciler cleans up on reconcile) |
 | `PauseAgent` | `control` | `{"agent": "networking"}` | marks paused in Redis and interrupts CLI |
 | `ResumeAgent` | `control` | `{"agent": "networking"}` | clears pause in Redis, resumes CLI, kicks pending ingress |
 | `AddTicket` | `tmux`, `openshell` | `{"title", "description", "priority", "related"}` | writes a ticket to that agent's `tasks.todo` — and **pastes nothing** |
@@ -838,11 +838,11 @@ that one difference is the whole security boundary.
 ### `StartAgent` publishes desired state; `StopAgent` attempts actual-state teardown synchronously
 
 `StartAgent` publishes optional profile and provider state plus the launch key,
-then enrols the agent; tmuxhost reconciliation asynchronously creates its window
+then enrols the agent; tmux_reconciler reconciliation asynchronously creates its window
 and starts the CLI in it. Desired launch state is visible before the roster row that triggers
 reconciliation, while actual window creation still follows enrolment.
 `StopAgent` removes the roster row, purges classified identity state, and attempts to kill
-the window synchronously inline (`tmuxhost.reconcile_once` also cleans up any orphaned window later).
+the window synchronously inline (`tmux_reconciler.reconcile_once` also cleans up any orphaned window later).
 
 For a fresh tmux membership carrying a `correlation_id`, `StartAgent` atomically
 publishes the per-agent `window.cause` key with roster visibility. The first
@@ -856,12 +856,12 @@ later crash recovery. A real-agent recovery with no marker emits a valid
 `window_created` with `correlation_id` absent; `__init__` placeholder creation
 does not emit that lifecycle event. Consumption happens before
 logging, deliberately preferring a missing join over a stale false join if
-tmuxhost dies at that boundary. Idempotent starts do not publish a cause because
+tmux_reconciler dies at that boundary. Idempotent starts do not publish a cause because
 they require no new window.
 
 The cause and roster row are one Lua write boundary because neither sequential
 ordering is truthful: cause-first could strand an id when roster publication
-fails, while roster-first could let tmuxhost create before the id is visible.
+fails, while roster-first could let tmux_reconciler create before the id is visible.
 If the operation commits but its reply is lost, control conservatively emits
 `start_agent_incomplete`; Redis nevertheless contains both values. The Lua
 script writes the roster first because Redis does not roll back earlier script
@@ -894,12 +894,12 @@ restate it.
   StartAgent            StopAgent
     SET  …:networking:launch cli   HDEL roster networking
     HSET roster networking tmux    purge classified identity state
-    tmuxhost reconciles      kill the window
+    tmux_reconciler reconciles      kill the window
 ```
 
 **Desired state before its reconciliation trigger on start; roster before actual
 state on stop.** Launch/profile/provider values are written before the roster
-row, because that row can immediately trigger tmuxhost. On stop, the roster row
+row, because that row can immediately trigger tmux_reconciler. On stop, the roster row
 is removed before the window. The roster is desired membership and tmux is
 actual state, so the host converges the second toward the first.
 
@@ -908,9 +908,9 @@ the `HDEL`, and the host finds a roster row with no window and **recreates it**.
 The agent you just killed comes back, one poll later, looking like the host
 working correctly.
 
-tmuxhost is the only creator. A repeated `StartAgent` with changed CLI, profile,
+tmux_reconciler is the only creator. A repeated `StartAgent` with changed CLI, profile,
 provider, or resume setting removes the stale window after publishing the new
-desired state; tmuxhost then rebuilds it through the same path used at boot. An
+desired state; tmux_reconciler then rebuilds it through the same path used at boot. An
 unchanged hire is idempotent and leaves the running window alone.
 
 ⚠ **Session history and re-hiring**: `StopAgent` cleans up Redis state and kills
@@ -918,7 +918,7 @@ the active tmux window, but deliberately leaves `/workdir/<name>` and prior CLI
 session files on disk (`~/.claude[-<profile>]/projects/...`,
 `~/.codex[-<profile>]/sessions/...`, `~/.gemini/antigravity-cli/history.jsonl`).
 When `StartAgent` is subsequently called for that agent name without an explicit
-`resume: false` (`--fresh`), `tmuxhost` auto-detects existing session history for
+`resume: false` (`--fresh`), `tmux_reconciler` auto-detects existing session history for
 that workspace and launches with the CLI's native resume command (`startAgent claude --resume`,
 `startAgent codex resume --last`, `startAgent agy --continue`), attaching to the
 most recent session recorded for that directory. Explicit `resume: true` forces
@@ -1260,7 +1260,7 @@ or boot-only configuration must not reach agent windows (`LLD-container` §4).
 |---|---|
 | `POD`, `TENANT` | the prefix every Redis key is built from |
 | `AGENTS` | comma-separated `name:port_type` pairs; boot-only roster seed, unset before tmux starts |
-| `ROSTER_POLL_SECONDS` | default `5`. Shared by the switch and tmuxhost |
+| `ROSTER_POLL_SECONDS` | default `5`. Shared by the switch and tmux_reconciler |
 | `ACTIVITY_POLL_SECONDS` | default `2`. How often the **watchdog** tails CLI session files for the activity feed |
 | `VERIFY_AFTER_SECONDS` | default **`120`**. How long a delivery marker waits for later **`input`, `output` or `tool`** activity before being reported unconfirmed |
 | `WATCHDOG_ENABLED` | default `1`. ⚠ **`0` does NOT stop the process** — it silences *alerting* only. The observers keep running, because the api door, the console and the Telegram client all read what they write, and exiting took those down with it |

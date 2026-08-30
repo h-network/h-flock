@@ -22,10 +22,10 @@ Tier A is documentation, B internal code, C Redis/environment, and D wire.
 **`provider` already means something else in this codebase**, and it is a
 different concept from what OpenShell calls a provider:
 
-- `flock.tmux`/`flock.tmuxhost`'s `provider` (see `NAMING-tmux.md`) is a
+- `flock.tmux`/`flock.tmux_reconciler`'s `provider` (see `NAMING-tmux.md`) is a
   **model backend** selected for a tmux agent — a name that resolves to
   `PROVIDER_<NAME>_URL`/`_TOKEN`/`_MODEL` environment variables read by
-  `tmuxhost`. `NAMING-tmux.md` itself already flags this sense as
+  `tmux_reconciler`. `NAMING-tmux.md` itself already flags this sense as
   "misleading: a model uplink, not the participant provider."
 - OpenShell's `provider` (`SandboxSpec.providers`, `AttachSandboxProvider`)
   is a **named credential bundle** attached to a sandbox at creation — a
