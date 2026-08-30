@@ -912,8 +912,9 @@ def test_unreplied_duration_does_nothing_without_a_configured_lead(monkeypatch):
     assert _key("architect", "ingress") not in r.lists
 
 
-def test_credentials_warn_on_claude_refresh_expiry_and_codex_is_unknown(tmp_path, capsys):
+def test_credentials_warn_on_claude_refresh_expiry_and_codex_is_unknown(tmp_path, monkeypatch, capsys):
     r = WatchRedis()
+    monkeypatch.delenv("CLAUDE_OAUTH_TOKEN_DEFAULT", raising=False)
     r.values[_key("architect", "launch")] = "claude"
     r.values[_key("sme-2", "launch")] = "codex"
     claude = tmp_path / ".claude"
@@ -1033,9 +1034,10 @@ def test_credential_alert_retracted_when_credential_recovers(tmp_path, monkeypat
     assert r.hashes.get(alerted_key, {}) == {}
 
 
-def test_credential_alert_retracted_from_expiring_when_token_refreshed(tmp_path, capsys):
+def test_credential_alert_retracted_from_expiring_when_token_refreshed(tmp_path, monkeypatch, capsys):
     """Build 105 §1: when an expiring credential is refreshed, watchdog emits status=present."""
     r = WatchRedis()
+    monkeypatch.delenv("CLAUDE_OAUTH_TOKEN_DEFAULT", raising=False)
     r.values[_key("architect", "launch")] = "claude"
     claude = tmp_path / ".claude"
     claude.mkdir()
@@ -1216,8 +1218,9 @@ def test_missing_credentials_alert_once_per_account_in_use_and_clear_on_reseed(t
     assert r.hashes[prefix("acme", "hq", resource="credential.alerted")] == {}
 
 
-def test_missing_credentials_alert_for_each_cli_account_in_use(tmp_path):
+def test_missing_credentials_alert_for_each_cli_account_in_use(tmp_path, monkeypatch):
     r = WatchRedis()
+    monkeypatch.delenv("CLAUDE_OAUTH_TOKEN_DEFAULT", raising=False)
     r.roster["sme-3"] = "tmux"
     r.values[_key("architect", "launch")] = "claude"
     r.values[_key("sme-2", "launch")] = "codex"
