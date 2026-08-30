@@ -85,8 +85,10 @@ This one opener is shared with OpenShell and therefore remains in
 `flock.port.openers`; all terminal/paste openers live in `flock.tmux.openers`.
 
 - **No window check**: Writes to `tasks.todo` succeed even if the agent's window is not currently open.
-- **Synchronous mutation confirmation**: Returns list depth to confirm write. Success emits `board_write_confirmed`.
-  Exceptions or invalid lengths raise `DeadLetter` and emit `dead_lettered`.
+- **Synchronous mutation confirmation**: Checks the returned list depth
+  internally, then emits `board_write_confirmed` with `count=<depth>` and
+  returns `None`. Exceptions or invalid lengths raise `DeadLetter` and emit
+  `dead_lettered`.
 
 ### `Attachment` — workspace file write + inert notice
 `{"filename": "…", "mime_type": "…", "content_base64": "…", "caption": "…"}`.

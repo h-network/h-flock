@@ -31,7 +31,7 @@ def mark_delivery_pending(
     stream_id: str,
     correlation_id: str | None = None,
 ) -> None:
-    """Record a pending delivery verification marker for a tmux paste (claude/codex only)."""
+    """Record a pending delivery verification marker for a verifiable tmux CLI."""
     try:
         if not stream_id:
             return

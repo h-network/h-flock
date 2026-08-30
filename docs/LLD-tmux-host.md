@@ -201,14 +201,23 @@ the same line to the durable mounted custody log (`FLOCK_CUSTODY_FILE`).
 
 ## 6. Lifecycle
 
-tmux restarts nothing. A window whose process exits stays dead; a server that
-dies takes every pane with it.
+tmux itself restarts nothing. With `remain-on-exit` off, when a pane's process
+exits tmux removes its window; a server failure takes every pane with it.
 
-So supervision lives **above** this module — the container entrypoint gives the
-tmux host its own restart loop without restarting peer services. What this
-module owes that supervisor is idempotence: bringing the host up when it is
-already up must be a no-op, and reconciliation must converge rather than
-duplicate.
+The continuously polling tmuxhost makes the effective agent restart policy
+different from tmux's own behavior: on its next reconciliation pass, every
+`port_type: tmux` roster member whose window is missing is recreated. There is
+currently no retry limit, backoff, or terminal failed state. A configured CLI
+is launched again through `startAgent`, and the ordinary session-history check
+may select that CLI's resume command. This was verified live when a second
+Ctrl-C made a CLI exit, tmux removed its window, and reconciliation recreated
+it.
+
+Supervision therefore has two layers: tmuxhost continuously supervises desired
+window existence, while the container entrypoint restarts tmuxhost itself
+without restarting peer services. Both layers depend on idempotence: bringing
+the host up when it is already up must be a no-op, and reconciliation must
+converge rather than duplicate.
 
 Two consequences for anything downstream:
 
@@ -218,9 +227,10 @@ Two consequences for anything downstream:
 
 ## 7. Deferred
 
-**Restart policy for a dead agent.** Whether a window whose process exited should
-be relaunched, and how many times before giving up, is a decision that needs
-something watching. Not part of bringing the host up.
+**Desired restart policy for a dead agent.** The implemented behavior is
+unlimited recreation on reconciliation (§6). Whether that should instead have
+a retry limit, backoff, or terminal failed state remains a design decision.
+Documenting the current behavior does not decide that policy.
 
 **Cross-tenant routing.** Multiple tenants on one host are already supported:
 `flock_tenant_context` gives each tenant its own Compose project and container,
@@ -233,8 +243,9 @@ owned.
 Not the port — it never reads a queue, never opens an envelope, never types
 into a window.
 
-Not a supervisor. It creates windows and reconciles them; keeping processes
-alive is someone else's job.
+Not a child-process supervisor. It does not keep a CLI process alive in place,
+but its desired-state reconciliation does recreate a missing agent window and
+therefore relaunches the configured CLI (§6).
 
 Not a terminal multiplexer for humans. Attaching is supported because tmux
 supports it, not because anything here is designed around a viewer.
