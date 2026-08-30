@@ -1,9 +1,11 @@
 # One container is one tenant. Reaching a different tenant means reaching a
 # different container (LLD-container §1).
 #
-#   . container/flock-compose.sh && flock_compose_args hq
-#   docker compose -p "$FLOCK_PROJECT" --env-file "$TENANT_ENV_FILE" "${FLOCK_COMPOSE_ARGS[@]}" up -d
-#   docker compose -p "$FLOCK_PROJECT" --env-file "$TENANT_ENV_FILE" "${FLOCK_COMPOSE_ARGS[@]}" down -v
+#   . container/flock-compose.sh && resolve_compose_files hq
+#   COMPOSE=(docker compose -p "$FLOCK_COMPOSE_PROJECT" --env-file "$FLOCK_TENANT_ENV_PATH")
+#   for file in "${FLOCK_COMPOSE_FILES[@]}"; do COMPOSE+=(-f "$file"); done
+#   "${COMPOSE[@]}" up -d
+#   "${COMPOSE[@]}" down -v
 #
 # ⚠ Always pass -p. On the lab host an unrelated h-cli container is off limits,
 # and a project-scoped teardown is what keeps it that way. Never run
@@ -17,20 +19,20 @@ services:
     # ⚠ Tagged by commit so an existing image proves it matches the source
     # under test. See container/flock-image.sh. Defaults to latest for a
     # caller that has not sourced it.
-    image: ${FLOCK_IMAGE:-h-flock:latest}
+    image: ${FLOCK_TENANT_IMAGE:-h-flock:latest}
     # The tenant-scoped env reaches the container, so an operator can define any
     # number of providers under any names without editing this file. --env-file
     # alone only controls interpolation; this separate path controls the actual
     # container environment and must resolve to the same tenant.
     env_file:
-      - "${FLOCK_TENANT_ENV_FILE:?resolve a tenant with container/flock-compose.sh}"
+      - "${FLOCK_TENANT_ENV_PATH:?resolve a tenant with container/flock-compose.sh}"
     environment:
       POD: "${POD:-acme}"
       TENANT: "${TENANT:-hq}"
       # ⚠ name:port_type pairs — the entrypoint rejects a bare name and the container
       # exits. This default was bare from the start and had never been used,
       # because setup.sh always writes a .env that overrides it.
-      AGENTS: "${AGENTS:-architect:tmux,sme-2:tmux,sme-3:tmux}"
+      ROSTER_SEED: "${ROSTER_SEED:-architect:tmux,sme-2:tmux,sme-3:tmux}"
       ROSTER_POLL_SECONDS: "${ROSTER_POLL_SECONDS:-5}"
       # ⚠ The default MUST be spelled here, not left empty. An unset variable
       # passed through as "" is not absent — `os.environ.get(NAME, "120")` finds
@@ -39,50 +41,47 @@ services:
       # default, or the image shadows the code the way `Dockerfile:119` did.
       VERIFY_AFTER_SECONDS: "${VERIFY_AFTER_SECONDS:-120}"
       INGRESS_MAX: "${INGRESS_MAX:-300}"
-      BOARD_DONE_MAX: "${BOARD_DONE_MAX:-500}"
-      DEAD_MAX: "${DEAD_MAX:-500}"
+      DONE_TASK_MAX: "${DONE_TASK_MAX:-500}"
+      DEAD_LETTER_MAX: "${DEAD_LETTER_MAX:-500}"
       WINDOW_LOG_MAX_BYTES: "${WINDOW_LOG_MAX_BYTES:-8388608}"
       # Exceptions only — "frontend=codex", "backend=work". Blank when uniform.
       # ⚠ The tenant .env feeds compose's variable substitution; a variable only
       # reaches the container if it is named here as well.
       AGENT_CLIS: "${AGENT_CLIS:-}"
-      AGENT_PROFILES: "${AGENT_PROFILES:-}"
+      AGENT_ACCOUNTS: "${AGENT_ACCOUNTS:-}"
       # Which agents run against a model provider. The NAME is per agent; the
       # address is tenant configuration, so an agent cannot read or change the
       # provider it is pointed at.
       #
-      # ⚠ The PROVIDER_<NAME>_* variables are NOT listed here. Naming them would
+      # ⚠ The MODEL_PROVIDER_<NAME>_* variables are NOT listed here. Naming them would
       # hardcode the provider name — only "local" would ever reach the container,
       # and a tenant with "gpu-a" and "gpu-b" could not work. env_file passes
       # whatever the operator named.
       AGENT_PROVIDERS: "${AGENT_PROVIDERS:-}"
       # No default. The container refuses to start without it.
-      API_TOKEN: "${API_TOKEN:?set API_TOKEN in the tenant .env}"
-      # ⚠ The published host, passed in so the entrypoint can judge exposure —
-      # the doors bind 0.0.0.0 inside the container and cannot see this mapping.
-      # A door published beyond loopback without TLS stops the tenant starting
-      # unless ALLOW_PLAINTEXT_PUBLISH=1 says that is intended (`LLD-container` §3.1).
-      # ⚠ The doors ALWAYS bind 8080/8081 inside the container; API_PORT and
-      # SESSION_PORT choose the HOST side of the mapping only. env_file passes
-      # the whole .env in, so without these two overrides a tenant published on
-      # any other port binds that port internally, the ":8080" mapping points at
-      # nothing, and the tenant comes up unhealthy with a working door nobody
-      # can reach. Measured while running a second tenant beside the first.
-      API_PORT: "8080"
-      SESSION_PORT: "8081"
-      # ⚠ OPT-IN. Off by default: the api is the widest surface a tenant has, and
+      TENANT_ACCESS_TOKEN: "${TENANT_ACCESS_TOKEN:?set TENANT_ACCESS_TOKEN in the tenant .env}"
+      # ⚠ The publish address is passed in so the entrypoint can judge exposure —
+      # the services listen on 0.0.0.0 inside the container and cannot see this mapping.
+      # A service published beyond loopback without TLS stops the tenant starting
+      # unless ALLOW_INSECURE_PUBLISH=1 says that is intended (`LLD-container` §3.1).
+      # Internal listen ports are fixed independently of host-side publish ports.
+      # Generated compose.ports.yaml maps API_PUBLISH_PORT/TERMINAL_PUBLISH_PORT
+      # onto these two values.
+      API_LISTEN_PORT: "8080"
+      TERMINAL_LISTEN_PORT: "8081"
+      # ⚠ OPT-IN. Off by default: the API is the widest surface a tenant has, and
       # a tenant whose agents only talk over the bus never needs it. Named here
       # explicitly rather than left to env_file, because the healthcheck below
-      # branches on it and an unset value there would probe a door that is not
-      # running. Set API_ENABLED=1 in tenants/<tenant>/.env to publish it.
-      API_ENABLED: "${API_ENABLED:-0}"
-      API_HOST: "${API_HOST:-}"
-      SESSION_HOST: "${SESSION_HOST:-}"
-      ALLOW_PLAINTEXT_PUBLISH: "${ALLOW_PLAINTEXT_PUBLISH:-0}"
+      # branches on it and an unset value there would probe a service that is not
+      # running. Set API_SERVICE_ENABLED=1 in tenants/<tenant>/.env to publish it.
+      API_SERVICE_ENABLED: "${API_SERVICE_ENABLED:-0}"
+      API_PUBLISH_ADDRESS: "${API_PUBLISH_ADDRESS:-}"
+      TERMINAL_PUBLISH_ADDRESS: "${TERMINAL_PUBLISH_ADDRESS:-}"
+      ALLOW_INSECURE_PUBLISH: "${ALLOW_INSECURE_PUBLISH:-0}"
       API_TLS_CERT: "${API_TLS_CERT:-}"
       API_TLS_KEY: "${API_TLS_KEY:-}"
-      SESSION_TLS_CERT: "${SESSION_TLS_CERT:-}"
-      SESSION_TLS_KEY: "${SESSION_TLS_KEY:-}"
+      TERMINAL_TLS_CERT: "${TERMINAL_TLS_CERT:-}"
+      TERMINAL_TLS_KEY: "${TERMINAL_TLS_KEY:-}"
       TELEGRAM_BOT_TOKEN: "${TELEGRAM_BOT_TOKEN:-}"
       TELEGRAM_CHAT_ID: "${TELEGRAM_CHAT_ID:-}"
       TELEGRAM_VOICE: "${TELEGRAM_VOICE:-0}"
@@ -91,27 +90,27 @@ services:
       # (clients/web is not started here; see the comment above §"bundled
       # clients" and clients/web/README.md's Mini App section).
       MINI_APP_URL: "${MINI_APP_URL:-}"
-    # Worker and door services restart independently inside the tenant. Redis
+    # Worker and published services restart independently inside the tenant. Redis
     # remains critical: its exit restarts the tenant so boot can purge transport.
     restart: unless-stopped
     init: false  # tini is PID 1 from the image's own ENTRYPOINT
     healthcheck:
-      # ⚠ Scheme follows the door. With certs configured the api speaks TLS, and
+      # ⚠ Scheme follows the API service. With certs configured it speaks TLS, and
       # a plaintext probe gets "Empty reply from server" forever — measured: a
       # TLS tenant that served perfectly sat `health: starting` until it went
       # unhealthy. -k because the cert is for the published name, not 127.0.0.1.
       #
-      # ⚠ And the door is opt-in (API_ENABLED). With it off there is nothing to
+      # ⚠ And the API service is opt-in. With it off there is nothing to
       # curl, so liveness is the switch — the one daemon a tenant cannot deliver
       # without. Probing the api unconditionally would take every api-less tenant
       # unhealthy while it forwarded perfectly.
-      test: ["CMD-SHELL", "if [ \"$${API_ENABLED:-0}\" = \"0\" ]; then pgrep -f 'python3 -m flock.switch' >/dev/null && redis-cli -u \"$${REDIS_URL:-redis://127.0.0.1:6379/0}\" ping >/dev/null || exit 1; elif [ -n \"$$API_TLS_CERT\" ]; then curl -fsSk -H \"Authorization: Bearer $$API_TOKEN\" https://127.0.0.1:8080/health || exit 1; else curl -fsS -H \"Authorization: Bearer $$API_TOKEN\" http://127.0.0.1:8080/health || exit 1; fi"]
+      test: ["CMD-SHELL", "if [ \"$${API_SERVICE_ENABLED:-0}\" = \"0\" ]; then pgrep -f 'python3 -m flock.switch' >/dev/null && redis-cli -u \"$${REDIS_URL:-redis://127.0.0.1:6379/0}\" ping >/dev/null || exit 1; elif [ -n \"$$API_TLS_CERT\" ]; then curl -fsSk -H \"Authorization: Bearer $$TENANT_ACCESS_TOKEN\" https://127.0.0.1:8080/health || exit 1; else curl -fsS -H \"Authorization: Bearer $$TENANT_ACCESS_TOKEN\" http://127.0.0.1:8080/health || exit 1; fi"]
       interval: 10s
       timeout: 3s
       retries: 5
       start_period: 20s
     # ⚠ Docker's json-file driver had NO cap here, so container stdout — which
-    # is every custody record — grew without bound until the container was
+    # is every event record — grew without bound until the container was
     # removed. 5 × 50 MB is roughly a week of a four-agent office.
     logging:
       driver: json-file
@@ -124,8 +123,8 @@ services:
       # ever happened — TEST-SIGNOFF's own REFUSED example fails on exactly that.
       # A NAMED volume, so `down` keeps it and only an explicit `down -v` clears
       # it. Everything else in a tenant is deliberately ephemeral; this is not.
-      - custody:${CUSTODY_DIR:-/home/ubuntu/.flock/custody}
+      - event-log:${EVENT_LOG_DIR:-/home/ubuntu/.flock/events}
 
 volumes:
-  custody:
-    name: "${COMPOSE_PROJECT_NAME:-h-flock}-custody"
+  event-log:
+    name: "${COMPOSE_PROJECT_NAME:-h-flock}-event-log"

@@ -111,19 +111,19 @@ ENV PYTHONUNBUFFERED=1 \
     ROSTER_POLL_SECONDS=5 \
     ACTIVITY_POLL_SECONDS=2 \
     PRESENCE_WORKING_SECONDS=30 \
-    BOARD_DONE_MAX=500 \
-    DEAD_MAX=500 \
+    DONE_TASK_MAX=500 \
+    DEAD_LETTER_MAX=500 \
     WINDOW_LOG_MAX_BYTES=8388608 \
     TMUX_TMPDIR=/home/ubuntu/.flock/tmux \
-    API_PORT=8080 \
-    SESSION_PORT=8081
+    API_LISTEN_PORT=8080 \
+    TERMINAL_LISTEN_PORT=8081
 
-# The api binds every interface *inside* the container; publishing is the
-# deliberate act, and compose maps it to the host's loopback only. A
-# non-loopback bind with no token refuses to start (LLD-api §6), which is what
-# makes the token mandatory here rather than advisory (LLD-container §3).
-ENV API_BIND=0.0.0.0 \
-    SESSION_BIND=0.0.0.0
+# The API and terminal services listen on every interface *inside* the container;
+# publishing is a separate, deliberate compose mapping. The entrypoint rejects
+# non-loopback publication without TLS unless the operator explicitly allows it
+# (LLD-container §3.1).
+ENV API_LISTEN_ADDRESS=0.0.0.0 \
+    TERMINAL_LISTEN_ADDRESS=0.0.0.0
 
 USER ubuntu
 

@@ -3,13 +3,14 @@
 # Source it.
 #
 #   . container/flock-compose.sh
-#   flock_compose_args hq         # populates tenant context and compose args
-#   docker compose -p "$FLOCK_PROJECT" --env-file "$TENANT_ENV_FILE" \
-#     "${FLOCK_COMPOSE_ARGS[@]}" ...
+#   resolve_compose_files hq      # populates tenant context and file list
+#   COMPOSE=(docker compose -p "$FLOCK_COMPOSE_PROJECT" --env-file "$FLOCK_TENANT_ENV_PATH")
+#   for file in "${FLOCK_COMPOSE_FILES[@]}"; do COMPOSE+=(-f "$file"); done
+#   "${COMPOSE[@]}" ...
 #
 # ⚠ WHY THIS EXISTS. A tenant's base compose.yaml carries NO `ports:` key,
 # so an unpublished tenant exposes zero ports by default. When an operator
-# publishes a door, setup.sh writes the `ports:` block into an override
+# publishes a service, setup.sh writes the `ports:` block into an override
 # fragment at `tenants/<tenant>/compose.ports.yaml`.
 #
 # Sourcing this helper guarantees every compose invocation includes the
@@ -18,7 +19,7 @@
 
 FLOCK_REPO_ROOT="${FLOCK_REPO_ROOT:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"
 
-flock_tenant_context() {
+resolve_tenant_context() {
   local tenant="${1:-}"
   if [[ ! "$tenant" =~ ^[a-z0-9][a-z0-9-]{0,62}$ ]] \
      || [[ "$tenant" =~ ^[0-9]+$ ]]; then
@@ -31,21 +32,20 @@ flock_tenant_context() {
   esac
 
   TENANT="$tenant"
-  TENANT_DIR="$FLOCK_REPO_ROOT/tenants/$tenant"
-  TENANT_ENV_FILE="$TENANT_DIR/.env"
-  FLOCK_TENANT_ENV_FILE="$TENANT_ENV_FILE"
-  FLOCK_PROJECT="h-flock-$tenant"
-  FLOCK_CONTAINER="$FLOCK_PROJECT-tenant-1"
-  export TENANT TENANT_DIR TENANT_ENV_FILE FLOCK_TENANT_ENV_FILE FLOCK_PROJECT FLOCK_CONTAINER
+  FLOCK_TENANT_DIR="$FLOCK_REPO_ROOT/tenants/$tenant"
+  FLOCK_TENANT_ENV_PATH="$FLOCK_TENANT_DIR/.env"
+  FLOCK_COMPOSE_PROJECT="h-flock-$tenant"
+  FLOCK_TENANT_CONTAINER="$FLOCK_COMPOSE_PROJECT-tenant-1"
+  export TENANT FLOCK_TENANT_DIR FLOCK_TENANT_ENV_PATH FLOCK_COMPOSE_PROJECT FLOCK_TENANT_CONTAINER
 }
 
-flock_compose_args() {
-  flock_tenant_context "${1:-${TENANT:-}}" || return
-  FLOCK_COMPOSE_ARGS=("-f" "$FLOCK_REPO_ROOT/container/compose.yaml")
-  if [ -f "$TENANT_DIR/compose.ports.yaml" ]; then
-    FLOCK_COMPOSE_ARGS+=("-f" "$TENANT_DIR/compose.ports.yaml")
+resolve_compose_files() {
+  resolve_tenant_context "${1:-${TENANT:-}}" || return
+  FLOCK_COMPOSE_FILES=("$FLOCK_REPO_ROOT/container/compose.yaml")
+  if [ -f "$FLOCK_TENANT_DIR/compose.ports.yaml" ]; then
+    FLOCK_COMPOSE_FILES+=("$FLOCK_TENANT_DIR/compose.ports.yaml")
   fi
-  if [ -f "$TENANT_DIR/compose.mini-app.yaml" ]; then
-    FLOCK_COMPOSE_ARGS+=("-f" "$TENANT_DIR/compose.mini-app.yaml")
+  if [ -f "$FLOCK_TENANT_DIR/compose.mini-app.yaml" ]; then
+    FLOCK_COMPOSE_FILES+=("$FLOCK_TENANT_DIR/compose.mini-app.yaml")
   fi
 }

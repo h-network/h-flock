@@ -2,17 +2,17 @@
 # Restart one core service without coupling its lifetime to any peer service.
 set -uo pipefail
 
-name="$1"
+service_name="$1"
 shift
-delay="${SERVICE_RESTART_SECONDS:-1}"
-[[ "$delay" =~ ^[0-9]+([.][0-9]+)?$ ]] || delay=1
+restart_delay_seconds="${SERVICE_RESTART_DELAY_SECONDS:-1}"
+[[ "$restart_delay_seconds" =~ ^[0-9]+([.][0-9]+)?$ ]] || restart_delay_seconds=1
 child_pid=""
 stopping=0
 
-jlog() {
+emit_event() {
   printf '%s\n' "$1"
-  if [ -n "${FLOCK_CUSTODY_FILE:-}" ]; then
-    { printf '%s\n' "$1" >> "$FLOCK_CUSTODY_FILE"; } 2>/dev/null || true
+  if [ -n "${FLOCK_EVENT_LOG_PATH:-}" ]; then
+    { printf '%s\n' "$1" >> "$FLOCK_EVENT_LOG_PATH"; } 2>/dev/null || true
   fi
 }
 
@@ -25,10 +25,10 @@ trap stop_child INT TERM
 while [ "$stopping" -eq 0 ]; do
   "$@" &
   child_pid=$!
-  jlog "{\"module\":\"container\",\"writer\":\"container\",\"event\":\"service_started\",\"service\":\"$name\",\"pid\":$child_pid}"
+  emit_event "{\"module\":\"container\",\"writer\":\"container\",\"event\":\"service_started\",\"service\":\"$service_name\",\"pid\":$child_pid}"
 
   wait "$child_pid"
-  code=$?
+  exit_code=$?
   if [ "$stopping" -ne 0 ]; then
     # A signal interrupts bash's wait before the child necessarily finishes.
     # Reap it after forwarding the signal so the supervisor cannot orphan it.
@@ -37,8 +37,8 @@ while [ "$stopping" -eq 0 ]; do
   child_pid=""
   [ "$stopping" -eq 0 ] || break
 
-  jlog "{\"module\":\"container\",\"writer\":\"container\",\"event\":\"service_restart_scheduled\",\"service\":\"$name\",\"exit\":$code,\"delay_s\":$delay}"
-  sleep "$delay" &
+  emit_event "{\"module\":\"container\",\"writer\":\"container\",\"event\":\"service_restart_scheduled\",\"service\":\"$service_name\",\"exit\":$exit_code,\"delay_s\":$restart_delay_seconds}"
+  sleep "$restart_delay_seconds" &
   child_pid=$!
   wait "$child_pid" 2>/dev/null || true
   child_pid=""
