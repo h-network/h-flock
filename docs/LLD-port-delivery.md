@@ -58,7 +58,7 @@ while True:
     time.sleep(0.05)
 
 try:
-    deliver_one(r, pod=pod, tenant=tenant, agent=agent, session_name=session_name, socket=socket)
+    deliver_one(r, pod=pod, tenant=tenant, agent=agent)
 finally:
     r.hdel(delivering_key, agent)
 ```
@@ -109,7 +109,7 @@ immediately without draining ingress, leaving messages safely queued until resum
 its handler:
 
 ```python
-def deliver_one(r, pod: str, tenant: str, agent: str, session_name: str, socket: str | None = None) -> None:
+def deliver_one(r, pod: str, tenant: str, agent: str) -> None:
     if r.get(prefix(pod, tenant, agent=agent, resource="paused")):
         return
 
@@ -121,8 +121,13 @@ def deliver_one(r, pod: str, tenant: str, agent: str, session_name: str, socket:
         deliver_unroutable(r, pod=pod, tenant=tenant, agent=agent, port_type_name=agent_port_type)
         return
 
-    handler(r=r, pod=pod, tenant=tenant, agent=agent, session_name=session_name, socket=socket)
+    handler(r=r, pod=pod, tenant=tenant, agent=agent)
 ```
+
+The generic handler contract carries only Redis and destination-address context. A handler
+resolves configuration specific to its own transport at that transport's edge; for example,
+`deliver_tmux` reads `TMUX_SESSION` and `TMUX_SOCKET` rather than requiring every API,
+control, OpenShell, or extension handler to accept tmux-specific arguments.
 
 ### Handler Specification and Lazy Imports
 

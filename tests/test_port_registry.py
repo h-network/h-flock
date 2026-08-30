@@ -45,15 +45,13 @@ def test_register_and_dispatch_custom_callable():
     r = FakeRespRedis()
     r.hset("pod:acme:tenant:hq:roster", "worker-x", "custom_lane")
 
-    deliver_one(r, pod="acme", tenant="hq", agent="worker-x", session_name="hq")
+    deliver_one(r, pod="acme", tenant="hq", agent="worker-x")
 
     mock_handler.assert_called_once_with(
         r=r,
         pod="acme",
         tenant="hq",
         agent="worker-x",
-        session_name="hq",
-        socket=None,
     )
 
 
@@ -97,13 +95,48 @@ def test_deliver_one_dispatches_tmux(capsys):
 
     with patch("flock.port.openers.list_windows", return_value={"bob"}), \
          patch("flock.tmux.ops.run_tmux", return_value=(0, "", "")):
-        deliver_one(r, pod="acme", tenant="hq", agent="bob", session_name="hq")
+        deliver_one(r, pod="acme", tenant="hq", agent="bob")
 
     assert len(r.lists.get(ingress_key, [])) == 0
     records = [json.loads(line) for line in capsys.readouterr().out.splitlines()]
     events = [rec["event"] for rec in records]
     assert "received" in events
     assert "opened" in events
+
+
+@pytest.mark.parametrize("session_env", [None, ""])
+def test_tmux_handler_resolves_empty_or_absent_session_at_its_edge(monkeypatch, session_env):
+    r = FakeRespRedis()
+    r.hset("pod:acme:tenant:hq:roster", "bob", "tmux")
+    env = build_envelope(kind="Message", source="alice", destination="bob", payload={"text": "hello"})
+    r.rpush(prefix("acme", "hq", "bob", "ingress"), encode(env))
+
+    if session_env is None:
+        monkeypatch.delenv("TMUX_SESSION", raising=False)
+    else:
+        monkeypatch.setenv("TMUX_SESSION", session_env)
+    monkeypatch.setenv("TMUX_SOCKET", "/tmp/flock-test.sock")
+
+    with patch("flock.port.deliver.messages_opener") as mock_opener:
+        deliver_one(r, pod="acme", tenant="hq", agent="bob")
+
+    assert mock_opener.call_args.kwargs["session_name"] == "hq"
+    assert mock_opener.call_args.kwargs["socket"] == "/tmp/flock-test.sock"
+
+
+def test_tmux_handler_resolves_configured_session_at_its_edge(monkeypatch):
+    r = FakeRespRedis()
+    r.hset("pod:acme:tenant:hq:roster", "bob", "tmux")
+    env = build_envelope(kind="Message", source="alice", destination="bob", payload={"text": "hello"})
+    r.rpush(prefix("acme", "hq", "bob", "ingress"), encode(env))
+    monkeypatch.setenv("TMUX_SESSION", "custom-session")
+    monkeypatch.delenv("TMUX_SOCKET", raising=False)
+
+    with patch("flock.port.deliver.messages_opener") as mock_opener:
+        deliver_one(r, pod="acme", tenant="hq", agent="bob")
+
+    assert mock_opener.call_args.kwargs["session_name"] == "custom-session"
+    assert mock_opener.call_args.kwargs["socket"] is None
 
 
 def test_deliver_one_dispatches_api(capsys):
@@ -115,7 +148,7 @@ def test_deliver_one_dispatches_api(capsys):
     inbox_key = prefix("acme", "hq", agent="telegram", resource="inbox")
     r.rpush(ingress_key, encode(env))
 
-    deliver_one(r, pod="acme", tenant="hq", agent="telegram", session_name="hq")
+    deliver_one(r, pod="acme", tenant="hq", agent="telegram")
 
     assert len(r.lists.get(ingress_key, [])) == 0
     assert len(r.streams.get(inbox_key, [])) == 1
@@ -132,15 +165,13 @@ def test_deliver_one_dispatches_control():
 
     mock_control = MagicMock()
     with patch("flock.control.runner.deliver_one", mock_control):
-        deliver_one(r, pod="acme", tenant="hq", agent="host", session_name="hq")
+        deliver_one(r, pod="acme", tenant="hq", agent="host")
 
     mock_control.assert_called_once_with(
         r=r,
         pod="acme",
         tenant="hq",
         agent="host",
-        session_name="hq",
-        socket=None,
     )
 
 
@@ -153,7 +184,7 @@ def test_deliver_one_unroutable_dead_letters(capsys):
     dead_key = prefix("acme", "hq", "ghost", "dead")
     r.rpush(ingress_key, encode(env))
 
-    deliver_one(r, pod="acme", tenant="hq", agent="ghost", session_name="hq")
+    deliver_one(r, pod="acme", tenant="hq", agent="ghost")
 
     assert len(r.lists.get(ingress_key, [])) == 0
     assert len(r.lists.get(dead_key, [])) == 1

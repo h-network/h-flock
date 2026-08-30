@@ -117,11 +117,13 @@ def deliver_tmux(
     pod: str,
     tenant: str,
     agent: str,
-    session_name: str,
+    session_name: str | None = None,
     socket: str | None = None,
     timeout: int = 1,
     **kwargs,
 ) -> None:
+    session_name = session_name or os.environ.get("TMUX_SESSION") or tenant
+    socket = socket or os.environ.get("TMUX_SOCKET")
     ingress_key = prefix(pod, tenant, agent, "ingress")
     dead_key = prefix(pod, tenant, agent, "dead")
 
@@ -262,8 +264,6 @@ def deliver_one(
     pod: str,
     tenant: str,
     agent: str,
-    session_name: str,
-    socket: str | None = None,
 ) -> None:
     paused_key = prefix(pod, tenant, agent=agent, resource="paused")
     if r.get(paused_key):
@@ -283,8 +283,6 @@ def deliver_one(
         pod=pod,
         tenant=tenant,
         agent=agent,
-        session_name=session_name,
-        socket=socket,
     )
 
 
@@ -293,12 +291,8 @@ def run_port(
     pod: str = "default",
     tenant: str = "default",
     redis_url: str = "redis://127.0.0.1:6379/0",
-    session_name: str | None = None,
-    socket: str | None = None,
 ) -> None:
     r = redis.Redis.from_url(redis_url)
-    session_name = session_name or tenant
-    socket = socket or os.environ.get("TMUX_SOCKET")
 
     delivering_key = prefix(pod, tenant, resource="delivering")
 
@@ -315,8 +309,6 @@ def run_port(
             pod=pod,
             tenant=tenant,
             agent=agent,
-            session_name=session_name,
-            socket=socket,
         )
     finally:
         r.hdel(delivering_key, agent)

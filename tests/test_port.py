@@ -372,7 +372,8 @@ def test_add_ticket_opener_appends_to_task_record(mock_run_tmux, mock_list_windo
 @patch("flock.port.deliver.redis.Redis.from_url")
 @patch("flock.port.openers.list_windows")
 @patch("flock.tmux.ops.run_tmux")
-def test_run_port_kicked_one_shot(mock_run_tmux, mock_list_windows, mock_redis_cls):
+def test_run_port_kicked_one_shot(mock_run_tmux, mock_list_windows, mock_redis_cls, monkeypatch):
+    monkeypatch.delenv("TMUX_SESSION", raising=False)
     mock_r = FakeRespRedis()
     mock_redis_cls.return_value = mock_r
     mock_list_windows.return_value = {"alice", "bob"}
@@ -385,7 +386,7 @@ def test_run_port_kicked_one_shot(mock_run_tmux, mock_list_windows, mock_redis_c
     env = build_envelope(kind="Message", source="alice", destination="bob", payload={"text": "kicked message"})
     mock_r.rpush(ingress_key, encode(env))
 
-    run_port(agent="bob", pod="acme", tenant="hq", session_name="hq")
+    run_port(agent="bob", pod="acme", tenant="hq")
 
     assert len(mock_r.lists.get(ingress_key, [])) == 0
 
@@ -411,7 +412,7 @@ def test_run_port_paused_leaves_envelope_in_ingress(mock_redis_cls):
     env = build_envelope(kind="Message", source="alice", destination="bob", payload={"text": "paused message"})
     mock_r.rpush(ingress_key, encode(env))
 
-    run_port(agent="bob", pod="acme", tenant="hq", session_name="hq")
+    run_port(agent="bob", pod="acme", tenant="hq")
 
     assert len(mock_r.lists.get(ingress_key, [])) == 1
     delivering_key = "pod:acme:tenant:hq:delivering"
@@ -458,7 +459,7 @@ def test_run_port_port_type_api_pops_and_writes_mailbox(mock_redis_cls):
     env = build_envelope(kind="Message", source="alice", destination="api", payload={"text": "reply"})
     mock_r.rpush(ingress_key, encode(env))
 
-    run_port(agent="api", pod="acme", tenant="hq", session_name="hq")
+    run_port(agent="api", pod="acme", tenant="hq")
 
     assert len(mock_r.lists.get(ingress_key, [])) == 0
     inbox_key = "pod:acme:tenant:hq:agent:api:inbox"
@@ -484,7 +485,7 @@ def test_run_port_unroutable_broadcast_records_actual_recipient(mock_redis_cls, 
     env = build_envelope(kind="Message", source="alice", destination="all", payload={"text": "test"})
     mock_r.rpush(ingress_key, encode(env))
 
-    run_port(agent="host", pod="acme", tenant="hq", session_name="hq")
+    run_port(agent="host", pod="acme", tenant="hq")
 
     assert len(mock_r.lists.get(ingress_key, [])) == 0
     dead_key = "pod:acme:tenant:hq:agent:host:dead"
@@ -611,7 +612,7 @@ def test_port_batches_consecutive_messages_into_single_paste(mock_run_tmux, mock
     env3 = build_envelope(kind="Message", source="alice", destination="bob", payload={"text": "third message"})
     mock_r.rpush(ingress_key, encode(env1), encode(env2), encode(env3))
 
-    run_port(agent="bob", pod="acme", tenant="hq", session_name="hq")
+    run_port(agent="bob", pod="acme", tenant="hq")
 
     # Ingress drained
     assert len(mock_r.lists.get(ingress_key, [])) == 0
@@ -664,7 +665,7 @@ def test_port_preserves_order_with_interleaved_commands_and_tickets(mock_run_tmu
 
     mock_r.rpush(ingress_key, encode(msg1), encode(msg2), encode(cmd1), encode(msg3), encode(ticket1), encode(msg4), encode(msg5))
 
-    run_port(agent="bob", pod="acme", tenant="hq", session_name="hq")
+    run_port(agent="bob", pod="acme", tenant="hq")
 
     # Check load-buffer inputs in order
     load_buffer_calls = [call for call in mock_run_tmux.call_args_list if "load-buffer" in call[0]]
@@ -699,7 +700,7 @@ def test_port_batch_missing_window_dead_letters_all_envelopes(mock_list_windows,
     msg2 = build_envelope(kind="Message", source="architect", destination="bob", payload={"text": "m2"})
     mock_r.rpush(ingress_key, encode(msg1), encode(msg2))
 
-    run_port(agent="bob", pod="acme", tenant="hq", session_name="hq")
+    run_port(agent="bob", pod="acme", tenant="hq")
 
     dead_key = "pod:acme:tenant:hq:agent:bob:dead"
     assert len(mock_r.lists.get(dead_key, [])) == 2
@@ -740,7 +741,7 @@ def test_port_burst_repro_twenty_envelopes_batched_cleanly(mock_run_tmux, mock_l
         env["stream_id"] = f"{i:032x}"
     mock_r.rpush(ingress_key, *[encode(e) for e in envelopes])
 
-    run_port(agent="bob", pod="acme", tenant="hq", session_name="hq")
+    run_port(agent="bob", pod="acme", tenant="hq")
 
     # Ingress drained
     assert len(mock_r.lists.get(ingress_key, [])) == 0
@@ -953,7 +954,7 @@ def test_attachment_burst_isolation(mock_messages, mock_attachment):
     r.rpush(ingress_key, encode(env_msg1), encode(env_att), encode(env_msg2))
 
     from flock.port.deliver import deliver_one
-    deliver_one(r, "acme", "hq", "bob", "hq")
+    deliver_one(r, "acme", "hq", "bob")
 
     # Ingress drained
     assert len(r.lists.get(ingress_key, [])) == 0
@@ -1058,5 +1059,3 @@ def test_messages_opener_mixed_batch_trailer(mock_run_tmux, mock_list_windows):
         "[reply to web]\n"
     )
     assert input_data == expected
-
-

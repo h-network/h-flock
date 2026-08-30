@@ -600,6 +600,30 @@ def test_deliver_one_dispatches_control_kinds(monkeypatch, kind, expected_tmux):
         assert expected_tmux in events
 
 
+@pytest.mark.parametrize("session_env", [None, ""])
+def test_control_handler_resolves_tmux_context_at_its_edge(monkeypatch, session_env):
+    events = []
+    fake_tmux = types.ModuleType("flock.tmux")
+    fake_tmux.kill_window = lambda session, agent, socket=None: (
+        events.append((session, agent, socket)) or (0, "", "")
+    )
+    fake_tmux.run_tmux = lambda *args, **kwargs: (0, "", "")
+    monkeypatch.setitem(sys.modules, "flock.tmux", fake_tmux)
+    if session_env is None:
+        monkeypatch.delenv("TMUX_SESSION", raising=False)
+    else:
+        monkeypatch.setenv("TMUX_SESSION", session_env)
+    monkeypatch.setenv("TMUX_SOCKET", "/tmp/control.sock")
+
+    def fake_receive(r, **kwargs):
+        kwargs["openers"]["StopAgent"]({"payload": {"agent": "dave"}})
+
+    monkeypatch.setattr(runner, "receive", fake_receive)
+    deliver_one(RecordingRedis(events), pod="acme", tenant="hq", agent="host")
+
+    assert ("hq", "dave", "/tmp/control.sock") in events
+
+
 def test_changed_existing_hire_retires_stale_window_after_desired_state(monkeypatch):
     events = []
     fake_tmux = types.ModuleType("flock.tmux")
