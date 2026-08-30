@@ -1,21 +1,13 @@
 #!/usr/bin/env bash
-# flock-compose.sh — one answer to "which compose files are we loading?".
-# Source it.
+# Resolve the complete tenant-specific compose file list. Source this file.
 #
 #   . container/flock-compose.sh
 #   resolve_compose_files hq      # populates tenant context and file list
 #   COMPOSE=(docker compose -p "$FLOCK_COMPOSE_PROJECT" --env-file "$FLOCK_TENANT_ENV_PATH")
 #   for file in "${FLOCK_COMPOSE_FILES[@]}"; do COMPOSE+=(-f "$file"); done
 #   "${COMPOSE[@]}" ...
-#
-# ⚠ WHY THIS EXISTS. A tenant's base compose.yaml carries NO `ports:` key,
-# so an unpublished tenant exposes zero ports by default. When an operator
-# publishes a service, setup.sh writes the `ports:` block into an override
-# fragment at `tenants/<tenant>/compose.ports.yaml`.
-#
-# Sourcing this helper guarantees every compose invocation includes the
-# fragments when present and omits them when absent, avoiding ten manual
-# `-f` repetitions across setup and testbed scenarios.
+# The base has no ports; optional publication and mini-app fragments must be
+# included consistently by every caller.
 
 FLOCK_REPO_ROOT="${FLOCK_REPO_ROOT:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"
 

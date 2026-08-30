@@ -1,5 +1,4 @@
 #!/usr/bin/env bash
-# Restart one core service without coupling its lifetime to any peer service.
 set -uo pipefail
 
 service_name="$1"
