@@ -163,7 +163,7 @@ def test_add_ticket_opener_writes_v1_ticket(mock_run_tmux, mock_list_windows):
         payload={"title": "review the auth change", "description": "check auth middleware", "priority": "high"},
     )
 
-    add_ticket_opener(r, pod="acme", tenant="hq", agent="backend", envelope=env, session_name="hq")
+    add_ticket_opener(r, pod="acme", tenant="hq", agent="backend", envelope=env)
 
     todo_key = "pod:acme:tenant:hq:agent:backend:tasks.todo"
     assert todo_key in r.lists
@@ -194,7 +194,7 @@ def test_add_ticket_opener_stores_related_and_drops_non_strings(mock_run_tmux, m
         payload={"title": "follow-up", "related": ["abc12345", "def67890", 42, None]},
     )
 
-    add_ticket_opener(r, pod="acme", tenant="hq", agent="backend", envelope=env, session_name="hq")
+    add_ticket_opener(r, pod="acme", tenant="hq", agent="backend", envelope=env)
 
     todo_key = "pod:acme:tenant:hq:agent:backend:tasks.todo"
     ticket_data = json.loads(r.lists[todo_key][0])
@@ -215,7 +215,7 @@ def test_add_ticket_opener_omits_related_when_absent(mock_run_tmux, mock_list_wi
         payload={"title": "no relations"},
     )
 
-    add_ticket_opener(r, pod="acme", tenant="hq", agent="backend", envelope=env, session_name="hq")
+    add_ticket_opener(r, pod="acme", tenant="hq", agent="backend", envelope=env)
 
     todo_key = "pod:acme:tenant:hq:agent:backend:tasks.todo"
     ticket_data = json.loads(r.lists[todo_key][0])
@@ -233,7 +233,7 @@ def test_add_ticket_opener_writes_when_window_is_missing(mock_list_windows, caps
         payload={"title": "wait for recovery"},
     )
 
-    add_ticket_opener(r, pod="acme", tenant="hq", agent="backend", envelope=env, session_name="hq")
+    add_ticket_opener(r, pod="acme", tenant="hq", agent="backend", envelope=env)
 
     assert mock_list_windows.call_count == 0
     todo_key = "pod:acme:tenant:hq:agent:backend:tasks.todo"
@@ -260,7 +260,6 @@ def test_add_ticket_opener_dead_letters_unknown_board_write(capsys):
             tenant="hq",
             agent="backend",
             envelope=env,
-            session_name="hq",
         )
 
     record = json.loads(capsys.readouterr().out)
@@ -284,7 +283,6 @@ def test_add_ticket_opener_rejects_acknowledged_invalid_board_depth(capsys):
             tenant="hq",
             agent="backend",
             envelope=env,
-            session_name="hq",
         )
 
     record = json.loads(capsys.readouterr().out)
@@ -316,7 +314,6 @@ def test_failed_board_write_is_parked_once_by_receive(capsys):
                 tenant="hq",
                 agent="backend",
                 envelope=envelope,
-                session_name="hq",
             )
         },
         timeout=0,
@@ -355,7 +352,7 @@ def test_add_ticket_opener_appends_to_task_record(mock_run_tmux, mock_list_windo
                 destination="backend",
                 payload={"title": "fix log issue", "description": "detail"},
             )
-            add_ticket_opener(r, pod="acme", tenant="hq", agent="backend", envelope=env, session_name="hq")
+            add_ticket_opener(r, pod="acme", tenant="hq", agent="backend", envelope=env)
 
             assert os.path.exists(log_file)
             with open(log_file, "r", encoding="utf-8") as f:
@@ -551,7 +548,7 @@ def test_add_ticket_opener_skips_pending_verify_marker(mock_run_tmux, mock_list_
     env = build_envelope(kind="AddTicket", source="architect", destination="backend", payload={"title": "task"})
     env["stream_id"] = "12345-0"
 
-    add_ticket_opener(r, pod="acme", tenant="hq", agent="backend", envelope=env, session_name="hq")
+    add_ticket_opener(r, pod="acme", tenant="hq", agent="backend", envelope=env)
 
     verify_key = "pod:acme:tenant:hq:agent:backend:pending.verify"
     assert verify_key not in r.streams
