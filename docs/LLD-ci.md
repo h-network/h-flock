@@ -30,13 +30,19 @@ that those checks ran.
 
 ## 2. Workflow contract
 
-The workflow runs on pull requests targeting `main`, pushes to `main`, and
-manual dispatch. Pull requests are the pre-merge gate; the `main` run detects
-merge-only/environment drift; manual dispatch permits diagnosis without
-inventing a commit. There is deliberately no path filter: source, tests,
-packaging, shell/container code, and documentation can all contain executable
-contracts or alter the test collector, so a path allow-list can manufacture a
-green result by skipping the workflow.
+The workflow runs on pull requests targeting `develop`, pushes to `develop`,
+release promotions to `main`, and manual dispatch. Pull requests are the
+pre-merge gate; the `develop` and `main` runs detect merge-only/environment
+drift; manual dispatch permits diagnosis without inventing a commit.
+
+> **Live-state caveat (2026-08-30):** `develop` is temporarily absent and
+> changes go directly to `main`; this section describes the target workflow
+> once `develop` is recreated.
+
+There is deliberately no path filter: source, tests, packaging,
+shell/container code, and documentation can all contain executable contracts
+or alter the test collector, so a path allow-list can manufacture a green
+result by skipping the workflow.
 
 The workflow has two required jobs:
 
@@ -178,4 +184,3 @@ script. Making only the fake reject the mutation is not evidence for this gate.
   an explicit design decision.
 - CI must report skipped or uncollected required integration tests as failure.
   A green job means its named gate ran, not merely that pytest exited zero.
-
