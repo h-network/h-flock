@@ -78,7 +78,10 @@ tag-based policy, `send` it, and return `202` with the `stream_id` and the
 `422 Unprocessable Content`; a structurally invalid address returns `404 Not
 Found`. Both fail synchronously before anything is enqueued.
 
-**The body carries `kind` and `payload`, and the api validates neither (with the one documented exception of `Attachment` resource admission).**
+**The full-envelope body carries a non-empty string `kind` and an object
+`payload`. The api enforces those structural types, but does not whitelist or
+interpret kinds (with the one documented exception of `Attachment` resource
+admission).**
 
 ```json
 POST /agents/host/envelopes    {"kind": "StartAgent", "payload": {"agent": "networking"}}

@@ -389,8 +389,12 @@ Post an envelope to a specific agent, or to `"all"` for broadcast messages.
 - **Request Body Fields:**
   - `text` (optional string): Text message shorthand (implies `kind: "Message"`).
   - `as` (optional string): Enrolled application client name to declare as `source`. Must name an enrolled `port_type: "api"` client.
-  - `kind` (optional string): Envelope kind (e.g. `"Message"`, `"AddTicket"`, `"StartAgent"`, `"StopAgent"`).
-  - `payload` (optional object): Payload dictionary associated with the envelope kind.
+  - `kind` (string, required with `payload`): Non-empty envelope kind (e.g. `"Message"`, `"AddTicket"`, `"StartAgent"`, `"StopAgent"`). The API does not whitelist kind values.
+  - `payload` (object, required with `kind`): Payload dictionary associated with the envelope kind.
+
+Use either the `text` shorthand or the full `kind` + `payload` pair. Omitting
+either full-envelope field, or giving it the wrong structural type, returns
+`422 Unprocessable Content`.
 
 **Example Shorthand Message:**
 ```json
@@ -875,7 +879,7 @@ Port `:8081` provides WebSocket terminal access for rendering live terminal wind
 | **Policy Denial** | `"policy denied '<source>' -> '<destination>': no shared export/import tag"` | Senders and recipients have disjoint policy tags. **Nothing was sent or enqueued.** Verify and update `export` / `import` tags via `StartAgent`. |
 | **Non-Local Route** | `"no route to non-local destination '<destination>'"` | Destination specifies a qualified pod/tenant outside this tenant. Intra-tenant local routing cannot reach foreign nodes without a gateway. |
 | **Invalid Client Identity** | `"invalid 'as' client: must be an enrolled client with port_type 'api'"` | The declared `"as"` client is not enrolled in the tenant roster as an `api` participant. Enrol with `StartAgent` first. |
-| **Malformed Payload** | `"payload must be an object"` | Request envelope structure does not conform to the v4 frame specification. A malformed destination in the `{agent}` path is instead a `404 Not Found`. |
+| **Malformed Envelope** | `"kind must be a non-empty string"` or `"payload must be an object"` | The full-envelope request is missing `kind` or `payload`, or a field has the wrong structural type. A malformed destination in the `{agent}` path is instead a `404 Not Found`. |
 | **Payload Too Large** | `"envelope payload exceeds maximum size limit of 1MB"` or `"decoded attachment exceeds maximum size limit of 10MB..."` | Envelope payload exceeded the 1MB default or 10MB Attachment decoded limit. |
 | **Invalid Attachment** | `"invalid attachment filename..."` or `"invalid attachment mime_type..."` or `"invalid attachment content_base64..."` | Attachment payload violates closed schema or field-level validation rules. |
 
