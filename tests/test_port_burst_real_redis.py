@@ -123,7 +123,7 @@ def test_real_redis_port_delivery_batching_and_markers(mock_run_tmux, mock_list_
 
     client.rpush(ingress_key, *[encode(e) for e in envelopes])
 
-    run_port(agent="bob", pod="acme", tenant="hq", redis_url=redis_url, session_name="hq")
+    run_port(agent="bob", pod="acme", tenant="hq", redis_url=redis_url)
 
     # Ingress drained
     assert client.llen(ingress_key) == 0

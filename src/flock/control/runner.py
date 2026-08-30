@@ -1,5 +1,6 @@
 """One-envelope delivery routine for the control port_type."""
 
+import os
 import subprocess
 
 from flock.bus import receive
@@ -29,10 +30,13 @@ def deliver_one(
     pod: str,
     tenant: str,
     agent: str,
-    session_name: str,
+    session_name: str | None = None,
     socket: str | None = None,
 ) -> None:
     """Pop and open one lifecycle envelope addressed to a control agent."""
+    session_name = session_name or os.environ.get("TMUX_SESSION") or tenant
+    socket = socket or os.environ.get("TMUX_SOCKET")
+
     # The tmux lane owns this shared library. Keeping the import here lets the
     # control storage operations remain independently testable on this lane.
     from flock.tmux import kill_window, run_tmux

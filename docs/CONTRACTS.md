@@ -224,8 +224,12 @@ window-creation implementation. tmuxhost passes the resolved environment and
 `flock.port.deliver` looks up the `port_type` in `flock.port.registry` and dispatches to its registered delivery handler (see [`LLD-port-delivery.md`](LLD-port-delivery.md)). The registry supports direct callables as well as lazy `(module_path, attribute_name)` specs so port modules are only imported when an envelope for that port type is actively being delivered.
 
 ```python
-def deliver_one(r, *, pod, tenant, agent, session_name, socket=None) -> None
+def deliver_one(r, *, pod, tenant, agent) -> None
 ```
+
+That shared signature contains destination context only. Transport-specific handlers
+resolve their own configuration; in particular, tmux and control read `TMUX_SESSION`
+and `TMUX_SOCKET` at their respective delivery edges.
 
 | port_type | Registered Handler | Owner | Spec |
 |---|---|---|---|
