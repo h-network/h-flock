@@ -218,8 +218,6 @@ def deliver_tmux(
                         tenant=tenant,
                         agent=agent,
                         envelope=envelope,
-                        session_name=session_name,
-                        socket=socket,
                     )
                 except DeadLetter as exc:
                     r.rpush(dead_key, raw)
