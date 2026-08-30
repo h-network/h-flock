@@ -313,7 +313,7 @@ six-record contract has holes under load*
 
 | | |
 |---|---|
-| broadcast | `src/flock/bus/doors.py:60` skips the policy check when the destination is `all`, so the ACL covers every send except the one that fans out. A broadcast storm has nothing in front of it |
+| broadcast | `src/flock/bus/doors.py:215` skips the policy check when the destination is `all`, so the ACL covers every send except the one that fans out. A broadcast storm has nothing in front of it |
 | contract | re-measure. The recorded rates predate v3, v4 and `send_refused`, so nobody knows whether the rewrite already fixed them |
 
 ⚠ **This sprint got cheaper on 2026-08-23.** It carried a third row — reworking
@@ -386,7 +386,7 @@ run, which is the reason to trust the list.
 |---|---|
 | board | **half-open.** A ticket used to land with no notification at all; `docs/LLD-watchdog.md` §2b now alerts the lead when one sits unpicked. What remains: the lead still hand-counts message budgets, and phase work still has no per-participant ticket |
 | ~~peers~~ | **closed, build 108.** `office peers -v` reports framework, profile and current task per peer, built from keys the display already reads |
-| threads | the fabric mints and propagates `correlation_id` through every custody stage; it is the join key the whole custody log is built on. `office send` neither shows it nor accepts one, so a thread is reconstructible from the log and not from the interface an agent uses. ⚠ **Sharper as of `TODO.md:83`**: `bus/doors.py:43`'s `send()` returns only a stream id, so the first task isn't a CLI flag, it's widening that single choke point's return — both `office send` and the api door gain it from one change |
+| threads | the fabric mints and propagates `correlation_id` through every custody stage; it is the join key the whole custody log is built on. `office send` neither shows it nor accepts one, so a thread is reconstructible from the log and not from the interface an agent uses. ⚠ **Sharper as of `TODO.md:92`**: `bus/doors.py:209`'s `send()` returns only a stream id, so the first task isn't a CLI flag, it's widening that single choke point's return — both `office send` and the api door gain it from one change |
 
 ---
 

@@ -106,9 +106,9 @@ def port_type(r, *, pod, tenant, agent) -> str | None   # HGET   — port side o
 ```
 
 The Redis wire is **hard v4**: a frame is a fixed 256-byte ASCII header then an
-opaque JSON body (`bus/envelope.py:16`), and anything else is rejected rather
+opaque JSON body (`bus/envelope.py:17`), and anything else is rejected rather
 than upgraded — as v3 rejected v2 and v2 rejected flat v1. ⚠ **191 is the TTL
-offset now, not the header width** (`TTL_START`, `bus/envelope.py:13`); a reader
+offset now, not the header width** (`TTL_START`, `bus/envelope.py:14`); a reader
 who remembers 191 as the width is one version behind. HTTP send request bodies
 are port input and keep their existing shape; mailbox consumers receive the
 layered frame and must read L2/L3, and since v4 also `ttl` and `hops`.
@@ -257,7 +257,7 @@ derive this count from a pair-per-component rule: `sent` is an origin and
 `kick_started` is an attempted wake-up, not a custody pair.
 
 ⚠ **A broadcast does not have six**: `forwarded` is emitted once with `count=N`
-and `destination:"all"` (`switch/service.py:169`), so it cannot be joined per
+and `destination:"all"` (`switch/service.py:198`), so it cannot be joined per
 recipient. `analyse-run.py`'s `STAGES` is the operative list.
 
 The contract is a set, and a crash shows up as "popped, no outcome".
@@ -453,7 +453,7 @@ does not retry (`LLD-bus-and-switch` §3.3, rail 3). It emits `kick_started` whe
 handle away. Those attempt records do not claim that the port ran or delivered.
 
 ⚠ **The switch must set `signal.signal(signal.SIGCHLD, signal.SIG_IGN)` at
-start (`src/flock/switch/service.py:243`).** Without it the kernel keeps every
+start (`src/flock/switch/service.py:270`).** Without it the kernel keeps every
 exited kick as a zombie until the switch reaps it, and CPython only reaps at the
 top of the *next* `Popen` — so during a burst the reaping lags the spawning.
 Measured: **65 zombies** for a 100-envelope run, **40 still present at rest**

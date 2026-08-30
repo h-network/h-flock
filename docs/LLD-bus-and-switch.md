@@ -474,7 +474,7 @@ runs the final two housekeeping jobs in its own loop every
 `MAINTENANCE_POLL_SECONDS` (default 2). Keeping filesystem and Stream scans in
 the separate watchdog process prevents a slow observation from stalling
 forwarding (`src/flock/watchdog/service.py:373-407`,
-`src/flock/switch/service.py:192-224`).
+`src/flock/switch/service.py:221-256`).
 
 1. **Tail session files.** For each Claude, Codex or Antigravity agent, the
    tailer reads only bytes after the stored `activity.offset` in the newest
