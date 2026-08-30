@@ -192,8 +192,6 @@ def add_ticket_opener(
     tenant: str,
     agent: str,
     envelope: dict,
-    session_name: str,
-    socket: str | None = None,
 ) -> None:
     corr_id = envelope.get("correlation_id")
     source = envelope.get("l2", {}).get("source", "unknown")
@@ -419,4 +417,3 @@ def attachment_opener(
         notice += f"[attachment caption] {caption}\n"
 
     paste_text(session_name, agent, notice, stream_id=stream_id, socket=socket)
-
